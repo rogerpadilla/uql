@@ -1,9 +1,9 @@
 import {
   type EntityPredicate,
   type QueryConflictPaths,
-  type QueryRaw,
+  type QuerySql,
   type TriggerWrite,
-  TriggerWriteRaw,
+  TriggerWriteSql,
   type Type,
   type UpdatePayload,
   type WritableKey,
@@ -15,7 +15,7 @@ import {
  * Each value is a literal or SQL, a row's ref most often, and every engine renders it, SQL Server's
  * set-based trigger included, where it inserts one row for each the statement touched.
  */
-export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>): QueryRaw {
+export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>): QuerySql {
   return written({ kind: 'insert', entity, row });
 }
 
@@ -27,8 +27,8 @@ export function upsertInto<E extends object>(
   entity: Type<E>,
   conflictPaths: QueryConflictPaths<E>,
   row: WriteRow<E>,
-  update?: UpdatePayload<E, QueryRaw, WritableKey<E>, never>,
-): QueryRaw {
+  update?: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
+): QuerySql {
   return written({ kind: 'upsert', entity, conflictPaths, row, update });
 }
 
@@ -36,13 +36,13 @@ export function upsertInto<E extends object>(
 export function updateTable<E extends object>(
   entity: Type<E>,
   q: { readonly $where: EntityPredicate<E> },
-  set: UpdatePayload<E, QueryRaw, WritableKey<E>, never>,
-): QueryRaw {
+  set: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
+): QuerySql {
   return written({ kind: 'update', entity, set, where: q.$where });
 }
 
 /** The rows `q.$where` names deleted by a trigger's body, outright: a soft delete is an `updateTable`. */
-export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $where: EntityPredicate<E> }): QueryRaw {
+export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $where: EntityPredicate<E> }): QuerySql {
   return written({ kind: 'delete', entity, where: q.$where });
 }
 
@@ -50,11 +50,11 @@ export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $whe
  * Fails the write that fired the trigger, with `message` as the error: a table kept append-only refuses its
  * updates and deletes, and a `where` narrows it to the rows a rule forbids.
  */
-export function refuse(message: string): QueryRaw {
+export function refuse(message: string): QuerySql {
   return written({ kind: 'refuse', message });
 }
 
 /** A write in a trigger's body, as every helper here and a stamp render one. */
-export function written(write: TriggerWrite): QueryRaw {
-  return new TriggerWriteRaw(({ ctx, dialect, rows }) => dialect.triggerWrite(ctx, write, rows));
+export function written(write: TriggerWrite): QuerySql {
+  return new TriggerWriteSql(({ ctx, dialect, rows }) => dialect.triggerWrite(ctx, write, rows));
 }

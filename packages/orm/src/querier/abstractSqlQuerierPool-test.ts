@@ -1,7 +1,7 @@
 import { expect, onTestFinished } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlQuerier } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 
 import { QuerierPoolIt } from './abstractQuerierPool-test.js';
 import type { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
@@ -41,7 +41,7 @@ export class SqlQuerierPoolIt extends QuerierPoolIt<AbstractSqlQuerierPool<SqlQu
     });
 
     await this.pool.run`INSERT INTO pool_bind_it (name) VALUES (${hostile})`;
-    const rows = await this.pool.all<{ name: string }>`SELECT name FROM pool_bind_it WHERE ${raw`name = ${hostile}`}`;
+    const rows = await this.pool.all<{ name: string }>`SELECT name FROM pool_bind_it WHERE ${sql`name = ${hostile}`}`;
 
     expect(rows).toEqual([{ name: hostile }]);
   }

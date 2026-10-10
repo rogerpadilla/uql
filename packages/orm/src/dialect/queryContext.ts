@@ -7,7 +7,7 @@ export class SqlQueryContext implements QueryContext {
   private readonly tableAliases = new Set<string>();
 
   /**
-   * `params` and `statement` are a fragment's parent's, so a value numbers against the whole statement and
+   * `params` and `sql` are a fragment's parent's, so a value numbers against the whole statement and
    * an alias is unique across it; a fragment inlines values where its statement does.
    */
   constructor(

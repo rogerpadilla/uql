@@ -4,7 +4,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryUpdateResult, QueryWhere, RawRow } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
@@ -312,7 +312,7 @@ describe('AbstractSqlQuerier error context', () => {
   });
 });
 
-/** `all` and `run` are tags themselves, binding what they interpolate as `raw` does. */
+/** `all` and `run` are tags themselves, binding what they interpolate as `sql` does. */
 it('should take a statement written as a tag, binding each value', async () => {
   const seen: [query?: string, values?: unknown[]][] = [];
   class RecordingSqlQuerier extends StubSqlQuerier {
@@ -343,7 +343,7 @@ it('should refuse a statement past the bind budget', async () => {
   const querier = new StubSqlQuerier();
   const values = Array.from({ length: querier.dialect.maxBindValues + 1 }, (_, index) => index);
 
-  await expect(querier.all(raw(({ ctx }) => ctx.append('SELECT 1').pushValue(...values)))).rejects.toThrow(
+  await expect(querier.all(sql(({ ctx }) => ctx.append('SELECT 1').pushValue(...values)))).rejects.toThrow(
     UqlUsageError,
   );
 });

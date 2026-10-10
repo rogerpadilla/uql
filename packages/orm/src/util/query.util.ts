@@ -121,7 +121,7 @@ function undefinedPath(value: unknown): string[] | undefined {
   return undefined;
 }
 
-/** An array or a plain object: what a filter nests, and not a `Date`, a `raw` or a driver's value. */
+/** An array or a plain object: what a filter nests, and not a `Date`, a `sql` or a driver's value. */
 function isWalkable(value: unknown): value is Readonly<Record<string, unknown>> {
   if (Array.isArray(value)) {
     return true;

@@ -663,8 +663,8 @@ describe('EntityCodeGenerator', () => {
 
       expect(result.code).toContain("@Field({ type: 'text', defaultValue: 'CURRENT_TIMESTAMP' })");
       expect(result.code).toContain('defaultValue: currentTimestamp');
-      expect(result.code).toContain("defaultValue: raw`(lower('A'))`");
-      expect(result.code).toContain("import { Entity, Field, Id, currentTimestamp, raw } from 'uql-orm';");
+      expect(result.code).toContain("defaultValue: sql`(lower('A'))`");
+      expect(result.code).toContain("import { Entity, Field, Id, currentTimestamp, sql } from 'uql-orm';");
     });
 
     it('should handle OneToOne and ManyToMany relations', () => {
@@ -803,7 +803,7 @@ describe('EntityCodeGenerator', () => {
    * `OPTION_SOURCE`'s `satisfies` is what forces the answer; these are the answers it forces.
    */
   describe('round trip', () => {
-    it('should carry a generated column as a stored computed field, and import raw for it', () => {
+    it('should carry a generated column as a stored computed field, and import sql for it', () => {
       const ast = new SchemaAST();
       ast.addTable(
         mockTableNode('lines', [
@@ -817,8 +817,8 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain('computed: raw`qty * 2`, stored: true');
-      expect(result.code).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
+      expect(result.code).toContain('computed: sql`qty * 2`, stored: true');
+      expect(result.code).toContain("import { Entity, Field, Id, sql } from 'uql-orm';");
       // The database writes it, so a write payload leaves it out rather than dropping what it names.
       expect(result.code).toContain('readonly total?: number | null;');
       expect(result.code).toContain('  qty?: number | null;');
@@ -839,7 +839,7 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain("comment: 'the buyer\\'s name'");
-      expect(result.code).toContain('computed: raw`concat(\\`a\\`, \\${1})`');
+      expect(result.code).toContain('computed: sql`concat(\\`a\\`, \\${1})`');
     });
   });
 

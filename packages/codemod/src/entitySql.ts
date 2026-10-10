@@ -15,7 +15,8 @@ export function isRaw(node: ts.Node): node is RawSql {
     : ts.isCallExpression(node)
       ? node.expression
       : undefined;
-  return identifierText(callee) === 'raw';
+  const name = identifierText(callee);
+  return name === 'raw' || name === 'sql';
 }
 
 /** The expressions of a column list, written as one or returned by its callback: each entry or `column` that is `raw`. */

@@ -5,10 +5,10 @@ import type {
   IndexColumnSchema,
   IndexSchema,
   PrimaryKeySchema,
-  QueryRaw,
+  QuerySql,
   StoredDefinition,
 } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import {
   AbstractSqlSchemaIntrospector,
   type ReadColumn,
@@ -24,13 +24,13 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     this.dialect.hasVectorIndex() ? ['vector', 'distance'] : [],
   );
 
-  protected triggersQuery(tableName: string): QueryRaw {
-    return raw`SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ${tableName}`;
+  protected triggersQuery(tableName: string): QuerySql {
+    return sql`SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ${tableName}`;
   }
 
   /** User tables only: skips SQLite's own and libSQL's vector index tables (its metadata and `<index>_shadow`). */
-  protected getTableNamesQuery(): QueryRaw {
-    return raw`
+  protected getTableNamesQuery(): QuerySql {
+    return sql`
       SELECT name AS table_name
       FROM sqlite_master
       WHERE type = 'table'
@@ -41,8 +41,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(tableName: string): QueryRaw {
-    return raw`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${tableName}`;
+  protected tableExistsQuery(tableName: string): QuerySql {
+    return sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${tableName}`;
   }
 
   /**
@@ -129,7 +129,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** Every statement `sqlite_master` keeps for the table, its `CREATE TABLE` first. An automatic index has none. */
   protected override getDefinition(read: TableRowReader, tableName: string): Promise<StoredDefinition[]> {
     return read<StoredDefinition>(
-      raw`SELECT type AS kind, name, sql FROM sqlite_master WHERE tbl_name = ${tableName} AND sql IS NOT NULL ORDER BY type <> 'table'`,
+      sql`SELECT type AS kind, name, sql FROM sqlite_master WHERE tbl_name = ${tableName} AND sql IS NOT NULL ORDER BY type <> 'table'`,
     );
   }
 
@@ -154,8 +154,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   /** A PRAGMA takes no parameters, so the name it reads is written into the statement, escaped. */
-  private pragma(name: string, of: string): QueryRaw {
-    return raw.text(`PRAGMA ${name}(${this.dialect.escapeId(of)})`);
+  private pragma(name: string, of: string): QuerySql {
+    return sql.text(`PRAGMA ${name}(${this.dialect.escapeId(of)})`);
   }
 
   protected normalizeType(type: string): string {

@@ -7,7 +7,7 @@ import { Migrator } from '../migrate/migrator.js';
 import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
 import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
@@ -80,8 +80,8 @@ describe('schema against postgres', () => {
     // The generated DDL, not a hand-written equivalent: the schema statements, the qualified
     // `CREATE TABLE`s and the derived index and constraint names are exactly what this feature
     // emits, and a name that escapes into two identifiers only fails against a real server.
-    for (const sql of new SqlSchemaGenerator(pool.dialect).generateCreateSchema([Customer, Order])) {
-      await querier.run(raw.text(sql));
+    for (const statement of new SqlSchemaGenerator(pool.dialect).generateCreateSchema([Customer, Order])) {
+      await querier.run(sql.text(statement));
     }
     await querier.insertOne(Customer, { name: 'acme' });
     await querier.insertOne(Order, { total: 42, customerId: 1 });
@@ -124,10 +124,10 @@ describe('schema against postgres', () => {
     for (const [other, total] of TENANTS) {
       // Each tenant's DDL comes from a generator scoped to that schema, the same way its pool is.
       const scopedDialect = new PostgresDialect({ schema: other });
-      for (const sql of new SqlSchemaGenerator(scopedDialect).generateCreateSchema([Ledger])) {
-        await tenant.run(raw.text(sql));
+      for (const statement of new SqlSchemaGenerator(scopedDialect).generateCreateSchema([Ledger])) {
+        await tenant.run(sql.text(statement));
       }
-      await tenant.run`INSERT INTO ${raw.text(other)}."Ledger" (total) VALUES (${total})`;
+      await tenant.run`INSERT INTO ${sql.text(other)}."Ledger" (total) VALUES (${total})`;
     }
 
     await expect(tenant.findMany(Ledger, { $select: { total: true } })).resolves.toEqual([{ total: expected }]);
@@ -145,8 +145,8 @@ describe('schema against postgres', () => {
     beforeAll(async () => {
       driftPool = new PgliteQuerierPool('memory://');
       const querier = await driftPool.getQuerier();
-      for (const sql of new SqlSchemaGenerator(driftPool.dialect).generateCreateSchema([Customer])) {
-        await querier.run(raw.text(sql));
+      for (const statement of new SqlSchemaGenerator(driftPool.dialect).generateCreateSchema([Customer])) {
+        await querier.run(sql.text(statement));
       }
       await querier.release();
     });
@@ -167,13 +167,13 @@ describe('schema against postgres', () => {
     });
 
     it('should emit the ALTER against the qualified table', async () => {
-      const sql = await new Migrator(driftPool, { entities: [Drifted] }).planSync();
-      expect(sql).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
+      const statement = await new Migrator(driftPool, { entities: [Drifted] }).planSync();
+      expect(statement).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
     });
 
     it('should emit the ALTER against the qualified table when syncing that entity alone', async () => {
-      const sql = await new Migrator(driftPool, { entities: [Drifted] }).planSync({ entity: Drifted });
-      expect(sql).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
+      const statement = await new Migrator(driftPool, { entities: [Drifted] }).planSync({ entity: Drifted });
+      expect(statement).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
     });
   });
 });

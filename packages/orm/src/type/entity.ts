@@ -1,7 +1,7 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { SqlDialectName } from './dialect.js';
 import type { FilterOptions, RelationQuery } from './query.js';
-import type { ColumnRef, QueryRaw, RawFor, RelationAggregate } from './queryRaw.js';
+import type { ColumnRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type {
   AtLeastOne,
@@ -76,7 +76,7 @@ export type EntityWrite<E> = EntityData<E, Exclude<WritableKey<E>, FilledKey<E>>
   ([FilledKey<E>] extends [never] ? unknown : { [P in WritableKey<E> & FilledKey<E>]?: E[P] });
 
 /** A row a trigger's body writes: each writable field its value, or SQL - a row's ref most often. */
-export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F]?: E[K] | RawFor<QueryRaw, E[K]> };
+export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F]?: E[K] | SqlFor<QuerySql, E[K]> };
 
 /**
  * The property an entity brands with {@link versionKey} as its optimistic lock, `never` where it
@@ -90,7 +90,7 @@ export type VersionKey<E> = E extends { [versionKey]?: infer K } ? K & FieldKey<
  * and with the version where the entity keeps one - a write that cannot say which row state it read
  * is refused here rather than silently overwriting whatever is there now.
  */
-export type UpdateWrite<E, Raw = QueryRaw> = UpdatePayload<E, Raw, WritableKey<E>> & Required<Pick<E, VersionKey<E>>>;
+export type UpdateWrite<E, Sql = QuerySql> = UpdatePayload<E, Sql, WritableKey<E>> & Required<Pick<E, VersionKey<E>>>;
 
 /** The relation names of an entity: every key but its fields and its methods, so the two sets cannot drift. */
 export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
@@ -206,21 +206,21 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
  * would change the result. A `bigint` steps by a `bigint`, exactly, and the step may be SQL of the field's type.
  * @example `{ stock: { $inc: -1 } }`, `{ total: { $inc: newRow.amount } }`
  */
-export type FieldUpdateOp<T = number | bigint | QueryRaw> = ExactlyOne<Record<'$inc' | '$mul', T>>;
+export type FieldUpdateOp<T = number | bigint | QuerySql> = ExactlyOne<Record<'$inc' | '$mul', T>>;
 
 /** The {@link FieldUpdateOp} a field takes: `never` on one it has no operator for, which is any but a number. */
-type FieldUpdateOpFor<V, Raw> = [NonNullable<V>] extends [number]
-  ? FieldUpdateOp<number | RawFor<Raw, number>>
+type FieldUpdateOpFor<V, Sql> = [NonNullable<V>] extends [number]
+  ? FieldUpdateOp<number | SqlFor<Sql, number>>
   : [NonNullable<V>] extends [bigint]
-    ? FieldUpdateOp<bigint | RawFor<Raw, bigint>>
+    ? FieldUpdateOp<bigint | SqlFor<Sql, bigint>>
     : never;
 
-/** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and update operators. */
-type UpdateExtra<V, Raw> =
+/** What an update takes beyond the value: `null` to clear an optional member, `sql` SQL, and update operators. */
+type UpdateExtra<V, Sql> =
   | (undefined extends V ? null : never)
-  | RawFor<Raw, V>
+  | SqlFor<Sql, V>
   | JsonUpdateOpFor<V>
-  | FieldUpdateOpFor<V, Raw>;
+  | FieldUpdateOpFor<V, Sql>;
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a
@@ -237,10 +237,10 @@ export type EntityData<E, F extends keyof E = FieldKey<E>, R extends keyof E = R
 type RelationData<V> = V extends readonly (infer T)[] ? EntityWrite<T>[] : V extends object ? EntityWrite<V> : never;
 
 /** {@link EntityData} made partial, each member also taking its {@link UpdateExtra}. */
-export type UpdatePayload<E, Raw = QueryRaw, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
-  [P in F]?: E[P] | UpdateExtra<E[P], Raw>;
+export type UpdatePayload<E, Sql = QuerySql, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
+  [P in F]?: E[P] | UpdateExtra<E[P], Sql>;
 } & {
-  [P in R]?: E[P] | RelationData<E[P]> | UpdateExtra<E[P], Raw>;
+  [P in R]?: E[P] | RelationData<E[P]> | UpdateExtra<E[P], Sql>;
 };
 
 /** The key's name where the entity states it, by the `idKey` brand or a conventional name; `never` otherwise. */
@@ -389,7 +389,7 @@ export type TypeFor<V, T = NonNullable<V>> =
 /** A field as the registry holds it: what was authored, plus what registration worked out, which no decorator can write. */
 export type FieldMeta<V = TsTypeOf<FieldType>> = Except<FieldOptions<V>, 'computed'> & {
   /** {@link FieldOptions.computed}, a callback resolved to the SQL it returns. */
-  readonly computed?: QueryRaw;
+  readonly computed?: QuerySql;
   /** Whether the column type comes from the referenced key, where the field gave `references` but no `type`. */
   readonly typeFromReference?: boolean;
 };
@@ -420,7 +420,7 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly enum?: EnumValues;
   /**
    * An expression the database computes, never written: spliced into each read, or with `stored` a
-   * generated column, `computed: (user) => raw`${user.first} || ' ' || ${user.last}``.
+   * generated column, `computed: (user) => sql`${user.first} || ' ' || ${user.last}``.
    *
    * A relation aggregate is the other form, `computed: (user) => user.resources.count()`, read as the
    * subquery a `$count` reads. Both resolve to SQL at registration, so everything downstream sees one.
@@ -450,10 +450,10 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
 
   /**
    * The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`.
-   * An engine's own type is a `raw` constant, `columnType: raw`tsvector``, rendered verbatim and
+   * An engine's own type is a `sql` constant, `columnType: sql`tsvector``, rendered verbatim and
    * never translated, so a column declaring one is yours to keep portable.
    */
-  readonly columnType?: ColumnType | QueryRaw;
+  readonly columnType?: ColumnType | QuerySql;
   /** A string column's length. */
   readonly length?: number;
   /** A decimal column's digits, or a timestamp's fractional-second digits. */
@@ -462,8 +462,8 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly scale?: number;
   readonly nullable?: boolean;
   readonly unique?: boolean;
-  /** The column's DDL default: a literal, or SQL the database evaluates per inserted row (`currentTimestamp`, `raw`). */
-  readonly defaultValue?: DdlDefault<V> | QueryRaw;
+  /** The column's DDL default: a literal, or SQL the database evaluates per inserted row (`currentTimestamp`, `sql`). */
+  readonly defaultValue?: DdlDefault<V> | QuerySql;
   /** Whether the database generates the value; a numeric sole key does unless something else fills it. */
   readonly autoIncrement?: boolean;
   /**
@@ -475,7 +475,7 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly comment?: string;
 };
 
-export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V | QueryRaw);
+export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QuerySql | (() => V | QuerySql);
 
 /**
  * What a column may default to: its value, or on a JSON column the document it stores, `[]`, or its SQL text,
@@ -659,8 +659,8 @@ export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 /** The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)`, or a definition's callback. */
 export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string, E[K]> };
 
-/** SQL a definition writes: `raw`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
-export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
+/** SQL a definition writes: `sql`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
+export type EntitySql<E> = QuerySql | { sql(refs: RefMap<E>): QuerySql }['sql'];
 
 /** One field of `C`, read off its refs: `(item) => item.amount`. */
 type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
@@ -722,7 +722,7 @@ export type EntityAggregate<E> = { agg(refs: ComputedRefs<E>): RelationAggregate
  * SQL a `computed` field writes. One callback shape for every arm, aggregate or not: overload
  * resolution picks a contextual parameter type per arm only while they agree on one.
  */
-export type ComputedSql<E> = QueryRaw | { sql(refs: ComputedRefs<E>): QueryRaw }['sql'];
+export type ComputedSql<E> = QuerySql | { sql(refs: ComputedRefs<E>): QuerySql }['sql'];
 
 /** The value a field's options declare it holds, where an aggregate is what declares it. */
 export type AggregateValue<O> = O extends { readonly computed: (...args: never[]) => RelationAggregate<infer V> }
@@ -740,7 +740,7 @@ export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>
 export type EntityWhere<E> = EntityPredicate<E> | EntitySql<E>;
 
 /** A definition's predicate as metadata keeps it, a callback resolved to its SQL, for the schema build to compile. */
-export type EntityWhereMeta<E> = EntityPredicate<E> | QueryRaw;
+export type EntityWhereMeta<E> = EntityPredicate<E> | QuerySql;
 
 export type RelationReferences = { readonly local: string; readonly foreign: string }[];
 
@@ -786,14 +786,14 @@ export type IndexTypeOptions =
   | { type: 'fulltext'; distance?: never; config?: string }
   | { type?: Exclude<IndexType, VectorIndexType | 'vectorSearch' | 'fulltext'>; distance?: never; config?: never };
 
-/** One index entry as the migration builder takes it: a column name, `raw`, or an object when it needs more. */
-export type IndexColumnInput = string | QueryRaw | EntityIndexColumn;
+/** One index entry as the migration builder takes it: a column name, `sql`, or an object when it needs more. */
+export type IndexColumnInput = string | QuerySql | EntityIndexColumn;
 
 /**
- * One entry of an entity's index, read off its refs: a column, `raw`, or an object when it needs more.
- * @example `@Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, raw`lower(${post.email})`])`
+ * One entry of an entity's index, read off its refs: a column, `sql`, or an object when it needs more.
+ * @example `@Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, sql`lower(${post.email})`])`
  */
-export type EntityIndexColumnInput<E> = QueryRaw | IndexColumnOptions | IndexJsonColumnOptions<E>;
+export type EntityIndexColumnInput<E> = QuerySql | IndexColumnOptions | IndexJsonColumnOptions<E>;
 
 /** A JSON entry, its `path` checked against its own column's payload: a misspelled one builds an index nothing uses. */
 type IndexJsonColumnOptions<E> = {
@@ -862,8 +862,8 @@ type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'json
 
 /** An entity's entry with plain modifiers, never a JSON one, whose path would then go unchecked. */
 type IndexColumnOptions = IndexColumnPlainModifiers & {
-  /** A column read off the refs, or `raw` for an expression. */
-  readonly column: QueryRaw;
+  /** A column read off the refs, or `sql` for an expression. */
+  readonly column: QuerySql;
   readonly jsonPath?: never;
   readonly jsonArray?: never;
 };
@@ -877,7 +877,7 @@ export type IndexColumnSchema = IndexColumnModifiers & {
 };
 
 /** One index entry as metadata keeps it: a member, or an expression rendered when the schema is built. */
-export type EntityIndexColumn = IndexColumnModifiers & { readonly column: string | QueryRaw };
+export type EntityIndexColumn = IndexColumnModifiers & { readonly column: string | QuerySql };
 
 /** An index as metadata keeps it. */
 export type EntityIndexMeta<E = object> = {
@@ -964,7 +964,7 @@ type TriggerRowRefs<E, Ev extends TriggerEvent, R extends '$new' | '$old'> =
 type TriggerBody<E, Ev extends TriggerEvent> = (
   newRow: TriggerRowRefs<E, Ev, '$new'>,
   oldRow: TriggerRowRefs<E, Ev, '$old'>,
-) => QueryRaw;
+) => QuerySql;
 
 /**
  * A condition as data: a predicate on each row it names, of the rows the event has, all of which hold.
@@ -984,7 +984,7 @@ type TriggerRun<E, Ev extends TriggerEvent> =
   | Readonly<AtLeastOne<Record<SqlDialectName, TriggerBody<E, Ev>>>>;
 
 /**
- * A trigger, `{ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => raw`...` }`.
+ * A trigger, `{ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => sql`...` }`.
  *
  * A list rather than a map keyed by the event, as `checks` and `indexes` are lists: several triggers may
  * share an event, they fire in the order written, and each is named, diffed and dropped by that name.
@@ -1021,7 +1021,7 @@ export type TriggerOptions<E = unknown> = {
      */
     readonly deferred?: Ev extends `after${string}` ? boolean : never;
     /**
-     * The body, as SQL off the rows, `(newRow, oldRow) => raw`...``: the incoming row first and the
+     * The body, as SQL off the rows, `(newRow, oldRow) => sql`...``: the incoming row first and the
      * outgoing one second, the one `on` lacks typed `never`. One for every engine, or a map naming one
      * per engine where their SQL differs.
      */
@@ -1043,11 +1043,11 @@ export type EntityTriggerMeta<E = object> = Except<TriggerOptions<E>, 'of' | 'wh
  * A body as the renderer calls it, with both rows whatever the event. Bivariant, as {@link EntitySql} is,
  * so a body typing the row its event lacks as `never` is still held here.
  */
-export type TriggerMetaBody<E> = { run(newRow: RefMap<E>, oldRow: RefMap<E>): QueryRaw }['run'];
+export type TriggerMetaBody<E> = { run(newRow: RefMap<E>, oldRow: RefMap<E>): QuerySql }['run'];
 
 /**
  * A table's `CHECK`, `{ where: { balance: { $gte: 0 } } }`, or SQL off the refs,
- * `{ where: (wallet) => raw`${wallet.spent} <= ${wallet.balance}` }`.
+ * `{ where: (wallet) => sql`${wallet.spent} <= ${wallet.balance}` }`.
  */
 export type CheckOptions<E = unknown> = {
   /** Derived from the table and the constraint's position when absent. */
@@ -1101,8 +1101,8 @@ export type EntityOptions<E = unknown> = {
  * `type`/`distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
 export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'where'> & {
-  /** Partial-index predicate, as `raw` with no interpolation: the migration builder has no entity to compile one against. */
-  readonly where?: QueryRaw;
+  /** Partial-index predicate, as `sql` with no interpolation: the migration builder has no entity to compile one against. */
+  readonly where?: QuerySql;
 };
 
 /**
@@ -1113,7 +1113,7 @@ export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & 
   readonly include?: (refs: RefMap<E>) => readonly ColumnRef<FieldKey<E>>[];
   /**
    * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
-   * shape, so a hand-written `raw` that means the same thing leaves the index unused. See {@link EntityWhere}.
+   * shape, so a hand-written `sql` that means the same thing leaves the index unused. See {@link EntityWhere}.
    */
   readonly where?: EntityWhere<E>;
 };

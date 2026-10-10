@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { QueryWhere } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { likePattern, likeLiteral, likeRegex, namesRows } from './operators.js';
 
 class Row {
@@ -22,7 +22,7 @@ it.each<{ where: QueryWhere<Row> | undefined; names: boolean }>([
   { where: { at: new Date(0) }, names: true },
   { where: { id: { $in: [] } }, names: true },
   { where: { $or: [{ id: 1 }, {}] }, names: true },
-  { where: { $and: [raw`1 = 1`] }, names: true },
+  { where: { $and: [sql`1 = 1`] }, names: true },
 ])('should read $where as naming rows: $names', ({ where, names }) => {
   expect(namesRows(where)).toBe(names);
 });

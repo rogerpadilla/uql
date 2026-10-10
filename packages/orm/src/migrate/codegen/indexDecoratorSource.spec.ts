@@ -11,12 +11,12 @@ function indexNode(entries: IndexColumnSchema[], rest: Partial<IndexNode> = {}):
 }
 
 /**
- * The cooked value of the first `raw` template in generated source, by running it as TypeScript
+ * The cooked value of the first `sql` template in generated source, by running it as TypeScript
  * would. Comparing emitted text against an expected escaping would only restate the implementation;
  * this proves the source reads back as the SQL the database reported.
  */
 function evaluateFirstTag(source: string): string {
-  const start = source.indexOf('raw`');
+  const start = source.indexOf('sql`');
   let end = start + 4;
   while (source[end] !== '`') {
     end += source[end] === '\\' ? 2 : 1;
@@ -58,7 +58,7 @@ describe('buildIndexDecoratorSource', () => {
     const index = indexNode([{ column: 'lower(email)', expression: true, order: 'desc' }, { column: 'email' }]);
 
     expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [{ column: raw`lower(email)`, order: 'desc' }, t.email], { name: 'idx' })",
+      "@Index((t) => [{ column: sql`lower(email)`, order: 'desc' }, t.email], { name: 'idx' })",
     );
   });
 

@@ -21,7 +21,7 @@ export { idKey, isSqlQuerier, versionKey } from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
 export type { HookContext } from './util/hook.util.js';
 export { DefaultLogger } from './util/logger.js';
-export { currentDate, currentTime, currentTimestamp, raw, refs, uuid, uuidv7 } from './util/raw.js';
+export { currentDate, currentTime, currentTimestamp, raw, refs, sql, uuid, uuidv7 } from './util/sql.js';
 export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './util/triggerWrite.js';
 export {
   type QueryErrorKind,

@@ -1,4 +1,4 @@
-import { Entity, Field, Id, ManyToOne, raw } from 'uql-orm';
+import { Entity, Field, Id, ManyToOne, sql } from 'uql-orm';
 import { User } from './User.js';
 
 @Entity({ name: 'posts' })
@@ -21,7 +21,7 @@ export class Post {
   @Field({ type: 'int', nullable: false, defaultValue: 0 })
   views?: number;
 
-  @Field({ type: 'int', nullable: false, computed: raw`views * 2`, stored: true })
+  @Field({ type: 'int', nullable: false, computed: sql`views * 2`, stored: true })
   readonly score!: number;
 
   @Field({ name: 'published_at', type: 'timestamp' })

@@ -4,7 +4,7 @@ import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { Company, createSpec, InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 /** What is Postgres' alone: pgvector's narrower vector types, its wire drivers, `pg_class` stats. */
@@ -36,14 +36,14 @@ class PostgresDialectSpec extends PgFamilySpec {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'halfvec' }) vec!: number[] | null;
     }
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, HalfvecItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3] } },
         $limit: 5,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "HalfvecItem" ORDER BY "vec" <=> $1::halfvec LIMIT 5');
+    expect(statement).toBe('SELECT "id" FROM "HalfvecItem" ORDER BY "vec" <=> $1::halfvec LIMIT 5');
     expect(values).toEqual(['[1,2,3]']);
   }
 
@@ -58,14 +58,14 @@ class PostgresDialectSpec extends PgFamilySpec {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'sparsevec' }) vec!: number[] | null;
     }
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SparsevecItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [0, 0, 1], $distance: 'l2' } },
         $limit: 5,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "SparsevecItem" ORDER BY "vec" <-> $1::sparsevec LIMIT 5');
+    expect(statement).toBe('SELECT "id" FROM "SparsevecItem" ORDER BY "vec" <-> $1::sparsevec LIMIT 5');
     expect(values).toEqual(['{3:1}/3']);
   }
 
@@ -75,8 +75,8 @@ class PostgresDialectSpec extends PgFamilySpec {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'sparsevec' }) vec!: number[] | null;
     }
-    const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));
-    expect(sql).toBe('INSERT INTO "SparsevecItem2" ("vec") VALUES ($1::sparsevec) RETURNING "id" "id"');
+    const { sql: statement, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));
+    expect(statement).toBe('INSERT INTO "SparsevecItem2" ("vec") VALUES ($1::sparsevec) RETURNING "id" "id"');
     expect(values).toEqual(['{1:1,3:2}/3']);
   }
 
@@ -107,7 +107,7 @@ class PostgresDialectSpec extends PgFamilySpec {
    * alone (the simplest case) is enough to pin it without repeating the check per combination.
    */
   shouldUpdateWithJsonPushViaBunSql() {
-    const { sql, values } = this.exec(
+    const { sql: statement, values } = this.exec(
       (ctx) =>
         this.wirePostgresDialect.update(
           ctx,
@@ -117,7 +117,7 @@ class PostgresDialectSpec extends PgFamilySpec {
         ),
       this.wirePostgresDialect,
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['"new-tag"', 123, '1']);
@@ -125,7 +125,7 @@ class PostgresDialectSpec extends PgFamilySpec {
 
   /** A path element is quoted: unquoted, a key named `null` is SQL NULL in a `text[]` literal. */
   shouldQuoteAJsonPathKey() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         Company,
@@ -133,8 +133,8 @@ class PostgresDialectSpec extends PgFamilySpec {
         { kind: { $push: { null: 'x' }, $pull: { null: 'y' } } },
       ),
     );
-    expect(sql).toContain(`'{"null"}'`);
-    expect(sql).not.toContain(`'{null}'`);
+    expect(statement).toContain(`'{"null"}'`);
+    expect(statement).not.toContain(`'{null}'`);
   }
 
   /**
@@ -142,8 +142,10 @@ class PostgresDialectSpec extends PgFamilySpec {
    * statistic", verified live on PG 18), which raw would read as a negative row count.
    */
   override shouldEstimatedCount() {
-    const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
-    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_value" FROM pg_class WHERE oid = to_regclass($1)');
+    const { sql: statement, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
+    expect(statement).toBe(
+      'SELECT GREATEST(reltuples, 0)::bigint "_uql_value" FROM pg_class WHERE oid = to_regclass($1)',
+    );
     expect(values).toEqual(['"User"']);
   }
   /** PGlite runs Postgres, but every querier shares its one session, so a lock held there makes none wait. */
@@ -152,15 +154,15 @@ class PostgresDialectSpec extends PgFamilySpec {
   }
 
   shouldFindWithARawExistsSubquery() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true, name: true },
         $where: {
-          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $exists: sql(({ ctx, dialect, escapedPrefix }) => {
             dialect.find(
               ctx,
               User,
-              { $select: { id: true }, $where: { companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
+              { $select: { id: true }, $where: { companyId: sql((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
               { autoPrefix: true },
             );
           }),
@@ -168,22 +170,22 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       'SELECT "id", "name" FROM "Item" WHERE EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
     );
     expect(values).toEqual([]);
   }
 
   shouldFindWithARawNotExistsSubquery() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
         $where: {
-          $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $nexists: sql(({ ctx, dialect, escapedPrefix }) => {
             dialect.find(
               ctx,
               User,
-              { $select: { id: true }, $where: { companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
+              { $select: { id: true }, $where: { companyId: sql((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
               { autoPrefix: true },
             );
           }),
@@ -191,7 +193,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       'SELECT "id" FROM "Item" WHERE NOT EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
     );
     expect(values).toEqual([]);
@@ -199,19 +201,19 @@ class PostgresDialectSpec extends PgFamilySpec {
 
   /** Beside a filter of its own, whose value binds first. */
   shouldFindWithARawExistsSubqueryAndAFilter() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, InventoryAdjustment, {
         $select: { id: true, description: true },
         $where: {
           createdAt: { $gte: 1000 },
-          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $exists: sql(({ ctx, dialect, escapedPrefix }) => {
             dialect.find(
               ctx,
               ItemAdjustment,
               {
                 $select: { id: true },
                 $where: {
-                  inventoryAdjustmentId: raw((o) => o.ctx.append(`${escapedPrefix}"id"`)),
+                  inventoryAdjustmentId: sql((o) => o.ctx.append(`${escapedPrefix}"id"`)),
                   buyPrice: { $gte: 100 },
                 },
               },
@@ -222,7 +224,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       'SELECT "id", "description" FROM "InventoryAdjustment" ' +
         'WHERE "createdAt" >= $1 AND EXISTS (SELECT "ItemAdjustment"."id" FROM "ItemAdjustment" ' +
         'WHERE "ItemAdjustment"."inventoryAdjustmentId" = "InventoryAdjustment"."id" AND "ItemAdjustment"."buyPrice" >= $2)',
@@ -232,7 +234,7 @@ class PostgresDialectSpec extends PgFamilySpec {
 
   /** The children are read inside the statement, so their filter binds before the parent's own. */
   shouldFilterAPopulatedOneToManyInsideTheStatement() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, InventoryAdjustment, {
         $select: { id: true, description: true },
         $populate: {
@@ -242,7 +244,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT "InventoryAdjustment"."id", "InventoryAdjustment"."description", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
         ' FROM (SELECT "itemAdjustments"."buyPrice"::text "buyPrice", "itemAdjustments"."number"::text "number"' +
         ' FROM "ItemAdjustment" "itemAdjustments" WHERE "itemAdjustments"."buyPrice" >= $1' +
@@ -274,7 +276,7 @@ class PostgresDialectSpec extends PgFamilySpec {
 
   /** A to-many's rows ordered by what they project, carried out under its own name rather than a second time. */
   shouldOrderAPopulatedToManyByTheRankItProjects() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
         $populate: {
@@ -288,13 +290,13 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toContain(`JSON_AGG("_uql_row" ORDER BY "tags"."rank" DESC)`);
-    expect(sql).toContain(`WEBSEARCH_TO_TSQUERY($1)) "rank" FROM "Tag" "tags"`);
+    expect(statement).toContain(`JSON_AGG("_uql_row" ORDER BY "tags"."rank" DESC)`);
+    expect(statement).toContain(`WEBSEARCH_TO_TSQUERY($1)) "rank" FROM "Tag" "tags"`);
   }
 
   /** A to-one is joined, so its filter joins with it, binding before the parent's own. */
   shouldFilterAPopulatedManyToOneInItsJoin() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true, name: true },
         $populate: { tax: { $select: { name: true, percentage: true }, $where: { percentage: { $gte: 10 } } } },
@@ -302,7 +304,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       'SELECT "Item"."id", "Item"."name", "tax"."id" "tax.id", "tax"."name" "tax.name", "tax"."percentage" "tax.percentage" ' +
         'FROM "Item" LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."taxId" AND "tax"."percentage" >= $1 ' +
         'WHERE "Item"."salePrice" >= $2',

@@ -1,7 +1,7 @@
 import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
 import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
-import type { QueryRawRenderOptions } from './queryRaw.js';
+import type { QuerySqlRenderOptions } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
@@ -278,7 +278,7 @@ export type TriggerRows = { readonly from: string; readonly where?: string };
 
 /** Where DDL's SQL sits: the row a trigger's predicate reads, as its prefix, and a set-based body's rows. */
 export type DdlRenderOptions = Pick<QueryComparisonOptions, 'escapedPrefix' | 'operand'> &
-  Pick<QueryRawRenderOptions, 'rows'>;
+  Pick<QuerySqlRenderOptions, 'rows'>;
 
 /**
  * A write a trigger's body runs, as `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse` state
@@ -303,7 +303,7 @@ export type TriggerWrite =
   | { readonly kind: 'refuse'; readonly message: string };
 
 /**
- * What a SQL statement is rendered through, as a `raw` callback and a query context see it:
+ * What a SQL statement is rendered through, as a `sql` callback and a query context see it:
  * `AbstractSqlDialect` is the one implementation.
  */
 export interface SqlQueryDialect {

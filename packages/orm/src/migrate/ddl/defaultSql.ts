@@ -127,7 +127,7 @@ function expressionSql({ kind, sql }: SqlExpression, dialect: AbstractSqlDialect
     const precision = columnType === undefined ? undefined : preciseTypes.exec(columnType)?.[1];
     return precision ? `CURRENT_TIMESTAMP(${precision})` : 'CURRENT_TIMESTAMP';
   }
-  const spelled = kind === 'raw' ? undefined : dialect.sqlValues[kind];
+  const spelled = kind === 'sql' ? undefined : dialect.sqlValues[kind];
   if (spelled === undefined) {
     throw new UqlUsageError(`${dialect.dialectName} has no ${kind}; write it as raw SQL this engine accepts`);
   }

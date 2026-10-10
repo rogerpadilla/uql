@@ -1,19 +1,19 @@
-import { QueryRaw, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
+import { QuerySql, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
 import { isRecord } from '../util/object.util.js';
-import { SQL_VALUES } from '../util/raw.js';
+import { SQL_VALUES } from '../util/sql.js';
 
 /**
  * The kind of a {@link SqlExpression}: a value uql exports by name, which `formatDefaultValue` spells for the
  * engine at DDL time, or `raw`, carrying its own SQL.
  */
-export type SqlExpressionKind = SqlValueName | 'raw';
+export type SqlExpressionKind = SqlValueName | 'sql';
 
 /**
  * A column default that is SQL rather than a literal, whether an entity or a migration declares it or
  * introspection reads it back. It is a class, not a plain object, so a JSON default cannot pass for one.
  */
 export class SqlExpression {
-  /** `sql` is set only for the `raw` kind, which carries its own text verbatim. */
+  /** `sql` is set only for the `sql` kind, which carries its own text verbatim. */
   constructor(
     readonly kind: SqlExpressionKind,
     readonly sql?: string,
@@ -25,7 +25,7 @@ export class SqlExpression {
 
   /** Wraps `sql` in parentheses, which every engine accepts for a default expression and SQLite and MySQL require. */
   static parenthesized(sql: string): SqlExpression {
-    return new SqlExpression('raw', `(${sql})`);
+    return new SqlExpression('sql', `(${sql})`);
   }
 
   /** Its SQL, or its kind, as diffs and drift reports show it. */
@@ -40,12 +40,12 @@ const NAME_OF: ReadonlyMap<unknown, SqlValueName> = new Map(SQL_VALUE_NAMES.map(
  * A default in schema form: a value uql exports (`currentTimestamp`) becomes its kind, so each engine spells it
  * for the column it fills; other `raw` becomes the SQL `compile` renders, parenthesized; a literal is kept.
  */
-export function schemaDefault(value: unknown, compile: (sql: QueryRaw) => string): unknown {
+export function schemaDefault(value: unknown, compile: (sql: QuerySql) => string): unknown {
   const name = NAME_OF.get(value);
   if (name) {
     return new SqlExpression(name);
   }
-  return value instanceof QueryRaw ? SqlExpression.parenthesized(compile(value)) : value;
+  return value instanceof QuerySql ? SqlExpression.parenthesized(compile(value)) : value;
 }
 
 /**

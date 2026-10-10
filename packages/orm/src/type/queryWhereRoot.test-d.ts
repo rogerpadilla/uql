@@ -1,10 +1,10 @@
 /**
  * The root-level `$where` clauses: `$and`/`$or`/`$not`/`$nor`, `$text`, `$exists`/`$nexists`, a bare
- * `raw()` value, and `refs()` inside one. `queryWhereOperator.test-d.ts` covers per-field operators.
+ * `sql()` value, and `refs()` inside one. `queryWhereOperator.test-d.ts` covers per-field operators.
  * Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
-import { raw, refs } from '../util/index.js';
+import { sql, refs } from '../util/index.js';
 
 class Person {
   id!: number;
@@ -20,7 +20,7 @@ export async function rootClauseArrays() {
   await querier.findMany(Person, { $where: { $and: [{ name: 'x' }, { age: { $gt: 1 } }] } });
   await querier.findMany(Person, { $where: { $or: [{ id: 1 }, { id: 2 }] } });
   await querier.findMany(Person, { $where: { $not: [{ active: true }] } });
-  await querier.findMany(Person, { $where: { $nor: [{ active: true }, raw`deleted_at IS NOT NULL`] } });
+  await querier.findMany(Person, { $where: { $nor: [{ active: true }, sql`deleted_at IS NOT NULL`] } });
 
   // The clauses inside are checked against the same entity.
   // @ts-expect-error 'naem' is not a field of Person
@@ -63,8 +63,8 @@ export async function fullTextSearch() {
 }
 
 export async function existsSubqueries() {
-  await querier.findMany(Person, { $where: { $exists: raw`SELECT 1 FROM sessions WHERE person_id = id` } });
-  await querier.findMany(Person, { $where: { $nexists: raw`SELECT 1 FROM bans WHERE person_id = id` } });
+  await querier.findMany(Person, { $where: { $exists: sql`SELECT 1 FROM sessions WHERE person_id = id` } });
+  await querier.findMany(Person, { $where: { $nexists: sql`SELECT 1 FROM bans WHERE person_id = id` } });
 
   // @ts-expect-error $exists takes a raw subquery, not a plain string
   await querier.findMany(Person, { $where: { $exists: 'SELECT 1' } });
@@ -73,14 +73,14 @@ export async function existsSubqueries() {
 export async function rootIsOneMap() {
   await querier.findMany(Person, { $where: { id: 1 } });
   await querier.findMany(Person, { $where: { id: [1, 2] } });
-  await querier.findMany(Person, { $where: { $and: [raw`age > 1`] } });
+  await querier.findMany(Person, { $where: { $and: [sql`age > 1`] } });
 
   // @ts-expect-error a bare id is `{ id: 1 }`, or a by-id method
   await querier.findMany(Person, { $where: 1 });
   // @ts-expect-error a list of ids is `{ id: [1, 2] }`
   await querier.findMany(Person, { $where: [1, 2] });
-  // @ts-expect-error a bare raw() goes inside `$and`
-  await querier.findMany(Person, { $where: raw`age > 1` });
+  // @ts-expect-error a bare sql() goes inside `$and`
+  await querier.findMany(Person, { $where: sql`age > 1` });
 }
 
 /** Each directive sits on the line its error must land on: one reported on `$where` leaves it unused. */
@@ -101,16 +101,16 @@ export async function errorsLandOnTheProperty() {
 
 export async function rawFieldValue() {
   // A field may compare against a raw SQL expression instead of a literal value.
-  await querier.findMany(Person, { $where: { age: raw`EXTRACT(YEAR FROM birth_date)` } });
-  await querier.updateOneById(Person, 1, { age: raw`age + 1` });
+  await querier.findMany(Person, { $where: { age: sql`EXTRACT(YEAR FROM birth_date)` } });
+  await querier.updateOneById(Person, 1, { age: sql`age + 1` });
 }
 
 export async function columnRefs() {
   // A field named inside raw SQL, linked to its property the way a statement's keys are.
   const person = refs(Person);
-  await querier.findMany(Person, { $where: { $and: [raw`${person.age} > ${person.id}`] } });
-  await querier.findMany(Person, { $where: { age: raw`${person.age} + 1` } });
-  await querier.updateOneById(Person, 1, { age: raw`${person.age} + 1` });
+  await querier.findMany(Person, { $where: { $and: [sql`${person.age} > ${person.id}`] } });
+  await querier.findMany(Person, { $where: { age: sql`${person.age} + 1` } });
+  await querier.updateOneById(Person, 1, { age: sql`${person.age} + 1` });
 
   class Membership {
     id?: number;
@@ -119,9 +119,9 @@ export async function columnRefs() {
   }
   const membership = refs(Membership);
   // @ts-expect-error 'naem' is not a field of Person
-  await querier.findMany(Person, { $where: { $and: [raw`${person.naem} IS NULL`] } });
+  await querier.findMany(Person, { $where: { $and: [sql`${person.naem} IS NULL`] } });
   // @ts-expect-error a relation has no column of its own
-  await querier.findMany(Person, { $where: { $and: [raw`${membership.person} IS NULL`] } });
+  await querier.findMany(Person, { $where: { $and: [sql`${membership.person} IS NULL`] } });
   // @ts-expect-error a method has no column
-  await querier.findMany(Person, { $where: { $and: [raw`${membership.renew} IS NULL`] } });
+  await querier.findMany(Person, { $where: { $and: [sql`${membership.renew} IS NULL`] } });
 }

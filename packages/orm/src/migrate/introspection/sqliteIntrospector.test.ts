@@ -2,7 +2,7 @@ import { expect, vi } from 'vitest';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createMockQuerierPool, createSpec, sentStatements } from '../../test/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -25,8 +25,8 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   /** `PRAGMA index_info` names an expression entry `null`: it is reported as an expression, not a column called `null`. */
   async shouldReportAnExpressionEntryAsAnExpression() {
     const schema = await this.probe('probe_expression', async (querier, table) => {
-      await querier.run(raw.text(`CREATE TABLE ${table} (name TEXT)`));
-      await querier.run(raw.text(`CREATE INDEX probe_lower_idx ON ${table} (lower(name))`));
+      await querier.run(sql.text(`CREATE TABLE ${table} (name TEXT)`));
+      await querier.run(sql.text(`CREATE INDEX probe_lower_idx ON ${table} (lower(name))`));
     });
 
     expect(schema.indexes).toEqual([
@@ -53,7 +53,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
       querier.run(
-        raw.text(/*sql*/ `
+        sql.text(/*sql*/ `
         CREATE TABLE ${table} (
           blank TEXT DEFAULT NULL, today TEXT DEFAULT CURRENT_DATE, word TEXT DEFAULT 'x',
           quoted TEXT DEFAULT 'it''s', negative INTEGER DEFAULT -3, fraction REAL DEFAULT 1.5,
@@ -67,16 +67,16 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
       blank: null,
-      today: new SqlExpression('raw', '(CURRENT_DATE)'),
+      today: new SqlExpression('sql', '(CURRENT_DATE)'),
       word: 'x',
       quoted: "it's",
       negative: -3,
       fraction: 1.5,
       truthy: 1,
       falsy: 0,
-      computed: new SqlExpression('raw', "(lower('Y'))"),
+      computed: new SqlExpression('sql', "(lower('Y'))"),
       bare: undefined,
-      clock: new SqlExpression('raw', '(CURRENT_TIMESTAMP)'),
+      clock: new SqlExpression('sql', '(CURRENT_TIMESTAMP)'),
       dated: new SqlExpression('currentDate'),
       spelled: 'CURRENT_TIMESTAMP',
     });
@@ -84,7 +84,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
   async shouldReadADeclaredTypeWithoutItsLength() {
     const schema = await this.probe('probe_types', (querier, table) =>
-      querier.run(raw.text(`CREATE TABLE ${table} (untyped, code VARCHAR(12))`)),
+      querier.run(sql.text(`CREATE TABLE ${table} (untyped, code VARCHAR(12))`)),
     );
 
     expect(schema.columns.map(({ name, type, length }) => ({ name, type, length }))).toEqual([
@@ -97,9 +97,9 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReportTheIndexesATableDeclares() {
     const schema = await this.probe('probe_indexes', async (querier, table) => {
       await querier.run(
-        raw.text(`CREATE TABLE ${table} (code TEXT PRIMARY KEY, v TEXT, w TEXT UNIQUE, UNIQUE (v, w))`),
+        sql.text(`CREATE TABLE ${table} (code TEXT PRIMARY KEY, v TEXT, w TEXT UNIQUE, UNIQUE (v, w))`),
       );
-      await querier.run(raw.text(`CREATE INDEX probe_indexes_v_idx ON ${table} (v)`));
+      await querier.run(sql.text(`CREATE INDEX probe_indexes_v_idx ON ${table} (v)`));
     });
 
     // Each unique constraint's index, a one-column one too, as every engine reports it; never the key's.
@@ -130,9 +130,9 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReportOnlyTheTriggersUqlInstalled() {
     const mine = 'CREATE TRIGGER _uql_probe_triggers__mine AFTER UPDATE ON "probe_triggers" BEGIN SELECT 1; END';
     const schema = await this.probe('probe_triggers', async (querier, table) => {
-      await querier.run(raw.text(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY, n INTEGER)`));
-      await querier.run(raw.text(`CREATE TRIGGER hand_made AFTER UPDATE ON ${table} BEGIN SELECT 1; END`));
-      await querier.run(raw.text(mine));
+      await querier.run(sql.text(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY, n INTEGER)`));
+      await querier.run(sql.text(`CREATE TRIGGER hand_made AFTER UPDATE ON ${table} BEGIN SELECT 1; END`));
+      await querier.run(sql.text(mine));
     });
 
     expect(schema.triggers).toEqual([{ name: '_uql_probe_triggers__mine', statements: [mine] }]);
@@ -141,7 +141,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReadATableWhoseNameNeedsEscaping() {
     const table = 'probe`quoted';
     const schema = await this.probe(table, (querier, escapedTable) =>
-      querier.run(raw.text(`CREATE TABLE ${escapedTable} (id INTEGER PRIMARY KEY)`)),
+      querier.run(sql.text(`CREATE TABLE ${escapedTable} (id INTEGER PRIMARY KEY)`)),
     );
 
     expect(schema).toMatchObject({ name: table, primaryKey: { columns: ['id'] } });

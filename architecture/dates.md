@@ -23,7 +23,7 @@ A zoneless column stays available as `columnType: 'timestamp'`. uql binds and re
 
 ## Precision
 
-`precision` on a date column is its fractional-second digits. A field stating none declares 3 on every engine (`DATE_PRECISION`), the milliseconds a `Date` holds, so a value the database writes itself, a `currentTimestamp` default or a stamp, reads back as exactly what is stored. Postgres's 6 and SQL Server's 7 would keep digits a `Date` drops, and MySQL's 0 rounds, not truncates: `.999` stored in whole seconds is the next second, an instant that has not happened. The same reason the wiki gives against `timestamp(0)`. A `raw` column type is the SQL itself and is left as written.
+`precision` on a date column is its fractional-second digits. A field stating none declares 3 on every engine (`DATE_PRECISION`), the milliseconds a `Date` holds, so a value the database writes itself, a `currentTimestamp` default or a stamp, reads back as exactly what is stored. Postgres's 6 and SQL Server's 7 would keep digits a `Date` drops, and MySQL's 0 rounds, not truncates: `.999` stored in whole seconds is the next second, an instant that has not happened. The same reason the wiki gives against `timestamp(0)`. A `sql` column type is the SQL itself and is left as written.
 
 A column stating none holds the engine's own (`defaultTimestampPrecision`: 6 on Postgres, 0 on MySQL, 7 on SQL Server), and introspection reads it as that, so drift sees a bare `TIMESTAMPTZ` as wider than the `TIMESTAMPTZ(3)` a `Date` field declares, and `generate:from-db` writes the `precision` the column has, unless it is the 3 a field states by stating none.
 

@@ -28,7 +28,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
@@ -309,7 +309,7 @@ export class Migrator {
       for (const { tableName, column, nullable } of counts) {
         const empty = nullable ? ` WHERE ${escapeId(column)} IS NULL` : '';
         const [{ rows }] = await querier.all<{ rows: number | bigint | string }>(
-          raw.text(`SELECT COUNT(*) AS ${escapeId('rows')} FROM ${escapeId(tableName)}${empty}`),
+          sql.text(`SELECT COUNT(*) AS ${escapeId('rows')} FROM ${escapeId(tableName)}${empty}`),
         );
         const count = Number(rows);
         if (count) {

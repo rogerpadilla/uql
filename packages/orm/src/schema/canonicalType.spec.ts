@@ -7,7 +7,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { type ColumnFamily, COLUMN_TYPES } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import {
   engineType,
   areTypesEqual,
@@ -242,8 +242,8 @@ describe('canonicalType', () => {
     });
 
     // An engine's own type: rendered verbatim, so nothing downstream translates it.
-    it('should carry an engine type a `raw` column type names', () => {
-      expect(fieldOptionsToCanonical({ type: String, columnType: raw`tsvector` })).toEqual({
+    it('should carry an engine type a `sql` column type names', () => {
+      expect(fieldOptionsToCanonical({ type: String, columnType: sql`tsvector` })).toEqual({
         category: 'string',
         raw: 'tsvector',
       });
@@ -508,9 +508,9 @@ describe('timestamp precision', () => {
     expect(same(mysql, sqlToCanonical('DATETIME', { precision: 0 }))).toBe(false);
   });
 
-  /** A `raw` type is the SQL itself, so it keeps the engine's own digits and compares as the column reports them. */
+  /** A `sql` type is the SQL itself, so it keeps the engine's own digits and compares as the column reports them. */
   it("should leave a raw timestamp type the engine's own precision", () => {
-    const declared = fieldOptionsToCanonical({ type: Date, columnType: raw`TIMESTAMP` });
+    const declared = fieldOptionsToCanonical({ type: Date, columnType: sql`TIMESTAMP` });
     const stored = sqlToCanonical('timestamp without time zone', { precision: 6 });
 
     expect(canonicalToSql(declared, pg)).toBe('TIMESTAMP');

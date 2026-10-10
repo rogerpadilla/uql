@@ -5,7 +5,7 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { postgresConnection } from './connections.js';
 
 @Entity({ name: 'AllocCompany' })
@@ -60,9 +60,9 @@ const entities = [Company, User];
 const pool = new PgQuerierPool(postgresConnection('test_alloc'), { logger: false });
 const dropAll = async () => {
   for (const statement of new SqlSchemaGenerator(pool.dialect).generateDropSchema(entities, { ifExists: true })) {
-    await pool.run(raw.text(statement));
+    await pool.run(sql.text(statement));
   }
-  await pool.run(raw.text('DROP TABLE IF EXISTS "uql_migrations"'));
+  await pool.run(sql.text('DROP TABLE IF EXISTS "uql_migrations"'));
 };
 
 try {

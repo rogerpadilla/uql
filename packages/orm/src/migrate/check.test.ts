@@ -7,11 +7,11 @@ import { defineField, Entity, Field, getMeta, Id } from '../entity/index.js';
 import type { EnumValues } from '../schema/types.js';
 import { assertDefined, linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
-@Entity({ name: 'CkBill', checks: [{ name: 'cap', where: (bill) => raw`${bill.spent} <= ${bill.balance}` }] })
+@Entity({ name: 'CkBill', checks: [{ name: 'cap', where: (bill) => sql`${bill.spent} <= ${bill.balance}` }] })
 class CkBill {
   @Id({ type: Number }) id?: number;
   status?: string | null;
@@ -123,7 +123,7 @@ describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { feat
     const declared = meta.checks;
     meanwhile(
       () => {
-        meta.checks = [{ name: 'cap', where: raw`spent < balance` }];
+        meta.checks = [{ name: 'cap', where: sql`spent < balance` }];
       },
       () => {
         meta.checks = declared;
@@ -168,7 +168,7 @@ describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { feat
     await dropTables(pool(), 'CkHand');
     const id = (name: string) => pool().dialect.escapeId(name);
     await pool().run(
-      raw.text(
+      sql.text(
         `CREATE TABLE ${id('CkHand')} (${id('id')} BIGINT PRIMARY KEY, ${id('n')} BIGINT, CONSTRAINT hand_ck CHECK (n >= 0))`,
       ),
     );

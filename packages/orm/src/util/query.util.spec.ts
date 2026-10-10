@@ -3,7 +3,7 @@ import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
 import { assertWhere, whereIds, whereKeysIn } from './query.util.js';
-import { raw } from './raw.js';
+import { sql } from './sql.js';
 
 @Entity()
 class Enrolled {
@@ -45,7 +45,7 @@ describe('assertWhere', () => {
   it.each([
     ['an id', '1'],
     ['a list of ids', [1, 2]],
-    ['a bare raw()', raw`a > 1`],
+    ['a bare sql()', sql`a > 1`],
     ['null', null],
   ])('refuses %s', (_, where) => {
     expect(() => assertWhere(getMeta(User), where)).toThrow("$where on 'User' must be a map of conditions");

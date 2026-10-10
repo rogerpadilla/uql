@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { MariadbSchemaIntrospector } from '../migrate/introspection/mysqlIntrospector.js';
 import { assertDefined, mariadbConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
 const TABLE = 'maria_vector_index';
@@ -19,7 +19,7 @@ describe('MariaDB vector index', () => {
   it('should read a vector index built without a distance as euclidean, beside a plain index', async () => {
     await dropTables(pool, TABLE);
     await pool.run(
-      raw.text(
+      sql.text(
         `CREATE TABLE ${TABLE} (id INT PRIMARY KEY, n INT, vec VECTOR(3) NOT NULL, VECTOR INDEX ix_maria_vec (vec), INDEX ix_maria_n (n))`,
       ),
     );

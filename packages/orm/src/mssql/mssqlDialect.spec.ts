@@ -3,7 +3,7 @@ import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abst
 import { Entity, Field, Id } from '../entity/index.js';
 import { Company, createSpec, Invoice, Item, MeasureUnitCategory, TaxCategory, TypedRow, User } from '../test/index.js';
 import { idKey, type QueryLockWait } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 
 /** A composite key, which hands no single id back. */
@@ -446,7 +446,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(ctx.sql).toMatch(/;$/);
   }
 
-  /** Outside the types, which give a JSON key no `raw()`: rendered in place rather than bound as an object. */
+  /** Outside the types, which give a JSON key no `sql()`: rendered in place rather than bound as an object. */
   shouldSetAJsonKeyToARawExpression() {
     const res = this.exec((ctx) =>
       this.dialect.update(
@@ -454,8 +454,8 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
         Company,
         { $where: { id: '1' } },
         {
-          // @ts-expect-error: a JSON key takes no `raw`
-          kind: { $set: { private: raw`1 + ${1}` } },
+          // @ts-expect-error: a JSON key takes no `sql`
+          kind: { $set: { private: sql`1 + ${1}` } },
         },
       ),
     );

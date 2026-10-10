@@ -6,7 +6,7 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { PrimaryKey } from '../type/index.js';
-import { currentTimestamp, raw } from '../util/raw.js';
+import { currentTimestamp, sql } from '../util/sql.js';
 import { Migrator } from './migrator.js';
 
 /** What `onUpdate` already does: the database computes it, but only in the statement uql emits. */
@@ -14,14 +14,14 @@ import { Migrator } from './migrator.js';
 class StampTouch {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, onUpdate: raw`1` }) touched?: number | null;
+  @Field({ type: Number, onUpdate: sql`1` }) touched?: number | null;
 }
 
 @Entity({ name: 'StampNote' })
 class StampNote {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, computed: raw`1`, stored: ['insert', 'update'] }) readonly touched?: number | null;
+  @Field({ type: Number, computed: sql`1`, stored: ['insert', 'update'] }) readonly touched?: number | null;
   @Field({ type: Date, computed: currentTimestamp, stored: ['insert', 'update'] }) readonly stampedAt?: Date | null;
 }
 
@@ -38,7 +38,7 @@ class StampClocks {
 class StampCoded {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) code?: string | null;
-  @Field({ type: Number, computed: raw`1`, stored: ['update'] }) readonly touched?: number | null;
+  @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
 }
 
 describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
@@ -49,7 +49,7 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
     assertDefined(id);
     const escapeId = (name: string) => pool().dialect.escapeId(name);
     return pool()
-      .run`UPDATE ${raw.text(escapeId(table))} SET ${raw.text(escapeId(column))} = ${raw.text(value)} WHERE ${raw.text(escapeId('id'))} = ${id}`;
+      .run`UPDATE ${sql.text(escapeId(table))} SET ${sql.text(escapeId(column))} = ${sql.text(value)} WHERE ${sql.text(escapeId('id'))} = ${id}`;
   };
 
   // `onUpdate` would stamp only what uql writes; this write goes around it entirely.
@@ -106,7 +106,7 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
     class Retyped {
       @Id({ type: Number }) id?: number;
       @Field({ type: Number }) code?: number | null;
-      @Field({ type: Number, computed: raw`1`, stored: ['update'] }) readonly touched?: number | null;
+      @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
     }
     const id = await pool().insertOne(StampCoded, { code: '1' });
     const migrator = new Migrator(pool(), { entities: [Retyped] });

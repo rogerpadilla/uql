@@ -1,5 +1,5 @@
-import type { Querier, QueryRaw, SqlQuerier } from '../../type/index.js';
-import { currentTimestamp, raw } from '../../util/raw.js';
+import type { Querier, QuerySql, SqlQuerier } from '../../type/index.js';
+import { currentTimestamp, sql } from '../../util/sql.js';
 import { TableDefinitionBuilder } from '../builder/tableBuilder.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
@@ -30,8 +30,8 @@ export async function createMigrationsTable(querier: SqlQuerier, tableName: stri
   table.string('name', { length: 255, primaryKey: true });
   table.timestamptz('executed_at', { defaultValue: currentTimestamp });
   const generator = new SqlSchemaGenerator(querier.dialect);
-  for (const sql of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
-    await querier.run(raw.text(sql));
+  for (const statement of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
+    await querier.run(sql.text(statement));
   }
 }
 
@@ -66,6 +66,6 @@ export class DatabaseMigrationStorage implements MigrationStorage {
 }
 
 /** The journal `tableName` and its one column, escaped as `querier`'s engine spells them. */
-export function journalIds({ dialect }: SqlQuerier, tableName: string): { table: QueryRaw; name: QueryRaw } {
-  return { table: raw.text(dialect.escapeId(tableName)), name: raw.text(dialect.escapeId('name')) };
+export function journalIds({ dialect }: SqlQuerier, tableName: string): { table: QuerySql; name: QuerySql } {
+  return { table: sql.text(dialect.escapeId(tableName)), name: sql.text(dialect.escapeId('name')) };
 }

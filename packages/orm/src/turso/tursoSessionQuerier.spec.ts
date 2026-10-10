@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { TursoDialect } from './tursoDialect.js';
 import { type TursoCursorEntry, type TursoSession, TursoSessionQuerier } from './tursoSessionQuerier.js';
 
@@ -31,7 +31,7 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: ['id', 'big'], rows: [[1n, 9007199254740993n]], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const rows = await querier.all(raw.text('SELECT `id`, `big` FROM `t`'));
+    const rows = await querier.all(sql.text('SELECT `id`, `big` FROM `t`'));
 
     expect(rows).toEqual([{ id: 1, big: '9007199254740993' }]);
   });
@@ -40,7 +40,7 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: ['id'], rows: [[7n]], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const res = await querier.run(raw.text('INSERT INTO `t` DEFAULT VALUES RETURNING `id` `id`'));
+    const res = await querier.run(sql.text('INSERT INTO `t` DEFAULT VALUES RETURNING `id` `id`'));
 
     expect(res).toEqual({ changes: 1, ids: [7] });
   });
@@ -49,7 +49,7 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: [], rows: [], rowsAffected: 3 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const res = await querier.run(raw.text('UPDATE `t` SET `a` = 1'));
+    const res = await querier.run(sql.text('UPDATE `t` SET `a` = 1'));
 
     expect(res).toEqual({ changes: 3, ids: [] });
   });
@@ -110,7 +110,7 @@ describe('TursoSessionQuerier', () => {
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
     await querier.transaction(async () => {
-      await querier.run(raw.text('UPDATE `t` SET `a` = 1'));
+      await querier.run(sql.text('UPDATE `t` SET `a` = 1'));
     });
 
     expect(session.execute.mock.calls.map(([sql]) => sql)).toEqual([

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { main } from './cli.js';
 
 const SRC = fileURLToPath(new URL('../', import.meta.url));
@@ -51,10 +51,10 @@ describe('CLI', () => {
   const cli = (...args: string[]) => main(['--config', writeConfig(), ...args]);
 
   /** Runs `sql` on the project's database, outside the CLI. */
-  const query = async <T extends object>(sql: string): Promise<T[]> => {
+  const query = async <T extends object>(statement: string): Promise<T[]> => {
     const pool = new NodeSqliteQuerierPool(join(dir, 'app.db'));
     try {
-      return await pool.all<T>(raw.text(sql));
+      return await pool.all<T>(sql.text(statement));
     } finally {
       await pool.end();
     }
@@ -77,10 +77,10 @@ describe('CLI', () => {
     mkdirSync(join(dir, 'migrations'), { recursive: true });
     writeFileSync(
       join(dir, 'migrations', `${name}.mjs`),
-      `import { raw } from ${JSON.stringify(join(SRC, 'index.ts'))};
+      `import { sql } from ${JSON.stringify(join(SRC, 'index.ts'))};
       export default {
-        up: (querier) => querier.run(raw.text('CREATE TABLE ${table} (id INTEGER PRIMARY KEY)')),
-        down: (querier) => querier.run(raw.text('DROP TABLE ${table}')),
+        up: (querier) => querier.run(sql.text('CREATE TABLE ${table} (id INTEGER PRIMARY KEY)')),
+        down: (querier) => querier.run(sql.text('DROP TABLE ${table}')),
       };`,
     );
   };

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { defineEntity } from '../../entity/index.js';
-import { raw } from '../../util/index.js';
+import { sql } from '../../util/index.js';
 import { entityTypesSource } from './entityTypes.js';
 
 it('should write an interface per registered entity, relations included', () => {
@@ -101,7 +101,7 @@ it('should declare each field as present, optional or nullable as its column is'
       issuedAt: { type: Date, nullable: false, onInsert: () => new Date() },
       pdf: { type: 'blob', nullable: false, eager: false },
       note: { type: String },
-      total: { type: Number, nullable: false, computed: raw`1`, stored: true },
+      total: { type: Number, nullable: false, computed: sql`1`, stored: true },
     },
   });
 

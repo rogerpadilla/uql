@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { indexNameParts, normalizeIndexColumn, renderIndexColumn } from './ddlExpression.util.js';
-import { raw, refs } from './raw.js';
+import { sql, refs } from './sql.js';
 
 class Note {
   email?: string;
@@ -13,23 +13,23 @@ describe('normalizeIndexColumn', () => {
   });
 
   it('should keep any other raw as the expression it is', () => {
-    const sql = raw`lower(email)`;
-    expect(normalizeIndexColumn(sql)).toEqual({ column: sql });
+    const statement = sql`lower(email)`;
+    expect(normalizeIndexColumn(statement)).toEqual({ column: statement });
   });
 
   it("should resolve an options entry's column the same way, keeping its options", () => {
-    const sql = raw`lower(email)`;
+    const statement = sql`lower(email)`;
     expect(normalizeIndexColumn({ column: refs(Note).email, order: 'desc' })).toEqual({
       column: 'email',
       order: 'desc',
     });
-    expect(normalizeIndexColumn({ column: sql, length: 64 })).toEqual({ column: sql, length: 64 });
+    expect(normalizeIndexColumn({ column: statement, length: 64 })).toEqual({ column: statement, length: 64 });
   });
 });
 
 describe('renderIndexColumn', () => {
   it('should render an expression entry to text, keeping its options', () => {
-    expect(renderIndexColumn({ column: raw`lower(email)`, order: 'desc' }, () => 'lower(email)')).toEqual({
+    expect(renderIndexColumn({ column: sql`lower(email)`, order: 'desc' }, () => 'lower(email)')).toEqual({
       column: 'lower(email)',
       order: 'desc',
       expression: true,
@@ -43,6 +43,6 @@ describe('renderIndexColumn', () => {
 
 describe('indexNameParts', () => {
   it('should name an expression by its position, having no column to name it by', () => {
-    expect(indexNameParts([{ column: 'tenantId' }, { column: raw`lower(email)` }])).toEqual(['tenantId', 'expr1']);
+    expect(indexNameParts([{ column: 'tenantId' }, { column: sql`lower(email)` }])).toEqual(['tenantId', 'expr1']);
   });
 });

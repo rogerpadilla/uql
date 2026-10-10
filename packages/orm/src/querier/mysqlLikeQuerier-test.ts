@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { Coupon, MeasureUnit, MeasureUnitCategory } from '../test/index.js';
 import type { Type } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -11,7 +11,7 @@ import { VectorQuerierIt } from './vectorQuerier-test.js';
  */
 export class MySqlLikeQuerierIt extends VectorQuerierIt {
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
-    await this.querier.run(raw.text(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
+    await this.querier.run(sql.text(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
   }
 

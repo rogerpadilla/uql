@@ -3,8 +3,8 @@ import { getEntities } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import type { QuerierPool, QueryRaw } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import type { QuerierPool, QuerySql } from '../type/index.js';
+import { sql } from '../util/sql.js';
 
 /**
  * Every fixture table dropped and created again as a user's forced sync does it, foreign keys included,
@@ -46,8 +46,8 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
     await querier.run`DROP TABLE IF EXISTS uqlConstrainedChild`;
     await querier.run`DROP TABLE IF EXISTS uqlConstrainedParent`;
   };
-  const rejection = (sql: QueryRaw) =>
-    querier.run(sql).then(
+  const rejection = (statement: QuerySql) =>
+    querier.run(statement).then(
       () => undefined,
       (err: unknown) => err,
     );
@@ -57,9 +57,9 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
     await querier.run`CREATE TABLE uqlConstrainedParent (id INTEGER PRIMARY KEY)`;
     await querier.run`CREATE TABLE uqlConstrainedChild (id INTEGER PRIMARY KEY, parentId INTEGER, price INTEGER NOT NULL CHECK (price > 0), FOREIGN KEY (parentId) REFERENCES uqlConstrainedParent (id))`;
     return {
-      foreignKey: await rejection(raw`INSERT INTO uqlConstrainedChild (id, parentId, price) VALUES (1, 999, 1)`),
-      notNull: await rejection(raw`INSERT INTO uqlConstrainedChild (id, price) VALUES (2, NULL)`),
-      check: await rejection(raw`INSERT INTO uqlConstrainedChild (id, price) VALUES (3, 0)`),
+      foreignKey: await rejection(sql`INSERT INTO uqlConstrainedChild (id, parentId, price) VALUES (1, 999, 1)`),
+      notNull: await rejection(sql`INSERT INTO uqlConstrainedChild (id, price) VALUES (2, NULL)`),
+      check: await rejection(sql`INSERT INTO uqlConstrainedChild (id, price) VALUES (3, 0)`),
     };
   } finally {
     await dropPair();
@@ -81,7 +81,7 @@ export async function clearTables(querier: AbstractSqlQuerier) {
     const id = dialect.escapeId(name);
     return `CASE WHEN EXISTS (SELECT 1 FROM ${id}) THEN 1 ELSE 0 END AS ${id}`;
   });
-  const [filled] = await querier.all(raw.text(`SELECT ${probes.join(', ')}`));
+  const [filled] = await querier.all(sql.text(`SELECT ${probes.join(', ')}`));
   const tables = order.filter(({ name }) => Number(filled[name]));
   if (!tables.length) {
     return;
@@ -96,8 +96,8 @@ export async function clearTables(querier: AbstractSqlQuerier) {
   const deletes = tables.map((table) => `DELETE FROM ${dialect.escapeId(table.name)}`);
 
   await querier.transaction(async () => {
-    for (const sql of [...unlinks, ...deletes]) {
-      await querier.run(raw.text(sql));
+    for (const statement of [...unlinks, ...deletes]) {
+      await querier.run(sql.text(statement));
     }
   });
 }

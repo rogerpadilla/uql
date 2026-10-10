@@ -501,7 +501,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return this.generateCreateTableFromNode(tableNode, options);
   }
 
-  /** `raw` is split, being the one SQL no generator wrote. */
+  /** `sql` is split, being the one SQL no generator wrote. */
   generateOperation(operation: AnyMigrationOperation): string[] {
     switch (operation.type) {
       case 'createTable':

@@ -7,7 +7,7 @@
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
 import { DATE_PRECISION } from '../../util/date.js';
-import { currentTimestamp } from '../../util/raw.js';
+import { currentTimestamp } from '../../util/sql.js';
 import { columnForeignKey, columnIndex, indexDefinition } from '../generator/definitionToNode.js';
 import { ColumnDefinitionBuilder } from './columnBuilder.js';
 import type {

@@ -1,9 +1,9 @@
 import type { QueryKeyset, QueryOptions, WireQuery } from '../type/index.js';
 // the clause table itself, not the barrel: this module is in the browser bundle's graph
 import { QUERY_CLAUSES, type QueryClause } from '../type/query.js';
-// the brand alone, not the class: importing `QueryRaw` for an `instanceof` kept it, and `ColumnRef`
+// the brand alone, not the class: importing `QuerySql` for an `instanceof` kept it, and `ColumnRef`
 // with it, in the browser bundle, which is on a size budget
-import { RAW_VALUE } from '../type/queryRaw.js';
+import { SQL_FN } from '../type/querySql.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys, isRecord, isWhereMap } from '../util/object.util.js';
 // the error class alone, from its own leaf module: `queryError.ts` carries every driver's code map
@@ -112,7 +112,7 @@ export function stringifyQuery(query?: Record<string, unknown>): string {
 
 /**
  * What leaves the browser, as JSON, refusing what JSON keeps nothing of rather than letting the server
- * build a statement around the remains. A `raw` fragment renders SQL against a dialect the client does not
+ * build a statement around the remains. A `sql` fragment renders SQL against a dialect the client does not
  * have and arrives as `{}`; binary arrives as an object keyed by index. A `Date` is not among them - it
  * serializes to ISO 8601, which is what a date column reads. This is what a cast, or a JavaScript caller,
  * hits where the client's types already refuse a fragment.
@@ -122,7 +122,7 @@ export function wireJson(value: unknown): string {
     if (typeof held !== 'object' || held === null) {
       return held;
     }
-    if (RAW_VALUE in held) {
+    if (SQL_FN in held) {
       throw new UqlUsageError('raw SQL cannot travel over HTTP: what leaves the browser is JSON');
     }
     // A blob is a field value, so no type parameter reaches it: this is the only place it is caught.

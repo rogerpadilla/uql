@@ -7,7 +7,7 @@ import { SqlExpression } from '../schema/sqlExpression.js';
 import { linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { Json } from '../type/index.js';
-import { currentTimestamp, raw } from '../util/raw.js';
+import { currentTimestamp, sql } from '../util/sql.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
@@ -18,7 +18,7 @@ class DefaultNote {
   /** Text that spells the clock, which is text all the same. */
   @Field({ type: String, defaultValue: 'CURRENT_TIMESTAMP' }) spelled?: string | null;
   @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
-  @Field({ type: String, defaultValue: raw`coalesce(NULL, 'a')` }) derived?: string | null;
+  @Field({ type: String, defaultValue: sql`coalesce(NULL, 'a')` }) derived?: string | null;
   @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
   /** Keys in another order, and spacing, than Postgres keeps them. */
   @Field({ type: 'jsonb', defaultValue: { b: 1, a: [1, 2] } }) settings?: Json<{ a: number[]; b: number }> | null;
@@ -32,7 +32,7 @@ class DefaultDown {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) body?: string | null;
   @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
-  @Field({ type: String, defaultValue: raw`coalesce(NULL, 'a')` }) derived?: string | null;
+  @Field({ type: String, defaultValue: sql`coalesce(NULL, 'a')` }) derived?: string | null;
 }
 
 describe.each(sqlPools('test_default'))('a column default on %s', (_name, connect) => {

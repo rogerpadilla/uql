@@ -5,14 +5,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
 
 @Entity({ name: 'RecursiveStamp' })
 class RecursiveStamp {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, computed: raw`1`, stored: ['update'] }) readonly touched?: number | null;
+  @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
 }
 
 describe('a stamp on SQLite with recursive triggers on', () => {

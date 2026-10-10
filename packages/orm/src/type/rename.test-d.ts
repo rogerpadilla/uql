@@ -5,7 +5,7 @@
  * like any `.test-d.ts`.
  */
 import { defineEntity, Entity, Field, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
-import { raw, refs } from '../util/index.js';
+import { sql, refs } from '../util/index.js';
 import type { Querier } from './index.js';
 
 @Entity()
@@ -15,9 +15,9 @@ class Studio {
 }
 
 @Index((movie) => [movie.title, { column: movie.rating, order: 'desc' }], { include: (movie) => [movie.studioId] })
-@Index((movie) => [raw`lower(${movie.title})`], { where: (movie) => raw`${movie.rating} > 0` })
+@Index((movie) => [sql`lower(${movie.title})`], { where: (movie) => sql`${movie.rating} > 0` })
 @Index((movie) => [movie.studioId], { where: { rating: { $gt: 0 } } })
-@Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => raw`${movie.rating} <= ${10}` }] })
+@Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => sql`${movie.rating} <= ${10}` }] })
 class Movie {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string | null;
@@ -27,7 +27,7 @@ class Movie {
   studio?: Studio;
   @Field({ type: Number, references: () => Cinema }) cinemaId?: number | null;
   @ManyToOne({ entity: () => Cinema, references: (movie) => movie.cinemaId }) venue?: Cinema;
-  @Field({ type: Number, computed: (movie) => raw`${movie.rating} * 2` }) score?: number | null;
+  @Field({ type: Number, computed: (movie) => sql`${movie.rating} * 2` }) score?: number | null;
 }
 
 class Cinema {
@@ -44,16 +44,16 @@ defineEntity(Cinema, {
   fields: {
     id: { type: Number, isId: true },
     city: { type: String },
-    label: { type: String, computed: (cinema) => raw`upper(${cinema.city})` },
+    label: { type: String, computed: (cinema) => sql`upper(${cinema.city})` },
     filmCount: { computed: (cinema) => cinema.films.count({ $where: { rating: { $gt: 0 } } }) },
     topRating: { computed: (cinema) => cinema.films.max((movie) => movie.rating) },
   },
   relations: { films: { cardinality: '1m', entity: () => Movie, mappedBy: (movie) => movie.cinemaId } },
   indexes: [
     { columns: (cinema) => [cinema.city], include: (cinema) => [cinema.id] },
-    { columns: (cinema) => [raw`lower(${cinema.city})`], where: { city: { $ne: '' } } },
+    { columns: (cinema) => [sql`lower(${cinema.city})`], where: { city: { $ne: '' } } },
   ],
-  checks: [{ where: (cinema) => raw`${cinema.city} <> ''` }],
+  checks: [{ where: (cinema) => sql`${cinema.city} <> ''` }],
   hooks: { beforeInsert: (cinema) => [cinema.touch] },
 });
 
@@ -68,7 +68,7 @@ export async function find() {
       rating: { $gte: 7 },
       studio: { id: 1 },
       $text: { $value: 'noir', $fields: { title: true } },
-      $and: [raw`${movie.rating} > ${5}`],
+      $and: [sql`${movie.rating} > ${5}`],
     },
     $sort: { rating: -1, studio: { id: 1 } },
   });

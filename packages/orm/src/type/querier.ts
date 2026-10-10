@@ -13,10 +13,10 @@ import type {
   ReturningResult,
   WriteOptions,
 } from './query.js';
-import type { SqlStatement } from './queryRaw.js';
+import type { SqlStatement } from './querySql.js';
 import type { ProjectedQuery, ProjectedRead, ProjectedResult, UniversalQuerier } from './universalQuerier.js';
 import type { BooleanLike, RawRow, Type } from './utility.js';
-import type { QuerierRaw } from './wire.js';
+import type { QuerierSql } from './wire.js';
 
 /**
  * Isolation levels for transactions.
@@ -52,7 +52,7 @@ type DualRead<
   const P extends RelationKey<E> = never,
   const C extends RelationKey<E> = never,
 >(
-  q: ProjectedQuery<E, S, V, X, P, C, QuerierRaw<'server'>>[Q] & { $entity: Type<E> },
+  q: ProjectedQuery<E, S, V, X, P, C, QuerierSql<'server'>>[Q] & { $entity: Type<E> },
   opts?: QueryOptions,
 ) => ProjectedResult<'server', QueryFindResult<E, S, V, X, P, C>>[R]) &
   ProjectedRead<Q, R, 'server', QueryOptions>;
@@ -144,11 +144,11 @@ export interface SqlQuerier extends Querier {
 
   /**
    * The rows a statement answers, written as a tag, `all<Row>`SELECT ... WHERE id = ${id}``, each interpolated
-   * value bound, never spliced; or a `raw` built apart.
+   * value bound, never spliced; or a `sql` built apart.
    */
   all<T extends object = RawRow>(...statement: SqlStatement): Promise<T[]>;
 
-  /** Runs a statement (INSERT, UPDATE, DELETE, DDL), written as a tag or a `raw`, each interpolated value bound. */
+  /** Runs a statement (INSERT, UPDATE, DELETE, DDL), written as a tag or a `sql`, each interpolated value bound. */
   run(...statement: SqlStatement): Promise<QueryUpdateResult>;
 }
 

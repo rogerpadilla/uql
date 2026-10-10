@@ -1,8 +1,8 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { CheckSchema } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QueryRaw } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
+import { sql } from '../../util/sql.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
   AbstractSqlSchemaIntrospector,
@@ -17,10 +17,10 @@ import {
  */
 export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // A MySQL "schema" is a database, so the connection's own is what `DATABASE()` reports.
-  protected override readonly defaultSchemaExpr = raw`DATABASE()`;
+  protected override readonly defaultSchemaExpr = sql`DATABASE()`;
 
-  protected triggersQuery(tableName: string): QueryRaw {
-    return raw`
+  protected triggersQuery(tableName: string): QuerySql {
+    return sql`
       SELECT TRIGGER_NAME AS name,
         CONCAT('CREATE TRIGGER \`', TRIGGER_SCHEMA, '\`.\`', TRIGGER_NAME, '\` ', ACTION_TIMING, ' ', EVENT_MANIPULATION,
           ' ON \`', EVENT_OBJECT_SCHEMA, '\`.\`', EVENT_OBJECT_TABLE, '\` FOR EACH ROW ', ACTION_STATEMENT) AS definition
@@ -35,7 +35,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    */
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     const rows = await read<{ name: string; expression: string }>(
-      raw`
+      sql`
       SELECT k.CONSTRAINT_NAME AS name, c.CHECK_CLAUSE AS expression
       FROM information_schema.TABLE_CONSTRAINTS k
       JOIN information_schema.CHECK_CONSTRAINTS c
@@ -46,8 +46,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return rows.map(({ name, expression }) => ({ name, expression: unescapeMysqlString(expression) }));
   }
 
-  protected getTableNamesQuery(): QueryRaw {
-    return raw`
+  protected getTableNamesQuery(): QuerySql {
+    return sql`
       SELECT TABLE_NAME as table_name
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -56,8 +56,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(tableName: string): QueryRaw {
-    return raw`
+  protected tableExistsQuery(tableName: string): QuerySql {
+    return sql`
       SELECT 1 FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName} AND TABLE_TYPE = 'BASE TABLE'
     `;
@@ -65,7 +65,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const rows = await read<MysqlColumnRow>(
-      raw`
+      sql`
       SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
@@ -103,7 +103,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
     const rows = await read<MysqlIndexRow>(
-      raw`
+      sql`
       SELECT
         INDEX_NAME as index_name,
         GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
@@ -130,7 +130,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const rows = await read<JoinedForeignKeyRow>(
-      raw`
+      sql`
       SELECT
         kcu.CONSTRAINT_NAME as constraint_name,
         GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION) as columns,
@@ -156,7 +156,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     return this.readPrimaryKey(
       read,
-      raw`
+      sql`
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -238,7 +238,7 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
    */
   protected override async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     return read<{ name: string; expression: string }>(
-      raw`
+      sql`
       SELECT CONSTRAINT_NAME AS name, CHECK_CLAUSE AS expression
       FROM information_schema.CHECK_CONSTRAINTS
       WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName}
@@ -267,7 +267,7 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
     const qualified = [this.schema, tableName]
       .filter((name) => name !== undefined)
       .map((name) => this.dialect.escapeId(name));
-    const [row] = await read<{ 'Create Table': string }>(raw.text(`SHOW CREATE TABLE ${qualified.join('.')}`));
+    const [row] = await read<{ 'Create Table': string }>(sql.text(`SHOW CREATE TABLE ${qualified.join('.')}`));
     const lines = row['Create Table'].split('\n');
     return indexes.map((index) => {
       if (index.type !== 'vector') {
@@ -282,7 +282,7 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   protected override async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const columns = await super.getColumns(read, tableName);
     const checks = await read<{ column_name: string }>(
-      raw`
+      sql`
       SELECT CONSTRAINT_NAME as column_name
       FROM information_schema.CHECK_CONSTRAINTS
       WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr}

@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, User } from '../test/index.js';
 import type { Query } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { parseQueryParams, stringifyQuery, wireJson } from './query.js';
 
 const RAW_REFUSED = 'raw SQL cannot travel over HTTP: what leaves the browser is JSON';
 const BINARY_REFUSED = 'binary cannot travel over HTTP: what leaves the browser is JSON';
 
 describe('wireJson', () => {
-  /** JSON keeps none of a `raw` fragment, so it would arrive as `{}` and be built into a statement. */
+  /** JSON keeps none of a `sql` fragment, so it would arrive as `{}` and be built into a statement. */
   it('should refuse a raw fragment wherever it sits', () => {
-    expect(() => wireJson({ $where: { name: raw`lower(name)` } })).toThrow(RAW_REFUSED);
-    expect(() => wireJson({ $select: [raw`LOG10(price)`] })).toThrow(RAW_REFUSED);
-    expect(() => wireJson({ $where: { name: { $not: raw`lower(name)` } } })).toThrow(RAW_REFUSED);
+    expect(() => wireJson({ $where: { name: sql`lower(name)` } })).toThrow(RAW_REFUSED);
+    expect(() => wireJson({ $select: [sql`LOG10(price)`] })).toThrow(RAW_REFUSED);
+    expect(() => wireJson({ $where: { name: { $not: sql`lower(name)` } } })).toThrow(RAW_REFUSED);
   });
 
   /** JSON writes a blob as an object keyed by index, which no column reads: `{"0":1,"1":2}`. */
@@ -204,7 +204,7 @@ describe('parseQueryParams', () => {
 
 describe('stringifyQuery', () => {
   it('should refuse a raw fragment, as the body it mirrors does', () => {
-    expect(() => stringifyQuery({ $where: { $exists: raw`SELECT 1` } })).toThrow(RAW_REFUSED);
+    expect(() => stringifyQuery({ $where: { $exists: sql`SELECT 1` } })).toThrow(RAW_REFUSED);
   });
 
   it('should stringify an empty query', () => {

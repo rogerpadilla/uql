@@ -4,7 +4,7 @@ import type { TypeCategory } from '../../schema/types.js';
 import { assertDefined, type Spec } from '../../test/index.js';
 import { dropTables } from '../../test/sqlPools.js';
 import type { SchemaIntrospector, SqlQuerierPool, TableSchema } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { introspectorFor } from '../introspection/registry.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
 import type { MigrationBuilder } from './types.js';
@@ -296,7 +296,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (name) VALUES ('raw')`);
     });
 
-    expect(await this.pool.all(raw.text(`SELECT name FROM ${BUILDER_TABLES.MAIN}`))).toEqual([{ name: 'raw' }]);
+    expect(await this.pool.all(sql.text(`SELECT name FROM ${BUILDER_TABLES.MAIN}`))).toEqual([{ name: 'raw' }]);
   }
 
   async shouldDropATable() {
@@ -347,7 +347,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (qty, price) VALUES (3, 7)`);
     });
 
-    const [row] = await this.pool.all<{ total: number }>(raw.text(`SELECT total FROM ${BUILDER_TABLES.MAIN}`));
+    const [row] = await this.pool.all<{ total: number }>(sql.text(`SELECT total FROM ${BUILDER_TABLES.MAIN}`));
     expect(Number(row.total)).toBe(21);
   }
 

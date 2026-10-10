@@ -22,7 +22,7 @@ import {
   type FieldOptions,
   type Query,
   type QueryContext,
-  QueryRaw,
+  QuerySql,
   type QueryTextSearchOptions,
   type QueryWhere,
   type SqlDialectFeatures,
@@ -148,7 +148,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     }
     const name = declaredIndexName(index.name, this.resolveTableName(meta), [{ column: colName }]);
     const table = this.escapeId(prefix ?? this.resolveTableAlias(meta), true, true);
-    const nearest = new QueryRaw(({ ctx }) => {
+    const nearest = new QuerySql(({ ctx }) => {
       ctx.append(`${table}rowid IN (SELECT id FROM vector_top_k(`);
       ctx.addValue(name);
       ctx.append(', ');

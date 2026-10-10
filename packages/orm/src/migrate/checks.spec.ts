@@ -7,12 +7,12 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined } from '../test/index.js';
 import type { Type } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
-  checks: [{ name: 'wallet_non_negative_ck', where: raw`"balance" >= 0` }, { where: raw`"spent" <= "balance"` }],
+  checks: [{ name: 'wallet_non_negative_ck', where: sql`"balance" >= 0` }, { where: sql`"spent" <= "balance"` }],
 })
 class Wallet {
   @Id({ type: Number }) id?: number;
@@ -20,7 +20,7 @@ class Wallet {
   @Field({ type: Number }) spent?: number | null;
 }
 
-@Entity({ name: 'purse', checks: [{ where: raw`"balance" >= 0` }] })
+@Entity({ name: 'purse', checks: [{ where: sql`"balance" >= 0` }] })
 class RenamedWallet {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) balance?: number | null;
@@ -35,7 +35,7 @@ const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
 /** The name of every object uql installs that the DDL declares. */
-const ownedNames = (sql: string) => sql.match(/_uql_\w+/g);
+const ownedNames = (statement: string) => statement.match(/_uql_\w+/g);
 
 describe('check constraints', () => {
   it('should install an authored check under its name as a label, hashed by its SQL', () => {
@@ -51,7 +51,7 @@ describe('check constraints', () => {
   });
 
   it('should name an edited check apart from the one it replaces', () => {
-    @Entity({ name: 'purse', checks: [{ where: raw`"balance" >= 1` }] })
+    @Entity({ name: 'purse', checks: [{ where: sql`"balance" >= 1` }] })
     class EditedWallet {
       @Id({ type: Number }) id?: number;
       @Field({ type: Number }) balance?: number | null;
@@ -79,7 +79,7 @@ describe('check constraints', () => {
 
 describe('check expressions', () => {
   it('should write a value as its literal, which CREATE TABLE carries inline', () => {
-    @Entity({ checks: [{ where: raw`"balance" >= ${0}` }] })
+    @Entity({ checks: [{ where: sql`"balance" >= ${0}` }] })
     class Floor {
       @Id({ type: Number }) id?: number;
     }
@@ -87,7 +87,7 @@ describe('check expressions', () => {
   });
 
   it('should refuse a value left bound, which CREATE TABLE has no placeholder for', () => {
-    @Entity({ checks: [{ where: raw(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')) }] })
+    @Entity({ checks: [{ where: sql(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')) }] })
     class Bound {
       @Id({ type: Number }) id?: number;
     }
@@ -136,22 +136,22 @@ describe('enum fields', () => {
     class Priced {
       @Id({ type: Number }) id?: number;
       @Field({ type: Number }) net?: number | null;
-      @Field({ type: Number, computed: raw`net * 2`, stored: true, nullable: false, unique: true }) gross?: number;
+      @Field({ type: Number, computed: sql`net * 2`, stored: true, nullable: false, unique: true }) gross?: number;
     }
 
-    const sql = ddl(new PostgresDialect(), Priced);
+    const statement = ddl(new PostgresDialect(), Priced);
 
-    expect(sql).toContain('GENERATED ALWAYS AS (net * 2) STORED');
-    expect(sql).toContain('NOT NULL');
-    expect(sql).toContain('UNIQUE');
+    expect(statement).toContain('GENERATED ALWAYS AS (net * 2) STORED');
+    expect(statement).toContain('NOT NULL');
+    expect(statement).toContain('UNIQUE');
   });
 
   it('should constrain the column to its values, as a check of the table labelled by the column', () => {
-    const sql = ddl(new PostgresDialect(), Invoice);
-    expect(sql).toMatch(
+    const statement = ddl(new PostgresDialect(), Invoice);
+    expect(statement).toMatch(
       /CONSTRAINT "_uql_Invoice__status_[0-9a-f]{6}" CHECK \("status" IN \('draft', 'paid', 'void'\)\)/,
     );
-    expect(sql).toContain('"status" TEXT,');
+    expect(statement).toContain('"status" TEXT,');
   });
 
   it('should leave a field that declares none unconstrained', () => {
@@ -206,9 +206,9 @@ describe('check changes', () => {
   it('should replace a check whose values changed, and leave one uql did not install', () => {
     const { generator, diff } = diffOver(new PostgresDialect(), WideBill, NarrowBill);
     assertDefined(diff);
-    const sql = generator.generateAlterTable(diff);
+    const statement = generator.generateAlterTable(diff);
 
-    expect(sql).toEqual([
+    expect(statement).toEqual([
       expect.stringMatching(/^ALTER TABLE "Bill" DROP CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}";$/),
       expect.stringMatching(
         /^ALTER TABLE "Bill" ADD CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}" CHECK \("status" IN \('draft', 'paid', 'void'\)\);$/,

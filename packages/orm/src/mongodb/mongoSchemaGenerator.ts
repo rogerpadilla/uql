@@ -14,7 +14,7 @@ import {
   type IndexFeature,
   type IndexSchema,
   type NamingStrategy,
-  QueryRaw,
+  QuerySql,
   type SchemaDiff,
   type SchemaGenerator,
   type Type,
@@ -109,7 +109,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    * what that holds or what a migration carries as JSON.
    */
   private indexFilter(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
-    if (where instanceof QueryRaw) {
+    if (where instanceof QuerySql) {
       throw new UqlUsageError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
     }
     assertIndexPredicate(where, this.dialectName, indexName);
@@ -137,7 +137,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** A check's filter, refused where it is SQL or holds what a migration cannot carry as JSON. */
   private checkFilter(where: EntityWhereMeta<object>, entity: Type<object>, collectionName: string): MongoValidator {
-    if (where instanceof QueryRaw) {
+    if (where instanceof QuerySql) {
       throw new UqlUsageError(`mongodb does not support checks from a SQL predicate (collection "${collectionName}")`);
     }
     const filter = this.renderFilter(entity, where);

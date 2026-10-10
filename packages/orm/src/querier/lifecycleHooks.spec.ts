@@ -18,7 +18,7 @@ import {
 import type { HookContext } from '../index.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import type { Querier, QuerierListener } from '../type/index.js';
-import { getKeys, raw } from '../util/index.js';
+import { getKeys, sql } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -336,8 +336,8 @@ type PooledQuerier = Awaited<ReturnType<typeof pool.getQuerier>>;
 
 /** Drops first: the pooled `:memory:` connection is reused, so rows outlive the test that wrote them. */
 const createTable = async (querier: PooledQuerier, table: keyof typeof TABLES) => {
-  await querier.run(raw.text(`DROP TABLE IF EXISTS \`${table}\``));
-  await querier.run(raw.text(`CREATE TABLE \`${table}\` (${TABLES[table]})`));
+  await querier.run(sql.text(`DROP TABLE IF EXISTS \`${table}\``));
+  await querier.run(sql.text(`CREATE TABLE \`${table}\` (${TABLES[table]})`));
 };
 
 describe('lifecycle hooks', () => {

@@ -12,7 +12,7 @@ import type {
   IndexColumnInput,
   IndexOptions,
   IndexSchema,
-  QueryRaw,
+  QuerySql,
 } from '../../type/index.js';
 import type { ForeignKeySchema } from '../../type/migration.js';
 
@@ -109,7 +109,7 @@ export interface FullColumnDefinition extends ColumnDefinition {
  */
 export type IndexDefinition = Except<IndexSchema, 'entries' | 'where'> & {
   readonly entries: readonly EntityIndexColumn[];
-  readonly where?: QueryRaw;
+  readonly where?: QuerySql;
 };
 
 /**

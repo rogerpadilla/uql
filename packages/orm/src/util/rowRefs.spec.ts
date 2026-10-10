@@ -1,14 +1,14 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import type { QueryRaw, RefMap, TriggerRowName } from '../type/index.js';
-import { raw, rowRefs } from './raw.js';
+import type { QuerySql, RefMap, TriggerRowName } from '../type/index.js';
+import { sql, rowRefs } from './sql.js';
 
 @Entity()
 class Author {
   @Id({ type: Number }) id?: number;
   @Field({ type: String, name: 'full_name' }) name?: string | null;
-  @Field({ type: String, computed: (author) => raw`upper(${author.name})` }) loud?: string | null;
+  @Field({ type: String, computed: (author) => sql`upper(${author.name})` }) loud?: string | null;
   @Field({ computed: (author) => author.posts.count() }) postCount?: number;
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
 }
@@ -22,8 +22,8 @@ class Post {
 
 describe('rowRefs', () => {
   const dialect = new PostgresDialect();
-  const compile = (qualifier: TriggerRowName, read: (row: RefMap<Author>) => QueryRaw) =>
-    dialect.compileDdl(raw`${read(rowRefs(Author, qualifier))}`, Author);
+  const compile = (qualifier: TriggerRowName, read: (row: RefMap<Author>) => QuerySql) =>
+    dialect.compileDdl(sql`${read(rowRefs(Author, qualifier))}`, Author);
 
   afterAll(() => {
     removeEntity(Post);
@@ -50,7 +50,7 @@ describe('rowRefs', () => {
   // The ref knows its own entity, so it names its column wherever it renders: inside a write to another
   // table, say, which is where a trigger's row is read from most often.
   it('should read its own column while another entity is the one rendering', () => {
-    expect(dialect.compileDdl(raw`${rowRefs(Author, 'NEW').name}`, Post)).toBe('NEW."full_name"');
+    expect(dialect.compileDdl(sql`${rowRefs(Author, 'NEW').name}`, Post)).toBe('NEW."full_name"');
   });
 
   it('should refuse a field reading a relation, which no row can correlate a subquery to', () => {

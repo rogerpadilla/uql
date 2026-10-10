@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne, Trigger } from '../entity/index.js';
 import { assertDefined, Item } from '../test/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -32,7 +32,7 @@ class Post {
 }
 
 /** A trigger and a stamp, neither of which MongoDB can run. */
-@Trigger({ on: 'afterInsert', run: (newRow) => raw`PERFORM ${newRow.id};` })
+@Trigger({ on: 'afterInsert', run: (newRow) => sql`PERFORM ${newRow.id};` })
 @Entity({ name: 'Triggered' })
 class Triggered {
   @Id({ type: Number }) id?: number;
@@ -42,7 +42,7 @@ class Triggered {
 @Entity({ name: 'Stamped' })
 class Stamped {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Date, computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] }) readonly touchedAt?: Date | null;
+  @Field({ type: Date, computed: sql`CURRENT_TIMESTAMP`, stored: ['update'] }) readonly touchedAt?: Date | null;
 }
 
 /** Soft-deletable through a renamed column. */

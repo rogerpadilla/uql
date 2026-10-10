@@ -1,5 +1,5 @@
 import type { DialectName, EntityWhereMeta } from '../type/index.js';
-import { QueryRaw } from '../type/queryRaw.js';
+import { QuerySql } from '../type/querySql.js';
 import { isOperatorObject } from '../util/object.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -29,11 +29,11 @@ const PREDICATE_GRAMMARS: Partial<Record<DialectName, PredicateGrammar>> = {
 
 /**
  * Refuses a partial index's predicate reaching past what the engine takes, before it compiles to what
- * only the server would reject, naming the operator as its author wrote it. A `raw` one is left to the server.
+ * only the server would reject, naming the operator as its author wrote it. A `sql` one is left to the server.
  */
 export function assertIndexPredicate<E>(where: EntityWhereMeta<E>, dialectName: DialectName, indexName: string): void {
   const grammar = PREDICATE_GRAMMARS[dialectName];
-  const refused = grammar && !(where instanceof QueryRaw) ? refusedOperator(where, grammar) : undefined;
+  const refused = grammar && !(where instanceof QuerySql) ? refusedOperator(where, grammar) : undefined;
   if (refused) {
     throw refusedIndexPredicate(dialectName, refused, indexName);
   }
@@ -46,7 +46,7 @@ export function refusedIndexPredicate(dialectName: string, part: string, indexNa
   );
 }
 
-/** The first part of `where` outside `grammar`, depth-first; a `raw` clause is left alone. */
+/** The first part of `where` outside `grammar`, depth-first; a `sql` clause is left alone. */
 function refusedOperator(where: object, grammar: PredicateGrammar): string | undefined {
   return Object.entries(where)
     .map(([key, value]) => {
@@ -59,7 +59,7 @@ function refusedOperator(where: object, grammar: PredicateGrammar): string | und
       if (!grammar.rootOps.has(key)) {
         return key;
       }
-      const clauses = Array.isArray(value) ? value.filter((clause) => !(clause instanceof QueryRaw)) : [];
+      const clauses = Array.isArray(value) ? value.filter((clause) => !(clause instanceof QuerySql)) : [];
       return clauses.map((clause) => refusedOperator(clause, grammar)).find(Boolean);
     })
     .find(Boolean);

@@ -7,7 +7,7 @@ import { Entity, Field, Id, Trigger } from '../entity/index.js';
 import { assertDefined, linkUqlOrmSource, migrationsDir, provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { Type } from '../type/index.js';
-import { raw, refs } from '../util/raw.js';
+import { sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
@@ -91,7 +91,7 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     ]);
     const [table, title, key] = ['TgPost', 'title', 'id'].map((name) => pool().dialect.escapeId(name));
     await pool().run(
-      raw.text(
+      sql.text(
         `UPDATE ${table} SET ${title} = CASE WHEN ${key} = ${moved} THEN 'After' ELSE ${title} END ` +
           `WHERE ${key} IN (${moved}, ${kept})`,
       ),
@@ -242,7 +242,7 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     name: 'unflag',
     where: { $old: { title: 'flagged' } },
     run: (newRow) =>
-      raw`${deleteFrom(TgLog, { $where: { postId: newRow.id, source: 'flag' } })}
+      sql`${deleteFrom(TgLog, { $where: { postId: newRow.id, source: 'flag' } })}
         ${insertInto(TgLog, { postId: newRow.id, source: 'unflag' })}`,
   },
 )
@@ -459,7 +459,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
         TgTotal,
         { sku: true },
         { sku: newRow.sku, total: newRow.qty },
-        { total: raw`${refs(TgTotal).total} + ${newRow.qty}` },
+        { total: sql`${refs(TgTotal).total} + ${newRow.qty}` },
       ),
   },
 )
@@ -506,7 +506,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.fir
 // What a body kept in a function of its own can do, in the PL/pgSQL only the Postgres family runs: assign to
 // the incoming row and read the outgoing one.
 @Trigger(
-  { on: 'beforeInsert', name: 'slug', run: (newRow) => raw`${newRow.slug} := lower(${newRow.title});` },
+  { on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});` },
   { on: 'beforeDelete', name: 'trash', run: (_newRow, oldRow) => insertInto(TgTrash, { postId: oldRow.id }) },
   // A transition, which `of` alone cannot state: from one value to another.
   {
@@ -520,7 +520,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.fir
     on: 'afterInsert',
     name: 'literal',
     where: { $new: { title: "it's 100% $$" } },
-    run: (newRow) => raw`INSERT INTO "TgTrash" ("postId") SELECT ${newRow.id} WHERE ${"$$ it's"} <> '';`,
+    run: (newRow) => sql`INSERT INTO "TgTrash" ("postId") SELECT ${newRow.id} WHERE ${"$$ it's"} <> '';`,
   },
 )
 @Entity({ name: 'TgSlugged' })
@@ -553,7 +553,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
     const functionsIn = async (schema: string, table: string) =>
       (
         await pool().all(
-          raw.text(
+          sql.text(
             `SELECT 1 FROM information_schema.routines WHERE routine_schema = '${schema}' ` +
               `AND routine_name LIKE '\\_uql\\_${table}\\_%'`,
           ),
@@ -591,7 +591,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
 
     // A dropped trigger leaves the function it called, which would pile up with every edited body.
     it('should drop the function of each trigger it drops or replaces', async () => {
-      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => raw`${newRow.slug} := upper(${newRow.title});` })
+      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := upper(${newRow.title});` })
       @Entity({ name: 'TgSlugged' })
       class Upper {
         @Id({ type: Number }) id?: number;
@@ -613,7 +613,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
     // The catalogue read, the function and its drop all have to name the schema, or a second sync never sees
     // what the first installed and tries to create it again.
     it('should keep the function of a table in a schema of its own there, and drop it with its trigger', async () => {
-      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => raw`${newRow.slug} := lower(${newRow.title});` })
+      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});` })
       @Entity({ name: 'TgSchemed', schema: 'tg' })
       class Schemed {
         @Id({ type: Number }) id?: number;
@@ -630,7 +630,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
         for (const statement of new SqlSchemaGenerator(pool().dialect).generateDropSchema([Schemed], {
           ifExists: true,
         })) {
-          await pool().run(raw.text(statement));
+          await pool().run(sql.text(statement));
         }
       });
       const migrator = new Migrator(pool(), { entities: [Schemed] });

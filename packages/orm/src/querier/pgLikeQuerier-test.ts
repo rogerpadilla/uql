@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { NarrowVectorItem } from '../test/index.js';
 import type { Type } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -11,7 +11,7 @@ import { VectorQuerierIt } from './vectorQuerier-test.js';
  */
 export class PgLikeQuerierIt extends VectorQuerierIt {
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
-    await this.querier.run(raw.text(`ANALYZE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
+    await this.querier.run(sql.text(`ANALYZE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
   }
 
@@ -55,7 +55,7 @@ export class PgLikeQuerierIt extends VectorQuerierIt {
     const at = new Date('2024-01-15T12:30:45.123Z');
     const [row] = await this.querier.transaction(async () => {
       await this.querier.run`SET LOCAL TimeZone = 'America/Bogota'`;
-      return this.querier.all<{ at: Date }>(raw.text(`SELECT ${this.querier.dialect.escape(at)}::timestamptz AS "at"`));
+      return this.querier.all<{ at: Date }>(sql.text(`SELECT ${this.querier.dialect.escape(at)}::timestamptz AS "at"`));
     });
 
     expect(row?.at).toEqual(at);

@@ -12,7 +12,7 @@ import { PgQuerierPool, PostgresDialect } from '../postgres/index.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { SqlDialectName, SqlQuerierPool, Type } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import {
   cockroachConnection,
   mariadbConnection,
@@ -49,7 +49,7 @@ export function sqlPools(database: string, ...except: readonly (SqlDialectName |
 /** Drops `tables` one after another: two DDL statements fired at once deadlocked CockroachDB and SQL Server. */
 export async function dropTables(pool: SqlQuerierPool, ...tables: readonly string[]): Promise<void> {
   for (const table of tables) {
-    await pool.run(raw.text(`DROP TABLE IF EXISTS ${pool.dialect.escapeId(table)}`));
+    await pool.run(sql.text(`DROP TABLE IF EXISTS ${pool.dialect.escapeId(table)}`));
   }
 }
 
@@ -62,7 +62,7 @@ export function syncedPool(connect: () => SqlQuerierPool, entities: Type<object>
   let pool: SqlQuerierPool;
   const dropAll = async () => {
     for (const statement of new SqlSchemaGenerator(pool.dialect).generateDropSchema(entities, { ifExists: true })) {
-      await pool.run(raw.text(statement));
+      await pool.run(sql.text(statement));
     }
     await dropTables(pool, 'uql_migrations');
   };

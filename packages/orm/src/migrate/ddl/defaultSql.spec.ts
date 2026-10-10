@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { SqlExpression, schemaDefault } from '../../schema/sqlExpression.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
-import { type QueryRaw, SQL_VALUE_NAMES } from '../../type/index.js';
-import { currentTimestamp, uuid, raw, SQL_VALUES } from '../../util/raw.js';
+import { type QuerySql, SQL_VALUE_NAMES } from '../../type/index.js';
+import { currentTimestamp, uuid, sql, SQL_VALUES } from '../../util/sql.js';
 import { knownDefault, sameDefault } from './defaultSql.js';
 
 describe('sameDefault', () => {
@@ -50,8 +50,8 @@ describe('SQL values', () => {
   });
 
   it('should compile other raw SQL and keep a literal as it is', () => {
-    const compile = (sql: QueryRaw) => postgres.compileDdl(sql);
-    expect(schemaDefault(raw`now()`, compile)).toEqual(SqlExpression.parenthesized('now()'));
+    const compile = (sql: QuerySql) => postgres.compileDdl(sql);
+    expect(schemaDefault(sql`now()`, compile)).toEqual(SqlExpression.parenthesized('now()'));
     expect(schemaDefault('CURRENT_TIMESTAMP', compile)).toBe('CURRENT_TIMESTAMP');
   });
 

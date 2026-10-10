@@ -30,8 +30,8 @@ import {
   User,
   violateConstraints,
 } from '../test/index.js';
-import type { QueryRaw, Type } from '../type/index.js';
-import { currentTimestamp, raw, refs } from '../util/index.js';
+import type { QuerySql, Type } from '../type/index.js';
+import { currentTimestamp, sql, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -87,7 +87,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /** SQL in an upsert's `update` reads the row already there: an engine also has the incoming one in scope. */
   async shouldUpsertWithSqlOverTheRowAlreadyThere() {
     const id = '507f1f77bcf86cd799439014';
-    const update = { percentage: raw`${refs(Tax).percentage} * 2` };
+    const update = { percentage: sql`${refs(Tax).percentage} * 2` };
     await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, update);
     await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, update);
     expect(await this.querier.findOneById(Tax, id, { $select: { percentage: true } })).toMatchObject({
@@ -257,7 +257,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    * engine, so a page by one walks as the engine orders it.
    */
   async shouldPageByAnIntegerPastADoublesPrecision() {
-    const counts = [raw`9007199254740995`, raw`9007199254740993`, raw`9007199254740994`, raw`9007199254740993`];
+    const counts = [sql`9007199254740995`, sql`9007199254740993`, sql`9007199254740994`, sql`9007199254740993`];
     for (const [at, id] of [1, 2, 3, 4].entries()) {
       await this.querier.insertOne(TypedRow, { id, name: 'wide' });
       await this.querier.updateMany(TypedRow, { $where: { id } }, { count: counts[at] });
@@ -450,12 +450,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     const [group] = await this.querier.findMany(TypedGroup, {
       $select: { name: true },
       $where: { id: groupId },
-      $populate: { rows: { $select: [raw`UPPER(${refs(TypedRow).name})`.as('label')] } },
+      $populate: { rows: { $select: [sql`UPPER(${refs(TypedRow).name})`.as('label')] } },
     });
     const [row] = await this.querier.findMany(TypedRow, {
       $select: { name: true },
       $where: { groupId },
-      $populate: { group: { $select: [raw`UPPER(${refs(TypedGroup).name})`.as('label')] } },
+      $populate: { group: { $select: [sql`UPPER(${refs(TypedGroup).name})`.as('label')] } },
     });
 
     expect(group.rows).toEqual([{ label: 'RAW ROW' }]);
@@ -482,8 +482,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     );
   }
 
-  protected wideIntegerSql(): QueryRaw {
-    return raw`SELECT 9007199254740993 AS big`;
+  protected wideIntegerSql(): QuerySql {
+    return sql`SELECT 9007199254740993 AS big`;
   }
 
   override recreateTables(_querier: AbstractSqlQuerier) {
@@ -520,7 +520,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     ]);
 
     const found = await this.querier.findMany(MeasureUnitCategory, {
-      $select: [raw`name`],
+      $select: [sql`name`],
       $count: { measureUnits: true },
     });
 
@@ -598,14 +598,14 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /** A read binding `count` values. */
-  private readBinding(count: number): QueryRaw {
+  private readBinding(count: number): QuerySql {
     const { dialect } = this.querier;
-    const ids = raw(({ ctx }) => {
+    const ids = sql(({ ctx }) => {
       for (let index = 0; index < count; index++) {
         ctx.append(index ? ', ' : '').addValue(index);
       }
     });
-    return raw`SELECT COUNT(*) AS n FROM ${raw.text(dialect.escapeId('Coupon'))} WHERE ${raw.text(dialect.escapeId('id'))} IN (${ids})`;
+    return sql`SELECT COUNT(*) AS n FROM ${sql.text(dialect.escapeId('Coupon'))} WHERE ${sql.text(dialect.escapeId('id'))} IN (${ids})`;
   }
 
   /** Matched on a column that is not the key, which leaves MySQL's header with no id for the row. */

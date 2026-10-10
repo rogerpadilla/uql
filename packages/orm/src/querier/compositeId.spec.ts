@@ -10,7 +10,7 @@ import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { assertDefined, Cohort } from '../test/index.js';
 import type { SchemaDiff, Type } from '../type/index.js';
 import { idKey } from '../type/index.js';
-import { raw, whereIds } from '../util/index.js';
+import { sql, whereIds } from '../util/index.js';
 
 @Entity()
 class Enrolment {
@@ -145,7 +145,7 @@ beforeAll(async () => {
     Ticket,
     Seat,
   ])) {
-    await pool.run(raw.text(stmt));
+    await pool.run(sql.text(stmt));
   }
   await pool.insertMany(Enrolment, [
     { studentId: 1, courseId: 'maths', grade: 'A' },

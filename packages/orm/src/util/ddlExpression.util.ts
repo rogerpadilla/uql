@@ -6,18 +6,18 @@ import {
   type EntityMeta,
   type IndexColumnInput,
   type IndexColumnSchema,
-  QueryRaw,
+  QuerySql,
 } from '../type/index.js';
 import { definedEntries } from './object.util.js';
-import { raw } from './raw.js';
+import { sql } from './sql.js';
 import { derivedIndexName, ownedName } from './sql.util.js';
 
 /**
  * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
- * object reach the schema as one: a column read off the refs as its key, any other `raw` as it is.
+ * object reach the schema as one: a column read off the refs as its key, any other `sql` as it is.
  */
 export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn {
-  const { column, ...modifiers } = typeof entry === 'string' || entry instanceof QueryRaw ? { column: entry } : entry;
+  const { column, ...modifiers } = typeof entry === 'string' || entry instanceof QuerySql ? { column: entry } : entry;
   return { ...modifiers, column: column instanceof ColumnRef ? column.key : column };
 }
 
@@ -42,9 +42,12 @@ export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
 }
 
 /** An index entry as the schema holds it, its expression rendered to text by `render`. */
-export function renderIndexColumn(entry: EntityIndexColumn, render: (sql: QueryRaw) => string): IndexColumnSchema {
+export function renderIndexColumn(
+  entry: EntityIndexColumn,
+  render: (statement: QuerySql) => string,
+): IndexColumnSchema {
   const { column } = entry;
-  return column instanceof QueryRaw ? { ...entry, column: render(column), expression: true } : { ...entry, column };
+  return column instanceof QuerySql ? { ...entry, column: render(column), expression: true } : { ...entry, column };
 }
 
 /** What an unnamed index's name is built from: each entry's column, or `expr<n>` for an expression, which has none. */
@@ -74,12 +77,12 @@ export function ownedCheck(table: string, label: string | undefined, expression:
 export function enumCheck(
   table: string,
   { name, enum: values }: { readonly name: string; readonly enum?: EnumValues },
-  render: (sql: QueryRaw) => string,
+  render: (statement: QuerySql) => string,
 ): CheckSchema[] {
   if (!values) {
     return [];
   }
-  const sql = raw(({ ctx, dialect }) => {
+  const statement = sql(({ ctx, dialect }) => {
     ctx.append(`${dialect.escapeId(name)} IN (`);
     values.forEach((value, i) => {
       ctx.append(i ? ', ' : '');
@@ -87,5 +90,5 @@ export function enumCheck(
     });
     ctx.append(')');
   });
-  return [ownedCheck(table, name, render(sql))];
+  return [ownedCheck(table, name, render(statement))];
 }

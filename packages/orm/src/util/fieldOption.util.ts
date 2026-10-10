@@ -1,7 +1,7 @@
-import { type ColumnFamily, type FamilyOf, type FieldOptions, QueryRaw, type StampEvent } from '../type/index.js';
+import { type ColumnFamily, type FamilyOf, type FieldOptions, QuerySql, type StampEvent } from '../type/index.js';
 import { fieldFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
-import { constantSql } from './raw.js';
+import { constantSql } from './sql.js';
 
 /**
  * The column families each field option means anything on, or `'*'` where it applies to every column.
@@ -105,7 +105,7 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
   if (opts.stored && GENERATED_WRITES.some((write) => write === key)) return 'a column the database writes';
   if (opts.isId === true && contradictsNotNull(opts, key)) return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
-  if (opts.columnType instanceof QueryRaw && TYPE_BOUNDS.some((bound) => bound === key)) {
+  if (opts.columnType instanceof QuerySql && TYPE_BOUNDS.some((bound) => bound === key)) {
     return 'a column type written out as SQL, which carries its own bounds';
   }
   if (opts.version === true && (VERSION_WRITES.some((write) => write === key) || contradictsNotNull(opts, key))) {
@@ -122,8 +122,8 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
 export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   // Caught here rather than where the type is resolved, which is a migration on most engines and a
   // query on SQL Server, and which knows no field to name.
-  if (opts.columnType instanceof QueryRaw && constantSql(opts.columnType) === undefined) {
-    return "cannot use 'columnType': a `raw` one names a constant type, so it can bind no value and read no column";
+  if (opts.columnType instanceof QuerySql && constantSql(opts.columnType) === undefined) {
+    return "cannot use 'columnType': a `sql` one names a constant type, so it can bind no value and read no column";
   }
   const family = fieldFamily(opts);
   // Walked in table order, not in the order the field happened to be written, so a field with two
@@ -154,12 +154,12 @@ type OptionsFamily<O> = O extends { readonly columnType: infer C }
 type DeadOptions<O> =
   | (O extends { readonly stored: true | readonly StampEvent[] }
       ? GeneratedWrite
-      : O extends { readonly computed: QueryRaw }
+      : O extends { readonly computed: QuerySql }
         ? Exclude<keyof FieldOptions, InlineRead>
         : never)
   | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)
   | (O extends { readonly updatable: false } ? 'onUpdate' : never)
-  | (O extends { readonly columnType: QueryRaw } ? TypeBound : never)
+  | (O extends { readonly columnType: QuerySql } ? TypeBound : never)
   | (O extends { readonly version: true } ? VersionWrite : never)
   | (O extends { readonly version: true; readonly nullable: true } ? 'nullable' : never);
 

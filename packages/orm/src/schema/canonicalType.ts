@@ -4,10 +4,10 @@ import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
 import { fieldOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { ColumnType, EntityGetter, FieldMeta, FieldOptions } from '../type/entity.js';
-import { type DialectFeatures, type DialectName, QueryRaw } from '../type/index.js';
+import { type DialectFeatures, type DialectName, QuerySql } from '../type/index.js';
 import { DATE_PRECISION } from '../util/date.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
-import { constantSql } from '../util/raw.js';
+import { constantSql } from '../util/sql.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 /** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
@@ -319,12 +319,12 @@ export function sqlToCanonical(sqlType: string, reported: TypeBounds = {}): Cano
 }
 
 /**
- * The SQL type a field declares, however it named one: `columnType`, the engine's own as a `raw`
+ * The SQL type a field declares, however it named one: `columnType`, the engine's own as a `sql`
  * constant, or a `type` that is a SQL string rather than a constructor.
  */
 function declaredSqlType(options: FieldOptions): string | undefined {
   const { columnType, type } = options;
-  if (columnType instanceof QueryRaw) {
+  if (columnType instanceof QuerySql) {
     return constantSql(columnType);
   }
   return columnType ?? (typeof type === 'string' ? type : undefined);
@@ -407,10 +407,10 @@ export function engineType(dialect: AbstractDialect): (type: CanonicalType) => C
   return (type) => storedType(dialect.dialectName, canonicalToSql(type, dialect));
 }
 
-/** A field's canonical type; a timestamp without precision gets a `Date`'s milliseconds, unless it is `raw` SQL. */
+/** A field's canonical type; a timestamp without precision gets a `Date`'s milliseconds, unless it is `sql` SQL. */
 export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
   const type = fieldType(options);
-  return options.columnType instanceof QueryRaw ? type : withTimestampPrecision(type, DATE_PRECISION);
+  return options.columnType instanceof QuerySql ? type : withTimestampPrecision(type, DATE_PRECISION);
 }
 
 function fieldType(options: FieldOptions): CanonicalType {

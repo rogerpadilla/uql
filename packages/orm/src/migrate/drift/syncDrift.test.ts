@@ -7,7 +7,7 @@ import { driftOf, planOf, syncOf } from '../../test/drift.js';
 import { linkUqlOrmSource, provisioningTimeout } from '../../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../../test/sqlPools.js';
 import type { SqlQuerierPool, Type } from '../../type/index.js';
-import { raw } from '../../util/index.js';
+import { sql } from '../../util/index.js';
 import { Migrator } from '../migrator.js';
 
 const TABLE = 'drift_sync_user';
@@ -358,7 +358,7 @@ const INDEXED = 'drift_index_user';
  * predicate, a stored order, `INCLUDE` columns. CockroachDB also registers a `UNIQUE` constraint for a plain
  * `CREATE UNIQUE INDEX`, which a catalogue filter written for Postgres hides, and so reports missing.
  */
-@Index(() => [raw`lower("email")`], { unique: true, where: raw`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
+@Index(() => [sql`lower("email")`], { unique: true, where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
 @Index((user) => [user.status], { unique: true, name: 'drift_status_unique_idx' })
 @Index((user) => [user.status, { column: user.createdAt, order: 'desc' }], { name: 'drift_status_recent_idx' })
 @Index((user) => [user.tenantId], { include: (user) => [user.status], name: 'drift_tenant_covering_idx' })
@@ -373,7 +373,7 @@ class IndexedUser {
 }
 
 /** The same table with one index no longer unique, one covering column dropped, and the `status` ones gone. */
-@Index(() => [raw`lower("email")`], { where: raw`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
+@Index(() => [sql`lower("email")`], { where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
 @Index((user) => [user.tenantId], { name: 'drift_tenant_covering_idx' })
 @Entity({ name: INDEXED })
 class IndexedUserEdited {

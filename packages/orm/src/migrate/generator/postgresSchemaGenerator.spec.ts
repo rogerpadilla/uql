@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { sqlTypeOf } from '../../test/index.js';
-import { currentTimestamp } from '../../util/raw.js';
+import { currentTimestamp } from '../../util/sql.js';
 import { tableDdlFor } from '../ddl/index.js';
 import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';

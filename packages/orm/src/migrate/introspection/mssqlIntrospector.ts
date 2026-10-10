@@ -1,6 +1,6 @@
 import type { CheckSchema } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QueryRaw } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
+import { sql } from '../../util/sql.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
@@ -10,10 +10,10 @@ import {
 
 /** SQL Server schema introspector: `INFORMATION_SCHEMA` has no view of indexes, which come from `sys.indexes`. */
 export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected override readonly defaultSchemaExpr = raw`SCHEMA_NAME()`;
+  protected override readonly defaultSchemaExpr = sql`SCHEMA_NAME()`;
 
-  protected triggersQuery(tableName: string): QueryRaw {
-    return raw`
+  protected triggersQuery(tableName: string): QuerySql {
+    return sql`
       SELECT t.name AS name, m.definition AS definition
       FROM sys.triggers t
       JOIN sys.sql_modules m ON m.object_id = t.object_id
@@ -24,7 +24,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     return read<{ name: string; expression: string }>(
-      raw`
+      sql`
       SELECT k.name AS name, k.definition AS expression
       FROM sys.check_constraints k
       WHERE OBJECT_SCHEMA_NAME(k.parent_object_id) = ${this.schemaExpr} AND OBJECT_NAME(k.parent_object_id) = ${tableName}
@@ -32,8 +32,8 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     );
   }
 
-  protected getTableNamesQuery(): QueryRaw {
-    return raw`
+  protected getTableNamesQuery(): QuerySql {
+    return sql`
       SELECT TABLE_NAME as table_name
       FROM INFORMATION_SCHEMA.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -42,8 +42,8 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(tableName: string): QueryRaw {
-    return raw`
+  protected tableExistsQuery(tableName: string): QuerySql {
+    return sql`
       SELECT 1 FROM INFORMATION_SCHEMA.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName} AND TABLE_TYPE = 'BASE TABLE'
     `;
@@ -52,7 +52,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** From `sys` rather than `INFORMATION_SCHEMA`, which has no identity flag. */
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const rows = await read<MsSqlColumnRow>(
-      raw`
+      sql`
       SELECT
         c.name as column_name,
         t.name as data_type,
@@ -98,7 +98,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       is_unique: boolean;
       filter_definition: string | null;
     }>(
-      raw`
+      sql`
       SELECT
         i.name as index_name,
         i.is_unique as is_unique,
@@ -125,7 +125,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const rows = await read<JoinedForeignKeyRow>(
-      raw`
+      sql`
       SELECT
         fk.name as constraint_name,
         STRING_AGG(pc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) as columns,
@@ -151,7 +151,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     return this.readPrimaryKey(
       read,
-      raw`
+      sql`
       SELECT c.name as column_name, i.name as constraint_name
       FROM sys.indexes i
       JOIN sys.objects o ON o.object_id = i.object_id

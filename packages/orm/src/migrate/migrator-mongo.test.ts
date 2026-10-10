@@ -8,7 +8,7 @@ import { MongoSchemaGenerator } from '../mongodb/mongoSchemaGenerator.js';
 import { MongodbQuerierPool } from '../mongodb/mongodbQuerierPool.js';
 import { loadTsDefaultExport, migrationsDir, mongoUri, provisioningTimeout } from '../test/index.js';
 import type { MigrationDefinition } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineBuilderMigration, Migrator } from './migrator.js';
@@ -162,13 +162,13 @@ describe('Migrator on MongoDB (integration)', () => {
       await expect(builder.createTable('profile', (table) => table.string('nickname'))).rejects.toThrow(
         'mongodb does not support columns in a migration (collection "profile")',
       );
-      await expect(builder.createIndex('article', [raw`lower(title)`])).rejects.toThrow(noSql);
-      await expect(builder.createIndex('article', ['title'], { where: raw`title IS NOT NULL` })).rejects.toThrow(noSql);
+      await expect(builder.createIndex('article', [sql`lower(title)`])).rejects.toThrow(noSql);
+      await expect(builder.createIndex('article', ['title'], { where: sql`title IS NOT NULL` })).rejects.toThrow(noSql);
     });
   });
 
   it('should refuse to sync an entity indexing a SQL expression', async () => {
-    @Index((row) => [raw`lower(${row.title})`])
+    @Index((row) => [sql`lower(${row.title})`])
     @Entity()
     class ExpressionMongoIndex {
       @Id({ type: String }) id?: string;
@@ -180,7 +180,7 @@ describe('Migrator on MongoDB (integration)', () => {
   });
 
   it('should plan nothing for the trigger an entity declares, which MongoDB has none to run', async () => {
-    @Trigger({ on: 'afterInsert', run: (row) => raw`PERFORM ${row.id};` })
+    @Trigger({ on: 'afterInsert', run: (row) => sql`PERFORM ${row.id};` })
     @Entity()
     class TriggeredMongoNote {
       @Id({ type: String }) id?: string;

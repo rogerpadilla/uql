@@ -3,7 +3,7 @@ import { withContext } from '../context/context.js';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
 import { assertDefined, createSpec, MeasureUnitCategory, mongoUri, Profile, TypedRow, User } from '../test/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -102,8 +102,8 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   /** A raw projection is SQL, which MongoDB refuses, a tally beside it included. */
   async shouldRefuseARawSelect() {
     await expect(
-      this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } }),
-    ).rejects.toThrow('raw() in $select is not supported on MongoDB');
+      this.querier.findMany(MeasureUnitCategory, { $select: [sql`name`], $count: { measureUnits: true } }),
+    ).rejects.toThrow('sql() in $select is not supported on MongoDB');
   }
 
   /**

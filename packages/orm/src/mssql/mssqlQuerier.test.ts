@@ -4,13 +4,13 @@ import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, mssqlConnection } from '../test/index.js';
 import type { Type } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 
 class MsSqlQuerierIt extends VectorQuerierIt {
   /** A bare literal that wide is NUMERIC on SQL Server, which `tedious` reads as a float. */
   protected override wideIntegerSql() {
-    return raw`SELECT CAST(9007199254740993 AS BIGINT) AS big`;
+    return sql`SELECT CAST(9007199254740993 AS BIGINT) AS big`;
   }
 
   /** SQL Server keeps its per-partition row count live, so there is nothing to gather first. */
@@ -44,12 +44,12 @@ describe('MsSqlQuerierPool', () => {
     const pool = new MsSqlQuerierPool(mssqlConnection(database));
     onTestFinished(async () => {
       await pool.end();
-      await admin.run(raw.text(`DROP DATABASE IF EXISTS ${database}`));
+      await admin.run(sql.text(`DROP DATABASE IF EXISTS ${database}`));
       await admin.end();
     });
 
     await expect(pool.all`SELECT 1 AS one`).rejects.toThrow('Login failed');
-    await admin.run(raw.text(`CREATE DATABASE ${database}`));
+    await admin.run(sql.text(`CREATE DATABASE ${database}`));
 
     expect(await pool.all`SELECT 1 AS one`).toEqual([{ one: 1 }]);
   });

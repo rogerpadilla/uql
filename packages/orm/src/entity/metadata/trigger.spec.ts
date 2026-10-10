@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { TriggerOptions } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { Entity, Field, Id, removeEntity } from '../index.js';
 import { defineEntity, defineTrigger, getMeta } from './definition.js';
 
-const body = () => raw`PERFORM 1;`;
+const body = () => sql`PERFORM 1;`;
 
 /** A throwaway entity, since a trigger is registered against a class and read back off its metadata. */
 function entityWith(...triggers: TriggerOptions<Post>[]) {

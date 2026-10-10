@@ -21,8 +21,8 @@ import {
   VectorDoc,
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
-import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { type FieldKey, idKey, type QuerySql, type QueryWhere } from '../type/index.js';
+import { sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
@@ -86,7 +86,7 @@ class SqlComputedDoc {
   id?: number;
   @Field({ type: Number })
   price?: number | null;
-  @Field({ type: Number, computed: (doc) => raw`${doc.price} * 2` })
+  @Field({ type: Number, computed: (doc) => sql`${doc.price} * 2` })
   readonly doubled?: number | null;
 }
 
@@ -194,17 +194,17 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnRawSelectArray() {
-    expect(() => this.dialect.select(Tax, [raw`*`])).toThrow('raw() in $select is not supported on MongoDB');
+    expect(() => this.dialect.select(Tax, [sql`*`])).toThrow('sql() in $select is not supported on MongoDB');
   }
 
   /** A relation's projection runs inside its lookup, which refuses a raw one as the statement's does. */
   shouldThrowOnRawSelectArrayInARelation() {
-    const $select = [raw`*`];
+    const $select = [sql`*`];
     expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $select } } })).toThrow(
-      'raw() in $select is not supported on MongoDB',
+      'sql() in $select is not supported on MongoDB',
     );
     expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tags: { $select } } })).toThrow(
-      'raw() in $select is not supported on MongoDB',
+      'sql() in $select is not supported on MongoDB',
     );
   }
 
@@ -399,11 +399,11 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnRawInWhere() {
-    expect(() => this.dialect.where(Item, { $and: [raw`code IS NOT NULL`] })).toThrow(
-      'raw() in $where is not supported on MongoDB',
+    expect(() => this.dialect.where(Item, { $and: [sql`code IS NOT NULL`] })).toThrow(
+      'sql() in $where is not supported on MongoDB',
     );
-    expect(() => this.dialect.where(Item, { name: raw`lower(code)` })).toThrow(
-      'raw() in $where is not supported on MongoDB',
+    expect(() => this.dialect.where(Item, { name: sql`lower(code)` })).toThrow(
+      'sql() in $where is not supported on MongoDB',
     );
   }
 
@@ -559,7 +559,7 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { $nor: [{ tags: { name: 'x' } }] })).toBe(true);
     expect(this.dialect.constrainsRelations(Item, { $nor: [] })).toBe(false);
     // Refused later by the render, rather than recursing forever on the way there.
-    expect(this.dialect.constrainsRelations(Item, { $or: [raw`code IS NOT NULL`] })).toBe(false);
+    expect(this.dialect.constrainsRelations(Item, { $or: [sql`code IS NOT NULL`] })).toBe(false);
     // A relation aggregate reads the relation's rows too.
     expect(this.dialect.constrainsRelations(Item, { $or: [{ tagsCount: { $gt: 1 } }] })).toBe(true);
   }
@@ -1122,7 +1122,7 @@ class MongoDialectSpec implements Spec {
    * missing field compares below every value there, so an upper bound asks for one to be present.
    */
   shouldTranslateAnAggregateFilterIntoAnExpression() {
-    const counting = (where: QueryWhere<Item, QueryRaw, FieldKey<Item>>) =>
+    const counting = (where: QueryWhere<Item, QuerySql, FieldKey<Item>>) =>
       this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: where } } })[0];
     const counted = (test: unknown) => ({ $group: { _id: null, n: { $sum: { $cond: [test, 1, 0] } } } });
     const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
@@ -1167,8 +1167,8 @@ class MongoDialectSpec implements Spec {
       }),
     ).toThrow("aggregate $where operator '$text' is not supported on MongoDB");
     expect(() =>
-      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: { $or: [raw`1 = 1`] } } } }),
-    ).toThrow('raw() in an aggregate $where is not supported on MongoDB');
+      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: { $or: [sql`1 = 1`] } } } }),
+    ).toThrow('sql() in an aggregate $where is not supported on MongoDB');
     expect(() =>
       this.dialect.buildAggregateStages(MeasureUnit, { $group: { units: { category: { unitCount: true } } } }),
     ).toThrow("cannot $group by 'category.unitCount' on MongoDB: a joined row's relation aggregate is not read");
@@ -1897,13 +1897,13 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
-  /** `raw()` renders SQL, which a document cannot hold: refused wherever a write persists a value, or steps by one. */
+  /** `sql()` renders SQL, which a document cannot hold: refused wherever a write persists a value, or steps by one. */
   shouldRefuseRawInAWrite() {
-    expect(() => this.dialect.getPersistables(getMeta(Item), { name: raw`upper(name)` } as never, 'onInsert')).toThrow(
-      'raw() in a write is not supported on MongoDB',
+    expect(() => this.dialect.getPersistables(getMeta(Item), { name: sql`upper(name)` } as never, 'onInsert')).toThrow(
+      'sql() in a write is not supported on MongoDB',
     );
-    expect(() => this.dialect.getUpdateFilter({ salePrice: { $inc: raw`2` } })).toThrow(
-      'raw() in a write is not supported on MongoDB',
+    expect(() => this.dialect.getUpdateFilter({ salePrice: { $inc: sql`2` } })).toThrow(
+      'sql() in a write is not supported on MongoDB',
     );
   }
 

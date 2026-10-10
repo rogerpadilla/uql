@@ -10,7 +10,7 @@ export * from './querierPool.js';
 export * from './query.js';
 export * from './queryAggregate.js';
 export * from './queryLock.js';
-export * from './queryRaw.js';
+export * from './querySql.js';
 export * from './queryWhere.js';
 export * from './universalQuerier.js';
 export * from './utility.js';

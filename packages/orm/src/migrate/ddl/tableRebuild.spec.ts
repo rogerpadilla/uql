@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { migrationTargetFor } from '../migrationTarget.js';
 import { rebuildTable } from './tableRebuild.js';
 
@@ -29,18 +29,18 @@ describe('rebuildTable on SQLite', () => {
       }),
     );
 
-  const rows = (table: string) => pool.all<{ id: number }>(raw.text(`SELECT * FROM \`${table}\``));
+  const rows = (table: string) => pool.all<{ id: number }>(sql.text(`SELECT * FROM \`${table}\``));
 
   beforeEach(async () => {
     pool = new SqliteQuerierPool(':memory:');
-    await pool.run(raw.text('CREATE TABLE `parent` (`id` INTEGER PRIMARY KEY, `code` TEXT)'));
+    await pool.run(sql.text('CREATE TABLE `parent` (`id` INTEGER PRIMARY KEY, `code` TEXT)'));
     await pool.run(
-      raw.text(
+      sql.text(
         'CREATE TABLE `child` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `parent` (`id`) ON DELETE CASCADE)',
       ),
     );
-    await pool.run(raw.text("INSERT INTO `parent` VALUES (1, '12')"));
-    await pool.run(raw.text('INSERT INTO `child` VALUES (1, 1)'));
+    await pool.run(sql.text("INSERT INTO `parent` VALUES (1, '12')"));
+    await pool.run(sql.text('INSERT INTO `child` VALUES (1, 1)'));
   });
 
   afterEach(() => pool.end());
@@ -50,7 +50,7 @@ describe('rebuildTable on SQLite', () => {
     await expect(
       pool.transaction(async (querier) => {
         for (const statement of STATEMENTS) {
-          await querier.run(raw.text(statement));
+          await querier.run(sql.text(statement));
         }
       }),
     ).rejects.toThrow('turn foreign keys off to rebuild parent: the rows referencing it would be lost');
@@ -77,8 +77,8 @@ describe('rebuildTable on SQLite', () => {
   });
 
   it('should rebuild a table sharing no column with the old one empty, copying nothing', async () => {
-    await pool.run(raw.text('CREATE TABLE `solo` (`code` TEXT)'));
-    await pool.run(raw.text("INSERT INTO `solo` VALUES ('a')"));
+    await pool.run(sql.text('CREATE TABLE `solo` (`code` TEXT)'));
+    await pool.run(sql.text("INSERT INTO `solo` VALUES ('a')"));
 
     await migrate(
       rebuildTable(

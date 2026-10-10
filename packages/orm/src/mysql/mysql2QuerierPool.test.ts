@@ -1,7 +1,7 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { createSpec, mysqlConnection } from '../test/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
 createSpec(new SqlQuerierPoolIt(() => new MySql2QuerierPool(mysqlConnection())));
@@ -15,7 +15,7 @@ describe('MySql2QuerierPool', () => {
     const [{ id }] = await querier.all<{ id: number }>`SELECT CONNECTION_ID() AS id`;
 
     await querier.beginTransaction();
-    await expect(querier.all(raw.text(`KILL ${id}`))).rejects.toThrow();
+    await expect(querier.all(sql.text(`KILL ${id}`))).rejects.toThrow();
     await querier.release();
 
     const [next] = await pool.all<{ id: number; tz: string }>`SELECT CONNECTION_ID() AS id, @@session.time_zone AS tz`;

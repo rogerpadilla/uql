@@ -20,13 +20,13 @@ import {
 import {
   type EntityMeta,
   type IdKey,
-  RAW_VALUE,
+  SQL_FN,
   RelationAggregate,
   idKey,
   type Type,
   versionKey,
 } from '../../type/index.js';
-import { getKeys, raw } from '../../util/index.js';
+import { getKeys, sql } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import {
@@ -101,7 +101,7 @@ it('should keep a check constraint as authored, for the schema build to render',
     id?: number;
     quantity?: number | null;
   }
-  const checks = [{ name: 'quantity_positive', where: raw`quantity > 0` }, { where: raw`quantity < 1000` }];
+  const checks = [{ name: 'quantity_positive', where: sql`quantity > 0` }, { where: sql`quantity < 1000` }];
   const meta = defineEntity(Stocked, {
     fields: { id: { type: Number, isId: true }, quantity: { type: Number } },
     checks,
@@ -402,7 +402,7 @@ it('should register the Tag metadata', () => {
       itemsCount: {
         name: 'itemsCount',
         computed: expect.objectContaining({
-          [RAW_VALUE]: expect.any(Function),
+          [SQL_FN]: expect.any(Function),
           spec: { relation: 'items', op: '$count' },
         }),
       },
@@ -1111,7 +1111,7 @@ it('should refuse a join on a member that is not a column of its entity', () => 
   @Entity()
   class Pier {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number, computed: raw`1` }) berthCount?: number | null;
+    @Field({ type: Number, computed: sql`1` }) berthCount?: number | null;
   }
   class Tug {
     id?: number;

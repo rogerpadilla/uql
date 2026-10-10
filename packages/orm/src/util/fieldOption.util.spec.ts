@@ -1,18 +1,18 @@
 import { expect, it } from 'vitest';
 import { defineEntity, defineField } from '../entity/index.js';
 import { fieldOptionConflict } from './fieldOption.util.js';
-import { raw } from './raw.js';
+import { sql } from './sql.js';
 
 // It would otherwise surface wherever the schema is next built, which on SQL Server is a query.
 it('should report a column type written out as SQL that interpolates', () => {
-  expect(fieldOptionConflict({ type: String, columnType: raw`numeric(${10})` })).toBe(
-    "cannot use 'columnType': a `raw` one names a constant type, so it can bind no value and read no column",
+  expect(fieldOptionConflict({ type: String, columnType: sql`numeric(${10})` })).toBe(
+    "cannot use 'columnType': a `sql` one names a constant type, so it can bind no value and read no column",
   );
-  expect(fieldOptionConflict({ type: String, columnType: raw`tsvector` })).toBe(undefined);
+  expect(fieldOptionConflict({ type: String, columnType: sql`tsvector` })).toBe(undefined);
 });
 
 it('should report a bound stated beside a column type written out as SQL', () => {
-  expect(fieldOptionConflict({ type: String, columnType: raw`ltree`, length: 100 })).toBe(
+  expect(fieldOptionConflict({ type: String, columnType: sql`ltree`, length: 100 })).toBe(
     "cannot use 'length': it is ignored on a column type written out as SQL, which carries its own bounds",
   );
 });
@@ -40,7 +40,7 @@ it('should report the option a column cannot use', () => {
 });
 
 it('should report the option another option leaves unread', () => {
-  expect(fieldOptionConflict({ type: Number, computed: raw`1`, index: true })).toBe(
+  expect(fieldOptionConflict({ type: Number, computed: sql`1`, index: true })).toBe(
     "cannot use 'index': it is ignored on an inlined computed field",
   );
   expect(fieldOptionConflict({ type: Number, updatable: false, onUpdate: () => 1 })).toBe(
@@ -72,15 +72,15 @@ it('should leave a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: String, columnType: 'decimal', precision: 30, scale: 2 })).toBe(undefined);
   // A foreign key resolves its column from the referenced key, so there is no family to contradict.
   expect(fieldOptionConflict({ references: () => class {}, length: 36 })).toBe(undefined);
-  expect(fieldOptionConflict({ type: Number, computed: raw`1`, eager: false })).toBe(undefined);
+  expect(fieldOptionConflict({ type: Number, computed: sql`1`, eager: false })).toBe(undefined);
   // An option stated as `undefined` is one the field never gave.
-  expect(fieldOptionConflict({ type: Number, index: undefined, computed: raw`1` })).toBe(undefined);
+  expect(fieldOptionConflict({ type: Number, index: undefined, computed: sql`1` })).toBe(undefined);
   // A key is NOT NULL, so saying so states what it already is - only claiming the opposite is a conflict.
   expect(fieldOptionConflict({ type: Number, isId: true, nullable: false })).toBe(undefined);
 });
 
 it('should let a stored computed column keep what a real column has, and refuse what the engine fills', () => {
-  const stored = { type: String, computed: raw`a || b`, stored: true } as const;
+  const stored = { type: String, computed: sql`a || b`, stored: true } as const;
 
   expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: false })).toBeUndefined();
   expect(fieldOptionConflict({ ...stored, defaultValue: 'x' })).toBe(
@@ -97,7 +97,7 @@ it('should backstop at run time what the decorators reject at compile time', () 
     computed?: number;
   }
 
-  expect(() => defineField(Backstopped, 'computed', { type: Number, computed: raw`1`, index: true })).toThrow(
+  expect(() => defineField(Backstopped, 'computed', { type: Number, computed: sql`1`, index: true })).toThrow(
     "'Backstopped.computed' cannot use 'index': it is ignored on an inlined computed field.",
   );
   expect(() => defineEntity(Backstopped, { fields: { id: { type: Number, isId: true, nullable: true } } })).toThrow(

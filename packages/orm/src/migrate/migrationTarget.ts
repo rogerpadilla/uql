@@ -11,7 +11,7 @@ import {
   type SchemaGenerator,
   type SqlQuerier,
 } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import { MigrationOperationBuilder } from './builder/migrationBuilder.js';
@@ -49,7 +49,7 @@ export type MigrationTarget = {
 
 const sqlSession = (querier: SqlQuerier): MigrationSession => ({
   querier,
-  run: (statement) => querier.run(raw.text(statement)),
+  run: (statement) => querier.run(sql.text(statement)),
   transaction: (work) =>
     querier.dialect.features.rebuildsTables ? withForeignKeysOff(querier, work) : querier.transaction(work),
 });

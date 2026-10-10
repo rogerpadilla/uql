@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 
 /**
  * The two ways a cascade happens, asserted on the statements and the rows left: a declared constraint
@@ -73,17 +73,17 @@ describe('cascade delegation', () => {
   beforeEach(async () => {
     querier = await pool.getQuerier();
     for (const table of ['DelegatedChild', 'DelegatedParent', 'WalkedChild', 'WalkedParent']) {
-      await querier.run(raw.text(`DROP TABLE IF EXISTS \`${table}\``));
+      await querier.run(sql.text(`DROP TABLE IF EXISTS \`${table}\``));
     }
-    await querier.run(raw.text('CREATE TABLE `DelegatedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `DelegatedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
     await querier.run(
-      raw.text(
+      sql.text(
         'CREATE TABLE `DelegatedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `DelegatedParent`(`id`) ON DELETE CASCADE)',
       ),
     );
-    await querier.run(raw.text('CREATE TABLE `WalkedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `WalkedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
     await querier.run(
-      raw.text(
+      sql.text(
         'CREATE TABLE `WalkedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `WalkedParent`(`id`))',
       ),
     );

@@ -5,7 +5,7 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { Coupon, createSpec, Invoice, InvoiceLine, probeForeignKeys, TenantNote } from '../test/index.js';
 import { idKey } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 import { SqliteQuerierPool } from './sqliteQuerierPool.js';
@@ -54,7 +54,7 @@ class TextPkNote {
 describe('insertMany id semantics', () => {
   it('should split oversized batches by maxBindValues and return every id', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
     const runSpy = vi.spyOn(querier, 'internalRun');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({ code: `c${index}`, label: `chunk ${index}` }));
     const ids = await querier.insertMany(Coupon, payload);
@@ -71,7 +71,7 @@ describe('insertMany id semantics', () => {
   /** The assignments bind once per statement beside the rows, so a split filling the budget would bind one too many. */
   it('should split an upsert leaving room for what its assignments bind', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)'));
     const payload = Array.from({ length: 6 }, (_, index) => ({ code: `c${index}`, label: 'new' }));
 
     await querier.insertOne(Coupon, { code: 'c0', label: 'old' });
@@ -86,7 +86,7 @@ describe('insertMany id semantics', () => {
   /** Each key is read back once, so one listed in two batches is not taken for two rows sharing it. */
   it('should read a guarded upsert back once per key, however the batches fall', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run(raw.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
     const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: 'old' }));
 
@@ -113,7 +113,7 @@ describe('insertMany id semantics', () => {
   /** A null never conflicts, as a unique index reads it, so a row whose conflict key holds one is inserted. */
   it('should insert a guarded row whose conflict key holds a null, not update one that holds it too', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
-    await querier.run(raw.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
     const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: null }));
 
@@ -130,7 +130,7 @@ describe('insertMany id semantics', () => {
 
   it('should split oversized batches by maxInsertRows', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
-    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
     const runSpy = vi.spyOn(querier, 'internalRun');
 
     const ids = await querier.insertMany(
@@ -145,7 +145,7 @@ describe('insertMany id semantics', () => {
 
   it('should return the real persisted value (not the internal rowid) when the primary key is not database-generated', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
-    await querier.run(raw.text('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)'));
     // No id provided: the persisted key is NULL, which names no row, so none is reported - never the rowid.
     const generated = await querier.insertMany(TextPkNote, [{ title: 'no pk' }]);
     expect(generated).toEqual([undefined]);
@@ -168,7 +168,7 @@ describe('insertMany id semantics', () => {
    */
   it('should split an oversized upsert by maxBindValues', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
     const runSpy = vi.spyOn(querier, 'internalRun');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({
       id: index + 1,
@@ -191,9 +191,9 @@ describe('insertMany id semantics', () => {
 describe('id lists past the bind budget', () => {
   const tables = async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run(raw.text('CREATE TABLE `Invoice` (`id` INTEGER PRIMARY KEY, `description` TEXT)'));
+    await querier.run(sql.text('CREATE TABLE `Invoice` (`id` INTEGER PRIMARY KEY, `description` TEXT)'));
     await querier.run(
-      raw.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
+      sql.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
     );
     return querier;
   };
@@ -283,7 +283,7 @@ describe('id lists past the bind budget', () => {
       seven(() => ({ amount: 1 })),
     );
     await querier.run(
-      raw.text(
+      sql.text(
         "CREATE TRIGGER `refuseLast` BEFORE UPDATE ON `InvoiceLine` WHEN NEW.`id` = 7 BEGIN SELECT RAISE(ABORT, 'refused'); END",
       ),
     );
@@ -300,7 +300,7 @@ describe('id lists past the bind budget', () => {
 it('should insert the rows naming nothing in a chunk of their own one at a time', async () => {
   const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
   await querier.run(
-    raw.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
+    sql.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
   );
 
   const ids = await querier.insertMany(InvoiceLine, [{ amount: 1 }, {}, {}, {}]);

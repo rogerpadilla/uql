@@ -8,11 +8,11 @@ import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined } from '../test/index.js';
-import type { QueryRaw } from '../type/index.js';
+import type { QuerySql } from '../type/index.js';
 import { namedLockSql } from './migrationLock.js';
 
 /** A statement as `dialect` sends it: its SQL and the values it binds. */
-function rendered(dialect: AbstractSqlDialect, sql: QueryRaw) {
+function rendered(dialect: AbstractSqlDialect, sql: QuerySql) {
   const { sql: text, values } = dialect.compile(sql);
   return { sql: text.replace(/\s+/g, ' '), values };
 }

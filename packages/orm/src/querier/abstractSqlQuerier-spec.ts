@@ -14,7 +14,7 @@ import {
   VersionedNote,
 } from '../test/index.js';
 import type { QuerierPool, QuerySearch, QueryUpdateResult } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
@@ -248,12 +248,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         id: 1,
       },
       $where: {
-        $exists: raw((rawOpts) => {
+        $exists: sql((rawOpts) => {
           const { ctx, dialect, escapedPrefix } = rawOpts;
           dialect.find(ctx, User, {
             $select: { id: true },
             $where: {
-              companyId: raw((innerOpts) => {
+              companyId: sql((innerOpts) => {
                 const { ctx: innerCtx } = innerOpts;
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),
@@ -276,12 +276,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(Item, {
       $select: { id: 1 },
       $where: {
-        $nexists: raw((rawOpts) => {
+        $nexists: sql((rawOpts) => {
           const { ctx, dialect, escapedPrefix } = rawOpts;
           dialect.find(ctx, User, {
             $select: { id: true },
             $where: {
-              companyId: raw((innerOpts) => {
+              companyId: sql((innerOpts) => {
                 const { ctx: innerCtx } = innerOpts;
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),

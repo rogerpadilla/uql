@@ -3,7 +3,7 @@ import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
-import { entitySql, raw, refs } from '../util/index.js';
+import { entitySql, sql, refs } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 import { MYSQL_FEATURES } from './mysqlLikeSqlDialect.js';
 
@@ -105,7 +105,7 @@ class RefLedger {
   creditLimit?: number | null;
   @Field({ type: String, name: 'display_label' })
   label?: string | null;
-  @Field({ type: Number, computed: (ledger) => raw`${ledger.creditLimit} * 2` })
+  @Field({ type: Number, computed: (ledger) => sql`${ledger.creditLimit} * 2` })
   double?: number | null;
 }
 
@@ -285,14 +285,14 @@ describe('AbstractSqlDialect', () => {
       expect(ctx.sql).toBe(' WHERE `email` IS NOT NULL');
     });
   });
-  describe('raw() prefixing', () => {
+  describe('sql() prefixing', () => {
     // A trigger reads its row as `NEW.`: every nested group and raw term is the same scope, so keeps it.
     it('should keep an escaped prefix through nested groups and their raw terms', () => {
       const ctx = dialect.createContext();
       dialect.where(
         ctx,
         Company,
-        { $or: [{ name: 'a' }, { $not: [{ name: 'b' }] }, raw(({ escapedPrefix }) => `${escapedPrefix}kind IS NULL`)] },
+        { $or: [{ name: 'a' }, { $not: [{ name: 'b' }] }, sql(({ escapedPrefix }) => `${escapedPrefix}kind IS NULL`)] },
         { clause: false, escapedPrefix: 'NEW.' },
       );
       expect(ctx.sql).toBe('NEW.`name` = ? OR NOT NEW.`name` = ? OR NEW.kind IS NULL');
@@ -301,7 +301,7 @@ describe('AbstractSqlDialect', () => {
     it('should leave a raw string in $and unprefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`(kind->>'public')::boolean IS TRUE`],
+        $and: [sql`(kind->>'public')::boolean IS TRUE`],
       });
       expect(ctx.sql).toBe(" WHERE (kind->>'public')::boolean IS TRUE");
     });
@@ -309,7 +309,7 @@ describe('AbstractSqlDialect', () => {
     it('should leave a raw string in $or unprefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $or: [raw`kind IS NULL`, raw`kind = '{}'`],
+        $or: [sql`kind IS NULL`, sql`kind = '{}'`],
       });
       expect(ctx.sql).toBe(" WHERE kind IS NULL OR kind = '{}'");
     });
@@ -317,7 +317,7 @@ describe('AbstractSqlDialect', () => {
     it('should run a raw function in $and', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw(() => 'custom_check(kind) = TRUE')],
+        $and: [sql(() => 'custom_check(kind) = TRUE')],
       });
       expect(ctx.sql).toBe(' WHERE custom_check(kind) = TRUE');
     });
@@ -326,7 +326,7 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         name: 'Acme',
-        $and: [raw`kind IS NOT NULL`],
+        $and: [sql`kind IS NOT NULL`],
       });
       expect(ctx.sql).toBe(' WHERE `name` = ? AND kind IS NOT NULL');
       expect(ctx.values).toEqual(['Acme']);
@@ -335,46 +335,46 @@ describe('AbstractSqlDialect', () => {
     /** An alias names a `$select` projection; anywhere else it would land mid-expression. */
     it('should write no alias for a raw outside $select', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Company, { $and: [raw`kind IS NOT NULL`.as('ignored')] });
+      dialect.where(ctx, Company, { $and: [sql`kind IS NOT NULL`.as('ignored')] });
       expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
     });
 
     it('should emit the text of a raw with no interpolation as written, whatever the prefix', () => {
       const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`COUNT(*)`, prefix: 'c' });
+      dialect.getRawValue(ctx, { value: sql`COUNT(*)`, prefix: 'c' });
       expect(ctx.sql).toBe('COUNT(*)');
     });
   });
 
-  describe('raw.join', () => {
+  describe('sql.join', () => {
     it('should join fragments with a separator, each binding its own values', () => {
       const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`WHERE ${raw.join([raw`a = ${1}`, raw`b = ${2}`], ' AND ')}` });
+      dialect.getRawValue(ctx, { value: sql`WHERE ${sql.join([sql`a = ${1}`, sql`b = ${2}`], ' AND ')}` });
       expect(ctx.sql).toBe('WHERE a = ? AND b = ?');
       expect(ctx.values).toEqual([1, 2]);
     });
 
     it('should separate with a comma by default, and render nothing for no fragment', () => {
       const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`(${raw.join([raw`${1}`, raw`${2}`])})${raw.join([])}` });
+      dialect.getRawValue(ctx, { value: sql`(${sql.join([sql`${1}`, sql`${2}`])})${sql.join([])}` });
       expect(ctx.sql).toBe('(?, ?)');
       expect(ctx.values).toEqual([1, 2]);
     });
   });
 
-  describe('raw() as a tagged template', () => {
+  describe('sql() as a tagged template', () => {
     it('should refuse an interpolated undefined, which would bind nothing', () => {
       // As plain JavaScript calls it: the types refuse an undefined before it gets here.
       const strings = Object.assign(['id = ', ''], { raw: ['id = ', ''] });
-      expect(() => Reflect.apply(raw, undefined, [strings, undefined])).toThrow(
-        'a raw template interpolated undefined',
+      expect(() => Reflect.apply(sql, undefined, [strings, undefined])).toThrow(
+        'an sql template interpolated undefined',
       );
     });
 
     it('should bind an interpolated value instead of inlining it', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`kind = ${'public'}`],
+        $and: [sql`kind = ${'public'}`],
       });
       expect(ctx.sql).toBe(' WHERE kind = ?');
       expect(ctx.values).toEqual(['public']);
@@ -383,7 +383,7 @@ describe('AbstractSqlDialect', () => {
     it('should bind a value carrying SQL syntax rather than emitting it', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`name = ${"' OR 1=1 --"}`],
+        $and: [sql`name = ${"' OR 1=1 --"}`],
       });
       expect(ctx.sql).toBe(' WHERE name = ?');
       expect(ctx.values).toEqual(["' OR 1=1 --"]);
@@ -392,7 +392,7 @@ describe('AbstractSqlDialect', () => {
     it('should bind every interpolation of a multi-value fragment in order', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`GREATEST(0, ${10} - ${3}) > ${1}`],
+        $and: [sql`GREATEST(0, ${10} - ${3}) > ${1}`],
       });
       expect(ctx.sql).toBe(' WHERE GREATEST(0, ? - ?) > ?');
       expect(ctx.values).toEqual([10, 3, 1]);
@@ -401,7 +401,7 @@ describe('AbstractSqlDialect', () => {
     it('should resolve an interpolated raw in place so fragments compose', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`kind = ${'public'} AND ${raw`deleted_at IS NULL`}`],
+        $and: [sql`kind = ${'public'} AND ${sql`deleted_at IS NULL`}`],
       });
       expect(ctx.sql).toBe(' WHERE kind = ? AND deleted_at IS NULL');
       expect(ctx.values).toEqual(['public']);
@@ -411,7 +411,7 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         name: 'Acme',
-        $and: [raw`kind = ${'public'}`],
+        $and: [sql`kind = ${'public'}`],
       });
       expect(ctx.sql).toBe(' WHERE `name` = ? AND kind = ?');
       expect(ctx.values).toEqual(['Acme', 'public']);
@@ -419,7 +419,7 @@ describe('AbstractSqlDialect', () => {
 
     it('should alias a projection built as a template', () => {
       const ctx = dialect.createContext();
-      dialect.find(ctx, Company, { $select: [raw`LOG10(${100})`.as('score')] });
+      dialect.find(ctx, Company, { $select: [sql`LOG10(${100})`.as('score')] });
       expect(ctx.sql).toContain('LOG10(?) `score`');
       expect(ctx.values).toEqual([100]);
     });
@@ -427,7 +427,7 @@ describe('AbstractSqlDialect', () => {
     it('should resolve an interpolated callback against the render options', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, {
-        value: raw`${raw(({ escapedPrefix }) => `${escapedPrefix}kind`)} = ${'public'}`,
+        value: sql`${sql(({ escapedPrefix }) => `${escapedPrefix}kind`)} = ${'public'}`,
         prefix: 'c',
       });
       expect(ctx.sql).toBe('`c`.kind = ?');
@@ -436,14 +436,14 @@ describe('AbstractSqlDialect', () => {
 
     it("should drop an interpolated fragment's alias, which belongs to a projection not an expression", () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Company, { $and: [raw`kind = ${raw`'x'`.as('ignored')}`] });
+      dialect.where(ctx, Company, { $and: [sql`kind = ${sql`'x'`.as('ignored')}`] });
       expect(ctx.sql).toBe(" WHERE kind = 'x'");
     });
 
     it('should emit a fragment with no interpolation unchanged', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw`kind IS NOT NULL`],
+        $and: [sql`kind IS NOT NULL`],
       });
       expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
       expect(ctx.values).toEqual([]);
@@ -454,7 +454,7 @@ describe('AbstractSqlDialect', () => {
     it('should render a field as its column', () => {
       const ledger = refs(RefLedger);
       const ctx = dialect.createContext();
-      dialect.where(ctx, RefLedger, { $and: [raw`${ledger.creditLimit} > ${0}`] });
+      dialect.where(ctx, RefLedger, { $and: [sql`${ledger.creditLimit} > ${0}`] });
       expect(ctx.sql).toBe(' WHERE `creditLimit` > ?');
       expect(ctx.values).toEqual([0]);
     });
@@ -463,25 +463,25 @@ describe('AbstractSqlDialect', () => {
       const ledger = refs(RefLedger);
       const snake = new TestSqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
       const ctx = snake.createContext();
-      snake.where(ctx, RefLedger, { $and: [raw`${ledger.creditLimit} > 0 AND ${ledger.label} <> ''`] });
+      snake.where(ctx, RefLedger, { $and: [sql`${ledger.creditLimit} > 0 AND ${ledger.label} <> ''`] });
       expect(ctx.sql).toBe(" WHERE `credit_limit` > 0 AND `display_label` <> ''");
     });
 
     it('should qualify the column by the alias in scope', () => {
       const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).creditLimit}`, prefix: 'l' });
+      dialect.getRawValue(ctx, { value: sql`${refs(RefLedger).creditLimit}`, prefix: 'l' });
       expect(ctx.sql).toBe('`l`.`creditLimit`');
     });
 
     it('should render an inlined computed field as its expression', () => {
       const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).double} + 1` });
+      dialect.getRawValue(ctx, { value: sql`${refs(RefLedger).double} + 1` });
       expect(ctx.sql).toBe('(`creditLimit` * 2) + 1');
     });
 
     it("should refuse a definition's ref rendered outside its entity's SQL", () => {
-      const sql = entitySql<RefLedger>((ledger) => raw`${ledger.creditLimit}`);
-      expect(() => dialect.getRawValue(dialect.createContext(), { value: sql })).toThrow(
+      const statement = entitySql<RefLedger>((ledger) => sql`${ledger.creditLimit}`);
+      expect(() => dialect.getRawValue(dialect.createContext(), { value: statement })).toThrow(
         "'creditLimit' was read off a definition's refs, so it renders only inside its entity's SQL",
       );
     });
@@ -492,7 +492,7 @@ describe('AbstractSqlDialect', () => {
       dialect.find(ctx, Item, {
         $select: { id: true },
         $populate: {
-          tax: { $select: { id: true }, $where: { name: raw`${tax.name}`, $and: [raw`${tax.name} <> ''`] } },
+          tax: { $select: { id: true }, $where: { name: sql`${tax.name}`, $and: [sql`${tax.name} <> ''`] } },
         },
       });
       expect(ctx.sql).toContain("`tax`.`name` = `tax`.`name` AND `tax`.`name` <> ''");
@@ -730,7 +730,7 @@ describe('AbstractSqlDialect', () => {
       dialect.where(ctx, Item, {
         companyId: '1',
         tags: { name: 'test' },
-        $and: [raw`code IS NOT NULL`],
+        $and: [sql`code IS NOT NULL`],
       });
       expect(ctx.sql).toContain('`companyId` = ?');
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');

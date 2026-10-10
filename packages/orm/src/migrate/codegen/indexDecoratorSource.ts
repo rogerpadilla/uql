@@ -1,7 +1,7 @@
 import type { IndexNode } from '../../schema/types.js';
 import { type IndexColumnSchema, isVectorIndexType } from '../../type/index.js';
 import { fulltextConfig } from '../../util/dialect.util.js';
-import { memberSource, quoted, rawTag } from './sourceLiteral.js';
+import { memberSource, quoted, sqlTag } from './sourceLiteral.js';
 
 /** What building an index's decorator source needs besides the index itself. */
 interface IndexSourceContext {
@@ -49,7 +49,7 @@ const INDEX_OPTION_SOURCE = {
     const config = fulltextConfig(index);
     return index.type === 'fulltext' && config !== fulltextConfig({}) ? [`config: ${quoted(config)}`] : [];
   },
-  where: (index) => (index.where ? [`where: ${rawTag(index.where)}`] : []),
+  where: (index) => (index.where ? [`where: ${sqlTag(index.where)}`] : []),
   include: (index, { param, propertyName }) => {
     const included = index.include?.map((column) => memberSource(param, propertyName(column))) ?? [];
     return included.length ? [`include: (${param}) => [${included.join(', ')}]`] : [];
@@ -103,7 +103,7 @@ export function isPlainFieldIndex(index: IndexNode): boolean {
 
 /**
  * One `@Index((user) => [...])` as source, for an index no `@Field` can express, its columns read off the
- * refs `param` names. Emits `raw` for an expression entry, so callers import `raw` when
+ * refs `param` names. Emits `sql` for an expression entry, so callers import `sql` when
  * {@link indexNeedsRaw} holds.
  */
 export function buildIndexDecoratorSource(
@@ -117,13 +117,13 @@ export function buildIndexDecoratorSource(
   return `@Index((${param}) => [${entries}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''})`;
 }
 
-/** Whether emitting this index needs `raw` imported alongside `Index`. */
+/** Whether emitting this index needs `sql` imported alongside `Index`. */
 export function indexNeedsRaw(index: IndexNode): boolean {
   return Boolean(index.where) || index.entries.some((entry) => entry.expression);
 }
 
 function indexEntrySource(entry: IndexColumnSchema, { param, propertyName }: IndexSourceContext): string {
-  const column = entry.expression ? rawTag(entry.column) : memberSource(param, propertyName(entry.column));
+  const column = entry.expression ? sqlTag(entry.column) : memberSource(param, propertyName(entry.column));
   const modifiers = entryModifiers(entry);
   return modifiers.length === 0 ? column : `{ column: ${column}, ${modifiers.join(', ')} }`;
 }

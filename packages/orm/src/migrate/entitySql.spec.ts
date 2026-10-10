@@ -8,11 +8,11 @@ import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { EntityWhere, Json, Type } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
-  checks: [{ where: { balance: { $gte: 0 } } }, { where: (ledger) => raw`${ledger.spent} >= ${ledger.refunded}` }],
+  checks: [{ where: { balance: { $gte: 0 } } }, { where: (ledger) => sql`${ledger.spent} >= ${ledger.refunded}` }],
 })
 class Ledger {
   @Id({ type: Number }) id?: number;
@@ -22,8 +22,8 @@ class Ledger {
 }
 
 @Index((account) => [account.emailAddress], { unique: true, where: { deletedAt: null } })
-@Index((account) => [raw`lower(${account.emailAddress})`], {
-  where: (account) => raw`${account.deletedAt} IS NULL`,
+@Index((account) => [sql`lower(${account.emailAddress})`], {
+  where: (account) => sql`${account.deletedAt} IS NULL`,
 })
 @Entity()
 class Account {
@@ -36,7 +36,7 @@ class Account {
 class Scored {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) rawScore?: number | null;
-  @Field({ type: Number, computed: (scored) => raw`${scored.rawScore} + 1`, stored: true }) nextScore?: number | null;
+  @Field({ type: Number, computed: (scored) => sql`${scored.rawScore} + 1`, stored: true }) nextScore?: number | null;
 }
 
 class Line {
@@ -51,7 +51,7 @@ defineEntity(Line, {
     id: { type: Number, isId: true },
     unitPrice: { type: Number },
     qty: { type: Number },
-    total: { type: Number, computed: (line) => raw`${line.unitPrice} * ${line.qty}`, stored: true },
+    total: { type: Number, computed: (line) => sql`${line.unitPrice} * ${line.qty}`, stored: true },
   },
 });
 
@@ -95,7 +95,7 @@ describe('SQL an entity declares', () => {
   });
 
   it('should refuse a predicate given no entity to read it against', () => {
-    // @ts-expect-error: not a `raw` statement
+    // @ts-expect-error: not a `sql` statement
     expect(() => new PostgresDialect().compileDdl({ id: 1 })).toThrow('a predicate compiles against the entity');
   });
 });
@@ -176,7 +176,7 @@ describe('a SQL Server filtered index', () => {
   });
 
   it('should leave a raw predicate to the server', () => {
-    const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.closedAt} IS NOT NULL`;
+    const where: EntityWhere<TicketShape> = (ticket) => sql`${ticket.closedAt} IS NOT NULL`;
     expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "closedAt" IS NOT NULL;`);
   });
 });

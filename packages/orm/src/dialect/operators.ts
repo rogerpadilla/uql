@@ -6,7 +6,7 @@ import {
   type QueryOrderedOp,
   type QueryVectorNear,
   type QueryVectorQuery,
-  QueryRaw,
+  QuerySql,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOp,
@@ -53,7 +53,7 @@ export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
     where !== undefined &&
     someKey(where, (key) =>
       isGroupOp(key)
-        ? groupClauses(key, where[key]).some((clause) => clause instanceof QueryRaw || namesRows(clause))
+        ? groupClauses(key, where[key]).some((clause) => clause instanceof QuerySql || namesRows(clause))
         : !(isWhereMap(where[key]) && !hasKeys(where[key])),
     )
   );

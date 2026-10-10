@@ -10,7 +10,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { idKey } from '../type/index.js';
 import type { EntityTriggerMeta, Json } from '../type/index.js';
-import { raw, refs } from '../util/raw.js';
+import { sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { dropTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
@@ -24,13 +24,13 @@ class Post {
 const stamp: EntityTriggerMeta<Post> = {
   on: 'beforeUpdate',
   of: ['body'],
-  run: { postgres: (newRow) => raw`${newRow.searchVector} := ${newRow.body};` },
+  run: { postgres: (newRow) => sql`${newRow.searchVector} := ${newRow.body};` },
 };
 
-const plain: EntityTriggerMeta<object> = { on: 'beforeUpdate', run: { postgres: () => raw`SELECT 1;` } };
+const plain: EntityTriggerMeta<object> = { on: 'beforeUpdate', run: { postgres: () => sql`SELECT 1;` } };
 
 /** SQL Server has no BEFORE trigger, so anything rendered for it fires after the write. */
-const setBased: EntityTriggerMeta<Post> = { on: 'afterUpdate', run: { mssql: () => raw`SELECT 1;` } };
+const setBased: EntityTriggerMeta<Post> = { on: 'afterUpdate', run: { mssql: () => sql`SELECT 1;` } };
 
 const render = (dialect: AbstractSqlDialect, trigger: EntityTriggerMeta<Post>, i = 0) =>
   renderTrigger(dialect, getMeta(Post), trigger, i).statements;
@@ -85,7 +85,7 @@ describe('renderTrigger', () => {
     const dialect = new PostgresDialect();
     expect(nameOf(dialect, stamp)).toBe(nameOf(dialect, stamp));
     expect(nameOf(dialect, { ...stamp, of: undefined })).not.toBe(nameOf(dialect, stamp));
-    expect(nameOf(dialect, { ...stamp, run: { postgres: (newRow) => raw`${newRow.searchVector} := NULL;` } })).not.toBe(
+    expect(nameOf(dialect, { ...stamp, run: { postgres: (newRow) => sql`${newRow.searchVector} := NULL;` } })).not.toBe(
       nameOf(dialect, stamp),
     );
   });
@@ -110,9 +110,9 @@ describe('renderTrigger', () => {
   // first, and no `OR REPLACE`, which MySQL and SQLite do not have anyway.
   it('should create it outright, on every engine', () => {
     for (const dialect of [new PostgresDialect(), new MySqlDialect(), new MariaDialect(), new SqliteDialect()]) {
-      const sql = render(dialect, { ...stamp, run: { [dialect.dialectName]: () => raw`SELECT 1;` } }).join('\n');
-      expect(sql).toContain('CREATE TRIGGER');
-      expect(sql).not.toContain('DROP TRIGGER');
+      const statement = render(dialect, { ...stamp, run: { [dialect.dialectName]: () => sql`SELECT 1;` } }).join('\n');
+      expect(statement).toContain('CREATE TRIGGER');
+      expect(statement).not.toContain('DROP TRIGGER');
     }
     expect(render(new MsSqlDialect(), setBased).join('\n')).toContain('CREATE TRIGGER');
   });
@@ -143,14 +143,14 @@ describe('the body, where the engine keeps it', () => {
   });
 
   it('should quote the function with a dollar tag its body does not hold, so nothing in it ends the function', () => {
-    const sql = render(new PostgresDialect(), { ...stamp, run: { postgres: () => raw`RAISE NOTICE '$uql$';` } });
-    expect(sql.join('\n')).toContain("RETURNS trigger AS $uql1$\nBEGIN\nRAISE NOTICE '$uql$';");
+    const statement = render(new PostgresDialect(), { ...stamp, run: { postgres: () => sql`RAISE NOTICE '$uql$';` } });
+    expect(statement.join('\n')).toContain("RETURNS trigger AS $uql1$\nBEGIN\nRAISE NOTICE '$uql$';");
   });
 
   it('should inline it everywhere else', () => {
     const create = render(new MySqlDialect(), {
       ...stamp,
-      run: { mysql: (newRow) => raw`SET @x = ${newRow.body};` },
+      run: { mysql: (newRow) => sql`SET @x = ${newRow.body};` },
     });
     expect(create.join('\n')).not.toContain('CREATE FUNCTION');
     expect(create.join('\n')).toContain('SET @x = NEW.`body`;');
@@ -161,8 +161,8 @@ describe('what a body opens with', () => {
   // A T-SQL trigger running its own DML sends a rowcount back, which the client reads as what the
   // original statement affected. `SET NOCOUNT ON` is what every hand-written one starts with.
   it('should quiet the rowcount on SQL Server, first thing in the body', () => {
-    const sql = render(new MsSqlDialect(), setBased).join('\n');
-    expect(sql).toContain('AS\nBEGIN\nSET NOCOUNT ON;\nSELECT 1;');
+    const statement = render(new MsSqlDialect(), setBased).join('\n');
+    expect(statement).toContain('AS\nBEGIN\nSET NOCOUNT ON;\nSELECT 1;');
   });
 
   it('should open with nothing where the engine needs none', () => {
@@ -170,7 +170,7 @@ describe('what a body opens with', () => {
       expect(
         render(dialect, {
           ...stamp,
-          run: { postgres: () => raw`SELECT 1;`, mysql: () => raw`SELECT 1;`, sqlite: () => raw`SELECT 1;` },
+          run: { postgres: () => sql`SELECT 1;`, mysql: () => sql`SELECT 1;`, sqlite: () => sql`SELECT 1;` },
         }).join('\n'),
       ).not.toContain('NOCOUNT');
     }
@@ -179,18 +179,18 @@ describe('what a body opens with', () => {
 
 describe('the guard, however the engine states one', () => {
   it('should emit UPDATE OF and a null-safe WHEN where the engine takes both', () => {
-    const sql = render(new PostgresDialect(), stamp).join('\n');
-    expect(sql).toContain('BEFORE UPDATE OF "body" ON "Post"');
-    expect(sql).toContain('WHEN (OLD."body" IS DISTINCT FROM NEW."body")');
+    const statement = render(new PostgresDialect(), stamp).join('\n');
+    expect(statement).toContain('BEFORE UPDATE OF "body" ON "Post"');
+    expect(statement).toContain('WHEN (OLD."body" IS DISTINCT FROM NEW."body")');
   });
 
   it('should spell the comparison as SQLite does, beside its own UPDATE OF', () => {
-    const sql = render(new SqliteDialect(), {
+    const statement = render(new SqliteDialect(), {
       ...stamp,
-      run: { sqlite: (newRow) => raw`SELECT ${newRow.body};` },
+      run: { sqlite: (newRow) => sql`SELECT ${newRow.body};` },
     }).join('\n');
-    expect(sql).toContain('BEFORE UPDATE OF `body` ON `Post`');
-    expect(sql).toContain('WHEN (OLD.`body` IS NOT NEW.`body`)');
+    expect(statement).toContain('BEFORE UPDATE OF `body` ON `Post`');
+    expect(statement).toContain('WHEN (OLD.`body` IS NOT NEW.`body`)');
   });
 
   // SQL Server is handed the rows as tables, so the same comparison is made over a join between them
@@ -214,40 +214,40 @@ describe('the guard, however the engine states one', () => {
   });
 
   it('should or two watched columns together on a set-based engine too', () => {
-    const sql = render(new MsSqlDialect(), { ...audited, of: ['body', 'searchVector'] }).join('\n');
-    expect(sql).toContain(
+    const statement = render(new MsSqlDialect(), { ...audited, of: ['body', 'searchVector'] }).join('\n');
+    expect(statement).toContain(
       'WHERE (EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body") ' +
         'OR EXISTS (SELECT deleted."searchVector" EXCEPT SELECT inserted."searchVector"));',
     );
   });
 
   it('should narrow the rows a write reads by a where on SQL Server, as other engines fire for them', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       ...audited,
       of: undefined,
       where: { $old: { body: 'draft' }, $new: { body: 'published' } },
     }).join('\n');
-    expect(sql).toContain(
+    expect(statement).toContain(
       'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
         `WHERE deleted."body" = N'draft' AND inserted."body" = N'published';`,
     );
   });
 
   it('should narrow an insert by a where on SQL Server, reading the one table it has', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       on: 'afterInsert',
       where: { $new: { body: { $ne: null } } },
       run: (newRow) => insertInto(Post, { searchVector: newRow.body }),
     }).join('\n');
-    expect(sql).toContain('SELECT inserted."body" FROM inserted WHERE inserted."body" IS NOT NULL;');
+    expect(statement).toContain('SELECT inserted."body" FROM inserted WHERE inserted."body" IS NOT NULL;');
   });
 
   it('should keep the rows a write names beside the ones the trigger narrows to', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       ...audited,
       run: (newRow) => updateTable(Post, { $where: { id: newRow.id } }, { searchVector: newRow.body }),
     }).join('\n');
-    expect(sql).toContain(
+    expect(statement).toContain(
       'UPDATE "Post" SET "searchVector" = inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
         'WHERE "Post"."id" = inserted."id" AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body");',
     );
@@ -263,17 +263,17 @@ describe('the guard, however the engine states one', () => {
   });
 
   it('should narrow each of several writes joined in one raw on SQL Server, having no SQL of its own', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       ...audited,
       run: (newRow) =>
-        raw`${insertInto(Post, { searchVector: newRow.body })}
+        sql`${insertInto(Post, { searchVector: newRow.body })}
           ${deleteFrom(Post, { $where: { id: newRow.id } })}`,
     }).join('\n');
     const narrowed = 'WHERE EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body")';
-    expect(sql).toContain(
+    expect(statement).toContain(
       `SELECT inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id" ${narrowed};`,
     );
-    expect(sql).toContain(
+    expect(statement).toContain(
       `WHERE "Post"."id" = inserted."id" AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body");`,
     );
   });
@@ -282,7 +282,7 @@ describe('the guard, however the engine states one', () => {
     expect(() =>
       render(new MsSqlDialect(), {
         ...audited,
-        run: (newRow) => raw`${insertInto(Post, { searchVector: newRow.body })} SELECT 1;`,
+        run: (newRow) => sql`${insertInto(Post, { searchVector: newRow.body })} SELECT 1;`,
       }),
     ).toThrow(/once per statement/);
   });
@@ -290,54 +290,54 @@ describe('the guard, however the engine states one', () => {
   // Measured, not assumed: CockroachDB has no `UPDATE OF`, and its `WHEN` resolves neither OLD nor NEW,
   // so the guard has to go inside the body. The body itself is written once, for Postgres.
   it('should emulate the guard in the body on CockroachDB, which has no usable WHEN', () => {
-    const sql = render(new CockroachDialect(), stamp).join('\n');
-    expect(sql).toContain('BEFORE UPDATE ON "Post"');
-    expect(sql).not.toContain('UPDATE OF');
-    expect(sql).not.toContain('WHEN (');
-    expect(sql).toContain('IF OLD."body" IS DISTINCT FROM NEW."body" THEN');
+    const statement = render(new CockroachDialect(), stamp).join('\n');
+    expect(statement).toContain('BEFORE UPDATE ON "Post"');
+    expect(statement).not.toContain('UPDATE OF');
+    expect(statement).not.toContain('WHEN (');
+    expect(statement).toContain('IF OLD."body" IS DISTINCT FROM NEW."body" THEN');
   });
 
   it('should emulate it inside the body where the engine has no WHEN', () => {
-    const sql = render(new MySqlDialect(), {
+    const statement = render(new MySqlDialect(), {
       ...stamp,
-      run: { mysql: (newRow) => raw`SET @x = ${newRow.body};` },
+      run: { mysql: (newRow) => sql`SET @x = ${newRow.body};` },
     }).join('\n');
-    expect(sql).not.toContain('WHEN (');
-    expect(sql).toContain('IF NOT (OLD.`body` <=> NEW.`body`) THEN');
+    expect(statement).not.toContain('WHEN (');
+    expect(statement).toContain('IF NOT (OLD.`body` <=> NEW.`body`) THEN');
   });
 
   it("should take MySQL's body on MariaDB, which runs MySQL's SQL", () => {
-    const sql = render(new MariaDialect(), {
+    const statement = render(new MariaDialect(), {
       ...stamp,
-      run: { mysql: (newRow) => raw`SET @x = ${newRow.body};` },
+      run: { mysql: (newRow) => sql`SET @x = ${newRow.body};` },
     }).join('\n');
-    expect(sql).toContain('SET @x = NEW.`body`;');
+    expect(statement).toContain('SET @x = NEW.`body`;');
   });
 
   it('should emulate it on MariaDB as on MySQL, one family one rule', () => {
-    const sql = render(new MariaDialect(), {
+    const statement = render(new MariaDialect(), {
       ...stamp,
-      run: { mariadb: (newRow) => raw`SET @x = ${newRow.body};` },
+      run: { mariadb: (newRow) => sql`SET @x = ${newRow.body};` },
     }).join('\n');
-    expect(sql).toContain('IF NOT (OLD.`body` <=> NEW.`body`) THEN');
+    expect(statement).toContain('IF NOT (OLD.`body` <=> NEW.`body`) THEN');
   });
 
   it('should or two watched columns together, bracketed so a `where` beside them still ands', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       ...stamp,
       of: ['body', 'searchVector'],
-      where: (newRow) => raw`${newRow.body} IS NOT NULL`,
+      where: (newRow) => sql`${newRow.body} IS NOT NULL`,
     }).join('\n');
-    expect(sql).toContain(
+    expect(statement).toContain(
       'WHEN ((OLD."body" IS DISTINCT FROM NEW."body" OR OLD."searchVector" IS DISTINCT FROM NEW."searchVector")' +
         ' AND (NEW."body" IS NOT NULL))',
     );
   });
 
   it('should emit no guard at all where the trigger names no columns', () => {
-    const sql = render(new PostgresDialect(), { ...stamp, of: undefined }).join('\n');
-    expect(sql).not.toContain('WHEN (');
-    expect(sql).toContain('BEFORE UPDATE ON "Post"');
+    const statement = render(new PostgresDialect(), { ...stamp, of: undefined }).join('\n');
+    expect(statement).not.toContain('WHEN (');
+    expect(statement).toContain('BEFORE UPDATE ON "Post"');
   });
 });
 
@@ -353,78 +353,80 @@ describe('the where guard', () => {
 
   afterAll(() => removeEntity(Scoped));
 
-  const archived: EntityTriggerMeta<Post> = { ...stamp, where: (newRow) => raw`${newRow.body} IS NOT NULL` };
+  const archived: EntityTriggerMeta<Post> = { ...stamp, where: (newRow) => sql`${newRow.body} IS NOT NULL` };
 
   it('should read the row it names, as the body does', () => {
-    const sql = render(new PostgresDialect(), archived).join('\n');
-    expect(sql).toContain('WHEN (');
-    expect(sql).toContain('NEW."body" IS NOT NULL');
+    const statement = render(new PostgresDialect(), archived).join('\n');
+    expect(statement).toContain('WHEN (');
+    expect(statement).toContain('NEW."body" IS NOT NULL');
   });
 
   it('should stand alone where the trigger watches no columns', () => {
-    const sql = render(new PostgresDialect(), { ...archived, of: undefined }).join('\n');
-    expect(sql).toContain('WHEN (NEW."body" IS NOT NULL)');
+    const statement = render(new PostgresDialect(), { ...archived, of: undefined }).join('\n');
+    expect(statement).toContain('WHEN (NEW."body" IS NOT NULL)');
   });
 
   it('should join the watched columns with AND, both having to hold', () => {
-    const sql = render(new PostgresDialect(), archived).join('\n');
-    expect(sql).toContain('WHEN (OLD."body" IS DISTINCT FROM NEW."body" AND (NEW."body" IS NOT NULL))');
+    const statement = render(new PostgresDialect(), archived).join('\n');
+    expect(statement).toContain('WHEN (OLD."body" IS DISTINCT FROM NEW."body" AND (NEW."body" IS NOT NULL))');
   });
 
   it('should take a predicate object, rendered against the row it names', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       ...stamp,
       of: undefined,
       where: { $new: { body: { $ne: null } } },
     }).join('\n');
-    expect(sql).toContain('WHEN (NEW."body" IS NOT NULL)');
+    expect(statement).toContain('WHEN (NEW."body" IS NOT NULL)');
   });
 
   it('should read the outgoing row where the predicate names it', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       on: 'afterDelete',
       where: { $old: { body: { $ne: null } } },
-      run: { postgres: () => raw`SELECT 1;` },
+      run: { postgres: () => sql`SELECT 1;` },
     }).join('\n');
-    expect(sql).toContain('WHEN (OLD."body" IS NOT NULL)');
+    expect(statement).toContain('WHEN (OLD."body" IS NOT NULL)');
   });
 
   // Each piece bracketed, so an `$or` inside one never swallows the `AND` joining it to the next.
   it('should keep an $or in a predicate from escaping the watched columns beside it', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       ...stamp,
       where: { $new: { $or: [{ body: 'a' }, { body: 'b' }] } },
     }).join('\n');
-    expect(sql).toContain(`WHEN (OLD."body" IS DISTINCT FROM NEW."body" AND (NEW."body" = 'a' OR NEW."body" = 'b'))`);
+    expect(statement).toContain(
+      `WHEN (OLD."body" IS DISTINCT FROM NEW."body" AND (NEW."body" = 'a' OR NEW."body" = 'b'))`,
+    );
   });
 
   // A transition, which `of` alone cannot state: changed, and from what to what.
   it('should hold a predicate on each row at once', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       ...stamp,
       of: undefined,
       where: { $old: { body: 'draft' }, $new: { body: { $in: ['published', 'featured'] } } },
     }).join('\n');
-    expect(sql).toContain(`WHEN (OLD."body" = 'draft' AND NEW."body" IN ('published', 'featured'))`);
+    expect(statement).toContain(`WHEN (OLD."body" = 'draft' AND NEW."body" IN ('published', 'featured'))`);
   });
 
   it('should spell a predicate as each engine does, from the one declaration', () => {
-    const sql = render(new MySqlDialect(), {
+    const statement = render(new MySqlDialect(), {
       ...stamp,
       of: undefined,
       where: { $new: { body: { $ne: null } } },
-      run: { mysql: () => raw`SET @x = 1;` },
+      run: { mysql: () => sql`SET @x = 1;` },
     }).join('\n');
-    expect(sql).toContain('IF NEW.`body` IS NOT NULL THEN');
+    expect(statement).toContain('IF NEW.`body` IS NOT NULL THEN');
   });
 
   it('should move into the body where the engine has no WHEN', () => {
-    const sql = render(new MySqlDialect(), {
+    const statement = render(new MySqlDialect(), {
       ...archived,
       of: undefined,
-      run: { mysql: () => raw`SET @x = 1;` },
+      run: { mysql: () => sql`SET @x = 1;` },
     }).join('\n');
-    expect(sql).toContain('IF NEW.`body` IS NOT NULL THEN');
+    expect(statement).toContain('IF NEW.`body` IS NOT NULL THEN');
   });
 
   // A filter scopes what a request reads, and a trigger serves no request: its guard holds what it states.
@@ -432,10 +434,10 @@ describe('the where guard', () => {
     const trigger: EntityTriggerMeta<Scoped> = {
       on: 'afterUpdate',
       where: { $new: { status: 'x' } },
-      run: () => raw`SELECT 1;`,
+      run: () => sql`SELECT 1;`,
     };
-    const sql = renderTrigger(new PostgresDialect(), getMeta(Scoped), trigger, 0).statements.join('\n');
-    expect(sql).toContain(`WHEN (NEW."status" = 'x')\n`);
+    const statement = renderTrigger(new PostgresDialect(), getMeta(Scoped), trigger, 0).statements.join('\n');
+    expect(statement).toContain(`WHEN (NEW."status" = 'x')\n`);
   });
 });
 
@@ -443,7 +445,7 @@ describe('a stamp, which uql writes the body of', () => {
   @Entity({ name: 'Note' })
   class Note {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number, computed: raw`1`, stored: ['update'] }) touched?: number | null;
+    @Field({ type: Number, computed: sql`1`, stored: ['update'] }) touched?: number | null;
   }
 
   const stampSql = (dialect: AbstractSqlDialect, meta = getMeta(Note)) =>
@@ -463,9 +465,9 @@ describe('a stamp, which uql writes the body of', () => {
 
   // SQLite forbids writing `NEW`, so the row is restated after the write instead.
   it('should restate the row where a body may not assign to it', () => {
-    const sql = stampSql(new SqliteDialect());
-    expect(sql).toContain('AFTER UPDATE ON `Note`');
-    expect(sql).toContain(
+    const statement = stampSql(new SqliteDialect());
+    expect(statement).toContain('AFTER UPDATE ON `Note`');
+    expect(statement).toContain(
       'UPDATE `Note` SET `touched` = 1 WHERE `Note`.`id` = NEW.`id` AND `Note`.`touched` IS NOT 1;',
     );
   });
@@ -485,10 +487,10 @@ describe('a stamp, which uql writes the body of', () => {
       [idKey]?: 'left';
       @Id({ type: Number }) left?: number;
       @Id({ type: Number }) right?: number;
-      @Field({ type: Number, computed: raw`1`, stored: ['update'] }) touched?: number | null;
+      @Field({ type: Number, computed: sql`1`, stored: ['update'] }) touched?: number | null;
     }
-    const sql = stampSql(new SqliteDialect(), getMeta(Pair));
-    expect(sql).toContain('WHERE `Pair`.`left` = NEW.`left` AND `Pair`.`right` = NEW.`right` AND');
+    const statement = stampSql(new SqliteDialect(), getMeta(Pair));
+    expect(statement).toContain('WHERE `Pair`.`left` = NEW.`left` AND `Pair`.`right` = NEW.`right` AND');
     removeEntity(Pair);
   });
 
@@ -496,7 +498,7 @@ describe('a stamp, which uql writes the body of', () => {
     @Entity({ name: 'Both' })
     class Both {
       @Id({ type: Number }) id?: number;
-      @Field({ type: Number, computed: raw`1`, stored: ['insert', 'update'] }) touched?: number | null;
+      @Field({ type: Number, computed: sql`1`, stored: ['insert', 'update'] }) touched?: number | null;
     }
     const names = stampTriggers(new PostgresDialect(), getMeta(Both)).map((it) => it.name);
     expect(names).toEqual(['touched_insert', 'touched_update']);
@@ -505,7 +507,7 @@ describe('a stamp, which uql writes the body of', () => {
 });
 
 describe('what a row trigger hands back', () => {
-  const run = { postgres: () => raw`SELECT 1;` };
+  const run = { postgres: () => sql`SELECT 1;` };
 
   it('should return the incoming row before an insert, or the write is discarded', () => {
     expect(render(new PostgresDialect(), { on: 'beforeInsert', run }).join('\n')).toContain('RETURN NEW;');
@@ -523,24 +525,24 @@ describe('what a row trigger hands back', () => {
 
 describe('the rows it reads', () => {
   it('should render each row it names as the record the engine hands a row trigger', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       on: 'afterUpdate',
-      run: { postgres: (newRow, oldRow) => raw`PERFORM ${newRow.body}, ${oldRow.body};` },
+      run: { postgres: (newRow, oldRow) => sql`PERFORM ${newRow.body}, ${oldRow.body};` },
     }).join('\n');
-    expect(sql).toContain('PERFORM NEW."body", OLD."body";');
+    expect(statement).toContain('PERFORM NEW."body", OLD."body";');
   });
 
   it('should render them as the tables a set-based engine hands it instead', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       on: 'afterUpdate',
-      run: { mssql: (newRow, oldRow) => raw`SELECT ${newRow.body}, ${oldRow.body} FROM inserted, deleted;` },
+      run: { mssql: (newRow, oldRow) => sql`SELECT ${newRow.body}, ${oldRow.body} FROM inserted, deleted;` },
     }).join('\n');
-    expect(sql).toContain('SELECT inserted."body", deleted."body" FROM inserted, deleted;');
+    expect(statement).toContain('SELECT inserted."body", deleted."body" FROM inserted, deleted;');
   });
 
   // Named rather than positional, so one body reading the row two events share reads it on both.
   it('should read the outgoing row alike on an update and a delete', () => {
-    const logOld: EntityTriggerMeta<Post>['run'] = { postgres: (_newRow, oldRow) => raw`PERFORM ${oldRow.body};` };
+    const logOld: EntityTriggerMeta<Post>['run'] = { postgres: (_newRow, oldRow) => sql`PERFORM ${oldRow.body};` };
     for (const on of ['afterUpdate', 'afterDelete'] as const) {
       expect(render(new PostgresDialect(), { on, run: logOld }).join('\n')).toContain('PERFORM OLD."body";');
     }
@@ -551,16 +553,16 @@ describe('the rows it reads', () => {
   });
 
   it('should refuse a before event on SQL Server, which has only AFTER and INSTEAD OF', () => {
-    expect(() => render(new MsSqlDialect(), { ...stamp, run: { mssql: () => raw`SELECT 1;` } })).toThrow(/before/i);
+    expect(() => render(new MsSqlDialect(), { ...stamp, run: { mssql: () => sql`SELECT 1;` } })).toThrow(/before/i);
   });
 
   it('should fire per statement on SQL Server, reading the set it touched', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       on: 'afterUpdate',
-      run: { mssql: () => raw`SELECT 1;` },
+      run: { mssql: () => sql`SELECT 1;` },
     }).join('\n');
-    expect(sql).toContain('AFTER UPDATE');
-    expect(sql).not.toContain('FOR EACH ROW');
+    expect(statement).toContain('AFTER UPDATE');
+    expect(statement).not.toContain('FOR EACH ROW');
   });
 
   // The table a trigger names is qualified: two schemas may hold a table of the same name.
@@ -569,8 +571,8 @@ describe('the rows it reads', () => {
     class Note {
       @Id({ type: Number }) id?: number;
     }
-    const sql = renderTrigger(new PostgresDialect(), getMeta(Note), plain, 0).statements.join('\n');
-    expect(sql).toContain('ON "sales"."Note"');
+    const statement = renderTrigger(new PostgresDialect(), getMeta(Note), plain, 0).statements.join('\n');
+    expect(statement).toContain('ON "sales"."Note"');
     removeEntity(Note);
   });
 
@@ -598,12 +600,12 @@ describe('the rows it reads', () => {
       @Id({ type: Number }) id?: number;
     }
     const meta = getMeta(Note);
-    const mysql = renderTrigger(new MySqlDialect(), meta, { on: 'afterInsert', run: () => raw`SET @x = 1;` }, 0);
+    const mysql = renderTrigger(new MySqlDialect(), meta, { on: 'afterInsert', run: () => sql`SET @x = 1;` }, 0);
     expect(mysql.statements.join('\n')).toContain(`CREATE TRIGGER \`sales\`.\`${mysql.name}\``);
     expect(dropTrigger(new MySqlDialect(), 'sales.Note', mysql.name)).toEqual([
       `DROP TRIGGER IF EXISTS \`sales\`.\`${mysql.name}\``,
     ]);
-    const mssql = renderTrigger(new MsSqlDialect(), meta, { on: 'afterInsert', run: () => raw`SELECT 1;` }, 0);
+    const mssql = renderTrigger(new MsSqlDialect(), meta, { on: 'afterInsert', run: () => sql`SELECT 1;` }, 0);
     expect(mssql.statements.join('\n')).toContain(`CREATE TRIGGER "sales"."${mssql.name}"`);
     removeEntity(Note);
   });
@@ -667,8 +669,8 @@ describe('a write in the body, to another table', () => {
       dialect: new MsSqlDialect(),
       sql: `INSERT INTO "WriteAudit" ("post_id", "body") SELECT inserted."id", N'it''s' FROM inserted;`,
     },
-  ])('should insert on $dialect.dialectName', ({ dialect, sql }) => {
-    expect(render(dialect, inserted).join('\n')).toContain(sql);
+  ])('should insert on $dialect.dialectName', ({ dialect, sql: statement }) => {
+    expect(render(dialect, inserted).join('\n')).toContain(statement);
   });
 
   // No filter narrows the rows named: the security one would bake in the tenant of whoever ran `sync`.
@@ -699,8 +701,8 @@ describe('a write in the body, to another table', () => {
         'UPDATE "WriteAudit" SET "body" = inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id"' +
         ' WHERE "WriteAudit"."post_id" = inserted."id";',
     },
-  ])('should update the rows it names, and no others, on $dialect.dialectName', ({ dialect, sql }) => {
-    expect(render(dialect, updated).join('\n')).toContain(sql);
+  ])('should update the rows it names, and no others, on $dialect.dialectName', ({ dialect, sql: statement }) => {
+    expect(render(dialect, updated).join('\n')).toContain(statement);
   });
 
   // Outright, though the table soft-deletes, and with no filter narrowing the rows named.
@@ -714,26 +716,26 @@ describe('a write in the body, to another table', () => {
       dialect: new MsSqlDialect(),
       sql: 'DELETE FROM "WriteAudit" FROM deleted WHERE "WriteAudit"."post_id" = deleted."id";',
     },
-  ])('should delete the rows it names outright on $dialect.dialectName', ({ dialect, sql }) => {
-    expect(render(dialect, deleted).join('\n')).toContain(sql);
+  ])('should delete the rows it names outright on $dialect.dialectName', ({ dialect, sql: statement }) => {
+    expect(render(dialect, deleted).join('\n')).toContain(statement);
   });
 
   it('should take a counter where the engine fires per row', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       on: 'afterInsert',
       run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { hits: { $inc: 1 } }),
     }).join('\n');
-    expect(sql).toContain(
+    expect(statement).toContain(
       'UPDATE "WriteAudit" SET "hits" = COALESCE("hits", 0) + 1 WHERE "WriteAudit"."post_id" = NEW."id";',
     );
   });
 
   it('should step a counter by a column of the incoming row', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       on: 'afterInsert',
       run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { hits: { $inc: newRow.id } }),
     }).join('\n');
-    expect(sql).toContain('UPDATE "WriteAudit" SET "hits" = COALESCE("hits", 0) + (NEW."id") WHERE');
+    expect(statement).toContain('UPDATE "WriteAudit" SET "hits" = COALESCE("hits", 0) + (NEW."id") WHERE');
   });
 
   // A set-based UPDATE writes a target once however many rows of the set match it, so what accumulates
@@ -757,14 +759,14 @@ describe('a write in the body, to another table', () => {
   });
 
   it('should run several writes in one body, each reading the rows it was handed', () => {
-    const sql = render(new MsSqlDialect(), {
+    const statement = render(new MsSqlDialect(), {
       on: 'afterDelete',
       run: (_newRow, oldRow) =>
-        raw`${deleteFrom(WriteAudit, { $where: { postId: oldRow.id } })}
+        sql`${deleteFrom(WriteAudit, { $where: { postId: oldRow.id } })}
           ${insertInto(WriteAudit, { body: oldRow.body })}`,
     }).join('\n');
-    expect(sql).toContain('DELETE FROM "WriteAudit" FROM deleted WHERE "WriteAudit"."post_id" = deleted."id";');
-    expect(sql).toContain('INSERT INTO "WriteAudit" ("body") SELECT deleted."body" FROM deleted;');
+    expect(statement).toContain('DELETE FROM "WriteAudit" FROM deleted WHERE "WriteAudit"."post_id" = deleted."id";');
+    expect(statement).toContain('INSERT INTO "WriteAudit" ("body") SELECT deleted."body" FROM deleted;');
   });
 
   // Left out, a uuid uql fills in JavaScript would be NULL, and every write firing the trigger would fail.
@@ -780,11 +782,11 @@ describe('a write in the body, to another table', () => {
   });
 
   it('should take SQL in place of what uql would fill', () => {
-    const sql = render(new PostgresDialect(), {
+    const statement = render(new PostgresDialect(), {
       on: 'afterInsert',
-      run: (newRow) => insertInto(UuidAudit, { id: raw`gen_random_uuid()`, postId: newRow.id }),
+      run: (newRow) => insertInto(UuidAudit, { id: sql`gen_random_uuid()`, postId: newRow.id }),
     }).join('\n');
-    expect(sql).toContain('INSERT INTO "UuidAudit" ("id", "postId") VALUES (gen_random_uuid(), NEW."id");');
+    expect(statement).toContain('INSERT INTO "UuidAudit" ("id", "postId") VALUES (gen_random_uuid(), NEW."id");');
   });
 
   it('should refuse a write naming no field', () => {
@@ -845,18 +847,18 @@ describe('a deferred trigger, which fires at commit', () => {
   const balance: EntityTriggerMeta<Post> = {
     on: 'afterInsert',
     deferred: true,
-    run: { postgres: () => raw`PERFORM 1;` },
+    run: { postgres: () => sql`PERFORM 1;` },
   };
 
   it('should be a constraint trigger deferred to commit on Postgres', () => {
-    const sql = render(new PostgresDialect(), balance).join('\n');
-    expect(sql).toMatch(
+    const statement = render(new PostgresDialect(), balance).join('\n');
+    expect(statement).toMatch(
       /CREATE CONSTRAINT TRIGGER "[^"]+"\nAFTER INSERT ON "Post"\nDEFERRABLE INITIALLY DEFERRED\nFOR EACH ROW/,
     );
   });
 
   it('should refuse it where the engine cannot defer a trigger', () => {
-    const portable = { ...balance, run: () => raw`SELECT 1;` };
+    const portable = { ...balance, run: () => sql`SELECT 1;` };
     expect(() => render(new MySqlDialect(), portable)).toThrow(
       'mysql cannot defer a trigger to commit, which Post asks for; only Postgres can',
     );
@@ -897,7 +899,7 @@ describe('an upsert in the body, to another table', () => {
 
   /** The engine has the incoming row in scope beside the one there, so a ref to the table is qualified by it. */
   it('should read the row already there through SQL in its update', () => {
-    const summed = tally({ count: raw`${refs(Tally).count} + 1` });
+    const summed = tally({ count: sql`${refs(Tally).count} + 1` });
     expect(render(new PostgresDialect(), summed).join('\n')).toContain('DO UPDATE SET "count" = "Tally"."count" + 1;');
     expect(render(new MySqlDialect(), summed).join('\n')).toContain(
       'ON DUPLICATE KEY UPDATE `count` = `Tally`.`count` + 1;',

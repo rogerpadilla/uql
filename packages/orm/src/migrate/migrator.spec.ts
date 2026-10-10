@@ -9,7 +9,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
 import { createMockQuerier, createMockQuerierPool, linkUqlOrmSource, UQL_ORM_SOURCE } from '../test/index.js';
 import type { MigratorOptions, Querier } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { runDriftCheck } from './cli.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineMigration, Migrator } from './migrator.js';
@@ -52,7 +52,7 @@ describe('Migrator', () => {
     ).map((row) => row.name);
 
   const columns = async (table: string) =>
-    (await pool.all<{ name: string }>(raw.text(`SELECT name FROM pragma_table_info('${table}')`))).map(
+    (await pool.all<{ name: string }>(sql.text(`SELECT name FROM pragma_table_info('${table}')`))).map(
       (row) => row.name,
     );
 
@@ -60,11 +60,11 @@ describe('Migrator', () => {
   const writeMigration = (name: string, up: readonly string[], down: readonly string[] = [], declares = '') =>
     writeFile(
       join(dir, `${name}.mjs`),
-      `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+      `import { sql } from ${JSON.stringify(UQL_ORM_SOURCE)};
       export default {
         ${declares}
-        async up(querier) { for (const sql of ${JSON.stringify(up)}) await querier.run(raw.text(sql)); },
-        async down(querier) { for (const sql of ${JSON.stringify(down)}) await querier.run(raw.text(sql)); },
+        async up(querier) { for (const statement of ${JSON.stringify(up)}) await querier.run(sql.text(statement)); },
+        async down(querier) { for (const statement of ${JSON.stringify(down)}) await querier.run(sql.text(statement)); },
       };`,
     );
 
@@ -200,11 +200,11 @@ describe('Migrator', () => {
     const writeIncrement = (name: string, wait = 0) =>
       writeFile(
         join(dir, `${name}.mjs`),
-        `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+        `import { sql } from ${JSON.stringify(UQL_ORM_SOURCE)};
         export default {
           async up(querier) {
             await new Promise((resolve) => setTimeout(resolve, ${wait}));
-            await querier.run(raw.text('UPDATE counter SET n = n + 1'));
+            await querier.run(sql.text('UPDATE counter SET n = n + 1'));
           },
           async down() {},
         };`,
@@ -452,8 +452,8 @@ describe('Migrator', () => {
       class Second {
         @Id({ type: Number }) id?: number;
       }
-      await pool.run(raw.text('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)'));
-      await pool.run(raw.text('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)'));
+      await pool.run(sql.text('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)'));
+      await pool.run(sql.text('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)'));
       const migrator = migratorOf({ entities: [First, Second] });
 
       const filePath = await migrator.generateFromEntities('reorder');
@@ -563,8 +563,8 @@ describe('Migrator under a failing connection', () => {
     dir = await mkdtemp(join(tmpdir(), 'uql-migrator-'));
     await writeFile(
       join(dir, 'm1.mjs'),
-      `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
-      export default { up: (querier) => querier.run(raw.text('CREATE TABLE "MigNote" ("id" INTEGER)')), down: async () => {} };`,
+      `import { sql } from ${JSON.stringify(UQL_ORM_SOURCE)};
+      export default { up: (querier) => querier.run(sql.text('CREATE TABLE "MigNote" ("id" INTEGER)')), down: async () => {} };`,
     );
   });
 

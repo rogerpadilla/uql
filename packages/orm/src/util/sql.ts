@@ -5,21 +5,21 @@ import {
   type EntitySql,
   type EntityWhere,
   type EntityWhereMeta,
-  QueryRaw,
-  type QueryRawFn,
-  RAW_TEXT,
+  QuerySql,
+  type QuerySqlFn,
+  SQL_TEXT,
   type AggregatePage,
   type ComputedRefs,
-  type QueryRawRenderOptions,
+  type QuerySqlRenderOptions,
   type RefMap,
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
-  type RawValue,
+  type SqlArg,
   type SqlStatement,
   type SqlValueName,
   type TriggerRowName,
-  TriggerWriteRaw,
+  TriggerWriteSql,
   type Type,
 } from '../type/index.js';
 import { aggregateOf, isInlinedExpression } from './field.util.js';
@@ -27,29 +27,29 @@ import { entityName, hasKeys } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
- * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `raw` renders
- * in place: `raw`GREATEST(0, ${user.credits} - ${amount})``. A callback writes whatever it writes, so
+ * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `sql` renders
+ * in place: `sql`GREATEST(0, ${user.credits} - ${amount})``. A callback writes whatever it writes, so
  * never build one from user input. See the Raw SQL guide.
  */
-export function raw(strings: TemplateStringsArray, ...values: readonly RawValue[]): QueryRaw;
-export function raw(value: QueryRawFn): QueryRaw;
-export function raw(source: QueryRawFn | TemplateStringsArray, ...values: readonly RawValue[]): QueryRaw {
+export function sql(strings: TemplateStringsArray, ...values: readonly SqlArg[]): QuerySql;
+export function sql(value: QuerySqlFn): QuerySql;
+export function sql(source: QuerySqlFn | TemplateStringsArray, ...values: readonly SqlArg[]): QuerySql {
   if (!isTemplateStrings(source)) {
-    return new QueryRaw(source);
+    return new QuerySql(source);
   }
   if (!values.length) {
-    return raw.text(source[0]);
+    return sql.text(source[0]);
   }
   if (values.some((value) => value === undefined)) {
-    throw new UqlUsageError('a raw template interpolated undefined, which binds nothing: leave it out, or write null');
+    throw new UqlUsageError('an sql template interpolated undefined, which binds nothing: leave it out, or write null');
   }
   // Writes joined by whitespace alone are still only writes, so a set-based trigger narrows each one.
-  const writes = values.every((value) => value instanceof TriggerWriteRaw) && source.every((part) => !part.trim());
-  return new (writes ? TriggerWriteRaw : QueryRaw)((opts) => {
+  const writes = values.every((value) => value instanceof TriggerWriteSql) && source.every((part) => !part.trim());
+  return new (writes ? TriggerWriteSql : QuerySql)((opts) => {
     const { ctx } = opts;
     ctx.append(source[0]);
     values.forEach((value, i) => {
-      if (value instanceof QueryRaw) {
+      if (value instanceof QuerySql) {
         value.render(opts);
       } else {
         ctx.addValue(value);
@@ -59,9 +59,9 @@ export function raw(source: QueryRawFn | TemplateStringsArray, ...values: readon
   });
 }
 
-/** `parts` one after another, `separator` between each, every part binding its own values: `raw.join(conditions, ' AND ')`. */
-raw.join = function join(parts: readonly QueryRaw[], separator = ', '): QueryRaw {
-  return new QueryRaw((opts) => {
+/** `parts` one after another, `separator` between each, every part binding its own values: `sql.join(conditions, ' AND ')`. */
+sql.join = function join(parts: readonly QuerySql[], separator = ', '): QuerySql {
+  return new QuerySql((opts) => {
     parts.forEach((part, index) => {
       if (index) {
         opts.ctx.append(separator);
@@ -72,31 +72,31 @@ raw.join = function join(parts: readonly QueryRaw[], separator = ', '): QueryRaw
 };
 
 /** SQL held in a string, run as written, binding nothing: for trusted text only, never built from user input. */
-raw.text = function text(sql: string): QueryRaw {
-  return new QueryRaw(() => sql, { text: sql });
+sql.text = function text(statement: string): QuerySql {
+  return new QuerySql(() => statement, { text: statement });
 };
 
-/** The statement `all` or `run` was handed: a tagged template's, or a `raw` built apart. */
-export function statementOf([sql, ...values]: SqlStatement): QueryRaw {
-  return sql instanceof QueryRaw ? sql : raw(sql, ...values);
+/** The statement `all` or `run` was handed: a tagged template's, or a `sql` built apart. */
+export function statementOf([statement, ...values]: SqlStatement): QuerySql {
+  return statement instanceof QuerySql ? statement : sql(statement, ...values);
 }
 
 /**
- * The SQL of a `raw` that names a constant, for a DDL clause with no dialect to render against and
+ * The SQL of a `sql` that names a constant, for a DDL clause with no dialect to render against and
  * nowhere to bind a value; `undefined` where it interpolates and so needs one.
  */
-export function constantSql(value: QueryRaw): string | undefined {
-  return value[RAW_TEXT];
+export function constantSql(value: QuerySql): string | undefined {
+  return value[SQL_TEXT];
 }
 
 /** A value the database computes, in each engine's SQL; one an engine has no function for throws. */
-function sqlValue(name: SqlValueName): QueryRaw {
-  return raw(({ dialect }) => {
-    const sql = dialect.sqlValues[name];
-    if (sql === undefined) {
+function sqlValue(name: SqlValueName): QuerySql {
+  return sql(({ dialect }) => {
+    const statement = dialect.sqlValues[name];
+    if (statement === undefined) {
       throw new UqlUsageError(`${dialect.dialectName} has no ${name}; write it as raw SQL this engine accepts`);
     }
-    return sql;
+    return statement;
   });
 }
 
@@ -104,22 +104,22 @@ function sqlValue(name: SqlValueName): QueryRaw {
  * The database's clock in UTC to the millisecond, the form uql reads a timestamp back in exactly. Use it for
  * a `defaultValue`, a stamp, an `onUpdate` or a `$where`, in entities and migrations alike.
  */
-export const currentTimestamp: QueryRaw = sqlValue('currentTimestamp');
+export const currentTimestamp: QuerySql = sqlValue('currentTimestamp');
 
 /** Today on the database's clock; on SQLite, the text a bound `Date` at midnight is. */
-export const currentDate: QueryRaw = sqlValue('currentDate');
+export const currentDate: QuerySql = sqlValue('currentDate');
 
 /** The time of day on the database's clock. */
-export const currentTime: QueryRaw = sqlValue('currentTime');
+export const currentTime: QuerySql = sqlValue('currentTime');
 
 /** A UUID the database generates: a version 4, or a version 1 on MySQL and MariaDB. SQLite has none. */
-export const uuid: QueryRaw = sqlValue('uuid');
+export const uuid: QuerySql = sqlValue('uuid');
 
 /** A time-ordered version 7 UUID, which indexes better as a key. Postgres 18+ and MariaDB 11.7+ only. */
-export const uuidv7: QueryRaw = sqlValue('uuidv7');
+export const uuidv7: QuerySql = sqlValue('uuidv7');
 
 /** Each value above by its name, the name a migration or `generate:from-db` writes it under. */
-export const SQL_VALUES: Readonly<Record<SqlValueName, QueryRaw>> = {
+export const SQL_VALUES: Readonly<Record<SqlValueName, QuerySql>> = {
   currentTimestamp,
   currentDate,
   currentTime,
@@ -128,7 +128,7 @@ export const SQL_VALUES: Readonly<Record<SqlValueName, QueryRaw>> = {
 };
 
 /**
- * The fields of `entity` as {@link ColumnRef}s, each rendering inside `raw` as its column: named the way
+ * The fields of `entity` as {@link ColumnRef}s, each rendering inside `sql` as its column: named the way
  * the dialect names it, so the naming strategy and `@Field({ name })` apply, and qualified by the alias
  * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
  */
@@ -147,8 +147,8 @@ export function memberRefs<E>(): ComputedRefs<E> {
 }
 
 /** SQL a definition writes, a callback's refs read off {@link memberRefs}. */
-export function entitySql<E>(sql: EntitySql<E>): QueryRaw {
-  return sql instanceof QueryRaw ? sql : sql(memberRefs<E>());
+export function entitySql<E>(statement: EntitySql<E>): QuerySql {
+  return statement instanceof QuerySql ? statement : statement(memberRefs<E>());
 }
 
 /** A definition's predicate, its callback resolved the way {@link entitySql} resolves one. */
@@ -226,7 +226,7 @@ function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: s
  * Under a `qualifier` the column is read off that row rather than off the alias in scope, and the row is
  * written verbatim: it is a record the engine declares, not an identifier to quote and case-fold.
  */
-function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderOptions, qualifier?: string): void {
+function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderOptions, qualifier?: string): void {
   const scope = qualifier === undefined ? opts : { ...opts, escapedPrefix: `${qualifier}.` };
   const field = meta.fields[key];
   if (field && isInlinedExpression(field)) {
@@ -245,7 +245,10 @@ function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderO
   scope.ctx.append(scope.escapedPrefix + scope.dialect.escapeId(scope.dialect.columnOf(meta, key), true));
 }
 
-/** A tag call passes the frozen strings array, which carries its own `raw` counterpart. */
+/** @deprecated Renamed to {@link sql}, the tag editors recognise for SQL highlighting. */
+export const raw = sql;
+
+/** A tag call passes the frozen strings array, which carries its own `sql` counterpart. */
 function isTemplateStrings(value: unknown): value is TemplateStringsArray {
   return Array.isArray(value) && Array.isArray(Reflect.get(value, 'raw'));
 }

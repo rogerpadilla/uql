@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.101.2] - 2026-10-10
+
+- Renamed: `raw` is now `sql`, the tag editors highlight as SQL: ``sql`...` ``, `sql.join`, `sql.text`. `raw` still works, deprecated.
+- `generate:from-db` writes ``sql`...` `` in entities.
+
 ## [0.101.1] - 2026-10-10
 
 - `uql-orm/migrate`, `uql-orm/http` and the driver entries export only what the docs use: the CLI helpers, DDL classes, drift detection and the dialects' feature tables are no longer exported.

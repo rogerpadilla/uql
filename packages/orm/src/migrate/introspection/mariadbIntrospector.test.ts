@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { MariadbQuerierPool } from '../../mariadb/mariadbQuerierPool.js';
 import { createSpec, mariadbConnection } from '../../test/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { MySqlFamilyIntrospectorIt } from './mysqlFamilyIntrospector-test.js';
 
 class MariadbIntrospectorIt extends MySqlFamilyIntrospectorIt {
@@ -10,7 +10,7 @@ class MariadbIntrospectorIt extends MySqlFamilyIntrospectorIt {
   /** MariaDB prints a nullable column's default as `NULL`, stated or not, where MySQL prints none. */
   async shouldReadANullableColumnsDefaultAsNull() {
     const schema = await this.probe('probe_null_default', (querier, table) =>
-      querier.run(raw.text(`CREATE TABLE ${table} (stated INT DEFAULT NULL, implied INT)`)),
+      querier.run(sql.text(`CREATE TABLE ${table} (stated INT DEFAULT NULL, implied INT)`)),
     );
 
     expect(schema.columns.map(({ name, defaultValue }) => ({ name, defaultValue }))).toEqual([

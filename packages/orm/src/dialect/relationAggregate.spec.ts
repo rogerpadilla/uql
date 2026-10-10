@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defineField, Entity, Field, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { Query, QueryAggregate } from '../type/index.js';
-import { memberRefs, raw } from '../util/index.js';
+import { memberRefs, sql } from '../util/index.js';
 
 /**
  * A field a relation aggregate computes reads as the correlated subquery `$count` already emits, so
@@ -179,7 +179,7 @@ describe('relation aggregate', () => {
   it('should refuse to render outside the entity that declares it', () => {
     const ctx = dialect.createContext();
     const orphan = memberRefs<Project>().tasks.count();
-    expect(() => dialect.find(ctx, Project, { $select: [raw`${orphan}`.as('x')] })).toThrow(
+    expect(() => dialect.find(ctx, Project, { $select: [sql`${orphan}`.as('x')] })).toThrow(
       "'tasks' was read off a definition's refs",
     );
   });

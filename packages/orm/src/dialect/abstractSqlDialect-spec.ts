@@ -21,7 +21,7 @@ import {
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
-import { raw, refs } from '../util/index.js';
+import { sql, refs } from '../util/index.js';
 import { UqlSecurityError } from '../util/uqlError.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -41,7 +41,7 @@ const EVERY_TAG_FIELD = {
 class SoftDeleteRaw {
   @Id({ type: Number })
   id?: number;
-  @Field({ type: Date, softDelete: () => raw(() => 'NOW()') })
+  @Field({ type: Date, softDelete: () => sql(() => 'NOW()') })
   deletedAt?: Date | null;
 }
 
@@ -211,9 +211,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   /** Every engine wants the lock after `LIMIT`/`OFFSET`, which `pager` emits. */
   shouldPlaceLockAfterLimitAndOffset() {
-    const sql = this.lockedSql({ $select: { id: true }, $limit: 10, $skip: 5, $lock: true });
-    expect(sql.endsWith(this.lockClause())).toBe(true);
-    expect(sql.indexOf('LIMIT')).toBeLessThan(sql.indexOf('FOR UPDATE'));
+    const statement = this.lockedSql({ $select: { id: true }, $limit: 10, $skip: 5, $lock: true });
+    expect(statement.endsWith(this.lockClause())).toBe(true);
+    expect(statement.indexOf('LIMIT')).toBeLessThan(statement.indexOf('FOR UPDATE'));
   }
 
   /** A lock belongs to a SELECT: `search` is shared, so these must stay clean. */
@@ -258,8 +258,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldNarrowLockToRootTableWhenPopulating() {
     const e = this.dialect.escapeIdChar;
-    const sql = this.lockedSql({ $select: { id: true }, $populate: { company: true }, $lock: true });
-    expect(sql).toContain(this.lockClause('block', ` OF ${e}User${e}`));
+    const statement = this.lockedSql({ $select: { id: true }, $populate: { company: true }, $lock: true });
+    expect(statement).toContain(this.lockClause('block', ` OF ${e}User${e}`));
   }
 
   /** MariaDB has no `OF`, so it refuses a lock over a join rather than lock the joined rows too. */
@@ -272,11 +272,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A chain past 16 operands splits in halves, so its depth grows with the log of its length. */
   shouldNestALongOrInHalves() {
     const $or = Array.from({ length: 20 }, (_, at) => ({ name: `n${at}` }));
-    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: { $or } }));
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $or } }),
+    );
     const name = this.dialect.escapeId('name');
     const half = (from: number) =>
       Array.from({ length: 10 }, (_, at) => `${name} = ${this.ph(from + at)}`).join(' OR ');
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${this.dialect.escapeId('id')} FROM ${this.dialect.escapeId('User')} WHERE (${half(1)}) OR (${half(11)})`,
     );
   }
@@ -294,7 +296,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldInsertMany() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
         {
           name: 'Some name 1',
@@ -313,7 +315,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)' +
         this.returningClause(User),
     );
@@ -339,13 +341,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * database default.
    */
   shouldInsertManyWithHeterogeneousColumns() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
         { id: '5', name: 'Some name 1', createdAt: 123 },
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (?, ?, ?, ?)' +
         this.returningClause(User),
     );
@@ -381,8 +383,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   /** Every column the key or its default, so the statement names none. */
   shouldInsertARowWithNothingToWrite() {
-    const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, InvoiceLine, {}));
-    expect(sql).toBe(this.emptyRowInsert());
+    const { sql: statement, values } = this.exec((ctx) => this.dialect.insert(ctx, InvoiceLine, {}));
+    expect(statement).toBe(this.emptyRowInsert());
     expect(values).toEqual([]);
   }
 
@@ -399,13 +401,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldInsertWithOnInsertId() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       'INSERT INTO `TaxCategory` (`name`, `createdAt`, `pk`) VALUES (?, ?, ?)' + this.returningClause(TaxCategory),
     );
     expect(values[0]).toBe('Some Name');
@@ -414,19 +416,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldUpdateWithRawString() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         Company,
         { $where: { id: '1' } },
         {
-          kind: raw`'value'`,
+          kind: sql`'value'`,
           updatedAt: 123,
         },
       ),
     );
     const e = this.dialect.escapeIdChar;
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Company${e} SET ${e}kind${e} = 'value', ${e}updatedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)}`,
     );
     expect(values).toEqual([123, '1']);
@@ -435,10 +437,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** `$inc` adds in the statement, so no read races it, and a NULL counts as 0, as MongoDB's does. */
   shouldUpdateWithIncrement() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: -2 }, updatedAt: 123 }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) + ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
     );
     expect(values).toEqual([-2, 123, '1']);
@@ -447,10 +449,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A step in SQL is parenthesized, so the operator applies to the whole of it. */
   shouldUpdateWithARawIncrement() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
-      this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: raw`2 - 1` }, updatedAt: 123 }),
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: sql`2 - 1` }, updatedAt: 123 }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) + (2 - 1), ${e}updatedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)}`,
     );
   }
@@ -467,10 +469,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldUpdateWithMultiply() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $mul: 1.5 }, updatedAt: 123 }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) * ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
     );
     expect(values).toEqual([1.5, 123, '1']);
@@ -478,7 +480,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldUpdateWithJsonbField() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         Company,
@@ -489,7 +491,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Company${e} SET ${e}kind${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
     );
     expect(values).toEqual(['{"private":1}', 123, '1']);
@@ -504,11 +506,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   protected abstract readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }>;
 
   private assertJsonUpdate(name: JsonUpdateCaseName): void {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: JSON_UPDATE_PAYLOADS[name], updatedAt: 123 }),
     );
     const expected = this.jsonUpdateCases[name];
-    expect(sql).toBe(expected.sql);
+    expect(statement).toBe(expected.sql);
     expect(values).toEqual(expected.values);
   }
 
@@ -554,7 +556,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, TaxCategory, [
         {
           name: 'Some Name A',
@@ -572,7 +574,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       'INSERT INTO `TaxCategory` (`name`, `createdAt`, `pk`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)' +
         this.returningClause(TaxCategory),
     );
@@ -583,7 +585,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldUpsert() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.upsert(
         ctx,
         User,
@@ -595,14 +597,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toMatch(
+    expect(statement).toMatch(
       /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*`id`.*\) VALUES \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUE\(`name`\).*`createdAt` = VALUE\(`createdAt`\).*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid, expect.any(Number)]);
   }
 
   shouldUpsertMany() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.upsert(ctx, User, { email: true }, [
         {
           name: 'Name A',
@@ -616,13 +618,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
+    expect(statement).toMatch(
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE/,
+    );
     expect(values).toHaveLength(9);
   }
 
   shouldUpdate() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         User,
@@ -634,7 +638,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}User${e} SET ${e}name${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}name${e} = ${this.ph(3)} AND ${e}creatorId${e} = ${this.ph(4)}`,
     );
     expect(values).toEqual(['Some Text', 321, 'some', '123']);
@@ -642,7 +646,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldUpdateWithAlias() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         Profile,
@@ -653,7 +657,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}user_profile${e} SET ${e}image${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}pk${e} = ${this.ph(3)}`,
     );
     expect(values).toEqual(['a base64 image', 321, '123']);
@@ -661,18 +665,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldSoftDelete() {
     // MeasureUnit stamps `() => Date.now()`; delete becomes an UPDATE that only touches live rows.
-    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: '1' } }));
+    const { sql: statement, values } = this.exec((ctx) =>
+      this.dialect.delete(ctx, MeasureUnit, { $where: { id: '1' } }),
+    );
     const deletedAt = this.dialect.escapeId('deletedAt');
-    expect(sql).toContain(`UPDATE ${this.dialect.escapeId('MeasureUnit')} SET ${deletedAt} = `);
-    expect(sql).toContain(`${deletedAt} IS NULL`);
+    expect(statement).toContain(`UPDATE ${this.dialect.escapeId('MeasureUnit')} SET ${deletedAt} = `);
+    expect(statement).toContain(`${deletedAt} IS NULL`);
     expect(typeof values[0]).toBe('number');
     expect(values).toContain('1');
   }
 
   shouldSoftDeleteWithRawValue() {
     // A raw stamp is emitted inline, not bound as a parameter.
-    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, SoftDeleteRaw, { $where: { id: 1 } }));
-    expect(sql).toContain(`SET ${this.dialect.escapeId('deletedAt')} = NOW()`);
+    const { sql: statement, values } = this.exec((ctx) =>
+      this.dialect.delete(ctx, SoftDeleteRaw, { $where: { id: 1 } }),
+    );
+    expect(statement).toContain(`SET ${this.dialect.escapeId('deletedAt')} = NOW()`);
     expect(values).toEqual([1]);
   }
 
@@ -693,7 +701,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldGenerateRestoreUpdate() {
     // Restore = UPDATE set the soft-delete field to null, with the soft-delete read filter disabled.
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         MeasureUnit,
@@ -705,8 +713,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     const deletedAt = this.dialect.escapeId('deletedAt');
-    expect(sql).toContain(`SET ${deletedAt} = ${this.ph(1)}`);
-    expect(sql).not.toContain(`${deletedAt} IS NULL`); // soft-delete read filter disabled
+    expect(statement).toContain(`SET ${deletedAt} = ${this.ph(1)}`);
+    expect(statement).not.toContain(`${deletedAt} IS NULL`); // soft-delete read filter disabled
     expect(values).toContain('1');
   }
 
@@ -1114,14 +1122,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFindSingle$where() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: 'some' },
         $limit: 3,
       }),
     );
-    expect(sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)}${this.pgr(3)}`);
+    expect(statement).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)}${this.pgr(3)}`);
     expect(values).toEqual(['some']);
   }
 
@@ -1218,22 +1226,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A subquery reading the statement's own table takes an alias of its own, so the two stay apart. */
   shouldAliasARawSubqueryReadingItsStatementTable() {
     const q = (id: string) => this.dialect.escapeId(id);
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          $exists: raw(({ ctx, dialect, escapedPrefix }) =>
+          $exists: sql(({ ctx, dialect, escapedPrefix }) =>
             dialect.find(
               ctx,
               User,
-              { $select: { id: true }, $where: { creatorId: raw((o) => o.ctx.append(`${escapedPrefix}${q('id')}`)) } },
+              { $select: { id: true }, $where: { creatorId: sql((o) => o.ctx.append(`${escapedPrefix}${q('id')}`)) } },
               { autoPrefix: true },
             ),
           ),
         },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${q('id')} FROM ${q('User')} WHERE EXISTS (SELECT ${q('User_2')}.${q('id')} FROM ${q('User')} ${q('User_2')}` +
         ` WHERE ${q('User_2')}.${q('creatorId')} = ${q('User')}.${q('id')})`,
     );
@@ -1270,14 +1278,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$ne() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: 'some', companyId: { $ne: '5' } },
         $limit: 20,
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}companyId${e} <> ${this.ph(2)}${this.pgr(20)}`,
     );
     expect(values).toEqual(['some', '5']);
@@ -1382,14 +1390,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$nin() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: 'some', companyId: { $nin: ['1', '2', '3'] } },
         $limit: 10,
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}companyId${e} NOT IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)})${this.pgr(10)}`,
     );
     expect(values).toEqual(['some', '1', '2', '3']);
@@ -1397,10 +1405,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$selectFields() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, User, { $select: { id: true }, $populate: { company: true } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}User${e}.${e}id${e}, ${e}company${e}.${e}id${e} ${e}company.id${e}, ${e}company${e}.${e}companyId${e} ${e}company.companyId${e}, ${e}company${e}.${e}creatorId${e} ${e}company.creatorId${e}, ${e}company${e}.${e}createdAt${e} ${e}company.createdAt${e}, ${e}company${e}.${e}updatedAt${e} ${e}company.updatedAt${e}, ${e}company${e}.${e}name${e} ${e}company.name${e}, ${e}company${e}.${e}description${e} ${e}company.description${e}, ${e}company${e}.${e}kind${e} ${e}company.kind${e} FROM ${e}User${e} LEFT JOIN ${e}Company${e} ${e}company${e} ON ${e}company${e}.${e}id${e} = ${e}User${e}.${e}companyId${e}`,
     );
   }
@@ -1445,38 +1453,40 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A relation excluding every field reads every one, as `*` does for the statement's own rows. */
   shouldReadEveryFieldOfARelationExcludingAll() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags: { $exclude: EVERY_TAG_FIELD } } }),
     );
 
-    expect(sql).toContain(`${e}tags${e}.${e}name${e}`);
+    expect(statement).toContain(`${e}tags${e}.${e}name${e}`);
   }
 
   /** Reading every field, such a relation deduplicates on each, so it sorts by any. */
   shouldSortADistinctRelationExcludingAll() {
     const e = this.dialect.escapeIdChar;
     const tags = { $exclude: EVERY_TAG_FIELD, $distinct: true, $sort: { name: 1 } } as const;
-    const { sql } = this.exec((ctx) => this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags } }));
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags } }),
+    );
 
-    expect(sql).toContain(`${e}tags${e}.${e}name${e}`);
+    expect(statement).toContain(`${e}tags${e}.${e}name${e}`);
   }
 
   /** A raw projection reaches a populated relation qualified by its alias, as it reaches a read of its own. */
   shouldPopulateARawSelect() {
     const e = this.dialect.escapeIdChar;
-    const tax = { $select: [raw`UPPER(${refs(Tax).name})`.as('label')] };
-    const tags = { $select: [raw`UPPER(${refs(Tag).name})`.as('label')] };
-    const { sql } = this.exec((ctx) =>
+    const tax = { $select: [sql`UPPER(${refs(Tax).name})`.as('label')] };
+    const tags = { $select: [sql`UPPER(${refs(Tag).name})`.as('label')] };
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax, tags } }),
     );
 
-    expect(sql).toContain(`UPPER(${e}tax${e}.${e}name${e}) ${e}tax.label${e}`);
-    expect(sql).toContain(`UPPER(${e}tags${e}.${e}name${e})`);
+    expect(statement).toContain(`UPPER(${e}tax${e}.${e}name${e}) ${e}tax.label${e}`);
+    expect(statement).toContain(`UPPER(${e}tags${e}.${e}name${e})`);
   }
 
   /** A relation's row answers under keys, so a raw projection inside one needs the alias it lands under. */
   shouldRefuseAnUnaliasedRawSelectInARelation() {
-    const $select = [raw`1`];
+    const $select = [sql`1`];
     expect(() => this.exec((ctx) => this.dialect.find(ctx, Item, { $populate: { tax: { $select } } }))).toThrow(
       'a raw $select in a populated relation needs an alias',
     );
@@ -1488,26 +1498,26 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A to-many under a to-one hangs off the joined row: correlated to its alias, keyed under its path. */
   shouldPopulateAToManyUnderAToOne() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnit, {
         $select: { name: true },
         $populate: { category: { $populate: { measureUnits: { $select: { name: true } } } } },
       }),
     );
 
-    expect(sql).toContain(`${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e}`);
-    expect(sql).toContain(`${e}category.measureUnits${e}`);
+    expect(statement).toContain(`${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e}`);
+    expect(statement).toContain(`${e}category.measureUnits${e}`);
   }
 
   shouldFind$excludeOnAJoinedRelation() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $populate: { profile: { $exclude: { picture: true } } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}User${e}.${e}id${e}, ${e}profile${e}.${e}companyId${e} ${e}profile.companyId${e}, ${e}profile${e}.${e}creatorId${e} ${e}profile.creatorId${e}, ${e}profile${e}.${e}createdAt${e} ${e}profile.createdAt${e}, ${e}profile${e}.${e}updatedAt${e} ${e}profile.updatedAt${e}, ${e}profile${e}.${e}pk${e} ${e}profile.pk${e} FROM ${e}User${e} LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`,
     );
   }
@@ -1537,7 +1547,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$selectManyToOne() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: {
           id: true,
@@ -1551,7 +1561,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 100,
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
   }
@@ -1559,7 +1569,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A `security: true` filter on a joined to-one applies to a bare `$populate`, with no `$where` of its own. */
   shouldApplySecurityFilterToJoinedPopulateWithoutExplicitWhere() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = withContext({ secureTenantId: 5 }, () =>
+    const { sql: statement } = withContext({ secureTenantId: 5 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureParent, {
           $select: { id: true },
@@ -1567,7 +1577,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}SecureParent${e}.${e}id${e}, ${e}related${e}.${e}id${e} ${e}related.id${e}, ${e}related${e}.${e}name${e} ${e}related.name${e} FROM ${e}SecureParent${e} LEFT JOIN ${e}SecureRelated${e} ${e}related${e} ON ${e}related${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}related${e}.${e}tenantId${e} = ${this.ph(1)}`,
     );
   }
@@ -1587,7 +1597,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A `$size` count is a client-supplied threshold over rows it never sees: the target's filters must scope it. */
   shouldApplyTargetFiltersToOneToManySizeCount() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureCollection, {
           $select: { id: true },
@@ -1595,7 +1605,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureChild${e} ${e}children${e} WHERE ${e}children${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}children${e}.${e}deletedAt${e} IS NULL AND ${e}children${e}.${e}tenantId${e} = ${this.ph(1)}) >= ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 2]);
@@ -1604,12 +1614,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A single-valued relation counts on the parent's FK, not its PK - the join side the `EXISTS` form uses. */
   shouldJoinManyToOneSizeCountOnTheParentForeignKey() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureParent, { $select: { id: true }, $where: { related: { $size: 1 } } }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureParent${e} WHERE (SELECT COUNT(*) FROM ${e}SecureRelated${e} ${e}related${e} WHERE ${e}related${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}related${e}.${e}tenantId${e} = ${this.ph(1)}) = ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 1]);
@@ -1618,7 +1628,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** The junction cannot be scoped by a target filter, so the counted rows narrow to the ids satisfying it. */
   shouldApplyTargetFiltersToManyToManySizeCount() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureCollection, {
           $select: { id: true },
@@ -1626,7 +1636,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}taggedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}taggedChildren${e} WHERE ${e}taggedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}taggedChildren${e}.${e}tenantId${e} = ${this.ph(1)})) >= ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 2]);
@@ -1635,13 +1645,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A renamed PK/FK correlates on the column, not the field key. One query pins both projections. */
   shouldCorrelateRelationSubqueryOnMappedColumnNames() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, RenamedParent, {
         $select: { id: true },
         $where: { children: { id: 3 }, $and: [{ children: { $size: 1 } }] },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}parent_pk${e} ${e}id${e} FROM ${e}RenamedParent${e} WHERE EXISTS (SELECT 1 FROM ${e}RenamedChild${e} ${e}children${e} WHERE ${e}children${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e} AND ${e}children${e}.${e}id${e} = ${this.ph(1)}) AND (SELECT COUNT(*) FROM ${e}RenamedChild${e} ${e}children_2${e} WHERE ${e}children_2${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e}) = ${this.ph(2)}`,
     );
     expect(values).toEqual([3, 1]);
@@ -1650,12 +1660,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** The junction's own FK columns are resolved the same way. */
   shouldCorrelateManyToManySubqueryOnMappedJunctionColumnNames() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { renamedChildren: { id: 5 } } }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionRenamed${e} WHERE ${e}SecureCollectionRenamed${e}.${e}renamed_collection${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionRenamed${e}.${e}renamed_child${e} IN (SELECT ${e}renamedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}renamedChildren${e} WHERE ${e}renamedChildren${e}.${e}id${e} = ${this.ph(1)} AND ${e}renamedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}renamedChildren${e}.${e}tenantId${e} = ${this.ph(2)}))`,
     );
     expect(values).toEqual([5, 7]);
@@ -1664,10 +1674,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** The junction is a row being read too, so its own filters scope the count. */
   shouldApplyJunctionFiltersToManyToManySizeCount() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { $size: 2 } } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL) = ${this.ph(1)}`,
     );
     expect(values).toEqual([2]);
@@ -1676,10 +1686,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** Both levels scope the `EXISTS` form: the junction's own filters and the target's. */
   shouldApplyJunctionAndTargetFiltersToManyToManyRelationFilter() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { id: 5 } } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL AND ${e}SecureCollectionLink${e}.${e}plainChildId${e} IN (SELECT ${e}linkedChildren${e}.${e}id${e} FROM ${e}PlainChild${e} ${e}linkedChildren${e} WHERE ${e}linkedChildren${e}.${e}id${e} = ${this.ph(1)}))`,
     );
     expect(values).toEqual([5]);
@@ -1688,10 +1698,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** An unfiltered target contributes nothing, so the mm count stays junction-only. */
   shouldKeepManyToManySizeCountJunctionOnlyForUnfilteredTarget() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { plainChildren: { $size: 3 } } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionPlain${e} WHERE ${e}SecureCollectionPlain${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e}) = ${this.ph(1)}`,
     );
     expect(values).toEqual([3]);
@@ -1712,12 +1722,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldApplyTargetFiltersToOneToManyRelationFilter() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { children: { id: 3 } } }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureChild${e} ${e}children${e} WHERE ${e}children${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}children${e}.${e}id${e} = ${this.ph(1)} AND ${e}children${e}.${e}deletedAt${e} IS NULL AND ${e}children${e}.${e}tenantId${e} = ${this.ph(2)})`,
     );
     expect(values).toEqual([3, 7]);
@@ -1726,12 +1736,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** Same for mm, where the target is reached through the junction's `IN` sub-select. */
   shouldApplyTargetFiltersToManyToManyRelationFilter() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+    const { sql: statement, values } = withContext({ secureTenantId: 7 }, () =>
       this.exec((ctx) =>
         this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { taggedChildren: { id: 3 } } }),
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}taggedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}taggedChildren${e} WHERE ${e}taggedChildren${e}.${e}id${e} = ${this.ph(1)} AND ${e}taggedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}taggedChildren${e}.${e}tenantId${e} = ${this.ph(2)}))`,
     );
     expect(values).toEqual([3, 7]);
@@ -1739,7 +1749,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$selectWithAllFieldsAndSpecificFieldsAndWhere() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: {
           id: true,
@@ -1754,7 +1764,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 100,
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}` +
         `, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}` +
         `, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}` +
@@ -1773,14 +1783,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldAliasARenamedColumnByItsKeyBesideAJoin() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Profile, {
         $select: { picture: true },
         $populate: { creator: { $select: { name: true } } },
       }),
     );
 
-    expect(sql).toContain(`${e}user_profile${e}.${e}image${e} ${e}picture${e}`);
+    expect(statement).toContain(`${e}user_profile${e}.${e}image${e} ${e}picture${e}`);
   }
 
   /**
@@ -1789,11 +1799,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldCorrelateASelfReferencingRelationAgainstItsParent() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, { $select: { id: true }, $where: { users: { name: 'x' } } }),
     );
 
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE EXISTS (SELECT 1 FROM ${e}User${e} ${e}users${e}` +
         ` WHERE ${e}users${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e} AND ${e}users${e}.${e}name${e} = ${this.ph(1)})`,
     );
@@ -1803,10 +1813,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A `$sort` reaching into a relation joins it, exactly as populating it would - filters included. */
   shouldSortByRelationWithoutPopulate() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { measureUnit: { name: 1 } } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}` +
         ` LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL` +
         ` ORDER BY ${e}measureUnit${e}.${e}name${e}`,
@@ -1824,19 +1834,21 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** Where nulls land is asked for, and reads the same on every engine. */
   shouldSortByNullPlacement() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { code: 'descNullsFirst' } }),
     );
-    expect(sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} ORDER BY ${this.expectedNullsOrdering(`${e}code${e}`)}`);
+    expect(statement).toBe(
+      `SELECT ${e}id${e} FROM ${e}Item${e} ORDER BY ${this.expectedNullsOrdering(`${e}code${e}`)}`,
+    );
   }
 
   /** A nested path is one alias (`"tax.category"`), and every level it crosses has to be joined. */
   shouldSortByNestedRelation() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { tax: { category: { name: -1 } } } }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}` +
         ` LEFT JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e}` +
         ` LEFT JOIN ${e}TaxCategory${e} ${e}tax.category${e} ON ${e}tax.category${e}.${e}pk${e} = ${e}tax${e}.${e}categoryId${e}` +
@@ -1847,23 +1859,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A related column resolves through its own entity, so `@Field({ name })` is honoured. */
   shouldSortByRenamedRelationColumn() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, User, { $select: { id: true }, $sort: { profile: { picture: 1 } } }),
     );
-    expect(sql).toContain(` ORDER BY ${e}profile${e}.${e}image${e}`);
+    expect(statement).toContain(` ORDER BY ${e}profile${e}.${e}image${e}`);
   }
 
   /** One join, whether `$populate` or `$sort` asked for it first - and it keeps its columns. */
   shouldReuseThePopulatedJoinWhenSorting() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
         $populate: { tax: { $select: { name: true }, $required: true } },
         $sort: { tax: { name: 1 } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}Item${e}.${e}id${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}` +
         ` FROM ${e}Item${e}` +
         ` INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e}` +
@@ -1900,15 +1912,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * each parent's rows are paged by the engine's own pager, inside the parent's statement.
    */
   shouldPageAToManyRelation() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
         $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 5, $skip: 1 } },
       }),
     );
 
-    expect(sql).toContain(this.pgr(5, 1, true));
-    expect(sql).not.toContain(' JOIN ');
+    expect(statement).toContain(this.pgr(5, 1, true));
+    expect(statement).not.toContain(' JOIN ');
   }
 
   /** Every statement that cannot join says so, rather than emitting an alias nothing defines. */
@@ -2137,7 +2149,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRefuseAFieldNameInA$selectList() {
     const query = parseQueryParams<User>({ $select: '["password"]' });
     expect(() => this.exec((ctx) => this.dialect.find(ctx, User, query))).toThrow(
-      'a $select list takes raw() expressions only, not a string: name fields in its map form, { field: true }',
+      'a $select list takes sql() expressions only, not a string: name fields in its map form, { field: true }',
     );
   }
 
@@ -2161,7 +2173,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw`*`, raw`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
+        $select: [sql`*`, sql`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2250,7 +2262,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw(() => 'createdAt').as('hotness')],
+        $select: [sql(() => 'createdAt').as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2259,7 +2271,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw`*`, raw`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
+        $select: [sql`*`, sql`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2274,7 +2286,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $and: [{ companyId: '1' }, raw`SUM(salePrice) > 500`] },
+        $where: { $and: [{ companyId: '1' }, sql`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe(
@@ -2285,7 +2297,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ companyId: '1' }, { id: '5' }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ companyId: '1' }, { id: '5' }, sql`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe(
@@ -2296,7 +2308,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ id: '1' }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ id: '1' }, sql`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe(
@@ -2307,7 +2319,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [raw`SUM(salePrice) > 500`, { id: '1' }, { companyId: '1' }] },
+        $where: { $or: [sql`SUM(salePrice) > 500`, { id: '1' }, { companyId: '1' }] },
       }),
     );
     expect(res.sql).toBe(
@@ -2318,7 +2330,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $and: [raw`SUM(salePrice) > 500`] },
+        $where: { $and: [sql`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500`);
@@ -2707,7 +2719,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldUpdateWithJsonNull() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
         Company,
@@ -2718,7 +2730,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `UPDATE ${e}Company${e} SET ${e}kind${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
     );
     expect(values).toEqual([null, 123, '1']);
@@ -2727,8 +2739,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldHandleRawFalsyValues() {
     const ctx = this.dialect.createContext();
 
-    expect(this.dialect.selectTerms(ctx, User, [raw(() => 0).as('zero')])).toEqual([{ sql: '0', key: 'zero' }]);
-    expect(this.dialect.selectTerms(ctx, User, [raw(() => '').as('empty')])).toEqual([{ sql: '', key: 'empty' }]);
+    expect(this.dialect.selectTerms(ctx, User, [sql(() => 0).as('zero')])).toEqual([{ sql: '0', key: 'zero' }]);
+    expect(this.dialect.selectTerms(ctx, User, [sql(() => '').as('empty')])).toEqual([{ sql: '', key: 'empty' }]);
   }
 
   shouldHandleEmptyAppend() {
@@ -2767,20 +2779,20 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   // Aggregate tests - shared across all SQL dialects
   shouldAggregateGroupByWithCount() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
       }),
     );
-    expect(sql).toBe(`SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e}`);
+    expect(statement).toBe(`SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e}`);
     expect(values).toEqual([]);
   }
 
   /** A group key reaches a to-one relation's field through an `INNER JOIN`, and every column is qualified once one joins. */
   shouldAggregateGroupedByARelationsField() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, Item, {
         $where: { code: 'a' },
         $group: { taxName: { tax: { name: true } } },
@@ -2788,7 +2800,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $sort: { total: -1 },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(1)} GROUP BY ${e}tax${e}.${e}name${e} ORDER BY SUM(${e}Item${e}.${e}salePrice${e}) DESC`,
     );
     expect(values).toEqual(['a']);
@@ -2800,14 +2812,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldFilterAGroupedRelationThroughItsJoin() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, Item, {
         $where: { code: 'a', tax: { name: 'vat' } },
         $group: { taxName: { tax: { name: true } } },
         $select: { total: { $sum: { salePrice: true } } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} AND ${e}tax${e}.${e}name${e} = ${this.ph(1)} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(2)} GROUP BY ${e}tax${e}.${e}name${e}`,
     );
     expect(values).toEqual(['vat', 'a']);
@@ -2815,14 +2827,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   /** A negated one stays a `NOT EXISTS`, which the join cannot say. */
   shouldKeepANegatedGroupedRelationFilterAsASubquery() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, Item, {
         $where: { $not: [{ tax: { name: 'vat' } }] },
         $group: { taxName: { tax: { name: true } } },
         $select: { total: { $sum: { salePrice: true } } },
       }),
     );
-    expect(sql).toContain('NOT EXISTS');
+    expect(statement).toContain('NOT EXISTS');
   }
 
   /**
@@ -2831,7 +2843,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldAggregateOnlyTheRowsItsOwnWherePasses() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, Item, {
         $group: { code: true },
         $select: {
@@ -2842,7 +2854,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $having: { sold: { $gt: 5 } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}code${e}, SUM(${e}sold${e}) ${e}sold${e}, COUNT(*) ${e}n${e}, COUNT(${e}named${e}) ${e}named${e} FROM (SELECT ${e}code${e}, CASE WHEN ${e}name${e} = ${this.ph(1)} THEN ${e}salePrice${e} END ${e}sold${e}, CASE WHEN ${e}name${e} IS NOT NULL THEN 1 END ${e}named${e} FROM ${e}Item${e}) ${e}_uql_rows${e} GROUP BY ${e}code${e} HAVING SUM(${e}sold${e}) > ${this.ph(2)}`,
     );
     expect(values).toEqual(['a', 5]);
@@ -2851,13 +2863,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A joined row's relation aggregate is a subquery, so the rows computing it are read first, the join inside. */
   shouldAggregateGroupedByAJoinedRowsRelationAggregate() {
     const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, MeasureUnit, {
         $group: { units: { category: { unitCount: true } } },
         $select: { n: { $count: '*' } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}units${e}, COUNT(*) ${e}n${e} FROM (SELECT (SELECT COUNT(*) FROM ${e}MeasureUnit${e} ${e}measureUnits${e} WHERE ${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e} AND ${e}measureUnits${e}.${e}deletedAt${e} IS NULL) ${e}units${e} FROM ${e}MeasureUnit${e} INNER JOIN ${e}MeasureUnitCategory${e} ${e}category${e} ON ${e}category${e}.${e}id${e} = ${e}MeasureUnit${e}.${e}categoryId${e} AND ${e}category${e}.${e}deletedAt${e} IS NULL WHERE ${e}MeasureUnit${e}.${e}deletedAt${e} IS NULL) ${e}_uql_rows${e} GROUP BY ${e}units${e}`,
     );
   }
@@ -2902,14 +2914,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A raw `$having` operand is SQL rendered in place: bound, the driver received the object itself. */
   shouldAggregate$havingByARawOperand() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
-        $having: { count: raw`1 + 1` },
+        $having: { count: sql`1 + 1` },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e} HAVING COUNT(*) = 1 + 1`,
     );
     expect(values).toEqual([]);
@@ -2940,7 +2952,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ).toThrow("cannot $sort by 'createdAt': it is neither a $group column nor a $select alias");
 
     // a grouped column and an alias are both legal in either clause
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { total: { $count: '*' } },
@@ -2948,19 +2960,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $sort: { name: 1, total: -1 },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) >');
-    expect(sql).toContain('ORDER BY');
+    expect(statement).toContain('HAVING COUNT(*) >');
+    expect(statement).toContain('ORDER BY');
   }
 
   shouldAggregateCountDistinct() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { emails: { $countDistinct: { email: true } } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}name${e}, COUNT(DISTINCT ${e}email${e}) ${e}emails${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
     );
     expect(values).toEqual([]);
@@ -2968,13 +2980,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldAggregateCountField() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { emails: { $count: { email: true } } },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}name${e}, COUNT(${e}email${e}) ${e}emails${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
     );
     expect(values).toEqual([]);
@@ -2982,7 +2994,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldAggregateGroupByWithMultipleFunctions() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: {
@@ -2993,7 +3005,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       }),
     );
-    expect(sql).toBe(
+    expect(statement).toBe(
       `SELECT ${e}name${e}, COUNT(*) ${e}count${e}, AVG(${e}createdAt${e}) ${e}avgCreated${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e}, MIN(${e}createdAt${e}) ${e}minCreated${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
     );
     expect(values).toEqual([]);
@@ -3001,14 +3013,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldAggregateWithHaving() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $gt: 5 } },
       }),
     );
-    expect(sql).toContain(`GROUP BY ${e}name${e} HAVING COUNT(*) > `);
+    expect(statement).toContain(`GROUP BY ${e}name${e} HAVING COUNT(*) > `);
     expect(values).toEqual([5]);
   }
 
@@ -3028,7 +3040,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldAggregateWithWhereAndSort() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
@@ -3037,14 +3049,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 10,
       }),
     );
-    expect(sql).toContain(`${e}name${e} IS NOT NULL`);
-    expect(sql).toContain(`ORDER BY COUNT(*) DESC${this.pgr(10, undefined, true)}`);
+    expect(statement).toContain(`${e}name${e} IS NOT NULL`);
+    expect(statement).toContain(`ORDER BY COUNT(*) DESC${this.pgr(10, undefined, true)}`);
     expect(values).toEqual([]);
   }
 
   shouldAggregateTotalWithoutGroupBy() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $select: {
           total: { $count: '*' },
@@ -3052,63 +3064,65 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       }),
     );
-    expect(sql).toBe(`SELECT COUNT(*) ${e}total${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e} FROM ${e}User${e}`);
+    expect(statement).toBe(
+      `SELECT COUNT(*) ${e}total${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e} FROM ${e}User${e}`,
+    );
     expect(values).toEqual([]);
   }
 
   shouldAggregateWithHavingBetween() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $between: [2, 10] } },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) BETWEEN ');
+    expect(statement).toContain('HAVING COUNT(*) BETWEEN ');
     expect(values).toEqual([2, 10]);
   }
 
   shouldAggregateWithHavingExactValue() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: 5 },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) = ');
+    expect(statement).toContain('HAVING COUNT(*) = ');
     expect(values).toEqual([5]);
   }
 
   /** `$having` takes every operator its type offers, a text one on a `$min`/`$max` included. */
   shouldAggregateWithHavingTextOperator() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { companyId: true },
         $select: { biggest: { $max: { name: true } } },
         $having: { biggest: { $startsWith: 'A' } },
       }),
     );
-    expect(sql).toContain('HAVING MAX(');
-    expect(sql).toContain('LIKE ');
+    expect(statement).toContain('HAVING MAX(');
+    expect(statement).toContain('LIKE ');
     expect(values).toEqual(['A%']);
   }
 
   /** And it compares against null the way every other operand does, rather than emitting `= NULL`. */
   shouldAggregateWithHavingNullComparison() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { companyId: true },
         $select: { biggest: { $max: { name: true } } },
         $having: { biggest: { $eq: null } },
       }),
     );
-    expect(sql).toContain('IS NULL');
+    expect(statement).toContain('IS NULL');
     expect(values).toEqual([]);
   }
 
   shouldAggregateSortByAliasInsteadOfField() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' }, total: { $sum: { createdAt: true } } },
@@ -3116,25 +3130,25 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     // `count` should resolve to the aggregate expression COUNT(*), not a column name
-    expect(sql).toContain('ORDER BY COUNT(*) DESC');
-    expect(sql).toContain('GROUP BY');
+    expect(statement).toContain('ORDER BY COUNT(*) DESC');
+    expect(statement).toContain('GROUP BY');
   }
 
   // $distinct tests - shared across all SQL dialects
   shouldFindDistinct() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { name: true },
         $distinct: true,
       }),
     );
-    expect(sql).toBe(`SELECT DISTINCT ${e}name${e} FROM ${e}User${e}`);
+    expect(statement).toBe(`SELECT DISTINCT ${e}name${e} FROM ${e}User${e}`);
     expect(values).toEqual([]);
   }
 
   shouldFindDistinctWithWhereAndSort() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { name: true, email: true },
         $distinct: true,
@@ -3143,136 +3157,136 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 50,
       }),
     );
-    expect(sql).toContain('SELECT DISTINCT');
-    expect(sql).toContain('IS NOT NULL');
-    expect(sql).toContain(`${this.pgr(50, undefined, true)}`.trimStart());
+    expect(statement).toContain('SELECT DISTINCT');
+    expect(statement).toContain('IS NOT NULL');
+    expect(statement).toContain(`${this.pgr(50, undefined, true)}`.trimStart());
     expect(values).toEqual([]);
   }
 
   shouldAggregateWithHavingIn() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $in: [1, 5, 10] } },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) IN (');
+    expect(statement).toContain('HAVING COUNT(*) IN (');
     expect(values).toEqual([1, 5, 10]);
   }
 
   shouldAggregateWithHavingNin() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $nin: [0, 999] } },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) NOT IN (');
+    expect(statement).toContain('HAVING COUNT(*) NOT IN (');
     expect(values).toEqual([0, 999]);
   }
 
   shouldAggregateWithHavingInEmpty() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $in: [] } },
       }),
     );
-    expect(sql).toContain('HAVING 1 = 0');
+    expect(statement).toContain('HAVING 1 = 0');
   }
 
   shouldAggregateWithHavingIsNull() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { maxVal: { $max: { createdAt: true } } },
         $having: { maxVal: { $isNull: true } },
       }),
     );
-    expect(sql).toContain('HAVING MAX(');
-    expect(sql).toContain(' IS NULL');
+    expect(statement).toContain('HAVING MAX(');
+    expect(statement).toContain(' IS NULL');
     expect(values).toEqual([]);
   }
 
   shouldAggregateWithHavingIsNotNull() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { maxVal: { $max: { createdAt: true } } },
         $having: { maxVal: { $isNotNull: true } },
       }),
     );
-    expect(sql).toContain('HAVING MAX(');
-    expect(sql).toContain(' IS NOT NULL');
+    expect(statement).toContain('HAVING MAX(');
+    expect(statement).toContain(' IS NOT NULL');
     expect(values).toEqual([]);
   }
 
   /** `$isNull: false` is the negation of `$isNull: true`, not a no-op. */
   shouldAggregateWithHavingIsNullFalse() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { maxVal: { $max: { createdAt: true } } },
         $having: { maxVal: { $isNull: false } },
       }),
     );
-    expect(sql).toContain(' IS NOT NULL');
+    expect(statement).toContain(' IS NOT NULL');
     expect(values).toEqual([]);
   }
 
   shouldAggregateWithHavingIsNotNullFalse() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { maxVal: { $max: { createdAt: true } } },
         $having: { maxVal: { $isNotNull: false } },
       }),
     );
-    expect(sql).toContain(' IS NULL');
-    expect(sql).not.toContain(' IS NOT NULL');
+    expect(statement).toContain(' IS NULL');
+    expect(statement).not.toContain(' IS NOT NULL');
     expect(values).toEqual([]);
   }
 
   /** `$ne` in `HAVING` uses the same null-safe inequality the `WHERE` builder does. */
   shouldAggregateWithHavingNe() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $ne: 5 } },
       }),
     );
-    expect(sql).toContain(`HAVING COUNT(*) <> ${this.ph(1)}`);
+    expect(statement).toContain(`HAVING COUNT(*) <> ${this.ph(1)}`);
     expect(values).toEqual([5]);
   }
 
   /** Several operators on one alias AND together, each repeating the aggregate expression. */
   shouldAggregateWithHavingMultipleOperatorsOnSameAlias() {
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { count: { $gt: 2, $lte: 10 } },
       }),
     );
-    expect(sql).toContain(`HAVING COUNT(*) > ${this.ph(1)} AND COUNT(*) <= ${this.ph(2)}`);
+    expect(statement).toContain(`HAVING COUNT(*) > ${this.ph(1)} AND COUNT(*) <= ${this.ph(2)}`);
     expect(values).toEqual([2, 10]);
   }
 
   /** A `$having` alias that is not an aggregate falls back to the grouped column. */
   shouldAggregateWithHavingOnGroupedColumn() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $having: { name: 'maz' },
       }),
     );
-    expect(sql).toContain(`HAVING ${e}name${e} = ${this.ph(1)}`);
+    expect(statement).toContain(`HAVING ${e}name${e} = ${this.ph(1)}`);
     expect(values).toEqual(['maz']);
   }
 
@@ -3290,32 +3304,34 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldAggregateSortWithNumericNegativeOne() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
         $sort: { count: -1 },
       }),
     );
-    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+    expect(statement).toContain('ORDER BY COUNT(*) DESC');
   }
 
   shouldAggregateSortWithMixedDirections() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' }, total: { $sum: { createdAt: true } } },
         $sort: { count: 'desc', name: 'asc', total: 1 },
       }),
     );
-    expect(sql).toContain('ORDER BY COUNT(*) DESC');
-    expect(sql).toContain('SUM(');
-    expect(sql).not.toContain('SUM(' + this.dialect.escapeIdChar + 'createdAt' + this.dialect.escapeIdChar + ') DESC');
+    expect(statement).toContain('ORDER BY COUNT(*) DESC');
+    expect(statement).toContain('SUM(');
+    expect(statement).not.toContain(
+      'SUM(' + this.dialect.escapeIdChar + 'createdAt' + this.dialect.escapeIdChar + ') DESC',
+    );
   }
 
   shouldAggregateWithPagination() {
     const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
+    const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
         $select: { count: { $count: '*' } },
@@ -3324,10 +3340,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 10,
       }),
     );
-    expect(sql).toContain(`GROUP BY ${e}name${e}`);
-    expect(sql).toContain('ORDER BY COUNT(*) DESC');
-    expect(sql).toContain(`${this.pgr(10, 20, true)}`.trimStart());
-    expect(sql).toContain('OFFSET 20');
+    expect(statement).toContain(`GROUP BY ${e}name${e}`);
+    expect(statement).toContain('ORDER BY COUNT(*) DESC');
+    expect(statement).toContain(`${this.pgr(10, 20, true)}`.trimStart());
+    expect(statement).toContain('OFFSET 20');
     expect(values).toEqual([]);
   }
 
@@ -3342,13 +3358,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * one lets the inner level shadow the outer it correlates against, which matches no row.
    */
   shouldGenerateDistinctAliasesForNestedElemMatch() {
-    const { sql } = this.exec((ctx) =>
+    const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
         $where: { entries: { $elemMatch: { $elemMatch: { $gt: 5 } } } },
       }),
     );
-    const aliases = new Set(sql.match(/_uql_elem(?:_\d+)?/g));
+    const aliases = new Set(statement.match(/_uql_elem(?:_\d+)?/g));
     expect(aliases.size).toBe(2);
   }
 }

@@ -34,8 +34,8 @@ import {
   type QueryPage,
   type QueryPager,
   type QueryPopulate,
-  QueryRaw,
-  type QueryRawFnOptions,
+  QuerySql,
+  type QuerySqlFnOptions,
   type QuerySearch,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
@@ -106,7 +106,7 @@ import {
   populatesRelations,
   type SortDirection,
   aggregateOf,
-  raw,
+  sql,
   refs,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
@@ -292,20 +292,20 @@ function projectedKeys<E>(
   select: QuerySelectValue<E> | undefined,
   exclude: QueryExclude<E> | undefined,
   json: boolean | undefined,
-): readonly (FieldKey<E> | QueryRaw)[] {
-  const selected: readonly (FieldKey<E> | QueryRaw)[] = isSelectList(select)
+): readonly (FieldKey<E> | QuerySql)[] {
+  const selected: readonly (FieldKey<E> | QuerySql)[] = isSelectList(select)
     ? select.map(selectRaw)
     : normalizeScalarFieldSelection(meta, select, exclude);
   return selected.length || !json ? selected : normalizeScalarFieldSelection(meta);
 }
 
-/** An item of a `$select` list, which only `raw()` fills: anything else arrived from an untyped client. */
-function selectRaw(item: unknown): QueryRaw {
-  if (item instanceof QueryRaw) {
+/** An item of a `$select` list, which only `sql()` fills: anything else arrived from an untyped client. */
+function selectRaw(item: unknown): QuerySql {
+  if (item instanceof QuerySql) {
     return item;
   }
   throw new UqlUsageError(
-    `a $select list takes raw() expressions only, not a ${kindOf(item)}: name fields in its map form, { field: true }`,
+    `a $select list takes sql() expressions only, not a ${kindOf(item)}: name fields in its map form, { field: true }`,
   );
 }
 
@@ -470,10 +470,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return new SqlQueryContext(this, [], undefined, options.inlineValues);
   }
 
-  /** A statement as it is sent: the SQL `build` writes, or a `raw` renders, and the values it binds. */
-  compile(build: QueryBuildFn | QueryRaw): { sql: string; values: unknown[] } {
+  /** A statement as it is sent: the SQL `build` writes, or a `sql` renders, and the values it binds. */
+  compile(build: QueryBuildFn | QuerySql): { sql: string; values: unknown[] } {
     const ctx = this.createContext();
-    if (build instanceof QueryRaw) {
+    if (build instanceof QuerySql) {
       this.getRawValue(ctx, { value: build });
     } else {
       build(ctx);
@@ -491,8 +491,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return fragmentCtx.sql;
   }
 
-  /** A `raw()` rendered in place, an operand or a projected term: bound, the driver would get the object. */
-  protected rawFragment(ctx: QueryContext, value: QueryRaw, prefix?: string, entity?: Type<unknown>): string {
+  /** A `sql()` rendered in place, an operand or a projected term: bound, the driver would get the object. */
+  protected rawFragment(ctx: QueryContext, value: QuerySql, prefix?: string, entity?: Type<unknown>): string {
     return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value, prefix, entity }));
   }
 
@@ -511,7 +511,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   addValue(ctx: QueryContext, value: unknown): string {
-    if (value instanceof QueryRaw) {
+    if (value instanceof QuerySql) {
       return this.rawFragment(ctx, value);
     }
     if (ctx.inlineValues) {
@@ -615,7 +615,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return [{ sql: `${this.escapeId(opts.prefix, true, true)}*`, bare: true, kinds }];
     }
     return keys.map((key) =>
-      key instanceof QueryRaw
+      key instanceof QuerySql
         ? { sql: this.rawFragment(ctx, key, opts.prefix), key: key[RAW_ALIAS] }
         : this.fieldTerm(ctx, meta, key, opts),
     );
@@ -968,7 +968,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   compare<E>(ctx: QueryContext, entity: Type<E>, key: string, val: unknown, opts: QueryComparisonOptions = {}): void {
     const meta = getMeta(entity);
 
-    if (val instanceof QueryRaw) {
+    if (val instanceof QuerySql) {
       if (key === '$exists' || key === '$nexists') {
         ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
         // The read's alias: the enclosing statement declares one, and Postgres forbids reaching past
@@ -1042,7 +1042,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
     const parts = this.renderOperands(ctx, items, (fragmentCtx, entry) => {
       // The same scope as the group, so every render option carries over: a trigger's `NEW.` included.
-      if (entry instanceof QueryRaw) {
+      if (entry instanceof QuerySql) {
         this.getRawValue(fragmentCtx, { ...opts, value: entry });
       } else {
         this.renderWhere(fragmentCtx, entity, entry, { ...opts, operand: childOperand, clause: false });
@@ -1382,7 +1382,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * dialects use this - PostgreSQL binds JSON through {@link PgLikeSqlDialect.jsonScalarParam} instead.
    */
   protected jsonScalarParam(ctx: QueryContext, value: unknown): string {
-    if (value instanceof QueryRaw) {
+    if (value instanceof QuerySql) {
       return this.rawFragment(ctx, value);
     }
     return this.jsonCast(this.addValue(ctx, JSON.stringify(value)));
@@ -1511,7 +1511,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /**
    * The `ORDER BY` operands for one key: a JSON path's in each of {@link jsonSortModes}. A key that is
-   * not a field of `meta` - a `raw()` projection, a `$select` alias - is an output alias, which is never
+   * not a field of `meta` - a `sql()` projection, a `$select` alias - is an output alias, which is never
    * table-qualified and needs no resolving.
    */
   private sortColumns<E>(
@@ -1615,7 +1615,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void {
     const { $where, $skip, $limit } = q;
     if ($skip === undefined && $limit === undefined) {
-      this.select<E>(ctx, entity, { $select: [raw`COUNT(*)`.as(AGGREGATE_VALUE_ALIAS)] });
+      this.select<E>(ctx, entity, { $select: [sql`COUNT(*)`.as(AGGREGATE_VALUE_ALIAS)] });
       this.search(ctx, entity, { $where }, opts);
       return;
     }
@@ -2053,14 +2053,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     } else if (isFieldUpdateOp(value)) {
       const [op, operand] = fieldUpdateOf(key, value);
       ctx.append(`${escapedCol} = COALESCE(${current}, 0) ${SQL_ARITHMETIC[op]} `);
-      if (operand instanceof QueryRaw) {
+      if (operand instanceof QuerySql) {
         ctx.append('(');
         this.getRawValue(ctx, { value: operand, escapedPrefix: qualifier });
         ctx.append(')');
       } else {
         ctx.addValue(operand);
       }
-    } else if (value instanceof QueryRaw) {
+    } else if (value instanceof QuerySql) {
       ctx.append(`${escapedCol} = `);
       this.getRawValue(ctx, { value, escapedPrefix: qualifier });
     } else {
@@ -2134,7 +2134,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx.append(` FROM ${rows.from}`);
     }
     const narrowed = rows?.where;
-    const where = narrowed ? { $and: [write.where, raw(() => narrowed)] } : write.where;
+    const where = narrowed ? { $and: [write.where, sql(() => narrowed)] } : write.where;
     // Qualified by the table: on a set-based engine `inserted` holds the same column names.
     this.renderWhere(ctx, write.entity, where, { escapedPrefix: `${table}.` });
     ctx.append(';');
@@ -2261,9 +2261,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** `key`'s column of the row being inserted, as SQL an assignment takes. */
-  private incoming<E>(meta: EntityMeta<E>, key: string): QueryRaw {
+  private incoming<E>(meta: EntityMeta<E>, key: string): QuerySql {
     const column = this.escapedColumnName(meta, key);
-    return raw(() => this.upsertIncoming(column));
+    return sql(() => this.upsertIncoming(column));
   }
 
   /**
@@ -2432,7 +2432,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     field: FieldOptions | undefined,
     value: unknown,
   ): void {
-    if (value instanceof QueryRaw) {
+    if (value instanceof QuerySql) {
       this.getRawValue(ctx, { value });
       return;
     }
@@ -2543,9 +2543,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /**
    * The text of SQL a schema declares, as DDL carries it: values written as literals, and none left bound,
    * since a `CREATE` statement has no placeholder to bind one into. An entity's SQL reads its fields, a
-   * predicate with no entity filter applied; a migration's is `raw` reading none.
+   * predicate with no entity filter applied; a migration's is `sql` reading none.
    */
-  compileDdl(sql: QueryRaw): string;
+  compileDdl(sql: QuerySql): string;
   compileDdl<E>(sql: EntityWhereMeta<E>, entity: Type<E>, opts?: DdlRenderOptions): string;
   compileDdl<E>(
     sql: EntityWhereMeta<E>,
@@ -2553,7 +2553,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     { rows, escapedPrefix, operand }: DdlRenderOptions = {},
   ): string {
     const ctx = this.createContext({ inlineValues: true });
-    if (sql instanceof QueryRaw) {
+    if (sql instanceof QuerySql) {
       sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
     } else if (entity) {
       assertNoUndefined(sql, `a predicate over '${entity.name}'`);
@@ -2567,7 +2567,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return ctx.sql;
   }
 
-  getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw }) {
+  getRawValue(ctx: QueryContext, opts: QuerySqlFnOptions & { value: QuerySql }) {
     const { value, prefix = '', escapedPrefix } = opts;
     value.render({
       ...opts,
@@ -2752,11 +2752,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): void {
     const entity = rel.entity();
     const alias = ctx.claimAlias(aggregate.relation, parent);
-    const correlation = raw(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
+    const correlation = sql(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
     const { where: $where, page } = aggregate;
     // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
     const { field } = aggregate;
-    const read = field ? refs(entity)[field as FieldKey<object>] : raw`1`;
+    const read = field ? refs(entity)[field as FieldKey<object>] : sql`1`;
     const query = {
       ...page,
       $select: [read.as(AGGREGATE_VALUE_ALIAS)],
@@ -2852,7 +2852,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const relMeta = getMeta(entity);
     this.assertDistinctSort(relMeta, relKey, query);
     const alias = ctx.claimAlias(relKey, parent);
-    const correlation = raw(({ ctx: rowsCtx }) => this.appendCorrelation(rowsCtx, meta, relation, parent, alias));
+    const correlation = sql(({ ctx: rowsCtx }) => this.appendCorrelation(rowsCtx, meta, relation, parent, alias));
     const rows = { ...query, $where: whereAnd(query.$where, [correlation]) };
     const joins = resolveQueryJoins(relMeta, rows, (path) => ctx.claimAlias(path));
     return this.appendRelationArray(ctx, { entity, query: rows, alias, joins, distinct });

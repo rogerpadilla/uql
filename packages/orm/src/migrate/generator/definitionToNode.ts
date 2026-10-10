@@ -2,7 +2,7 @@ import { createTableNode, keyOfColumns } from '../../schema/schemaAST.js';
 import type { TableNode } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
-import type { QueryRaw } from '../../type/queryRaw.js';
+import type { QuerySql } from '../../type/querySql.js';
 import {
   declaredIndexName,
   enumCheck,
@@ -17,7 +17,7 @@ import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefi
  * `createTable` and an entity reach `generateCreateTableFromNode` in the same shape, its SQL rendered by
  * `render`. Free functions and not generator methods: the dialect reaches them only through `render`.
  */
-export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryRaw) => string): TableNode {
+export function tableDefinitionToNode(def: TableDefinition, render: (sql: QuerySql) => string): TableNode {
   const { name, schema } = splitQualifiedName(def.name);
   // Foreign keys stay external: each names its target table, which has no node in this build.
   const table: TableNode = {
@@ -94,7 +94,7 @@ export function indexDefinition(
 }
 
 /** An index the builder recorded, its SQL rendered by `render` into the text the schema holds. */
-export function renderIndexDefinition(index: IndexDefinition, render: (sql: QueryRaw) => string): IndexSchema {
+export function renderIndexDefinition(index: IndexDefinition, render: (sql: QuerySql) => string): IndexSchema {
   return {
     ...index,
     entries: index.entries.map((entry) => renderIndexColumn(entry, render)),

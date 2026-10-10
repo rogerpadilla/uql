@@ -11,7 +11,7 @@ import type { IndexNode, TableNode, TriggerSchema } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined, mockSqlTableNode, mockTableNode, sqlTypeOf } from '../test/index.js';
 import type { ColumnSchema, SchemaDiff } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { tableDdlFor } from './ddl/index.js';
 import { added, alterations, dropped, reverseDiff } from './schemaChange.js';
@@ -794,9 +794,9 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         tableName: 'memberships',
         index: {
           name: 'memberships_email_uk',
-          entries: [{ column: raw`lower("email")` }],
+          entries: [{ column: sql`lower("email")` }],
           unique: true,
-          where: raw`"deletedAt" IS NULL`,
+          where: sql`"deletedAt" IS NULL`,
         },
       }),
     ).toEqual([
@@ -810,9 +810,9 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         indexes: [
           {
             name: 'memberships_active_idx',
-            entries: [{ column: 'userId', order: 'desc' }, { column: raw`lower("groupId")` }],
+            entries: [{ column: 'userId', order: 'desc' }, { column: sql`lower("groupId")` }],
             unique: true,
-            where: raw`"deletedAt" IS NULL`,
+            where: sql`"deletedAt" IS NULL`,
             include: ['groupId'],
           },
         ],
@@ -1012,7 +1012,7 @@ class DefaultsEntity {
 @Entity()
 class ComputedEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, computed: raw`1 + 1` }) total?: number | null;
+  @Field({ type: Number, computed: sql`1 + 1` }) total?: number | null;
 }
 
 describe('SqlSchemaGenerator diffs (Postgres)', () => {
@@ -1468,7 +1468,7 @@ describe('SqlSchemaGenerator creating a table only where it is missing', () => {
 });
 
 describe('triggers', () => {
-  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: () => raw`PERFORM 1;` } })
+  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: () => sql`PERFORM 1;` } })
   @Entity({ name: 'GenPost' })
   class GenPost {
     @Id({ type: Number }) id?: number;

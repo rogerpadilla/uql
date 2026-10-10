@@ -39,7 +39,7 @@ export function Filter<E, N extends string>(name: FilterName<N>, opts: FilterOpt
 /**
  * Declares a composite index, its columns read off the entity's refs, so `@Index((user) => [user.nope])`
  * does not compile and a rename reaches every column. Stacks, so several may sit above one class.
- * @example `@Index((user) => [user.lastName, raw`lower(${user.email})`], { unique: true })`
+ * @example `@Index((user) => [user.lastName, sql`lower(${user.email})`], { unique: true })`
  */
 export function Index<E>(
   columns: (refs: RefMap<E>) => readonly EntityIndexColumnInput<E>[],
@@ -52,7 +52,7 @@ export function Index<E>(
 
 /**
  * Declares triggers the database runs, in the order written. Stacks, so several may sit above one class.
- * @example ``@Trigger({ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => raw`...` })``
+ * @example ``@Trigger({ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => sql`...` })``
  */
 export function Trigger<E>(...triggers: readonly TriggerOptions<E>[]) {
   return (entity: Type<E>): void => {

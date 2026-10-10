@@ -115,7 +115,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   ): void {
     if (this.vectorMetrics.size === 0) {
       throw new UqlUsageError(
-        `${this.dialectName} does not support vector similarity search. Use raw() for vector queries.`,
+        `${this.dialectName} does not support vector similarity search. Use sql() for vector queries.`,
       );
     }
     const { colName, distance, field } = this.resolveVectorDistance(meta, key, search);

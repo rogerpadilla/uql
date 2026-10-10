@@ -150,7 +150,7 @@ export class EntityCodeGenerator {
         uqlImports.add('Index');
       }
       if (declared.some(indexNeedsRaw)) {
-        uqlImports.add('raw');
+        uqlImports.add('sql');
       }
     }
 

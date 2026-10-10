@@ -13,7 +13,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
-import { QueryRaw } from '../type/queryRaw.js';
+import { QuerySql } from '../type/querySql.js';
 import { applyFilters } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
 import { assertNoUndefined, assertWhere } from '../util/query.util.js';
@@ -173,7 +173,7 @@ export abstract class AbstractDialect {
     const meta = getMeta(entity);
     return someKey(where, (key) =>
       isGroupOp(key)
-        ? groupClauses(key, where[key]).some((it) => !(it instanceof QueryRaw) && this.constrainsRelations(entity, it))
+        ? groupClauses(key, where[key]).some((it) => !(it instanceof QuerySql) && this.constrainsRelations(entity, it))
         : !!meta.relations[key] || aggregateOf(meta.fields[key]) !== undefined,
     );
   }

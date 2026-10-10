@@ -1,5 +1,5 @@
 import { Entity, Field, Id } from '../entity/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { versionKey } from './entity.js';
 import type { Json } from './utility.js';
 
@@ -41,11 +41,11 @@ class IncompatibleRejected {
   @Field({ type: String, precision: 10 }) d?: string | null;
   @Field({ type: Date, precision: 3 }) d2?: Date | null;
   // @ts-expect-error - an inlined computed field is never in the DDL, so its index would never be created
-  @Field({ type: Number, computed: raw`1`, index: true }) e?: number | null;
+  @Field({ type: Number, computed: sql`1`, index: true }) e?: number | null;
   // @ts-expect-error - the refs a computed callback reads are the entity's fields
-  @Field({ type: Number, computed: (row) => raw`${row.nope} + 1` }) e3?: number | null;
+  @Field({ type: Number, computed: (row) => sql`${row.nope} + 1` }) e3?: number | null;
   // @ts-expect-error - not an option: an expression the database computes is 'computed'
-  @Field({ type: Number, virtual: raw`1` }) e2?: number | null;
+  @Field({ type: Number, virtual: sql`1` }) e2?: number | null;
   // @ts-expect-error - an update never carries the field, so the callback could not fire
   @Field({ type: Number, updatable: false, onUpdate: () => 1 }) f?: number | null;
   // @ts-expect-error - a primary key is NOT NULL in every engine
@@ -85,15 +85,15 @@ class CompatibleStillCompiles {
   @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string | null;
   // A JSON column defaults with the SQL literal it stores.
   @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }> | null;
-  @Field({ type: Number, computed: raw`1`, eager: false }) computed?: number | null;
-  @Field({ type: Number, computed: (row) => raw`${row.computed} + 1`, stored: true }) next?: number | null;
+  @Field({ type: Number, computed: sql`1`, eager: false }) computed?: number | null;
+  @Field({ type: Number, computed: (row) => sql`${row.computed} + 1`, stored: true }) next?: number | null;
   @Field({ type: Date, softDelete: true, index: true }) deletedAt?: Date | null;
-  // An engine's own type, which no family models: a `raw` constant, never a bare string, so a
+  // An engine's own type, which no family models: a `sql` constant, never a bare string, so a
   // misspelling cannot pass for one.
-  @Field({ type: String, columnType: raw`tsvector`, eager: false }) searchVector?: string | null;
+  @Field({ type: String, columnType: sql`tsvector`, eager: false }) searchVector?: string | null;
 }
 
-/** A column type uql does not model is spelled `raw`, which is what keeps a typo from becoming one. */
+/** A column type uql does not model is spelled `sql`, which is what keeps a typo from becoming one. */
 @Entity()
 class UnknownColumnTypeRejected {
   @Id({ type: Number }) id?: number;
@@ -102,7 +102,7 @@ class UnknownColumnTypeRejected {
   // @ts-expect-error which is what catches a misspelling of one that is
   @Field({ type: String, columnType: 'varchr' }) typo?: string | null;
   // @ts-expect-error a type written out carries its own bounds, so one stated beside it is unread
-  @Field({ type: String, columnType: raw`ltree`, length: 100 }) bounded?: string | null;
+  @Field({ type: String, columnType: sql`ltree`, length: 100 }) bounded?: string | null;
 }
 
 export type _ = [

@@ -26,7 +26,7 @@ export function templateOf(sql: string): string {
   return `\`${sql.replace(/[\\`]|\$\{/g, (char) => `\\${char}`)}\``;
 }
 
-/** SQL as a `raw` tagged template. */
-export function rawTag(sql: string): string {
-  return `raw${templateOf(sql)}`;
+/** SQL as a `sql` tagged template. */
+export function sqlTag(sql: string): string {
+  return `sql${templateOf(sql)}`;
 }

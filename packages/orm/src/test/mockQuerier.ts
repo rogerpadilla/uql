@@ -1,7 +1,7 @@
 import { type Mock, type MockInstance, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import type { Querier, SqlStatement } from '../type/index.js';
-import { statementOf } from '../util/raw.js';
+import { statementOf } from '../util/sql.js';
 
 /** Methods become mocks; plain state (`hasOpenTransaction`) keeps its own type. */
 export type MockedQuerier = {

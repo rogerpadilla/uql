@@ -17,7 +17,7 @@ import {
   type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
-  QueryRaw,
+  QuerySql,
   type QuerySearch,
   type QuerySelect,
   type QuerySelectValue,
@@ -165,8 +165,8 @@ export function isPagedQuery<E>(q: QuerySearch<E>): boolean {
   return q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
 }
 
-/** Whether `select` is the list form `raw()` fills, narrowing both ways, which `Array.isArray` does not for a `readonly` array. */
-export function isSelectList<E>(select: QuerySelectValue<E> | undefined): select is readonly QueryRaw[] {
+/** Whether `select` is the list form `sql()` fills, narrowing both ways, which `Array.isArray` does not for a `readonly` array. */
+export function isSelectList<E>(select: QuerySelectValue<E> | undefined): select is readonly QuerySql[] {
   return Array.isArray(select);
 }
 
@@ -315,7 +315,7 @@ export function isFieldUpdateOp(value: unknown): value is FieldUpdateOp {
  * The one operator a scalar field's update carries, and its operand. Naming both throws rather than
  * reading one: their order would change the result, and an untyped payload is how both arrive.
  */
-export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint | QueryRaw] {
+export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint | QuerySql] {
   if (value.$inc !== undefined && value.$mul !== undefined) {
     throw new UqlUsageError(`'${key}' takes one of $inc and $mul`);
   }
@@ -523,7 +523,7 @@ function namedKeys(map: unknown): string[] {
 
 /**
  * Whether `value` is a map of comparison operators rather than a value to compare against. Only a
- * plain object qualifies: `Date`, `QueryRaw`, `Uint8Array` and arrays are all `typeof 'object'`, and
+ * plain object qualifies: `Date`, `QuerySql`, `Uint8Array` and arrays are all `typeof 'object'`, and
  * reading their keys as operators drops the condition (a `Date` has none) or throws on an array's
  * indices. Shared by the SQL and MongoDB builders, whose `$where` and `$having` all face this.
  */
@@ -534,7 +534,7 @@ export function isOperatorMap(value: unknown): value is Record<string, unknown> 
     !Array.isArray(value) &&
     !(value instanceof Date) &&
     !(value instanceof Uint8Array) &&
-    !(value instanceof QueryRaw)
+    !(value instanceof QuerySql)
   );
 }
 

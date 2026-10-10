@@ -59,7 +59,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/query.js';
-import { QueryRaw } from '../type/queryRaw.js';
+import { QuerySql } from '../type/querySql.js';
 import {
   aggregateOf,
   isSelectList,
@@ -180,16 +180,16 @@ export const mongoDialectFeatures: DialectFeatures = {
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
 const HEX_24 = /^[0-9a-f]{24}$/i;
 
-/** Where a statement can carry a `raw()`, as its refusal names it. */
+/** Where a statement can carry a `sql()`, as its refusal names it. */
 type RawPlace = '$select' | '$where' | 'an aggregate $where' | 'a write';
 
-/** `raw()` renders SQL, which MongoDB has no equivalent of: refused rather than emitted as `{}`. */
+/** `sql()` renders SQL, which MongoDB has no equivalent of: refused rather than emitted as `{}`. */
 function rawRefusal(place: RawPlace): UqlUsageError {
-  return new UqlUsageError(`raw() in ${place} is not supported on MongoDB`);
+  return new UqlUsageError(`sql() in ${place} is not supported on MongoDB`);
 }
 
-function assertNoRaw<T>(value: T, place: RawPlace): asserts value is Exclude<T, QueryRaw> {
-  if (value instanceof QueryRaw) {
+function assertNoRaw<T>(value: T, place: RawPlace): asserts value is Exclude<T, QuerySql> {
+  if (value instanceof QuerySql) {
     throw rawRefusal(place);
   }
 }

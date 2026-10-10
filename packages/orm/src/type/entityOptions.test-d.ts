@@ -14,7 +14,7 @@ import type {
   TsTypeOf,
   TypeFor,
 } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 
 declare function expectType<T>(value: T): void;
 
@@ -293,11 +293,11 @@ defineEntity(Account, {
   indexes: [
     { columns: (account) => [account.email], unique: true },
     {
-      columns: (account) => [{ column: account.createdAt, order: 'desc' }, raw`lower(${account.email})`],
+      columns: (account) => [{ column: account.createdAt, order: 'desc' }, sql`lower(${account.email})`],
       include: (account) => [account.id],
     },
   ],
-  checks: [{ where: { email: { $ne: '' } } }, { where: (account) => raw`${account.createdAt} IS NOT NULL` }],
+  checks: [{ where: { email: { $ne: '' } } }, { where: (account) => sql`${account.createdAt} IS NOT NULL` }],
   hooks: { beforeInsert: (account) => [account.touch], afterLoad: (account) => [account.touch] },
 });
 

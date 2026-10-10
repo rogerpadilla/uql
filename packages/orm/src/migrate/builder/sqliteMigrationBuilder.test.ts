@@ -3,7 +3,7 @@ import type { TypeCategory } from '../../schema/types.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createSpec } from '../../test/index.js';
 import { decodeDate } from '../../util/date.js';
-import { currentDate, raw } from '../../util/raw.js';
+import { currentDate, sql } from '../../util/sql.js';
 import { AbstractMigrationBuilderIt, BUILDER_TABLES } from './abstractMigrationBuilder-test.js';
 
 /**
@@ -28,10 +28,10 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
         t.date('day', { defaultValue: currentDate });
       }),
     );
-    await this.pool.run(raw.text(`INSERT INTO ${table} DEFAULT VALUES`));
-    const [row] = await this.pool.all<{ day: string }>(raw.text(`SELECT day FROM ${table}`));
+    await this.pool.run(sql.text(`INSERT INTO ${table} DEFAULT VALUES`));
+    const [row] = await this.pool.all<{ day: string }>(sql.text(`SELECT day FROM ${table}`));
 
-    expect(await this.pool.all`SELECT id FROM ${raw.text(table)} WHERE day = ${decodeDate(row.day)}`).toEqual([
+    expect(await this.pool.all`SELECT id FROM ${sql.text(table)} WHERE day = ${decodeDate(row.day)}`).toEqual([
       { id: 1 },
     ]);
   }

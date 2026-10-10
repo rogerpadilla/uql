@@ -13,7 +13,7 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryBuildFn,
-  QueryRaw,
+  QuerySql,
   QueryConflictPaths,
   QueryPage,
   QueryGroupMap,
@@ -29,7 +29,7 @@ import type {
   UpdatePayload,
 } from '../type/index.js';
 import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, isAutoIncrement } from '../util/index.js';
-import { statementOf } from '../util/raw.js';
+import { statementOf } from '../util/sql.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier, type UpsertedId } from './abstractQuerier.js';
@@ -170,18 +170,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /** The rows of a statement the dialect builds. */
-  private query<T>(build: QueryBuildFn | QueryRaw): Promise<T[]> {
+  private query<T>(build: QueryBuildFn | QuerySql): Promise<T[]> {
     return this.send(build, (sql, values) => this.internalAll<T>(sql, values));
   }
 
   /** Runs a statement the dialect builds. */
-  private exec(build: QueryBuildFn | QueryRaw): Promise<QueryUpdateResult> {
+  private exec(build: QueryBuildFn | QuerySql): Promise<QueryUpdateResult> {
     return this.send(build, (sql, values) => this.internalRun(sql, values));
   }
 
   /** Builds a statement and sends it on the connection, in turn, timed and its failure tagged with it. */
   private async send<T>(
-    build: QueryBuildFn | QueryRaw,
+    build: QueryBuildFn | QuerySql,
     task: (sql: string, values: unknown[] | undefined) => Promise<T>,
   ): Promise<T> {
     const { sql, values } = this.dialect.compile(build);

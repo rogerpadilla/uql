@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'bun:test';
 import { probeForeignKeys } from '../test/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 
 /**
@@ -35,7 +35,7 @@ describe('SqliteQuerierPool on bun:sqlite', () => {
   it('should report inserted ids from a RETURNING statement', async () => {
     const querier = await seed();
 
-    const res = await querier.run(raw.text("INSERT INTO t (s) VALUES ('a') RETURNING `id` `id`"));
+    const res = await querier.run(sql.text("INSERT INTO t (s) VALUES ('a') RETURNING `id` `id`"));
 
     expect(res.changes).toBe(1);
     expect(res.ids).toEqual([1]);

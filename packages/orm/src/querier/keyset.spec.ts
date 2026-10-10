@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import type { Json, QueryKeyset } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
 
@@ -24,7 +24,7 @@ class Order {
   @Field({ type: 'blob' }) digest?: Uint8Array | null;
   @Field({ type: Date, precision: 6 }) exactAt?: Date | null;
   /** A type of the engine's own, which no column family names, so only its value can say what it holds. */
-  @Field({ type: String, columnType: raw`point` }) spot?: string | null;
+  @Field({ type: String, columnType: sql`point` }) spot?: string | null;
   @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
   @Field({ references: () => Customer }) customerId?: string | null;
   @ManyToOne({ entity: () => Customer, references: (order) => order.customerId }) customer?: Customer;
@@ -157,7 +157,7 @@ describe('keysetRead', () => {
     ],
     [
       'a raw projection',
-      { $select: [raw`1`], $sort: { id: 1 }, $limit: 2 },
+      { $select: [sql`1`], $sort: { id: 1 }, $limit: 2 },
       "a page of 'Order' selects fields, which its cursor is read off",
     ],
   ])('should refuse %s', (_, q, message) => {

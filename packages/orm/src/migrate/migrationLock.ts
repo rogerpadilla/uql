@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import type { QuerierPool, QueryRaw, SqlDialectName, SqlQuerier } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import type { QuerierPool, QuerySql, SqlDialectName, SqlQuerier } from '../type/index.js';
+import { sql } from '../util/sql.js';
 import { fnv1a } from '../util/string.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
@@ -13,12 +13,12 @@ export const DEFAULT_LOCK_TIMEOUT = 5 * 60_000;
 const POLL_INTERVAL = 250;
 
 /** The statements taking and releasing a named lock: `acquire` takes it without waiting, answering a row only when it did. */
-type NamedLockSql = { readonly acquire: QueryRaw; readonly release: QueryRaw };
+type NamedLockSql = { readonly acquire: QuerySql; readonly release: QuerySql };
 
 /** MySQL's lock names are server-wide, so the database prefixes each, cut to the 64 characters it takes. */
 const mysqlLock = (name: string): NamedLockSql => {
-  const lock = raw`LEFT(CONCAT(DATABASE(), '.', ${name}), 64)`;
-  return { acquire: raw`SELECT 1 FROM DUAL WHERE GET_LOCK(${lock}, 0) = 1`, release: raw`DO RELEASE_LOCK(${lock})` };
+  const lock = sql`LEFT(CONCAT(DATABASE(), '.', ${name}), 64)`;
+  return { acquire: sql`SELECT 1 FROM DUAL WHERE GET_LOCK(${lock}, 0) = 1`, release: sql`DO RELEASE_LOCK(${lock})` };
 };
 
 /** Each engine's named lock, as `features.namedLocks` says what holds it. None on CockroachDB and SQLite. */
@@ -26,18 +26,18 @@ const NAMED_LOCK_SQL: Readonly<Record<SqlDialectName, ((name: string) => NamedLo
   postgres: (name) => {
     const key = fnv1a(name);
     return {
-      acquire: raw`SELECT 1 WHERE pg_try_advisory_lock(${key})`,
-      release: raw`SELECT pg_advisory_unlock(${key})`,
+      acquire: sql`SELECT 1 WHERE pg_try_advisory_lock(${key})`,
+      release: sql`SELECT pg_advisory_unlock(${key})`,
     };
   },
   cockroachdb: undefined,
   mysql: mysqlLock,
   mariadb: mysqlLock,
   mssql: (name) => ({
-    acquire: raw`DECLARE @_uql_lock INT;
+    acquire: sql`DECLARE @_uql_lock INT;
       EXEC @_uql_lock = sp_getapplock @Resource = ${name}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 0;
       SELECT 1 WHERE @_uql_lock >= 0`,
-    release: raw`EXEC sp_releaseapplock @Resource = ${name}, @LockOwner = 'Transaction'`,
+    release: sql`EXEC sp_releaseapplock @Resource = ${name}, @LockOwner = 'Transaction'`,
   }),
   sqlite: undefined,
 };

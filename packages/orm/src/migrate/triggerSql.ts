@@ -5,7 +5,7 @@ import type {
   EntityTriggerMeta,
   FieldKey,
   FieldMeta,
-  QueryRaw,
+  QuerySql,
   RefMap,
   StampEvent,
   TriggerEvent,
@@ -13,10 +13,10 @@ import type {
   TriggerRowName,
   TriggerRows,
 } from '../type/index.js';
-import { TriggerWriteRaw } from '../type/index.js';
+import { TriggerWriteSql } from '../type/index.js';
 import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
-import { raw, refs, rowRefs } from '../util/raw.js';
+import { sql, refs, rowRefs } from '../util/sql.js';
 import { ownedName, splitQualifiedName } from '../util/sql.util.js';
 import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -90,7 +90,7 @@ function triggerStatements<E>(
   const rows = [rowRefs(meta.entity, names.$new), rowRefs(meta.entity, names.$old)] as const;
   const filter = triggerFilter(dialect, meta, trigger, rows, names);
   const body = triggerBody(dialect, meta, trigger, before)(...rows);
-  if (perStatement && filter && !(body instanceof TriggerWriteRaw)) {
+  if (perStatement && filter && !(body instanceof TriggerWriteSql)) {
     throw new UqlUsageError(
       `${dialect.dialectName} fires a trigger once per statement, so 'of' and 'where' narrow only what ` +
         `insertInto, updateTable or deleteFrom reads, and '${meta.entity.name}' has one running its own SQL. ` +
@@ -279,25 +279,25 @@ function stampBody<E extends object>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
   key: FieldKey<E>,
-  value: QueryRaw,
+  value: QuerySql,
   newRow: RefMap<E>,
-): QueryRaw {
+): QuerySql {
   const { entity } = meta;
   if (dialect.features.triggers.assignsRow) {
     const target = newRow[key];
-    return dialect.features.triggers.body === 'function' ? raw`${target} := ${value};` : raw`SET ${target} = ${value};`;
+    return dialect.features.triggers.body === 'function' ? sql`${target} := ${value};` : sql`SET ${target} = ${value};`;
   }
   const table = refs(entity);
-  const keyed = meta.ids.map((id) => raw`${table[id]} = ${newRow[id]}`);
+  const keyed = meta.ids.map((id) => sql`${table[id]} = ${newRow[id]}`);
   // Read through the write's own qualifier, as `keyed` is: `inserted` holds the same column name.
   const stamped = dialect.compileDdl(value, entity);
-  const differs = raw(({ ctx, escapedPrefix }) =>
+  const differs = sql(({ ctx, escapedPrefix }) =>
     ctx.append(dialect.neExpr(`${escapedPrefix}${dialect.escapedColumnName(meta, key)}`, stamped)),
   );
   const where = { $and: [...keyed, differs] };
   const restated = written({ kind: 'update', entity, set: { [key]: value }, where });
   const { reentryGuard } = dialect.features.triggers;
-  return reentryGuard ? raw`${raw(() => reentryGuard)}\n${restated}` : restated;
+  return reentryGuard ? sql`${sql(() => reentryGuard)}\n${restated}` : restated;
 }
 
 /** A dollar quote the body does not contain, so no `$$` in it - a literal, a comment - ends the function early. */

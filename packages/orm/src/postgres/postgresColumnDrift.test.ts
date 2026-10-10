@@ -4,7 +4,7 @@ import { detectDrift } from '../migrate/drift/index.js';
 import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { postgresConnection, provisioningTimeout } from '../test/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 import { PostgresDialect } from './postgresDialect.js';
 
@@ -41,14 +41,14 @@ describe('PostgreSQL column type drift', () => {
 
   beforeAll(async () => {
     await pool.withQuerier(async (querier) => {
-      await querier.run(raw.text(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`));
-      await querier.run(raw.text(`CREATE SCHEMA "${SCHEMA}"`));
-      await querier.run(raw.text(`CREATE TABLE "${SCHEMA}"."${TABLE}" (id BIGINT PRIMARY KEY, title VARCHAR(255))`));
+      await querier.run(sql.text(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`));
+      await querier.run(sql.text(`CREATE SCHEMA "${SCHEMA}"`));
+      await querier.run(sql.text(`CREATE TABLE "${SCHEMA}"."${TABLE}" (id BIGINT PRIMARY KEY, title VARCHAR(255))`));
     });
   }, provisioningTimeout);
 
   afterAll(async () => {
-    await pool.withQuerier((querier) => querier.run(raw.text(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`)));
+    await pool.withQuerier((querier) => querier.run(sql.text(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`)));
     await pool.end();
   }, provisioningTimeout);
 

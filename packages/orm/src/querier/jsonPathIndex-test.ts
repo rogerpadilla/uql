@@ -5,7 +5,7 @@ import { driftOf } from '../test/drift.js';
 import type { Spec } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
 import type { Json, QueryWhere, SqlQuerierPool, Type } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { sql } from '../util/sql.js';
 
 const TABLE = 'json_path_index';
 
@@ -27,8 +27,8 @@ export async function queryPlanOf<E>(
   $where: QueryWhere<E>,
   explain = 'EXPLAIN',
 ): Promise<string> {
-  const find = raw(({ ctx }) => pool.dialect.find(ctx, entity, { $where }));
-  return JSON.stringify(await pool.all`${raw.text(explain)} ${find}`);
+  const find = sql(({ ctx }) => pool.dialect.find(ctx, entity, { $where }));
+  return JSON.stringify(await pool.all`${sql.text(explain)} ${find}`);
 }
 
 /**
@@ -49,7 +49,7 @@ export class JsonPathIndexIt implements Spec {
       JsonPathIndexed,
       Array.from({ length: ROWS }, (_, n) => ({ kind: { name: `n${n}`, score: n + 0.5 } })),
     );
-    await this.pool.run(raw.text(`${this.analyze} ${this.pool.dialect.escapeId(TABLE)}`));
+    await this.pool.run(sql.text(`${this.analyze} ${this.pool.dialect.escapeId(TABLE)}`));
   }
 
   async afterAll() {

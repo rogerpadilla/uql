@@ -1,7 +1,7 @@
 import { UqlUsageError } from '../util/uqlError.js';
 import type { FieldKey, FieldKeyOf, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
-import type { QueryRaw } from './queryRaw.js';
+import type { QuerySql } from './querySql.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 import type { ExactlyOne, IsMany, RejectKeys } from './utility.js';
 
@@ -98,7 +98,7 @@ export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>> & {
 };
 
 /** What an aggregate's own `$where` reads: the entity's fields, since a relation there is a subquery inside it. */
-type QueryAggregateWhere<E> = QueryWhere<E, QueryRaw, FieldKey<E>>;
+type QueryAggregateWhere<E> = QueryWhere<E, QuerySql, FieldKey<E>>;
 
 /** An aggregate's `$where` naming a key it does not have, refused: a captured `$select` skips the excess-property check. */
 type AggregateWhereKeys<E, Fn> = Fn extends { readonly $where: infer W }

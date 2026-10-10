@@ -12,7 +12,7 @@ import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSl
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
-import { QueryRaw } from '../type/index.js';
+import { QuerySql } from '../type/index.js';
 import type {
   EntityMeta,
   FieldMeta,
@@ -420,11 +420,11 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * An object or array bound as JSON, or a `raw()` rendered in place, which is the half both binders
+   * An object or array bound as JSON, or a `sql()` rendered in place, which is the half both binders
    * spell the same way; `undefined` for a scalar - where they diverge.
    */
   #jsonCompound(ctx: QueryContext, value: unknown): string | undefined {
-    if (value instanceof QueryRaw) {
+    if (value instanceof QuerySql) {
       return this.rawFragment(ctx, value);
     }
     if (value === null || typeof value !== 'object') {

@@ -3,7 +3,7 @@ import { MsSqlQuerierPool } from '../../mssql/mssqlQuerierPool.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ForeignKeyAction } from '../../schema/types.js';
 import { createSpec, mssqlConnection } from '../../test/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { introspectorFor } from './registry.js';
 
@@ -37,7 +37,7 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReadAWidthInCharacters() {
     const schema = await this.probe('probe_widths', (querier, table) =>
       querier.run(
-        raw.text(
+        sql.text(
           `CREATE TABLE ${table} (a NVARCHAR(255), b NVARCHAR(MAX), c VARCHAR(20), d NCHAR(10), e VARBINARY(16), f VARBINARY(MAX))`,
         ),
       ),
@@ -56,7 +56,7 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   /** Read off the storage size, an 8-byte header and four a dimension: `vector_dimensions` is 2025-only. */
   async shouldReadAVectorDimensionFromItsStorageSize() {
     const schema = await this.probe('probe_vector', (querier, table) =>
-      querier.run(raw.text(`CREATE TABLE ${table} (embedding VECTOR(1536))`)),
+      querier.run(sql.text(`CREATE TABLE ${table} (embedding VECTOR(1536))`)),
     );
 
     expect(this.getColumn(schema, 'embedding')).toMatchObject({ type: 'VECTOR', length: 1536 });
@@ -65,7 +65,7 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
       querier.run(
-        raw.text(/*sql*/ `
+        sql.text(/*sql*/ `
         CREATE TABLE ${table} (
           quoted NVARCHAR(9) DEFAULT N'it''s', plain VARCHAR(9) DEFAULT 'x', negative INT DEFAULT -3,
           fraction DECIMAL(6, 2) DEFAULT -1.5, blank NVARCHAR(9) DEFAULT NULL, stamped DATETIME2 DEFAULT CURRENT_TIMESTAMP,
@@ -81,8 +81,8 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
       negative: -3,
       fraction: -1.5,
       blank: null,
-      stamped: new SqlExpression('raw', '(getdate())'),
-      summed: new SqlExpression('raw', '((1)+(2))'),
+      stamped: new SqlExpression('sql', '(getdate())'),
+      summed: new SqlExpression('sql', '((1)+(2))'),
       bare: undefined,
       clock: new SqlExpression('currentTimestamp'),
     });
@@ -92,14 +92,14 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReadOnlyTheSchemaItWasGiven() {
     const table = `uql_probe.${INTROSPECT_TABLES.A}`;
     const dropProbe = async () => {
-      await this.pool.run(raw.text(`DROP TABLE IF EXISTS ${table}`));
+      await this.pool.run(sql.text(`DROP TABLE IF EXISTS ${table}`));
       await this.pool.run`DROP SCHEMA IF EXISTS uql_probe`;
     };
     await dropProbe();
     onTestFinished(dropProbe);
     await this.pool.run`CREATE SCHEMA uql_probe`;
     await this.pool.run(
-      raw.text(
+      sql.text(
         `CREATE TABLE ${table} (id INT CONSTRAINT probe_pk PRIMARY KEY, code INT UNIQUE, note NVARCHAR(9), INDEX probe_note_idx (note))`,
       ),
     );

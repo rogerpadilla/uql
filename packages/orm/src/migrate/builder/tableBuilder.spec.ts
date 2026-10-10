@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { currentTimestamp, uuid, raw } from '../../util/index.js';
+import { currentTimestamp, uuid, sql } from '../../util/index.js';
 import { formatDefaultValue } from '../ddl/defaultSql.js';
 import { renderIndexDefinition } from '../generator/definitionToNode.js';
 import { TableDefinitionBuilder } from './tableBuilder.js';
@@ -207,10 +207,12 @@ describe('TableDefinitionBuilder', () => {
       const table = new TableDefinitionBuilder('events');
       table.timestamp('at', { defaultValue: currentTimestamp });
       table.uuid('key').defaultValue(uuid);
-      table.bigint('seq', { defaultValue: raw`nextval('s')` });
+      table.bigint('seq', { defaultValue: sql`nextval('s')` });
 
-      const sql = table.build().columns.map((column) => formatDefaultValue(column.defaultValue, new PostgresDialect()));
-      expect(sql).toEqual(['CURRENT_TIMESTAMP', 'gen_random_uuid()', "(nextval('s'))"]);
+      const statement = table
+        .build()
+        .columns.map((column) => formatDefaultValue(column.defaultValue, new PostgresDialect()));
+      expect(statement).toEqual(['CURRENT_TIMESTAMP', 'gen_random_uuid()', "(nextval('s'))"]);
     });
   });
 
@@ -299,13 +301,15 @@ describe('TableDefinitionBuilder', () => {
 
     it('should take the same entries and options as the @Index decorator', () => {
       const table = new TableDefinitionBuilder('notes');
-      table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
+      table.index([sql`lower("email")`, { column: 'body', length: 64 }], {
         name: 'notes_lookup_idx',
         type: 'gin',
-        where: raw`"deletedAt" IS NULL`,
+        where: sql`"deletedAt" IS NULL`,
         include: ['title'],
       });
-      expect(renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql))).toEqual({
+      expect(
+        renderIndexDefinition(table.build().indexes[0], (statement) => new PostgresDialect().compileDdl(statement)),
+      ).toEqual({
         name: 'notes_lookup_idx',
         entries: [
           { column: 'lower("email")', expression: true },
@@ -327,7 +331,7 @@ describe('TableDefinitionBuilder', () => {
 
     it('should name an expression after its position, as an entity names one', () => {
       const table = new TableDefinitionBuilder('notes');
-      table.unique(['tenantId', raw`lower("email")`]);
+      table.unique(['tenantId', sql`lower("email")`]);
 
       expect(table.build().indexes[0].name).toBe('notes__tenantId_expr1_uk');
     });
@@ -443,8 +447,10 @@ describe('TableDefinitionBuilder', () => {
 describe('partial-index predicate', () => {
   it('should be rendered for the engine the migration runs on, a value written as its literal', () => {
     const table = new TableDefinitionBuilder('Item');
-    table.index(['name'], { where: raw`"stock" > ${0}` });
-    const index = renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql));
+    table.index(['name'], { where: sql`"stock" > ${0}` });
+    const index = renderIndexDefinition(table.build().indexes[0], (statement) =>
+      new PostgresDialect().compileDdl(statement),
+    );
     expect(index.where).toBe('"stock" > 0');
   });
 });

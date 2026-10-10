@@ -3,7 +3,7 @@ import { Entity, Field, Id, Index } from '../entity/index.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { postgresConnection } from '../test/index.js';
 import { syncedPool } from '../test/sqlPools.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { Migrator } from './migrator.js';
 
 const TABLE = 'RawColumnTypeCaption';
@@ -22,8 +22,8 @@ class Caption {
 
   @Field({
     type: String,
-    columnType: raw`tsvector`,
-    computed: (caption) => raw`to_tsvector('simple', coalesce(${caption.text}, ''))`,
+    columnType: sql`tsvector`,
+    computed: (caption) => sql`to_tsvector('simple', coalesce(${caption.text}, ''))`,
     stored: true,
     eager: false,
   })
@@ -35,7 +35,7 @@ describe('a raw column type (PostgreSQL)', () => {
 
   it('should create the column as the engine spells it', async () => {
     const [column] = await pool().all<{ data_type: string }>(
-      raw.text(
+      sql.text(
         `SELECT data_type FROM information_schema.columns WHERE table_name = '${TABLE}' AND column_name = 'searchVector'`,
       ),
     );
@@ -45,14 +45,14 @@ describe('a raw column type (PostgreSQL)', () => {
   it('should keep the generated expression the engine fills', async () => {
     await pool().insertOne(Caption, { text: 'la reunión del proyecto' });
     const [row] = await pool().all<{ hit: boolean }>(
-      raw.text(`SELECT "searchVector" @@ to_tsquery('simple', 'proyecto') AS hit FROM "${TABLE}"`),
+      sql.text(`SELECT "searchVector" @@ to_tsquery('simple', 'proyecto') AS hit FROM "${TABLE}"`),
     );
     expect(row.hit).toBe(true);
   });
 
   it('should index it, which is why the column needs the engine type and not a text one', async () => {
     const indexes = await pool().all<{ indexname: string }>(
-      raw.text(`SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}' ORDER BY indexname`),
+      sql.text(`SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}' ORDER BY indexname`),
     );
     expect(indexes).toEqual([{ indexname: `${TABLE}__id_pk` }, { indexname: 'rct_search_idx' }]);
   });

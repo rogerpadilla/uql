@@ -3,7 +3,7 @@ import { Entity, Field, Id, Index, ManyToOne, OneToMany, OneToOne } from '../ent
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { buildSchemaAST } from './schemaASTBuilder.js';
 
 // Test entities
@@ -316,7 +316,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class ComputedUser {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, computed: raw`TRUE` }) secret?: string | null;
+        @Field({ type: String, computed: sql`TRUE` }) secret?: string | null;
       }
       const ast = buildSchemaAST([ComputedUser]);
       expect(ast.getTable('ComputedUser')?.columns.has('secret')).toBe(false);
@@ -350,7 +350,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should refuse SQL an entity declares when given nothing to render it with', () => {
-      @Entity({ checks: [{ where: raw`1 = 1` }] })
+      @Entity({ checks: [{ where: sql`1 = 1` }] })
       class Checked {
         @Id({ type: Number }) id?: number;
       }
@@ -474,7 +474,7 @@ describe('SchemaASTBuilder', () => {
     /** An expression is not its column, so an index over one serves no lookup by the key. */
     it('should index a foreign key an expression index only reads', () => {
       @Entity()
-      @Index((fkExpression) => [raw`ABS(${fkExpression.fkBlogId})`])
+      @Index((fkExpression) => [sql`ABS(${fkExpression.fkBlogId})`])
       class FkExpression {
         @Id({ type: Number }) id?: number;
         @Field({ references: () => FkBlog }) fkBlogId?: number | null;

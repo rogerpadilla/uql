@@ -9,7 +9,7 @@ import { canonicalToSql } from '../../schema/canonicalType.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { TypeCategory } from '../../schema/types.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
-import { currentDate, currentTime, currentTimestamp, uuid, uuidv7, raw } from '../../util/raw.js';
+import { currentDate, currentTime, currentTimestamp, uuid, uuidv7, sql } from '../../util/sql.js';
 import { DIALECT_DEFAULTS, formatDefaultValue } from '../ddl/defaultSql.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
@@ -89,19 +89,19 @@ describe('Default value expressions', () => {
   /** MySQL refuses a `CURRENT_TIMESTAMP` default whose precision differs from its column's. */
   it('should give a now default the precision of its MySQL column', () => {
     expect(fmt(mysql, currentTimestamp, 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP(3)');
-    expect(fmt(mysql, new SqlExpression('raw', 'CURRENT_TIMESTAMP'), 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP');
+    expect(fmt(mysql, new SqlExpression('sql', 'CURRENT_TIMESTAMP'), 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP');
     expect(fmt(postgres, currentTimestamp, 'TIMESTAMP(3)')).toBe('CURRENT_TIMESTAMP');
   });
 
-  /** `raw` is the same SQL an entity declares, parenthesized as SQLite and MySQL require of an expression. */
+  /** `sql` is the same SQL an entity declares, parenthesized as SQLite and MySQL require of an expression. */
   it('should compile a raw default and parenthesize it', () => {
-    expect(fmt(sqlite, raw`unixepoch()`)).toBe('(unixepoch())');
-    expect(fmt(postgres, raw`nextval('s')`)).toBe("(nextval('s'))");
+    expect(fmt(sqlite, sql`unixepoch()`)).toBe('(unixepoch())');
+    expect(fmt(postgres, sql`nextval('s')`)).toBe("(nextval('s'))");
   });
 
   it('should pass raw SQL through untouched', () => {
-    expect(fmt(postgres, new SqlExpression('raw', "nextval('s')"))).toBe("nextval('s')");
-    expect(fmt(sqlite, new SqlExpression('raw', 'unixepoch()'))).toBe('unixepoch()');
+    expect(fmt(postgres, new SqlExpression('sql', "nextval('s')"))).toBe("nextval('s')");
+    expect(fmt(sqlite, new SqlExpression('sql', 'unixepoch()'))).toBe('unixepoch()');
   });
 
   it('should format plain values as literals', () => {
@@ -141,27 +141,27 @@ describe('Default value expressions', () => {
   it('should not report drift for SQL the engine reprints as it was declared', () => {
     const generator = new SqlSchemaGenerator(postgres);
 
-    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('raw', '(CURRENT_TIMESTAMP)'))).toBe(true);
-    expect(generator.defaultsEqual(uuid, new SqlExpression('raw', '(gen_random_uuid())'))).toBe(true);
+    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('sql', '(CURRENT_TIMESTAMP)'))).toBe(true);
+    expect(generator.defaultsEqual(uuid, new SqlExpression('sql', '(gen_random_uuid())'))).toBe(true);
     expect(generator.defaultsEqual({}, '{}')).toBe(true);
-    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('raw', '(CURRENT_DATE)'))).toBe(false);
+    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('sql', '(CURRENT_DATE)'))).toBe(false);
   });
 
   /** The reprints engines differ in, each taken out on its own engine: see `columnDefault.test.ts`. */
   it('should read SQL alike past case, spacing, wrapping parentheses and an empty argument list', () => {
     const generator = new SqlSchemaGenerator(cockroach);
 
-    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('raw', '(current_timestamp())'))).toBe(true);
+    expect(generator.defaultsEqual(currentTimestamp, new SqlExpression('sql', '(current_timestamp())'))).toBe(true);
     expect(
       generator.defaultsEqual(
-        new SqlExpression('raw', "coalesce(NULL, 'a')"),
-        new SqlExpression('raw', "((coalesce(NULL,'a')))"),
+        new SqlExpression('sql', "coalesce(NULL, 'a')"),
+        new SqlExpression('sql', "((coalesce(NULL,'a')))"),
       ),
     ).toBe(true);
     expect(
       generator.defaultsEqual(
-        new SqlExpression('raw', "coalesce(NULL, 'a')"),
-        new SqlExpression('raw', "(coalesce(NULL, 'b'))"),
+        new SqlExpression('sql', "coalesce(NULL, 'a')"),
+        new SqlExpression('sql', "(coalesce(NULL, 'b'))"),
       ),
     ).toBe(false);
   });
@@ -170,7 +170,7 @@ describe('Default value expressions', () => {
   it('should never read a literal as the SQL it spells', () => {
     const generator = new SqlSchemaGenerator(postgres);
 
-    expect(generator.defaultsEqual('CURRENT_TIMESTAMP', new SqlExpression('raw', '(CURRENT_TIMESTAMP)'))).toBe(false);
+    expect(generator.defaultsEqual('CURRENT_TIMESTAMP', new SqlExpression('sql', '(CURRENT_TIMESTAMP)'))).toBe(false);
     expect(generator.defaultsEqual(currentTimestamp, 'CURRENT_TIMESTAMP')).toBe(false);
   });
 

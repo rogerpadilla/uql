@@ -7,7 +7,7 @@ import {
   type JsonColumnType,
   type Query,
   type QueryContext,
-  QueryRaw,
+  QuerySql,
   type QueryTextSearchOptions,
   type SqlDialectFeatures,
   type VectorDistance,
@@ -385,7 +385,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * The plain values merge as one bound object; a `raw()` one is an SQL expression rather than JSON,
+   * The plain values merge as one bound object; a `sql()` one is an SQL expression rather than JSON,
    * so it merges through `JSONB_BUILD_OBJECT` and is evaluated in place - stringified with the rest,
    * it would land as `{}`.
    */
@@ -396,9 +396,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     field?: FieldOptions,
   ): string {
     const entries = Object.entries(set);
-    const merged = this.jsonVal(ctx, Object.fromEntries(entries.filter(([, value]) => !(value instanceof QueryRaw))));
+    const merged = this.jsonVal(ctx, Object.fromEntries(entries.filter(([, value]) => !(value instanceof QuerySql))));
     const raws = entries.flatMap(([key, value]) =>
-      value instanceof QueryRaw ? [` || JSONB_BUILD_OBJECT('${key}', ${this.rawFragment(ctx, value)})`] : [],
+      value instanceof QuerySql ? [` || JSONB_BUILD_OBJECT('${key}', ${this.rawFragment(ctx, value)})`] : [],
     );
     return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${merged}${raws.join('')}`;
   }
@@ -424,7 +424,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * Helper to add a JSON value to context with appropriate stringification and cast.
    */
   private jsonVal(ctx: QueryContext, value: unknown, type: JsonColumnType = 'jsonb'): string {
-    if (value instanceof QueryRaw) return this.rawFragment(ctx, value);
+    if (value instanceof QuerySql) return this.rawFragment(ctx, value);
     if (value == null) return `${this.addValue(ctx, null)}::${type}`;
 
     const json = JSON.stringify(value);

@@ -1,10 +1,10 @@
 /**
- * `UpdatePayload` (typo'd fields, `raw()` values, `$inc`/`$mul`, relations as their own entity shape) and
+ * `UpdatePayload` (typo'd fields, `sql()` values, `$inc`/`$mul`, relations as their own entity shape) and
  * `QueryConflictPaths`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { versionKey } from '../index.js';
-import { raw, refs } from '../util/index.js';
+import { sql, refs } from '../util/index.js';
 
 class Company {
   id!: number;
@@ -22,8 +22,8 @@ declare const querier: Querier;
 
 export async function updatePayloadSafety() {
   // Plain field values and a raw SQL expression in their place.
-  await querier.updateOneById(Employee, 1, { name: 'x', salary: raw`salary + 100` });
-  await querier.updateMany(Employee, { $where: { id: 1 } }, { salary: raw`salary * 1.1` });
+  await querier.updateOneById(Employee, 1, { name: 'x', salary: sql`salary + 100` });
+  await querier.updateMany(Employee, { $where: { id: 1 } }, { salary: sql`salary * 1.1` });
 
   // Relations are settable via their own entity shape, not a foreign-key scalar.
   await querier.updateOneById(Employee, 1, { company: { id: 1, name: 'Acme' } });
@@ -74,7 +74,7 @@ export async function arithmeticSafety() {
   await querier.updateOneById(Counter, 1, { total: { $inc: 1 } });
   // The step may be SQL of the field's type, NULL still counting as 0: a ref, or a raw expression.
   const counter = refs(Counter);
-  await querier.updateMany(Counter, { $where: { id: 1 } }, { hits: { $inc: counter.id }, total: { $mul: raw`2` } });
+  await querier.updateMany(Counter, { $where: { id: 1 } }, { hits: { $inc: counter.id }, total: { $mul: sql`2` } });
   // @ts-expect-error a string column's ref is no step
   await querier.updateOneById(Counter, 1, { hits: { $inc: counter.label } });
   // @ts-expect-error an upsert writes whole rows, with no update operator

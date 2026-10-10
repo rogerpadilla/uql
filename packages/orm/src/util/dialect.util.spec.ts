@@ -20,7 +20,7 @@ import {
   textSearchFields,
   withoutSoftDeleteFilter,
 } from './dialect.util.js';
-import { raw } from './raw.js';
+import { sql } from './sql.js';
 import { UqlSecurityError } from './uqlError.js';
 
 @Filter('active', { where: { status: 'active' }, default: false })
@@ -391,7 +391,7 @@ describe('textSearchFields', () => {
 
   it('should search only the plain columns of the fulltext index it reads', () => {
     @Entity()
-    @Index((doc) => [raw`lower(${doc.title})`, doc.body], { type: 'fulltext' })
+    @Index((doc) => [sql`lower(${doc.title})`, doc.body], { type: 'fulltext' })
     class Lowered {
       @Id({ type: Number }) id?: number;
       @Field({ type: String }) title?: string | null;
@@ -411,7 +411,7 @@ describe('textSearchFields', () => {
 });
 
 it('should tell a $select list from its map form', () => {
-  expect(isSelectList<User>([raw`1`])).toBe(true);
+  expect(isSelectList<User>([sql`1`])).toBe(true);
   expect(isSelectList<User>({ name: true })).toBe(false);
   expect(isSelectList<User>(undefined)).toBe(false);
 });
@@ -465,7 +465,7 @@ describe('findVectorIndex', () => {
   });
 
   it('should ignore an expression index, whose text names no column however it reads', () => {
-    @Index(() => [raw`embedding`], { type: 'hnsw', distance: 'cosine' })
+    @Index(() => [sql`embedding`], { type: 'hnsw', distance: 'cosine' })
     @Entity()
     class Expressed {
       @Id({ type: Number }) id?: number;

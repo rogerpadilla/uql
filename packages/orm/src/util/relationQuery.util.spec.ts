@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import type { QueryPopulate } from '../type/index.js';
-import { raw } from './raw.js';
 import {
   childrenExcept,
   childrenOf,
@@ -16,6 +15,7 @@ import {
   populatesRelations,
   targetJoins,
 } from './relationQuery.util.js';
+import { sql } from './sql.js';
 
 /** `/http` parses a populate out of client JSON, so a key the types would refuse can still arrive. */
 it('should pass over a relation populated false and a key that is no relation', () => {
@@ -120,7 +120,7 @@ it("should parse a relation's query value", () => {
 });
 
 it('should take a raw $select in a relation query, as the statement does', () => {
-  const $select = [raw`1`.as('one')];
+  const $select = [sql`1`.as('one')];
   expect(parseRelationQueryValue({ $select })).toEqual({ query: { $select }, required: false, nested: true });
 });
 

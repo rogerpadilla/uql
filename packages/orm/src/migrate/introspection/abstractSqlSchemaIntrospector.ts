@@ -12,14 +12,14 @@ import type {
   IndexSchema,
   PrimaryKeySchema,
   QuerierPool,
-  QueryRaw,
+  QuerySql,
   RawRow,
   SchemaIntrospector,
   SqlQuerier,
   StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
-import { raw } from '../../util/raw.js';
+import { sql } from '../../util/sql.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { knownDefault } from '../ddl/defaultSql.js';
@@ -29,7 +29,7 @@ import { renamedTable, tableSchemasToAST } from './tableSchemaAST.js';
  * Reads the rows of one statement while introspecting a table, an identical statement sent once: SQLite's
  * `table_info` is both the column list and the key, and on D1 and Turso every PRAGMA is a round trip.
  */
-export type TableRowReader = <T extends RawRow>(sql: QueryRaw) => Promise<T[]>;
+export type TableRowReader = <T extends RawRow>(sql: QuerySql) => Promise<T[]>;
 
 /** A column as its engine's catalogue reads it; the key and the indexes say which it belongs to. */
 export type ReadColumn = Except<ColumnSchema, 'isPrimaryKey' | 'isUnique'>;
@@ -64,15 +64,15 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 
   /** The schema every catalogue query filters on: the one that was asked for, bound, or the connection's default. */
-  protected get schemaExpr(): QueryRaw {
-    return this.schema === undefined ? this.defaultSchemaExpr : raw`${this.schema}`;
+  protected get schemaExpr(): QuerySql {
+    return this.schema === undefined ? this.defaultSchemaExpr : sql`${this.schema}`;
   }
 
   /**
    * How this engine names the connection's current schema (Postgres) or database (MySQL). Empty on
    * an engine with no schemas, whose catalogue queries never reference one.
    */
-  protected readonly defaultSchemaExpr: QueryRaw = raw``;
+  protected readonly defaultSchemaExpr: QuerySql = sql``;
 
   /**
    * The database as a {@link SchemaAST}, or just the tables named. A name nothing matches is left out
@@ -152,10 +152,10 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 
   /** SQL listing the base tables' names, as `table_name`. */
-  protected abstract getTableNamesQuery(): QueryRaw;
+  protected abstract getTableNamesQuery(): QuerySql;
 
   /** SQL answering a row where the base table named exists. */
-  protected abstract tableExistsQuery(tableName: string): QueryRaw;
+  protected abstract tableExistsQuery(tableName: string): QuerySql;
 
   /** The table's columns, in their order. */
   protected abstract getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]>;
@@ -189,7 +189,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
    * as the engine reprints it, and what it `requires` to be recreated first. It reads what is installed, not
    * what uql wrote, which is exactly what a rollback restores.
    */
-  protected abstract triggersQuery(tableName: string): QueryRaw;
+  protected abstract triggersQuery(tableName: string): QuerySql;
 
   /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
   protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
@@ -200,7 +200,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
    * The key `sql` lists a row of for each column, in key order: its `column_name`, and the `constraint_name`
    * where the engine names the key's constraint. Only a `DROP` needs that name, and only the reported one will do.
    */
-  protected async readPrimaryKey(read: TableRowReader, sql: QueryRaw): Promise<PrimaryKeySchema | undefined> {
+  protected async readPrimaryKey(read: TableRowReader, sql: QuerySql): Promise<PrimaryKeySchema | undefined> {
     const rows = await read<{ column_name: string; constraint_name?: string | null }>(sql);
     return rows.length
       ? { columns: rows.map((row) => row.column_name), name: rows[0].constraint_name ?? undefined }
@@ -257,7 +257,7 @@ function uniqueColumns(indexes: readonly IndexSchema[]): Set<string> {
 function createTableRowReader(querier: SqlQuerier): TableRowReader {
   const sent = new Map<string, Promise<RawRow[]>>();
 
-  return <T extends RawRow>(sql: QueryRaw): Promise<T[]> => {
+  return <T extends RawRow>(sql: QuerySql): Promise<T[]> => {
     const key = JSON.stringify(querier.dialect.compile(sql));
     let rows = sent.get(key);
     if (!rows) {

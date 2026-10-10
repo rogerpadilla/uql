@@ -5,7 +5,7 @@ import { createTableNode } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
 import { assertDefined } from '../test/index.js';
 import type { EntityWhere, Type } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { sql } from '../util/index.js';
 import { validatorCheck } from './mongoCommand.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
@@ -337,7 +337,7 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should refuse SQL as a partial index predicate', () => {
-    const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.status} = 'open'`;
+    const where: EntityWhere<TicketShape> = (ticket) => sql`${ticket.status} = 'open'`;
     expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
       'mongodb does not support partial indexes from a SQL predicate (index "ticket_idx")',
     );
@@ -480,7 +480,7 @@ describe('MongoSchemaGenerator validator', () => {
   });
 
   it('should refuse a check given as SQL', () => {
-    expect(() => generator.generateCreateSchema([taskChecking((task) => raw`${task.status} <> 'x'`)])).toThrow(
+    expect(() => generator.generateCreateSchema([taskChecking((task) => sql`${task.status} <> 'x'`)])).toThrow(
       'mongodb does not support checks from a SQL predicate (collection "Task")',
     );
   });

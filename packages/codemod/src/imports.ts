@@ -55,6 +55,7 @@ const UTIL_ROOT_EXPORTS = [
   'currentTime',
   'currentTimestamp',
   'raw',
+  'sql',
   'refs',
   'uuid',
   'uuidv7',

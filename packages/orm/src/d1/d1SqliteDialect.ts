@@ -28,7 +28,7 @@ export class D1SqliteDialect extends SqliteDialect {
   /**
    * D1 loads no extensions (its allowlist is FTS5, JSON and the math functions) and has no vector
    * functions of its own, so the sqlite-vec names inherited from {@link SqliteDialect} would compile
-   * to SQL that only fails once it reaches the edge. `raw()` is no escape hatch either, hence a
+   * to SQL that only fails once it reaches the edge. `sql()` is no escape hatch either, hence a
    * message that names the product that does the job.
    */
   protected override appendVectorDistance(): never {
