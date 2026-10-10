@@ -1,5 +1,6 @@
 import ts from 'typescript';
-import { templateOf } from './entitySql.js';
+import { original, type Part } from './edits.js';
+import { templateOf, templateWith } from './entitySql.js';
 
 /**
  * A quoted string or identifier, or a comment, skipped; a `?` or `$n` placeholder; or a character a placeholder
@@ -41,12 +42,12 @@ function placeholdersOf(sql: string, count: number): Placeholders | undefined {
  * it binds, or nothing where that is not certain: the SQL is no literal, or the values no array literal of
  * plain elements, or its placeholders cannot be told apart from the rest of the text.
  */
-export function statementTemplate(sql: ts.Expression, values: readonly ts.Expression[]): string | undefined {
+export function statementTemplate(sql: ts.Expression, values: readonly ts.Expression[]): readonly Part[] | undefined {
   if (!ts.isStringLiteral(sql) && !ts.isNoSubstitutionTemplateLiteral(sql)) {
     return undefined;
   }
   if (!values.length) {
-    return templateOf([sql.text]);
+    return [templateOf(sql.text)];
   }
   const [list] = values;
   const elements = ts.isArrayLiteralExpression(list) ? list.elements : undefined;
@@ -54,11 +55,17 @@ export function statementTemplate(sql: ts.Expression, values: readonly ts.Expres
     return undefined;
   }
   const placeholders = placeholdersOf(sql.text, elements.length);
-  return (
-    placeholders &&
-    templateOf(
-      placeholders.texts,
-      placeholders.values.map((at) => elements[at].getText()),
-    )
+  if (!placeholders || placeholders.values.some((at) => isReused(placeholders.values, at) && !isPlain(elements[at]))) {
+    return undefined;
+  }
+  return templateWith(
+    placeholders.texts,
+    placeholders.values.map((at) => original(elements[at])),
   );
 }
+
+/** A value read twice in the template is evaluated twice, which only a name or a literal can do unseen. */
+const isPlain = (value: ts.Expression): boolean =>
+  ts.isIdentifier(value) || ts.isNumericLiteral(value) || ts.isStringLiteral(value);
+
+const isReused = (values: readonly number[], at: number): boolean => values.filter((value) => value === at).length > 1;

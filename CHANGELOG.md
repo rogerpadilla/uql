@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.101.4] - 2026-10-10
+
+- The codemod renames `raw` to `sql` at the import and every use, and writes ``sql`...` `` and `sql.text` where it rewrites SQL.
+
 ## [0.101.3] - 2026-10-10
 
 - Generated migrations write ``querier.run /*sql*/ `...` ``, the comment editors such as es6-string-html highlight as SQL.

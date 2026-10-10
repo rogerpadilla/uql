@@ -54,7 +54,6 @@ const UTIL_ROOT_EXPORTS = [
   'currentDate',
   'currentTime',
   'currentTimestamp',
-  'raw',
   'sql',
   'refs',
   'uuid',
@@ -68,6 +67,10 @@ const UTIL_ROOT_EXPORTS = [
   'HookContext',
   'DefaultLogger',
 ];
+
+/** The name `uql-orm` gave its SQL tag, and gives it now. */
+export const LEGACY_SQL_TAG = 'raw';
+export const SQL_TAG = 'sql';
 
 /**
  * Exports renamed or moved and nothing else, so the import and every use follow, the import moving to `from`
@@ -108,6 +111,8 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['IForeignKeyBuilder', { to: 'ForeignKeyBuilder' }],
   ['ITableForeignKeyBuilder', { to: 'TableForeignKeyBuilder' }],
   ['UqlLockUsageError', { to: 'UqlUsageError' }],
+  [LEGACY_SQL_TAG, { to: SQL_TAG }],
+  [`uql-orm/util#${LEGACY_SQL_TAG}`, { to: SQL_TAG, from: 'uql-orm' }],
   ['uql-orm/http#Hook', { to: 'RequestHook' }],
   ['uql-orm/http#HookContext', { to: 'RequestHookContext' }],
   ...UTIL_ROOT_EXPORTS.map((name) => [`uql-orm/util#${name}`, { to: name, from: 'uql-orm' }] as const),
@@ -142,6 +147,9 @@ const MOVED_ENTRIES = new Map([
   ['uql-orm/type', 'uql-orm'],
 ]);
 
+/** The entry an import from `entry` lives in now. */
+const entryOf = (entry: string): string => MOVED_ENTRIES.get(entry) ?? entry;
+
 type UqlImport = {
   readonly declaration: ts.ImportDeclaration;
   readonly entry: string;
@@ -158,13 +166,16 @@ export function uqlImportDeclarations(source: ts.SourceFile, entries = false): r
       return [];
     }
     const entry = declaration.moduleSpecifier.text;
-    if (entry !== 'uql-orm' && !(entries && entry.startsWith('uql-orm/'))) {
+    if (entries ? !isUqlEntry(entry) : entry !== 'uql-orm') {
       return [];
     }
     const bindings = declaration.importClause?.namedBindings;
     return bindings && ts.isNamedImports(bindings) ? [{ declaration, entry, elements: bindings.elements }] : [];
   });
 }
+
+/** Whether `entry` is `uql-orm` itself or one of its `uql-orm/<driver>` entries. */
+const isUqlEntry = (entry: string): boolean => entry === 'uql-orm' || entry.startsWith('uql-orm/');
 
 function uqlImports(source: ts.SourceFile, entries = false): readonly ts.ImportSpecifier[] {
   return uqlImportDeclarations(source, entries).flatMap(({ elements }) => elements);
@@ -216,7 +227,7 @@ export function reportRemovedExports(ctx: Context): void {
       }
       continue;
     }
-    const root = (MOVED_ENTRIES.get(entry) ?? entry) === 'uql-orm';
+    const root = entryOf(entry) === 'uql-orm';
     for (const element of elements) {
       const name = importedName(element);
       const removed = REMOVED_EXPORTS.get(name);
@@ -228,49 +239,6 @@ export function reportRemovedExports(ctx: Context): void {
       }
     }
   }
-}
-
-/**
- * Rewrites each import naming a {@link RENAMED_EXPORTS} export, or from a {@link MOVED_ENTRIES} entry, renaming
- * every use: a name moving entries gets an import from its new one, and one the file already imports is dropped,
- * as is a `dead` one. Returns the rewritten imports, which nothing else may edit.
- */
-export function renameExports(dead: ReadonlySet<string>, ctx: Context): ReadonlySet<ts.ImportDeclaration> {
-  const imports = uqlImportDeclarations(ctx.source, true);
-  const kept = imports.flatMap(({ entry, elements }) => elements.filter((element) => !renamedTo(element, entry)));
-  const bound = new Set(kept.map((element) => element.name.text));
-  const rewritten = new Set<ts.ImportDeclaration>();
-  for (const { declaration, entry: imported, elements } of imports) {
-    const entry = MOVED_ENTRIES.get(imported) ?? imported;
-    if (entry === imported && !elements.some((element) => renamedTo(element, entry))) {
-      continue;
-    }
-    const byEntry = new Map<string, string[]>([[entry, []]]);
-    for (const element of elements.filter(({ name }) => !dead.has(name.text))) {
-      const rename = renamedTo(element, entry);
-      const local = element.propertyName || !rename ? element.name.text : rename.to;
-      if (rename && !element.propertyName) {
-        ctx.edits.push(...usesOf(ctx.source, element.name, ctx.checker).map((use) => replaced(use, rename.to)));
-      }
-      if (rename && bound.has(local)) {
-        continue;
-      }
-      bound.add(local);
-      const target = rename?.from ?? entry;
-      const text = rename
-        ? `${element.isTypeOnly ? 'type ' : ''}${rename.to}${element.propertyName ? ` as ${local}` : ''}`
-        : element.getText();
-      byEntry.set(target, [...(byEntry.get(target) ?? []), text]);
-    }
-    const keyword = isTypeOnly(declaration) ? 'import type' : 'import';
-    const quote = declaration.moduleSpecifier.getText()[0];
-    const statements = [...byEntry]
-      .filter(([, names]) => names.length)
-      .map(([from, names]) => `${keyword} { ${names.join(', ')} } from ${quote}${from}${quote};`);
-    ctx.edits.push(statements.length ? replaced(declaration, statements.join('\n')) : removeStatement(declaration));
-    rewritten.add(declaration);
-  }
-  return rewritten;
 }
 
 function isTypeOnly(declaration: ts.ImportDeclaration): boolean {
@@ -297,17 +265,90 @@ export function deadImportNames(ctx: Context): ReadonlySet<string> {
   const names = ['Relation', 'expr'] as const;
   return new Set(names.filter((name) => rewritten[name] > 0 && rewritten[name] === uses(name)));
 }
+/** The `uql-orm` export `node` names, where its symbol is an import of it or of one of its entries. */
+export function uqlExport(node: ts.Node | undefined, checker: ts.TypeChecker): string | undefined {
+  const declaration = node && ts.isIdentifier(node) ? checker.getSymbolAtLocation(node)?.declarations?.[0] : undefined;
+  return declaration && isUqlSpecifier(declaration) ? importedName(declaration) : undefined;
+}
+
+function isUqlSpecifier(declaration: ts.Declaration): declaration is ts.ImportSpecifier {
+  if (!ts.isImportSpecifier(declaration)) {
+    return false;
+  }
+  const { moduleSpecifier } = declaration.parent.parent.parent;
+  return ts.isStringLiteral(moduleSpecifier) && isUqlEntry(moduleSpecifier.text);
+}
+
+/** Whether `name` is the SQL tag, by either of its names. */
+export function isSqlExport(name: string | undefined): boolean {
+  return name === SQL_TAG || name === LEGACY_SQL_TAG;
+}
+
+/** The name the file calls the SQL tag by once `raw` is renamed: the alias it imports it as, else `sql`. */
+export function sqlName(source: ts.SourceFile): string {
+  const element = uqlImports(source, true).find((it) => isSqlExport(importedName(it)));
+  return element?.propertyName ? element.name.text : SQL_TAG;
+}
+
+/** The names the rewrites wrote that the file does not import from `uql-orm` yet, each with what wrote it. */
+function missingNames(ctx: Context): readonly (readonly [string, string])[] {
+  const imported = new Set(uqlImports(ctx.source, true).map(importedName));
+  const bound = [...imported].some(isSqlExport);
+  return [...ctx.imports].filter(([name]) => !imported.has(name) && !(bound && name === SQL_TAG));
+}
+
+const MEMBER = ts.SymbolFlags.Property | ts.SymbolFlags.Method | ts.SymbolFlags.Accessor | ts.SymbolFlags.EnumMember;
+
+/** Whether `node` names a binding or a reference that is not `uql-orm`'s, which an import of the same name would capture. */
+function isForeignName(node: ts.Identifier, checker: ts.TypeChecker): boolean {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (!symbol) {
+    const { parent } = node;
+    return !((ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) && parent.name === node);
+  }
+  return !(symbol.flags & MEMBER) && !symbol.declarations?.every(isUqlSpecifier);
+}
 
 /**
- * Removes `import 'reflect-metadata'`, since the polyfill only ever fed `design:type`, and each `dead` name
- * from the imports {@link renameExports} left as written, having left the dead names out of the rest.
+ * The first identifier of the file already naming something a rewrite writes: a name it imports (`sql`, `refs`,
+ * `idKey`) or a rename brings in. The write would shadow it or be shadowed, so the file is left to its owner.
  */
-export function dropDeadImports(
-  dead: ReadonlySet<string>,
-  rewritten: ReadonlySet<ts.ImportDeclaration>,
-  ctx: Context,
-): void {
-  for (const statement of ctx.source.statements) {
+export function clashingName(ctx: Context): ts.Identifier | undefined {
+  const renamed = uqlImportDeclarations(ctx.source, true).flatMap(({ entry, elements }) =>
+    elements.flatMap((element) => {
+      const rename = renamedTo(element, entry);
+      return rename && !element.propertyName ? [rename.to] : [];
+    }),
+  );
+  const names = new Set([...missingNames(ctx).map(([name]) => name), ...renamed]);
+  const visit = (node: ts.Node): ts.Identifier | undefined =>
+    ts.isIdentifier(node) && names.has(node.text) && isForeignName(node, ctx.checker)
+      ? node
+      : ts.forEachChild(node, visit);
+  return names.size ? visit(ctx.source) : undefined;
+}
+
+/**
+ * Rewrites the file's imports in one pass: a name {@link RENAMED_EXPORTS} renames or a {@link MOVED_ENTRIES} entry
+ * moves is imported again where it lives now, every use renamed, and one already imported or `dead` is dropped.
+ * The names the rewrites wrote join the first `uql-orm` import, or are reported when there is none.
+ */
+export function rewriteImports(dead: ReadonlySet<string>, ctx: Context): void {
+  const { source } = ctx;
+  const imports = new Map(uqlImportDeclarations(source, true).map((it) => [it.declaration, it]));
+  const bound = new Set(
+    [...imports.values()]
+      .flatMap(({ entry, elements }) => elements.filter((element) => !renamedTo(element, entry)))
+      .map((element) => element.name.text),
+  );
+  const home = [...imports.values()].find(({ entry }) => entryOf(entry) === 'uql-orm');
+  const written = missingNames(ctx);
+  if (!home) {
+    for (const [name, what] of written) {
+      ctx.unresolved.push(`${source.fileName}: import '${name}' from 'uql-orm' for ${what} written here`);
+    }
+  }
+  for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
@@ -315,43 +356,85 @@ export function dropDeadImports(
       ctx.edits.push(removeStatement(statement));
       continue;
     }
-    const named = statement.importClause?.namedBindings;
-    if (!named || !ts.isNamedImports(named) || rewritten.has(statement)) {
-      continue;
-    }
-    const dropped = named.elements.filter((element) => dead.has(element.name.text));
-    if (dropped.length === named.elements.length && !statement.importClause?.name) {
-      ctx.edits.push(removeStatement(statement));
-      continue;
-    }
-    for (const element of dropped) {
-      ctx.edits.push(removeFromList(named.elements, element, ctx.source));
+    const uql = imports.get(statement);
+    const join = uql === home ? written.map(([name]) => name) : [];
+    const entry = uql && entryOf(uql.entry);
+    if (uql && (entry !== uql.entry || uql.elements.some((element) => renamedTo(element, entry)))) {
+      rebuildImport(uql, join, dead, bound, ctx);
+    } else {
+      patchImport(statement, join, dead, ctx);
     }
   }
 }
 
+/** An import of `names` from `from`, quoted as the file quotes its imports. */
+const importText = (keyword: string, names: readonly string[], from: string, quote = "'"): string =>
+  `${keyword} { ${names.join(', ')} } from ${quote}${from}${quote};`;
+
 /**
- * Imports what the rewrites wrote (`idKey`, `raw`) into the file's own `uql-orm` import. Reported instead
- * where there is none: the package may be imported under a path this codemod does not recognise.
+ * The import written again: each name under the entry it lives in, `join` first under `uql-orm`. `join` is values,
+ * so in a type-only declaration it becomes a value import of its own.
  */
-export function addImports(rewritten: ReadonlySet<ts.ImportDeclaration>, ctx: Context): void {
-  const { source } = ctx;
-  const imported = new Set(uqlImports(source).map(importedName));
-  const missing = [...ctx.imports].filter(([name]) => !imported.has(name));
-  if (!missing.length) {
-    return;
-  }
-  const anchor = uqlImportDeclarations(source).find(({ declaration }) => !rewritten.has(declaration));
-  if (!anchor) {
-    for (const [name, what] of missing) {
-      ctx.unresolved.push(`${source.fileName}: import '${name}' from 'uql-orm' for ${what} written here`);
+function rebuildImport(
+  { declaration, entry: imported, elements }: UqlImport,
+  join: readonly string[],
+  dead: ReadonlySet<string>,
+  bound: Set<string>,
+  ctx: Context,
+): void {
+  const entry = entryOf(imported);
+  const typeOnly = isTypeOnly(declaration);
+  const byEntry = new Map<string, string[]>([[entry, typeOnly ? [] : [...join]]]);
+  for (const element of elements.filter(({ name }) => !dead.has(name.text))) {
+    const rename = renamedTo(element, entry);
+    const local = element.propertyName || !rename ? element.name.text : rename.to;
+    if (rename && !element.propertyName) {
+      ctx.edits.push(...usesOf(ctx.source, element.name, ctx.checker).map((use) => replaced(use, rename.to)));
     }
+    if (rename && bound.has(local)) {
+      continue;
+    }
+    bound.add(local);
+    const target = rename?.from ?? entry;
+    const text = rename
+      ? `${element.isTypeOnly ? 'type ' : ''}${rename.to}${element.propertyName ? ` as ${local}` : ''}`
+      : element.getText();
+    byEntry.set(target, [...(byEntry.get(target) ?? []), text]);
+  }
+  const keyword = typeOnly ? 'import type' : 'import';
+  const quote = declaration.moduleSpecifier.getText()[0];
+  const statements = [...byEntry]
+    .filter(([, names]) => names.length)
+    .map(([from, names]) => importText(keyword, names, from, quote));
+  if (typeOnly && join.length) {
+    statements.unshift(importText('import', join, 'uql-orm', quote));
+  }
+  ctx.edits.push(statements.length ? replaced(declaration, statements.join('\n')) : removeStatement(declaration));
+}
+
+/** The import with the `dead` names out and `join` in, nothing else of it touched. */
+function patchImport(
+  declaration: ts.ImportDeclaration,
+  join: readonly string[],
+  dead: ReadonlySet<string>,
+  ctx: Context,
+): void {
+  const named = declaration.importClause?.namedBindings;
+  if (!named || !ts.isNamedImports(named)) {
     return;
   }
-  const names = missing.map(([name]) => name);
-  ctx.edits.push(
-    isTypeOnly(anchor.declaration)
-      ? inserted(anchor.declaration, `import { ${names.join(', ')} } from 'uql-orm';\n`)
-      : inserted(anchor.elements[0], names.map((name) => `${name}, `).join('')),
-  );
+  const dropped = named.elements.filter((element) => dead.has(element.name.text));
+  const statement = importText('import', join, 'uql-orm');
+  if (dropped.length === named.elements.length && !declaration.importClause?.name) {
+    ctx.edits.push(join.length ? replaced(declaration, statement) : removeStatement(declaration));
+    return;
+  }
+  ctx.edits.push(...removeFromList(named.elements, dropped, ctx.source));
+  if (join.length) {
+    ctx.edits.push(
+      isTypeOnly(declaration)
+        ? inserted(declaration, `${statement}\n`)
+        : inserted(named.elements[0], join.map((name) => `${name}, `).join('')),
+    );
+  }
 }

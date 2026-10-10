@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { type Context, constructedType, memberNames, type Owner, ownerOf, propertyNames } from './context.js';
 import { type Edit, inserted, replaced } from './edits.js';
-import { isRaw } from './entitySql.js';
+import { isSqlCall } from './entitySql.js';
 import { uqlImport, usesOf } from './imports.js';
 import { type Edits, memberAccess } from './keyMaps.js';
 import { identifierText, propertyKey, propertyValue } from './syntax.js';
@@ -20,7 +20,7 @@ export function rewriteColumnRefs(ctx: Context): readonly string[] {
   const unread: ts.Node[] = [];
   for (const use of usesOf(ctx.source, element.name, ctx.checker)) {
     const call = ts.isCallExpression(use.parent) && use.parent.expression === use ? use.parent : undefined;
-    const sql = call && ts.findAncestor(call, isRaw);
+    const sql = call && ts.findAncestor(call, (node) => isSqlCall(node, ctx.checker));
     const option = sql?.parent;
     const owner =
       option && ts.isPropertyAssignment(option) && isComputedOption(option) ? computedOwner(option) : undefined;

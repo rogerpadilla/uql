@@ -43,7 +43,6 @@ const STUBS = `
   type FieldOptions = { type?: unknown; references?: EntityGetter; name?: string; length?: number };
   declare function Field(opts?: FieldOptions): PropertyDecorator;
   declare function Id(opts?: FieldOptions): PropertyDecorator;
-  declare const idKey: unique symbol;
   declare function InjectQuerier(): ParameterDecorator;
   declare function Log(): MethodDecorator;
   declare function Serialized(): PropertyDecorator;
@@ -59,9 +58,11 @@ const STUBS = `
   declare function Entity(options?: unknown): ClassDecorator;
   declare function Filter(name: string, options: unknown): ClassDecorator;
   declare function defineFilter(entity: unknown, name: string, options: unknown): void;
-  declare function raw(strings: TemplateStringsArray, ...values: unknown[]): unknown;
   type Relation<T> = T;
 `;
+
+/** {@link STUBS} without `Field`, for the cases where the codemod writes the `Field` import itself. */
+const STUBS_WITHOUT_FIELD = STUBS.replace(/ {2}declare function Field\(.*\n/, '');
 
 /** Runs the codemod over a snippet compiled against {@link STUBS}, for the per-property cases. */
 const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`);
@@ -567,7 +568,7 @@ export async function f(q: Querier) {
 
   it('declares the foreign key a to-one created by name, typed as the key it points at', () => {
     const { text, unresolved } = codemodFile(`import { ManyToOne, OneToOne } from 'uql-orm';
-${STUBS}
+${STUBS_WITHOUT_FIELD}
 type Uuid = \`\${string}-\${string}\`;
 abstract class Base {
   @Id({ type: 'uuid' }) id?: Uuid;
@@ -603,7 +604,7 @@ class Employee extends Base {
   });
 
   it("declares the foreign key of a to-one with no entity getter, typed as the key's inferred type", () => {
-    const { text } = codemod(`
+    const { text } = codemodFile(`${STUBS_WITHOUT_FIELD}
       class Company { @Id({ type: Number }) id = 0; }
       class Employee {
         @ManyToOne({ cascade: true }) company?: Company;
@@ -1059,7 +1060,7 @@ type ParentOf<T> = Relation<T>;
 export const one = raw\`1\`;
 `);
 
-    expect(text).toContain("import { raw } from 'uql-orm';");
+    expect(text).toContain("import { sql } from 'uql-orm';");
     expect(unresolved).toEqual([]);
   });
 
@@ -1265,20 +1266,70 @@ export const up = (q: SqlQuerier) => [q.run\`CREATE TABLE "a" (b INT)\`, q.all<{
     expect(unresolved).toEqual([]);
   });
 
-  it('wraps SQL built at run time in raw.text, which still splices it, and says so for a template', () => {
-    const { text, notes } = codemodFile(
+  it('does not bind a placeholder used twice by evaluating its value twice', () => {
+    const { text } = codemodFile(
       `import type { SqlQuerier } from 'uql-orm';
-export const f = (q: SqlQuerier, sql: string, t: string) => [q.all(sql), q.run(\`DROP TABLE \${t}\`)];
+export const up = (q: SqlQuerier) => q.run('select $1 + $1', [next()]);
 `,
       UQL_ORM_0_99,
     );
 
-    expect(text).toBe(`import { raw } from 'uql-orm';
+    expect(text).toContain("q.run('select $1 + $1', [next()]);");
+  });
+
+  it('imports a value a rewrite needs as a value, beside a type-only import it cannot join', () => {
+    const { text } = codemodFile(
+      `import type { IMigrationBuilder, IForeignKeyBuilder } from 'uql-orm';
+import { expr } from 'uql-orm';
+export const up = (m: IMigrationBuilder) => [m.raw(expr.raw('x')), m.foreignKey(IForeignKeyBuilder)];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toContain("import { sql } from 'uql-orm';");
+    expect(text).not.toContain('import type { sql');
+  });
+
+  it('renames an export a statement names in its type argument, as it renames it everywhere else', () => {
+    const { text } = codemodFile(
+      `import type { SqlQuerier, IForeignKeyBuilder } from 'uql-orm';
+export const up = (q: SqlQuerier) => [q.all<IForeignKeyBuilder>(\`SELECT 1\`), q.all<IForeignKeyBuilder>('SELECT 2')];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import type { SqlQuerier, ForeignKeyBuilder } from 'uql-orm';
+export const up = (q: SqlQuerier) => [q.all<ForeignKeyBuilder>\`SELECT 1\`, q.all<ForeignKeyBuilder>\`SELECT 2\`];
+`);
+  });
+
+  it('keeps every type argument a statement is called with, renamed where it names an export', () => {
+    const { text } = codemodFile(
+      `import type { SqlQuerier, IForeignKeyBuilder } from 'uql-orm';
+export const up = (q: SqlQuerier) => q.all<IForeignKeyBuilder, { n: number }>(\`SELECT 1\`);
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import type { SqlQuerier, ForeignKeyBuilder } from 'uql-orm';
+export const up = (q: SqlQuerier) => q.all<ForeignKeyBuilder, { n: number }>\`SELECT 1\`;
+`);
+  });
+
+  it('wraps SQL built at run time in sql.text, which still splices it, and says so for a template', () => {
+    const { text, notes } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, text: string, t: string) => [q.all(text), q.run(\`DROP TABLE \${t}\`)];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import { sql } from 'uql-orm';
 import type { SqlQuerier } from 'uql-orm';
-export const f = (q: SqlQuerier, sql: string, t: string) => [q.all(raw.text(sql)), q.run(raw.text(\`DROP TABLE \${t}\`))];
+export const f = (q: SqlQuerier, text: string, t: string) => [q.all(sql.text(text)), q.run(sql.text(\`DROP TABLE \${t}\`))];
 `);
     expect(notes).toEqual([
-      '/entities.ts:2: the values in this template are spliced into the SQL; write it as raw`...` to bind them',
+      '/entities.ts:2: the values in this template are spliced into the SQL; write it as sql`...` to bind them',
     ]);
   });
 
@@ -1306,7 +1357,7 @@ export const f = (q: SqlQuerier, values: number[]) => [q.run('DELETE FROM a WHER
     expect(changed).toBe(false);
     expect(text).toContain("job.run('x')");
     expect(unresolved).toEqual([
-      '/entities.ts:3: run() takes one raw statement: write the values into it, raw`... ${value}`, which binds them',
+      '/entities.ts:3: run() takes one statement: write the values into it, sql`... ${value}`, which binds them',
     ]);
   });
 
@@ -1350,7 +1401,7 @@ export const f = (q: SqlQuerier, a: number, b: number) => [
     const { changed, unresolved } = codemodFile(
       `import type { SqlQuerier } from 'uql-orm';
 declare const extra: unknown;
-export const f = (q: SqlQuerier, id: number, ids: number[], sql: string) => [
+export const f = (q: SqlQuerier, id: number, ids: number[], text: string) => [
   q.run('DELETE FROM a WHERE id = ? OR id = ?', [id]),
   q.run('DELETE FROM a WHERE id = $1', [id, id]),
   q.run('DELETE FROM a WHERE id = $2', [id]),
@@ -1365,7 +1416,7 @@ export const f = (q: SqlQuerier, id: number, ids: number[], sql: string) => [
   q.run("UPDATE a SET b = 'it\\\\'s' WHERE id = ?", [id]),
   q.run('DO $body$ SELECT ? $body$', [id]),
   q.run('DELETE FROM a WHERE id = $0', [id]),
-  q.run(sql, [id]),
+  q.run(text, [id]),
   q.run('DELETE FROM a', ids),
 ];
 `,
@@ -1373,7 +1424,7 @@ export const f = (q: SqlQuerier, id: number, ids: number[], sql: string) => [
     );
 
     const report = (line: number) =>
-      `/entities.ts:${line}: run() takes one raw statement: write the values into it, raw\`... \${value}\`, which binds them`;
+      `/entities.ts:${line}: run() takes one statement: write the values into it, sql\`... \${value}\`, which binds them`;
     expect(changed).toBe(false);
     expect(unresolved).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(report));
   });
@@ -1429,9 +1480,9 @@ raw\`now()\`;
 `);
 
     expect(text).toBe(`import { hasKeys } from 'uql-orm/util';
-import { raw } from 'uql-orm';
+import { sql } from 'uql-orm';
 import { refs } from 'uql-orm';
-raw\`now()\`;
+sql\`now()\`;
 `);
     expect(unresolved).toEqual([
       "/entities.ts:1: 'uql-orm/util' was removed; its helpers are internal, so write your own `hasKeys`",
@@ -1643,7 +1694,7 @@ describe('SQL in definitions', () => {
 class Post { id?: number; title?: string; }
 `);
 
-    expect(text).toContain('@Index((post) => [post.title, raw`lower("title")`, { column: raw`upper("title")` }])');
+    expect(text).toContain('@Index((post) => [post.title, sql`lower("title")`, { column: sql`upper("title")` }])');
   });
 
   it('writes a partial-index where given as a string as raw, importing raw', () => {
@@ -1654,10 +1705,10 @@ class Post { id?: number; title?: string; slug?: string; deletedAt?: Date; }
 defineIndex(Post, { columns: (post) => [post.title], where: "status = 'live'" });
 `);
 
-    expect(text).toContain("import { raw, Entity, Index, defineIndex } from 'uql-orm';");
-    expect(text).toContain('@Index((post) => [post.slug], { where: raw`"deletedAt" IS NULL` })');
-    expect(text).toContain('where: raw`"deletedAt" IS NULL` }] })');
-    expect(text).toContain("defineIndex(Post, { columns: (post) => [post.title], where: raw`status = 'live'` });");
+    expect(text).toContain("import { sql, Entity, Index, defineIndex } from 'uql-orm';");
+    expect(text).toContain('@Index((post) => [post.slug], { where: sql`"deletedAt" IS NULL` })');
+    expect(text).toContain('where: sql`"deletedAt" IS NULL` }] })');
+    expect(text).toContain("defineIndex(Post, { columns: (post) => [post.title], where: sql`status = 'live'` });");
     expect(unresolved).toEqual([]);
   });
 
@@ -1678,9 +1729,9 @@ class Post { id?: number; title?: string; slug?: string; stock?: number; }
     expect(text).toContain('{ where: predicate }');
     expect(text).toContain('{ where: either }');
     expect(unresolved).toEqual([
-      "/entities.ts:5: write the partial-index 'where' as raw`...` or a predicate; this one could not be read",
-      "/entities.ts:6: write the partial-index 'where' as raw`...` or a predicate; this one could not be read",
-      "/entities.ts:8: write the partial-index 'where' as raw`...` or a predicate; this one could not be read",
+      "/entities.ts:5: write the partial-index 'where' as sql`...` or a predicate; this one could not be read",
+      "/entities.ts:6: write the partial-index 'where' as sql`...` or a predicate; this one could not be read",
+      "/entities.ts:8: write the partial-index 'where' as sql`...` or a predicate; this one could not be read",
     ]);
   });
 
@@ -1690,7 +1741,7 @@ class Post { id?: number; title?: string; slug?: string; stock?: number; }
       class Post { id?: number; slug?: string; deletedAt?: Date; }
     `);
 
-    expect(unresolved).toEqual(["/entities.ts: import 'raw' from 'uql-orm' for the raw`...` written here"]);
+    expect(unresolved).toEqual(["/entities.ts: import 'sql' from 'uql-orm' for the sql`...` written here"]);
   });
 
   it("rewrites the migration builder's partial-index where string as raw", () => {
@@ -1707,8 +1758,8 @@ export default defineBuilderMigration({
 });
 `);
 
-    expect(text).toContain('t.unique([raw`lower("email")`], { where: raw`"deleted_at" IS NULL` });');
-    expect(text).toContain("m.createIndex('notes', ['slug'], { where: raw`\"deleted_at\" IS NULL` });");
+    expect(text).toContain('t.unique([sql`lower("email")`], { where: sql`"deleted_at" IS NULL` });');
+    expect(text).toContain("m.createIndex('notes', ['slug'], { where: sql`\"deleted_at\" IS NULL` });");
   });
 
   it("leaves the migration builder's index options alone where they are not a literal", () => {
@@ -1719,7 +1770,7 @@ t.index([raw\`lower("email")\`], options);
 `;
     const { text, unresolved } = codemodFile(body);
 
-    expect(text).toBe(body);
+    expect(text).toBe(body.replaceAll('raw', 'sql'));
     expect(unresolved).toEqual([]);
   });
 
@@ -1741,14 +1792,14 @@ export default defineBuilderMigration({
 });
 `);
 
-    expect(text).toContain("import { currentTimestamp, uuid, uuidv7, currentDate, currentTime, raw } from 'uql-orm';");
+    expect(text).toContain("import { currentTimestamp, uuid, uuidv7, currentDate, currentTime, sql } from 'uql-orm';");
     expect(text).toContain("import { defineBuilderMigration } from 'uql-orm/migrate';");
     expect(text).toContain("t.timestamp('at', { defaultValue: currentTimestamp });");
     expect(text).toContain("t.uuid('id', { defaultValue: uuid });");
     expect(text).toContain("t.uuid('ordered', { defaultValue: uuidv7 });");
     expect(text).toContain("t.date('day', { defaultValue: currentDate });");
     expect(text).toContain("t.time('clock', { defaultValue: currentTime });");
-    expect(text).toContain("t.bigint('seq', { defaultValue: raw`nextval('s')` });");
+    expect(text).toContain("t.bigint('seq', { defaultValue: sql`nextval('s')` });");
     expect(unresolved).toEqual([]);
   });
 
@@ -1759,7 +1810,7 @@ const expr = { now: () => raw\`now()\` };
 export const at = expr.now();
 `;
 
-    expect(codemodFile(body).text).toBe(body);
+    expect(codemodFile(body).text).toBe(body.replaceAll('raw', 'sql'));
   });
 
   it('reports an expr default it has no rewrite for, and keeps the import', () => {
@@ -1865,7 +1916,8 @@ t.index([raw\`lower("email")\`], { where: 'active' });
 
   /** A string literal and a word called as a function are left out: `'gone'` is a value, `count(*)` a call. */
   it('notes SQL in a definition that names a column by hand, which a rename does not reach', () => {
-    const { notes } = codemod(`
+    const { notes } = codemodFile(`import { raw } from 'uql-orm';
+${STUBS}
       @Index(() => [raw\`lower("email")\`], { where: raw\`status <> 'gone'\` })
       @Entity({ checks: [{ expression: raw\`length(code) = 3 AND "code" <> 'status'\` }] })
       class User {
@@ -1881,7 +1933,7 @@ t.index([raw\`lower("email")\`], { where: 'active' });
       expect.stringMatching(/^\/entities\.ts:\d+: SQL names 'code' by hand/),
     ]);
     expect(notes[0]).toMatch(
-      /; read each off a callback's refs instead: \(user\) => raw`\.\.\.\$\{user\.<member>\}\.\.\.`$/,
+      /; read each off a callback's refs instead: \(user\) => sql`\.\.\.\$\{user\.<member>\}\.\.\.`$/,
     );
   });
 
@@ -1906,8 +1958,8 @@ class Entity {
 }
 `);
 
-    expect(text).toContain('computed: raw() })');
-    expect(text).toContain("computed: raw('a', 'b', 'c') })");
+    expect(text).toContain('computed: sql() })');
+    expect(text).toContain("computed: sql('a', 'b', 'c') })");
     expect(notes).toEqual([]);
   });
 });
@@ -1917,33 +1969,39 @@ describe('raw()', () => {
 
   it('rewrites a string expression into a tagged template', () => {
     expect(codemodRaw(`const a = raw('"salePrice" > "cost" * 2');`)).toContain(
-      'const a = raw`"salePrice" > "cost" * 2`;',
+      'const a = sql`"salePrice" > "cost" * 2`;',
     );
   });
 
   it('moves a second alias argument onto as()', () => {
     expect(codemodRaw(`const a = raw('LOG10(points)', 'score');`)).toContain(
-      "const a = raw`LOG10(points)`.as('score');",
+      "const a = sql`LOG10(points)`.as('score');",
     );
   });
 
   it('moves the alias of a callback onto as()', () => {
     expect(codemodRaw(`const a = raw(({ ctx }) => ctx.append('x'), 'score');`)).toContain(
-      "const a = raw(({ ctx }) => ctx.append('x')).as('score');",
+      "const a = sql(({ ctx }) => ctx.append('x')).as('score');",
+    );
+  });
+
+  it('keeps a rewrite inside the alias argument of as()', () => {
+    expect(codemodRaw(`const a = raw('LOG10(points)', raw('name'));`)).toContain(
+      'const a = sql`LOG10(points)`.as(sql`name`);',
     );
   });
 
   it('escapes a backtick that would end the template', () => {
-    expect(codemodRaw('const a = raw("`points` > 1");')).toContain('const a = raw`\\`points\\` > 1`;');
+    expect(codemodRaw('const a = raw("`points` > 1");')).toContain('const a = sql`\\`points\\` > 1`;');
   });
 
   it('escapes a dollar-brace that would interpolate', () => {
-    expect(codemodRaw(`const a = raw('cost > \${x}');`)).toContain('raw`cost > \\${x}`');
+    expect(codemodRaw(`const a = raw('cost > \${x}');`)).toContain('sql`cost > \\${x}`');
   });
 
   it('leaves the callback form alone', () => {
     const body = 'const a = raw(({ ctx }) => ctx.append("x"));';
-    expect(codemodRaw(body)).toContain(body);
+    expect(codemodRaw(body)).toContain(body.replace('raw', 'sql'));
   });
 
   it("leaves another library's function of the same name alone", () => {
@@ -1954,6 +2012,128 @@ describe('raw()', () => {
   it('leaves a computed string alone, having no literal to inline', () => {
     const body = 'declare const sql: string;\nconst a = raw(sql);';
     expect(codemodRaw(body)).toContain('const a = raw(sql);');
+  });
+});
+
+describe('raw to sql', () => {
+  it('leaves a file naming sql itself alone, reporting it, since the tag it writes would be shadowed', () => {
+    const body = `import { raw } from 'uql-orm';
+const sql = 'SELECT 1';
+export const a = raw\`1\`;
+`;
+    const { text, unresolved } = codemodFile(body);
+
+    expect(text).toBe(body);
+    expect(unresolved).toEqual([
+      "/entities.ts:2: 'sql' is already named here, and the codemod writes it: rename that, then run again",
+    ]);
+  });
+
+  it('renames a raw inside an upsert update, which the update is unwrapped from its options', () => {
+    const { text } = codemodFile(`import { raw } from 'uql-orm';
+declare const q: { upsertOne(entity: unknown, data: unknown, unique: unknown, options: unknown): void };
+q.upsertOne(Item, { id: 1 }, ['id'], { update: { stock: raw\`1 + 1\` } });
+`);
+
+    expect(text).toContain("q.upsertOne(Item, { id: 1 }, ['id'], { stock: sql`1 + 1` });");
+  });
+
+  it('renames a raw inside a statement value, which the statement keeps as written', () => {
+    const { text } = codemodFile(
+      `import { raw, type SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier) => q.run('SELECT $1', [raw\`1\`]);
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toContain('q.run`SELECT ${sql`1`}`');
+  });
+
+  it('drops the raw import where the file already imports sql, renaming its uses to it', () => {
+    const { text } = codemodFile(`import { raw, sql } from 'uql-orm';
+export const a = raw\`1\`;
+`);
+
+    expect(text).toBe(`import { sql } from 'uql-orm';
+export const a = sql\`1\`;
+`);
+  });
+
+  it('leaves a file alone when it uses a sql no declaration binds, which the import would capture', () => {
+    const body = `import { raw } from 'uql-orm';
+export const a = raw\`1\`;
+export const b = sql\`2\`;
+`;
+    const { text, unresolved } = codemodFile(body);
+
+    expect(text).toBe(body);
+    expect(unresolved).toEqual([
+      "/entities.ts:3: 'sql' is already named here, and the codemod writes it: rename that, then run again",
+    ]);
+  });
+
+  it('rewrites a raw imported under another name, keeping the name', () => {
+    const { text } = codemodFile(`import { raw as r } from 'uql-orm';
+export const a = r('1 + 1');
+export const b = r\`2\`;
+`);
+
+    expect(text).toBe(`import { sql as r } from 'uql-orm';
+export const a = r\`1 + 1\`;
+export const b = r\`2\`;
+`);
+  });
+
+  it('leaves a file alone when it names any name the codemod writes, not only sql', () => {
+    const body = `import { expr } from 'uql-orm/migrate';
+const currentTimestamp = 1;
+declare const t: { timestamp(name: string, options: unknown): void };
+t.timestamp('at', { defaultValue: expr.now() });
+`;
+    const { text, unresolved } = codemodFile(body);
+
+    expect(text).toBe(body);
+    expect(unresolved).toEqual([
+      "/entities.ts:2: 'currentTimestamp' is already named here, and the codemod writes it: rename that, then run again",
+    ]);
+  });
+
+  it('writes the tag it adds by the name the file imports the SQL tag as', () => {
+    const { text } = codemodFile(`import { sql as q } from 'uql-orm';
+${STUBS}
+      @Index((post) => [post.slug], { where: '"deletedAt" IS NULL' })
+      class Post { id?: number; slug?: string; deletedAt?: Date; }
+    `);
+
+    expect(text).toContain('where: q`"deletedAt" IS NULL` })');
+  });
+
+  it('replaces an import left with nothing but the name the rewrites add', () => {
+    const { text } = codemodFile(`import { Relation } from 'uql-orm';
+declare function Id(options: { type: unknown }): PropertyDecorator;
+declare function ManyToOne(options: { entity: () => unknown }): PropertyDecorator;
+class Company { @Id({ type: Number }) id?: number; }
+class Pair {
+  @Id({ type: Number }) left?: number;
+  @Id({ type: Number }) right?: number;
+  @ManyToOne({ entity: () => Company }) company?: Relation<Company>;
+}
+`);
+
+    expect(text).toContain("import { idKey } from 'uql-orm';");
+    expect(text).not.toContain('Relation');
+  });
+
+  it('leaves a sql property name alone, which binds nothing', () => {
+    const { text } = codemodFile(`import { raw } from 'uql-orm';
+export const o = { sql: 1 };
+export const a = raw\`1\`;
+`);
+
+    expect(text).toBe(`import { sql } from 'uql-orm';
+export const o = { sql: 1 };
+export const a = sql\`1\`;
+`);
   });
 });
 
@@ -1971,11 +2151,11 @@ class Line { id?: number; unitPrice?: number; total?: number; }
 defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`\${col('unitPrice')} * 2\` } } });
 `);
 
-    expect(text).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
+    expect(text).toContain("import { Entity, Field, Id, sql } from 'uql-orm';");
     expect(text).toContain(
-      '@Field({ type: Number, computed: (product) => raw`${product.salePrice} - ${product.cost}` }) profit?: number | null;',
+      '@Field({ type: Number, computed: (product) => sql`${product.salePrice} - ${product.cost}` }) profit?: number | null;',
     );
-    expect(text).toContain('fields: { total: { type: Number, computed: (line) => raw`${line.unitPrice} * 2` } }');
+    expect(text).toContain('fields: { total: { type: Number, computed: (line) => sql`${line.unitPrice} * 2` } }');
     expect(unresolved).toEqual([]);
   });
 
@@ -1988,9 +2168,9 @@ pool.updateMany(Item, { $where: { id: 1 } }, { stock: raw\`\${col('stock')} - 1\
 pool.findMany(Item, { $populate: { tax: { $select: [raw\`UPPER(\${col('name')})\`.as('label')] } } });
 `);
 
-    expect(text).toContain("import { refs, raw } from 'uql-orm';");
-    expect(text).toContain('{ stock: raw`${refs(Item).stock} - 1` }');
-    expect(text).toContain("$select: [raw`UPPER(${refs(Tax).name})`.as('label')]");
+    expect(text).toContain("import { refs, sql } from 'uql-orm';");
+    expect(text).toContain('{ stock: sql`${refs(Item).stock} - 1` }');
+    expect(text).toContain("$select: [sql`UPPER(${refs(Tax).name})`.as('label')]");
     expect(unresolved).toEqual([]);
   });
 
@@ -2001,7 +2181,7 @@ pool.findMany(Item, { $populate: { tax: { $select: [raw\`UPPER(\${col('name')})\
   it('reports a col() whose entity or member it cannot tell, keeping the import', () => {
     const { text, unresolved } = codemodFile(`import { col, raw } from 'uql-orm';
 declare const pool: { findMany(entity: unknown, q: unknown): void };
-declare function wrap(sql: unknown): unknown;
+declare function wrap(value: unknown): unknown;
 class Tax { id?: number; name?: string; }
 class Item { id?: number; stock?: number; tax?: Tax; }
 const shared = raw\`\${col('stock')} > 0\`;
@@ -2014,7 +2194,7 @@ wrap(raw\`\${col('stock')} > 0\`);
 `);
 
     const report = "'col' was removed; read the column off refs(Entity), which the codemod could not tell here";
-    expect(text).toContain("import { col, raw } from 'uql-orm';");
+    expect(text).toContain("import { col, sql } from 'uql-orm';");
     expect(unresolved).toEqual([6, 7, 8, 9, 10, 11, 12].map((line) => `/entities.ts:${line}: ${report}`));
   });
 
@@ -2034,10 +2214,10 @@ const models = { Line: class { unitPrice?: number; total?: number; } };
 defineEntity(models.Line, { fields: { total: { type: Number, computed: raw\`\${col('unitPrice')} * 2\` } } });
 `);
 
-    expect(text).toContain("import { refs, Field, raw } from 'uql-orm';");
-    expect(text).toContain('$where: { [key]: raw`${refs(Item).stock} > 0` }');
-    expect(text).toContain('computed: (product) => raw`${product.cost} * ${settings.product}`');
-    expect(text).toContain('computed: (entity) => raw`${entity.unitPrice} * 2`');
+    expect(text).toContain("import { refs, Field, sql } from 'uql-orm';");
+    expect(text).toContain('$where: { [key]: sql`${refs(Item).stock} > 0` }');
+    expect(text).toContain('computed: (product) => sql`${product.cost} * ${settings.product}`');
+    expect(text).toContain('computed: (entity) => sql`${entity.unitPrice} * 2`');
     expect(unresolved).toEqual([]);
   });
 
@@ -2050,7 +2230,7 @@ class Product {
 }
 `);
 
-    expect(text).toContain("computed: raw`${col('cost')} * ${product}`");
+    expect(text).toContain("computed: sql`${col('cost')} * ${product}`");
     expect(unresolved).toEqual([
       "/entities.ts:5: 'col' was removed; read the column off refs(Entity), which the codemod could not tell here",
     ]);

@@ -28,12 +28,11 @@ export function transformTsconfig(fileName: string, text: string): TsconfigResul
   const compilerOptions = propertyValue(root, 'compilerOptions');
 
   if (compilerOptions && ts.isObjectLiteralExpression(compilerOptions)) {
-    for (const flag of LEGACY_FLAGS) {
+    const legacy = LEGACY_FLAGS.flatMap((flag) => {
       const property = propertyAssignment(compilerOptions, flag);
-      if (property) {
-        edits.push(removeFromList(compilerOptions.properties, property, source));
-      }
-    }
+      return property ? [property] : [];
+    });
+    edits.push(...removeFromList(compilerOptions.properties, legacy, source));
 
     // `target` is reported, not rewritten: removing it silently falls back to the compiler default
     // (`es5` for `tsc`), and choosing a replacement means guessing which era the project targets.

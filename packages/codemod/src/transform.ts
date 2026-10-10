@@ -1,15 +1,18 @@
 import ts from 'typescript';
 import { rewriteColumnRefs } from './columnRefs.js';
 import { type Context, createContext, instanceTypeOf, memberNames, type Owner, ownerOf } from './context.js';
-import { appended, applyEdits, type Edit, inserted, replaced } from './edits.js';
-import { columnExpressions, handNamedColumns, rawTag, rawWhereEdit } from './entitySql.js';
+import { appended, applyEdits, type Edit, inserted, original, type Part, replaced } from './edits.js';
+import { columnExpressions, handNamedColumns, sqlTag, sqlWhereEdit, templateOf } from './entitySql.js';
 import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
 import {
-  addImports,
+  clashingName,
   deadImportNames,
-  dropDeadImports,
-  renameExports,
+  LEGACY_SQL_TAG,
   reportRemovedExports,
+  rewriteImports,
+  SQL_TAG,
+  sqlName,
+  uqlExport,
   uqlImport,
   uqlImportDeclarations,
 } from './imports.js';
@@ -129,14 +132,14 @@ function renameSqlOption(options: Options, from: string, to: string, node: ts.No
 
 /** Notes SQL that names a column by hand, which a rename does not reach. */
 function noteHandNamedColumns(sql: ts.Expression | undefined, owner: Owner, ctx: Context): void {
-  const names = sql ? handNamedColumns(sql, memberNames(owner.entity, ctx.checker)) : [];
+  const names = sql ? handNamedColumns(sql, memberNames(owner.entity, ctx.checker), ctx.checker) : [];
   if (!sql || !names.length) {
     return;
   }
   ctx.note(
     sql,
     `SQL names ${names.map((name) => `'${name}'`).join(', ')} by hand, which a rename does not reach; ` +
-      `read each off a callback's refs instead: (${owner.param}) => raw\`...\${${owner.param}.<member>}...\``,
+      `read each off a callback's refs instead: (${owner.param}) => sql\`...\${${owner.param}.<member>}...\``,
   );
 }
 
@@ -442,23 +445,23 @@ function rewriteIndex(
   rewriteKeyList(columns, owner.param, node, what, ctx);
   rewriteKeyList(literal && propertyValue(literal, 'include'), owner.param, node, "'include'", ctx);
   rewriteIndexWhere(literal, ctx);
-  for (const sql of [...columnExpressions(columns), literal && propertyValue(literal, 'where')]) {
+  for (const sql of [...columnExpressions(columns, ctx.checker), literal && propertyValue(literal, 'where')]) {
     noteHandNamedColumns(sql, owner, ctx);
   }
 }
 
-/** A partial-index `where` string as `raw`, on an entity and in the migration builder alike, or reported. */
+/** A partial-index `where` string as `sql`, on an entity and in the migration builder alike, or reported. */
 function rewriteIndexWhere(options: ts.ObjectLiteralExpression | undefined, ctx: Context): void {
   const where = options && propertyValue(options, 'where');
   if (!where || !isStringTyped(ctx.checker.getTypeAtLocation(where))) {
     return;
   }
-  const edit = rawWhereEdit(where);
+  const edit = sqlWhereEdit(where, sqlName(ctx.source));
   if (edit) {
     ctx.edits.push(edit);
-    ctx.imports.set('raw', 'the raw`...`');
+    ctx.imports.set(SQL_TAG, 'the sql`...`');
   } else {
-    ctx.report(where, "write the partial-index 'where' as raw`...` or a predicate; this one could not be read");
+    ctx.report(where, "write the partial-index 'where' as sql`...` or a predicate; this one could not be read");
   }
 }
 
@@ -496,7 +499,7 @@ function rewriteMethodCall(call: ts.CallExpression, ctx: Context): void {
 /**
  * A querier's `run`/`all` handed SQL as a string, which now takes a tagged statement: a literal becomes
  * `run`...``, its values interpolated where {@link statementTemplate} can place them, and SQL built at run
- * time `raw.text`, which splices as the string did. Values it cannot place are reported.
+ * time `<sql>.text(...)`, which splices as the string did. Values it cannot place are reported.
  */
 function rewriteSqlCall(call: ts.CallExpression, method: string, ctx: Context): void {
   const [sql, ...values] = call.arguments;
@@ -505,22 +508,24 @@ function rewriteSqlCall(call: ts.CallExpression, method: string, ctx: Context): 
   }
   const template = statementTemplate(sql, values);
   if (template) {
-    const typeArguments = call.typeArguments ? `<${call.typeArguments.map((type) => type.getText()).join(', ')}>` : '';
-    ctx.edits.push(replaced(call, `${call.expression.getText()}${typeArguments}${template}`));
+    const typeArguments = (call.typeArguments ?? []).map(original);
+    const listed = typeArguments.flatMap((type, at) => (at ? [', ', type] : [type]));
+    const angle = typeArguments.length ? ['<', ...listed, '>'] : [];
+    ctx.edits.push(replaced(call, [original(call.expression), ...angle, ...template]));
     return;
   }
   if (values.length) {
     ctx.report(
       call,
-      `${method}() takes one raw statement: write the values into it, raw\`... \${value}\`, which binds them`,
+      `${method}() takes one statement: write the values into it, sql\`... \${value}\`, which binds them`,
     );
     return;
   }
   if (ts.isTemplateExpression(sql)) {
-    ctx.note(call, 'the values in this template are spliced into the SQL; write it as raw`...` to bind them');
+    ctx.note(call, 'the values in this template are spliced into the SQL; write it as sql`...` to bind them');
   }
-  ctx.edits.push(replaced(sql, `raw.text(${sql.getText()})`));
-  ctx.imports.set('raw', 'the raw.text(...)');
+  ctx.edits.push(replaced(sql, [`${sqlName(ctx.source)}.text(`, original(sql), ')']));
+  ctx.imports.set(SQL_TAG, 'the sql.text(...)');
 }
 
 /** `const { id } = await q.upsertOne(...)`, which resolves to the id now, as the id: other keys are reported. */
@@ -554,7 +559,7 @@ const EXPR_VALUES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Rewrites the migration builder's `expr.<helper>()` default as the value or `raw` an entity declares, or reports
+ * Rewrites the migration builder's `expr.<helper>()` default as the value or `sql` an entity declares, or reports
  * one with no rewrite. Called only where the file imports `expr` from uql, so a variable of its own is left alone.
  */
 function rewriteExprCall(call: ts.CallExpression, ctx: Context): void {
@@ -569,8 +574,8 @@ function rewriteExprCall(call: ts.CallExpression, ctx: Context): void {
     ctx.edits.push(replaced(call, value));
     ctx.imports.set(value, `the expr.${helper}()`);
   } else if (helper === 'raw' && sql && ts.isStringLiteralLike(sql)) {
-    ctx.edits.push(replaced(call, rawTag(sql.text)));
-    ctx.imports.set('raw', 'the raw`...`');
+    ctx.edits.push(replaced(call, sqlTag(sqlName(ctx.source), sql.text)));
+    ctx.imports.set(SQL_TAG, 'the sql`...`');
   } else {
     ctx.report(call, `expr.${helper}() is gone: declare the column with m.raw(...), or use a stamp on the entity`);
     return;
@@ -601,7 +606,7 @@ function rewriteUpsertCall(call: ts.CallExpression, ctx: Context): void {
   const options = call.arguments[3];
   const update = options && upsertUpdate(options);
   if (name && UPSERT_CALLS.has(name) && update) {
-    ctx.edits.push(replaced(options, update.getText()));
+    ctx.edits.push(replaced(options, [original(update)]));
   }
 }
 
@@ -706,7 +711,7 @@ function unwrapRelationAlias(node: ts.PropertyDeclaration, ctx: Context): void {
     identifierText(declared.typeName) === 'Relation' &&
     declared.typeArguments?.length === 1
   ) {
-    ctx.edits.push(replaced(declared, declared.typeArguments[0].getText()));
+    ctx.edits.push(replaced(declared, [original(declared.typeArguments[0])]));
     ctx.rewritten.Relation += 1;
   }
 }
@@ -846,22 +851,22 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
 }
 
 /**
- * Rewrites `raw('sql')` into the tagged template, and a second alias argument into `.as()`, the callback
- * form's included. A computed string is left alone: a template cannot be built from a value not known here.
+ * Rewrites the deprecated `raw('...')` into the `sql` tagged template, and a second alias argument into `.as()`, the
+ * callback form's included. A computed string is left alone: a template cannot be built from a value not known here.
  */
 function rewriteRawCall(node: ts.Node, ctx: Context): void {
-  if (!ts.isCallExpression(node) || identifierText(node.expression) !== 'raw') {
+  if (!ts.isCallExpression(node) || uqlExport(node.expression, ctx.checker) !== LEGACY_SQL_TAG) {
     return;
   }
   const [expression, alias] = node.arguments;
   if (!expression || node.arguments.length > 2) {
     return;
   }
-  const suffix = alias ? `.as(${alias.getText()})` : '';
+  const suffix: readonly Part[] = alias ? ['.as(', original(alias), ')'] : [];
   if (ts.isStringLiteral(expression)) {
-    ctx.edits.push(replaced(node, `${rawTag(expression.text)}${suffix}`));
+    ctx.edits.push(replaced(node, [original(node.expression), templateOf(expression.text), ...suffix]));
   } else if (alias) {
-    ctx.edits.push({ start: expression.getEnd(), end: node.getEnd(), text: `)${suffix}` });
+    ctx.edits.push({ start: expression.getEnd(), end: node.getEnd(), text: [')', ...suffix] });
   }
 }
 
@@ -875,13 +880,13 @@ export function transformFile(
   options: { readonly strictNullChecks: boolean } = { strictNullChecks: true },
 ): FileResult {
   const ctx = createContext(source, checker, options.strictNullChecks);
-  const rewritesRaw = uqlImport(source, 'raw') !== undefined;
   const importsUql = uqlImportDeclarations(source, true).length > 0;
   const importsExpr = uqlImport(source, 'expr', true) !== undefined;
+  const importsRaw = uqlImport(source, LEGACY_SQL_TAG, true) !== undefined;
 
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
-    if (rewritesRaw) {
+    if (importsRaw) {
       rewriteRawCall(node, ctx);
     }
     if (ts.isPropertyDeclaration(node)) {
@@ -911,17 +916,18 @@ export function transformFile(
     ts.forEachChild(node, visit);
   };
   visit(source);
+  const clash = clashingName(ctx);
+  if (clash) {
+    ctx.report(clash, `'${clash.text}' is already named here, and the codemod writes it: rename that, then run again`);
+    return fileResult(ctx, source.getFullText());
+  }
   const dead = new Set([...deadImportNames(ctx), ...rewriteColumnRefs(ctx)]);
-  const rewritten = renameExports(dead, ctx);
+  rewriteImports(dead, ctx);
   reportRemovedExports(ctx);
-  dropDeadImports(dead, rewritten, ctx);
-  addImports(rewritten, ctx);
 
-  return {
-    fileName: source.fileName,
-    text: applyEdits(source.getFullText(), ctx.edits),
-    changed: ctx.edits.length > 0,
-    unresolved: ctx.unresolved,
-    notes: ctx.notes,
-  };
+  return fileResult(ctx, applyEdits(source.getFullText(), ctx.edits));
+}
+
+function fileResult({ source, unresolved, notes }: Context, text: string): FileResult {
+  return { fileName: source.fileName, text, changed: text !== source.getFullText(), unresolved, notes };
 }

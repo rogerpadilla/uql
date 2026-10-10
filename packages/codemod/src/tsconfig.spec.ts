@@ -38,6 +38,24 @@ describe('tsconfig', () => {
     expect(JSON.parse(text)).toEqual({ compilerOptions: { strict: true } });
   });
 
+  it('removes two flags at the end of the object together', () => {
+    const { text } = transformTsconfig(
+      '/tsconfig.json',
+      `{"compilerOptions":{"strict":true,"experimentalDecorators":true,"emitDecoratorMetadata":true}}`,
+    );
+
+    expect(JSON.parse(text)).toEqual({ compilerOptions: { strict: true } });
+  });
+
+  it('removes two flags that are the only options', () => {
+    const { text } = transformTsconfig(
+      '/tsconfig.json',
+      `{"compilerOptions":{"experimentalDecorators":true,"emitDecoratorMetadata":true}}`,
+    );
+
+    expect(JSON.parse(text)).toEqual({ compilerOptions: {} });
+  });
+
   /**
    * Removing `target` would fall back to the compiler default (`es5`), and picking a replacement means
    * guessing which era the project targets.
