@@ -6,8 +6,6 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 **R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. _Unlocks views._
 
-**R2: entity capabilities.** A `readable`/`writable`/`refreshable` set on the entity's type, so a write to something with no table is a compile error. _Unlocks views, read-only queriers._
-
 ```ts
 await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 ```
@@ -17,6 +15,14 @@ await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 **R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). Internal (`SchemaDiffResult` is not exported), so it can land after 1.0. _Unlocks views._
 
 ## Features
+
+**Batching** (R5). `pool.batch((q) => [q.findMany(...), q.count(...)])`, a typed tuple back, one request where the engine allows it and a transaction elsewhere. [The design](batching.md).
+
+## After 1.0
+
+Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
+
+**R2: entity capabilities.** A `readable`/`writable`/`refreshable` set on the entity's type, so a write to something with no table is a compile error. _Unlocks views, read-only queriers._
 
 **Views and materialized views** (R1, R2, R7).
 
@@ -30,8 +36,6 @@ export const WorkspaceUsage = defineView({
 ```
 
 A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction.
-
-**Batching** (R5). `pool.batch((q) => [q.findMany(...), q.count(...)])`, a typed tuple back, one request where the engine allows it and a transaction elsewhere. [The design](batching.md).
 
 **Read-only queriers** (R2). `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
 
