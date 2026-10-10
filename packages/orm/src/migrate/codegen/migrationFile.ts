@@ -17,9 +17,9 @@ export type MigrationModuleOptions = {
   downInner: string;
 };
 
-/** One `await querier.run`...`` line, its SQL as written. */
+/** One `await querier.run`...`` line, its SQL as written, marked with an `sql` block comment, which editors highlight by. */
 export function emitSqlRunCall(sql: string): string {
-  return /*ts*/ `    await querier.run${templateOf(sql)};`;
+  return /*ts*/ `    await querier.run /*sql*/ ${templateOf(sql)};`;
 }
 
 /** Indented `up`/`down` body: one `await querier.run`...`` per SQL string. */
@@ -48,10 +48,10 @@ export const migrationSource = {
     entry: 'uql-orm',
     emptyUp: `    // Add your migration logic here: one await querier.run\`...\` per SQL statement.
     // Example (Postgres):
-    // await querier.run\`CREATE TABLE "users" ("id" SERIAL PRIMARY KEY)\`;
+    // await querier.run /*sql*/ \`CREATE TABLE "users" ("id" SERIAL PRIMARY KEY)\`;
 `,
     emptyDown: `    // Add your rollback logic here.
-    // await querier.run\`DROP TABLE IF EXISTS "users"\`;
+    // await querier.run /*sql*/ \`DROP TABLE IF EXISTS "users"\`;
 `,
     emit: emitSqlRunCalls,
   },

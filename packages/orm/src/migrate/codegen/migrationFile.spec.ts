@@ -58,8 +58,8 @@ describe('buildMigrationModule', () => {
     });
     expect(src).toContain(`import type { SqlQuerier } from 'uql-orm';`);
     expect(src).toContain('* Generated from entity definitions');
-    expect(src).toContain('await querier.run`SELECT 1;`;');
-    expect(src).toContain('await querier.run`SELECT 2;`;');
+    expect(src).toContain('await querier.run /*sql*/ `SELECT 1;`;');
+    expect(src).toContain('await querier.run /*sql*/ `SELECT 2;`;');
     expect(src).toContain('Migration: add_foo');
     expect(src).toContain('Created: 2026-01-01T00:00:00.000Z');
   });
@@ -68,7 +68,7 @@ describe('buildMigrationModule', () => {
 describe('emitSqlRunCall', () => {
   it('should write the SQL as a tagged run, its lines and Postgres quotes as they are', () => {
     expect(emitSqlRunCall('CREATE TABLE "users" (\n  "id" INTEGER\n);')).toBe(
-      '    await querier.run`CREATE TABLE "users" (\n  "id" INTEGER\n);`;',
+      '    await querier.run /*sql*/ `CREATE TABLE "users" (\n  "id" INTEGER\n);`;',
     );
   });
 

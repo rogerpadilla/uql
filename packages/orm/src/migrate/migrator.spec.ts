@@ -356,7 +356,7 @@ describe('Migrator', () => {
 
       const filePath = await migrator.generateFromEntities('initial_schema');
 
-      expect(await readFile(filePath, 'utf-8')).toContain('await querier.run`CREATE TABLE \\`MigNote\\` (');
+      expect(await readFile(filePath, 'utf-8')).toContain('await querier.run /*sql*/ `CREATE TABLE \\`MigNote\\` (');
       await linkUqlOrmSource(filePath);
       await migrator.up();
       expect(await tables()).toEqual(['MigNote', 'uql_migrations']);
@@ -460,7 +460,7 @@ describe('Migrator', () => {
       const source = await readFile(filePath, 'utf-8');
 
       const down = source.split('async down')[1];
-      const statements = [...down.matchAll(/querier\.run`((?:\\.|[^`\\])*)`;/g)];
+      const statements = [...down.matchAll(/querier\.run \/\*sql\*\/ `((?:\\.|[^`\\])*)`;/g)];
       expect(statements.map(([, sql]) => sql.replace(/\\([\\`$])/g, '$1'))).toEqual([
         'ALTER TABLE `Second` ADD COLUMN `b` TEXT;',
         'ALTER TABLE `First` DROP COLUMN `a`;',
