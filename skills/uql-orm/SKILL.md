@@ -72,6 +72,7 @@ export class Post {
 }
 ```
 
+- A class inherits everything its base declares (fields, relations, hooks, filters, indexes, checks, triggers), and the base needs no `@Entity()` unless it is a table. The child's own entry of the same name replaces the base's.
 - Every `@Field` states its `type`: `String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`. A foreign key takes `references` instead and inherits the target key's type. A `Date` is an instant, stored in UTC to the millisecond on every engine; `precision` sets other fractional digits. A `'decimal'` is exact text (`price?: string | null`); `type: Number` with `precision`/`scale` opts in to a rounding JS number. A JSON column of no fixed shape is a bare `Json`.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
 - Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. Declare `?` whatever an insert may leave out: a nullable, `onInsert`, `defaultValue`, `eager: false` or `computed` field, and relations.

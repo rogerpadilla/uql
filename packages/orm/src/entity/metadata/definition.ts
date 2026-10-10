@@ -283,10 +283,6 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     defineFilter(entity, name, filter);
   }
 
-  if (!hasKeys(meta.fields)) {
-    throw new UqlUsageError(`'${entity.name}' must have fields`);
-  }
-
   // A later call composes onto the entity, so a name is only ever set, and `derivedName` records that
   // the class name stood in, which is what a naming strategy derives from.
   if (opts.name !== undefined) {
@@ -301,6 +297,10 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   // is the nearer, and nearer wins every merge.
   inheritFrom(meta, parentOf(entity));
   inheritFrom(meta, opts.extends);
+
+  if (!hasKeys(meta.fields)) {
+    throw new UqlUsageError(`'${entity.name}' must have fields`);
+  }
 
   // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
   // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
@@ -722,11 +722,25 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
     target.filters = { ...source.filters, ...target.filters };
   }
 
-  // Merge hooks from parent entity (parent hooks execute first)
-  if (source.hooks) {
-    const hooks = (target.hooks ??= {});
-    for (const [event, sourceList] of definedEntries(source.hooks)) {
-      hooks[event] = [...sourceList, ...(hooks[event] ?? [])];
-    }
+  // A base's hooks fire first, as its triggers do: they are the entries written before the child's own.
+  for (const [event, sourceList] of definedEntries(source.hooks ?? {})) {
+    (target.hooks ??= {})[event] = inheritedEntries(sourceList, target.hooks?.[event], (hook) => hook.methodName);
   }
+  target.indexes = inheritedEntries(source.indexes, target.indexes, (index) => index.name);
+  target.checks = inheritedEntries(source.checks, target.checks, (check) => check.name);
+  target.triggers = inheritedEntries(source.triggers, target.triggers, (trigger) => trigger.name);
+}
+
+/** `source`'s entries ahead of `own`, each once, and a same-named `own` entry replaces its base's. */
+function inheritedEntries<T extends object>(
+  source: readonly T[] | undefined,
+  own: readonly T[] | undefined,
+  nameOf: (entry: T) => string | undefined,
+): T[] | undefined {
+  if (!source?.length) {
+    return own && [...own];
+  }
+  const taken = new Set((own ?? []).map(nameOf));
+  const inherited = source.filter((entry) => nameOf(entry) === undefined || !taken.has(nameOf(entry)));
+  return [...new Set([...inherited, ...(own ?? [])])];
 }

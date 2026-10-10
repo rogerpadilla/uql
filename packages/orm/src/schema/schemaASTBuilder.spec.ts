@@ -646,6 +646,23 @@ describe('SchemaASTBuilder', () => {
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
 
+    it('should give each table inheriting an index its own derived name', () => {
+      @Index((shared) => [shared.region])
+      class Regional {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) region?: string | null;
+      }
+      @Entity()
+      class Depot extends Regional {}
+      @Entity()
+      class Outlet extends Regional {}
+
+      const ast = buildSchemaAST([Depot, Outlet]);
+
+      expect(ast.getTable('Depot')?.indexes.map((index) => index.name)).toEqual(['Depot__region_idx']);
+      expect(ast.getTable('Outlet')?.indexes.map((index) => index.name)).toEqual(['Outlet__region_idx']);
+    });
+
     it('should use default callback when resolveTableName/resolveColumnName are not provided', () => {
       const ast = buildSchemaAST([User]);
       const table = ast.getTable('User');

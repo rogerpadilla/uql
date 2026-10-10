@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.101.5] - 2026-10-10
+
+- A subclass inherits the indexes, checks and triggers its base declares, and may declare no field of its own.
+- **Fixed:** a base's hook ran twice on a class two levels below it when the class between them was an entity.
+
 ## [0.101.4] - 2026-10-10
 
 - `uql-orm/migrate` and `uql-orm/nestjs` no longer export the schema introspector classes or `UqlContextInterceptor`; the migrator and the Nest module use them as before.
