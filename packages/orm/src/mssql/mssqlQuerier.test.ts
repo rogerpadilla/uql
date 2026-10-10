@@ -54,6 +54,20 @@ describe('MsSqlQuerierPool', () => {
     expect(await pool.all`SELECT 1 AS one`).toEqual([{ one: 1 }]);
   });
 
+  /** Holds the pool's connect until `open` is called, so a test can end the pool while it is under way. */
+  function holdConnect(pool: MsSqlQuerierPool) {
+    const connect = pool.pool.connect.bind(pool.pool);
+    let open!: () => void;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const connecting = vi.spyOn(pool.pool, 'connect').mockImplementation(async () => {
+      await held;
+      return connect();
+    });
+    return { connecting, open };
+  }
+
   /** `mssql` refuses to close a pool mid-connect, so `end` lets the connect under way settle first. */
   it.each([
     ['succeeds', mssqlConnection(), 'Connection is closed.'],
@@ -65,11 +79,13 @@ describe('MsSqlQuerierPool', () => {
   ])('should end while a connect is under way, whether it %s', async (_outcome, connection, refusal) => {
     const pool = new MsSqlQuerierPool(connection);
     const querier = await pool.getQuerier();
+    const { connecting, open } = holdConnect(pool);
     const inFlight = querier.all`SELECT 1`.catch((error: unknown) => error);
-    await vi.waitFor(() => expect(pool.pool.connecting).toBe(true));
+    await vi.waitFor(() => expect(connecting).toHaveBeenCalled());
 
-    await pool.end();
-
+    const ended = pool.end();
+    open();
+    await ended;
     await inFlight;
     await expect(querier.all`SELECT 1`).rejects.toThrow(refusal);
   });
