@@ -38,43 +38,60 @@ export function holdsForeignKey(relation: Pick<RelationMeta, 'cardinality' | 'ma
   return !relation.mappedBy && !isToManyRelation(relation);
 }
 
-/** One column of a parent's key, paired with the column matching it on the table being joined. */
-export type ParentJoin = { readonly parent: string; readonly joined: string };
+/** A key column of the entity a relation starts from or reaches, paired with the column holding it on the table joined. */
+export type KeyJoin = { readonly key: string; readonly column: string };
 
 /**
- * How a relation joins its parent, one pair per key: `parent` a column of the parent's table, `joined` the
+ * How a relation joins its parent, one pair per key: `key` a column of the parent's table, `column` the
  * matching one on the table the relation reads, a junction's or the child's.
  */
-export function parentJoins(
-  relOpts: Pick<RelationMeta, 'references' | 'through'>,
-  parentKeyCount: number,
-): ParentJoin[] {
+export function parentJoins(relOpts: Pick<RelationMeta, 'references' | 'through'>, parentKeyCount: number): KeyJoin[] {
   if (!relOpts.through) {
-    return relOpts.references.map(({ local, foreign }) => ({ parent: local, joined: foreign }));
+    return relOpts.references.map(({ local, foreign }) => ({ key: local, column: foreign }));
   }
   // A junction's pairs are the parent's followed by the target's, and how many the parent has is
   // something its caller already knows - so the boundary is passed rather than stored on a relation.
-  return relOpts.references.slice(0, parentKeyCount).map(({ local, foreign }) => ({ parent: foreign, joined: local }));
+  return relOpts.references.slice(0, parentKeyCount).map(({ local, foreign }) => ({ key: foreign, column: local }));
 }
 
-/** The junction columns holding the target's key, after the parent's `parentKeyCount` ones. */
-export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, parentKeyCount: number): string[] {
-  return relOpts.references.slice(parentKeyCount).map(({ local }) => local);
+/** The same pairs for the target's key: `key` a key column of the target, `column` the junction column holding it. */
+export function targetJoins(relOpts: Pick<RelationMeta, 'references'>, parentKeyCount: number): KeyJoin[] {
+  return relOpts.references.slice(parentKeyCount).map(({ local, foreign }) => ({ key: foreign, column: local }));
 }
 
 /**
- * The `$where` naming exactly the children of the rows `parentIds` identifies: an `IN` over the one
- * column a single key contributes, an OR of whole key maps for several - lists of each column apart
- * would pair values no parent has, and a delete would take a child of a parent that survives.
+ * The columns that make a row belong to the key `id` names, one per pair: a sole key's `id` is its value, a
+ * composite's the map of every column.
  */
-export function childrenOf(joins: readonly ParentJoin[], parentIds: readonly unknown[]): Record<string, unknown> {
+export function pointAt(joins: readonly KeyJoin[], id: unknown): Record<string, unknown> {
   const [first] = joins;
   if (joins.length === 1) {
-    return { [first.joined]: parentIds };
+    return { [first.column]: id };
   }
-  return {
-    $or: parentIds.map((id) => Object.fromEntries(joins.map(({ parent, joined }) => [joined, read(id, parent)]))),
-  };
+  return Object.fromEntries(joins.map(({ key, column }) => [column, read(id, key)]));
+}
+
+/** A key's own columns, each paired with itself: the joins of a table to the rows that name it by its own key. */
+export function keyJoins(keys: readonly string[]): KeyJoin[] {
+  return keys.map((key) => ({ key, column: key }));
+}
+
+/**
+ * The `$where` naming exactly the rows the keys `ids` identify: an `IN` over the one column a single key
+ * contributes, an OR of whole key maps for several - lists of each column apart would pair values no key
+ * has, and a delete would take a row of a key that survives.
+ */
+export function childrenOf(joins: readonly KeyJoin[], ids: readonly unknown[]): Record<string, unknown> {
+  return joins.length === 1 ? { [joins[0].column]: ids } : { $or: alternatives(joins, ids) };
+}
+
+/** The `$where` naming the rows {@link childrenOf} does not: `NOT IN` over one column, a `$nor` of whole keys for several. */
+export function childrenExcept(joins: readonly KeyJoin[], ids: readonly unknown[]): Record<string, unknown> {
+  return joins.length === 1 ? { [joins[0].column]: { $nin: ids } } : { $nor: alternatives(joins, ids) };
+}
+
+function alternatives(joins: readonly KeyJoin[], ids: readonly unknown[]): Record<string, unknown>[] {
+  return ids.map((id) => pointAt(joins, id));
 }
 
 function read(row: unknown, key: string): unknown {

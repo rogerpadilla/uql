@@ -351,7 +351,7 @@ export function assertSoleId<E>(meta: EntityMeta<E>, what: string): void {
   }
   throw new UqlUsageError(
     ids.length
-      ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support yet.`
+      ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support.`
       : // An entity registered with `@Field` but no `@Entity` never ran the check in `defineEntity`.
         `'${meta.entity.name}' has no primary key, which ${what} needs.`,
   );

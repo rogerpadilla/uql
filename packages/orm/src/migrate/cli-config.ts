@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Config } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -9,18 +9,23 @@ type ConfigModule = { default?: unknown };
 
 type TsxApi = { register(): unknown };
 
+/** The part of tsx's manifest naming its API's ESM build. */
+type TsxManifest = { exports: { './esm/api': { import: { default: string } } } };
+
 /**
- * The project's own `tsx/esm/api` where Node must load a TypeScript config: Node's type stripping runs
- * no decorators, and Bun transforms them natively. uql bundles no transpiler, so the project's
- * loader reads the project's `tsconfig.json`. Registered for the process, never imported through: an
- * import of its own would load the config's `uql-orm` apart from the CLI's, whose objects the other misreads.
+ * The ESM build of the project's own tsx API, where Node must load a TypeScript config: its type stripping
+ * runs no decorators. Registered, never imported through, so the config shares the CLI's `uql-orm`. Read off
+ * the export map, as `require.resolve` picks the CommonJS build, whose `register` fails on Node 22.
  */
 export function tsxApiFor(path: string, versions: { bun?: string }): string | undefined {
   if (!/\.[mc]?ts$/.test(path) || versions.bun) {
     return undefined;
   }
   try {
-    return createRequire(path).resolve('tsx/esm/api');
+    const require = createRequire(path);
+    const manifest = require.resolve('tsx/package.json');
+    const { exports }: TsxManifest = require(manifest);
+    return join(dirname(manifest), exports['./esm/api'].import.default);
   } catch {
     return undefined;
   }

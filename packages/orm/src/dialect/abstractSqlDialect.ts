@@ -1,4 +1,4 @@
-import { fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
+import { fieldOf, getMeta, relationOf } from '../entity/index.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -90,10 +90,11 @@ import {
   isOperatorMap,
   isOperatorKey,
   isVectorSearch,
+  type KeyJoin,
   normalizeScalarFieldSelection,
   parentJoins,
   rankedTextSearch,
-  targetKeyColumns,
+  targetJoins,
   textSearchFields,
   textSortOf,
   textWeightSteps,
@@ -188,6 +189,9 @@ type HydratableField = readonly [string, HydrateKind];
  * where an array operator finds it. A path of a column, an array element, or a field of one.
  */
 type JsonTarget = { readonly read: (mode: JsonAccessMode) => string; readonly slot: JsonSlot };
+
+/** A junction's rows of one parent, and the SQL column holding each key column of a target. */
+type JunctionRows = { readonly from: string; readonly targets: readonly KeyJoin[] };
 
 /** A sort term's direction. A vector distance has none: it always ranks nearest first. */
 type SortOrder = Partial<SortDirection>;
@@ -2656,11 +2660,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx.append(junction.from);
       if (hasKeys(targetWhere)) {
         const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey));
-        const targetKey = soleIdOf(relatedMeta, 'a many-to-many target');
-        ctx.append(` AND ${junction.target} IN (`);
-        ctx.append(`SELECT ${this.escapedColumn(related.alias, relatedMeta, targetKey)} FROM ${related.ref}`);
-        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'WHERE' });
-        ctx.append(')');
+        ctx.append(' AND ');
+        this.appendPartner(
+          ctx,
+          junction.targets.map(({ key, column }) => ({
+            junction: column,
+            target: this.escapedColumn(related.alias, relatedMeta, key),
+          })),
+          'junction',
+          related.ref,
+          (clause) => this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause }),
+        );
       }
     } else {
       // The alias is claimed before the SELECT is written, since an aggregate names a column of it.
@@ -2782,8 +2792,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const escapedParent = this.escapeId(parent, true, true);
     return parentJoins(rel, meta.ids.length)
       .map(
-        ({ parent: key, joined }) =>
-          `${this.escapedColumn(alias, joinedMeta, joined)} = ${escapedParent}${this.escapedColumnName(meta, key)}`,
+        ({ key, column }) =>
+          `${this.escapedColumn(alias, joinedMeta, column)} = ${escapedParent}${this.escapedColumnName(meta, key)}`,
       )
       .join(' AND ');
   }
@@ -2883,13 +2893,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
     const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
-    const targetKey = soleIdOf(relMeta, 'a many-to-many target');
-    ctx.append(`${this.escapedColumn(alias, relMeta, targetKey)} IN (SELECT ${junction.target} FROM ${junction.from})`);
+    this.appendPartner(
+      ctx,
+      junction.targets.map(({ key, column }) => ({
+        junction: column,
+        target: this.escapedColumn(alias, relMeta, key),
+      })),
+      'target',
+      junction.from,
+    );
   }
 
   /**
    * A junction's rows pairing the parent with the relation's targets, as far as its own filters let them
-   * through, since a soft-deleted link is not a link; and the column naming each row's target.
+   * through, since a soft-deleted link is not a link; and the column each of them holds a target's key in.
    */
   private junctionRows<E>(
     ctx: QueryContext,
@@ -2897,17 +2914,44 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     rel: RelationMeta,
     junction: Type<object>,
     parent: string,
-  ): { readonly from: string; readonly target: string } {
+  ): JunctionRows {
     const junctionMeta = getMeta(junction);
     const { alias, ref } = this.tableRef(junctionMeta, ctx.claimAlias(this.resolveTableAlias(junctionMeta), parent));
     const scope = this.buildFragment(ctx, (fragmentCtx) =>
       this.where(fragmentCtx, junction, {}, { prefix: alias, clause: 'AND' }),
     );
-    const [target] = targetKeyColumns(rel, meta.ids.length);
     return {
       from: `${ref} WHERE ${this.correlation(meta, rel, parent, alias, junctionMeta)}${scope}`,
-      target: this.escapedColumn(alias, junctionMeta, target),
+      targets: targetJoins(rel, meta.ids.length).map(({ key, column }) => ({
+        key,
+        column: this.escapedColumn(alias, junctionMeta, column),
+      })),
     };
+  }
+
+  /**
+   * Tests that the `outer` side's row has a partner among the rows of `from`, the other side's, a pair per key
+   * column: an `IN` over the one column each holds a lone key in, an `EXISTS` correlating every pair for several,
+   * which an `IN` cannot say. `from` is the junction's rows, already filtered, where the target is the outer side;
+   * `tail` writes the partner rows' own filters.
+   */
+  private appendPartner(
+    ctx: QueryContext,
+    pairs: readonly { readonly junction: string; readonly target: string }[],
+    outer: 'junction' | 'target',
+    from: string,
+    tail?: (clause: 'WHERE' | 'AND') => void,
+  ): void {
+    const inner = outer === 'junction' ? 'target' : 'junction';
+    if (pairs.length === 1) {
+      ctx.append(`${pairs[0][outer]} IN (SELECT ${pairs[0][inner]} FROM ${from}`);
+      tail?.('WHERE');
+    } else {
+      const links = pairs.map((pair) => `${pair.junction} = ${pair.target}`).join(' AND ');
+      ctx.append(`EXISTS (SELECT 1 FROM ${from} ${outer === 'target' ? 'AND' : 'WHERE'} ${links}`);
+      tail?.('AND');
+    }
+    ctx.append(')');
   }
 
   /**

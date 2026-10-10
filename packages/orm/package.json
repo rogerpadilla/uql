@@ -6,7 +6,7 @@
   "version": "0.100.3",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18"
   },
   "sideEffects": false,
   "main": "./dist/index.js",

@@ -41,14 +41,10 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **The maintained aggregate**, `computed: (u) => u.resources.count(), stored: true` kept by triggers on the child, once an unstored one profiles too slow. Only `count` and `sum` turn a row change into a delta, and an aggregate's filter is already row-local, so storing one would change no call site.
 - **Schema-scoped objects.** Extensions, functions and domains declared beside the entities (`objects: [{ kind: 'extension', name: 'pg_trgm' }]`), applied by `sync` and `up` before the tables using them; a function is named by its signature. Variability hand-rolls these in four places.
 
-## Where a composite key still refuses
-
-Each by name, never by taking the first key column: saving a relation (one child column per page), MongoDB (a compound `_id` compares by field order), and the HTTP `/:id` route (one path segment).
-
 ## Settled, not to re-litigate
 
 - **An id is either spelling in, one spelling out.** A by-id method takes `EntityId`, the union; `WrittenId` is the branch a write produced. Merging them refuses `findOneById(X, 'abc')` wherever the key cannot be named.
-- **The key is a list, and `assertSoleId` is the only way past it.** A first-column shortcut would address every row that agrees on one column of two.
+- **The key is a list.** Every path carries every column of it, a relation's child or junction row included (one column per key column, from `references`). `assertSoleId` refuses the rest by name, never taking the first column: MongoDB (a compound `_id` compares by field order; use a unique compound index) and the HTTP `/:id` route (a composite row is reachable through `$where`).
 - **Keys and indexes compare by columns, not names**, so a naming-convention change rewrites nothing.
 - **A check is compared by name.** It is installed as `_uql_<table>__<label>_<hash>`, the hash of its SQL, as a trigger is: an edited check is a new name, the old one dropped. Safe mode adds the new one and holds the drop, as it does an index. Only a `_uql_` check is ever dropped; any other is warned about on a table declaring checks.
 - **A partial index's predicate and a stored computed column's expression are not diffed**: the engine's reprint never matches what uql wrote, and a fingerprint table is not worth keeping for an edit nobody has made. Changing one is a written migration - and an index's `where` is spelled as the predicate the query passes, never as `raw`, or the planner will not match the two.

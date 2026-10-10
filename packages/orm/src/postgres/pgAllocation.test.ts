@@ -26,7 +26,7 @@ async function measured(): Promise<Partial<Record<keyof typeof BUDGET_KB, number
   return JSON.parse(stdout);
 }
 
-it(
+it.skipIf(Number(process.versions.node.split('.')[0]) < 24)(
   'should keep each step of a lifecycle within its allocation budget (PostgreSQL)',
   async () => {
     const kb = await measured();

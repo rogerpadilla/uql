@@ -20,7 +20,9 @@ The full docs are Markdown at https://uql-orm.dev/llms.txt, one page per URL. Re
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/client, ...
 ```
 
-ESM only. Node 24+, Bun or an edge runtime, TypeScript 5.7+. Decorators are the TC39 standard: never enable `experimentalDecorators` or `emitDecoratorMetadata`, never import `reflect-metadata`. In `tsconfig.json`, `module` is `nodenext` or `preserve`, and `target` is a dated one (`es2022`+), not `esnext`.
+ESM only (a CommonJS app loads it through `require(esm)`). Node 22.18+, Bun or an edge runtime, TypeScript 5.7+.
+
+UQL's decorators are the TC39 standard: for them, never enable `experimentalDecorators` or `emitDecoratorMetadata`, never import `reflect-metadata`; in `tsconfig.json`, `module` is `nodenext` or `preserve`, and `target` is a dated one (`es2022`+), not `esnext`. A project already on legacy decorators (NestJS, Angular) keeps its `tsconfig.json` as it is and defines entities with `defineEntity` instead: one config cannot compile both decorator specs. NestJS: https://uql-orm.dev/nestjs.md
 
 Node's type stripping runs no decorators: on Node, add `tsx` (`npm i -D tsx`), which `uql-migrate` imports `uql.config.ts` through. Next.js compiles TC39 decorators only through a `babel.config.json` with `@babel/plugin-proposal-decorators` at `version: '2023-11'`. A bundle that minifies class names (Next's server build, or any bundler's `minify`) needs `@Entity({ name: 'todo' })`: a table name is the class name otherwise.
 

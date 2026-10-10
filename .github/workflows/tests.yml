@@ -66,12 +66,17 @@ jobs:
       fail-fast: false
       matrix:
         example: [node, nextjs, bun, cloudflare-d1]
-    name: Example (${{ matrix.example }})
+        node: [lts/*]
+        # The oldest Node the package claims, where the CLI loads a TypeScript config through tsx.
+        include:
+          - example: node
+            node: 22
+    name: Example (${{ matrix.example }}, node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
-          node-version: lts/*
+          node-version: ${{ matrix.node }}
       - name: Build
         run: bun run --filter uql-orm build
       # Links `uql-migrate` again, now that its target exists, so the bin is executable.
@@ -102,6 +107,8 @@ jobs:
             node: lts/*
           - suite: vitest
             node: latest
+          - suite: vitest
+            node: 22
     name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v7

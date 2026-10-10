@@ -123,7 +123,8 @@ services:
     # `--cache` and `--max-sql-memory` default to a quarter of visible RAM *each*, so left alone this
     # claims up to ~8GB of a CI runner it shares with three other engines. It holds 20 tiny tables. The
     # store is in memory, as TypeORM, Drizzle and Knex run it for tests: no disk sync on every schema change.
-    command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB --store=type=mem,size=1GiB
+    # That store lives in the Go heap, whose cap defaults to 2.25x `--max-sql-memory`: once it filled, GC took 6 cores.
+    command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB --max-go-memory=2GiB --store=type=mem,size=1GiB
     # Its settings live in that in-memory store, so a restart loses them, and the image reruns its init
     # scripts only on an empty data directory, which its own logs keep filled: applied in the check, healthy
     # implies configured. Unset, every dropped table's cleanup job waits hours and thousands pile up. A failure

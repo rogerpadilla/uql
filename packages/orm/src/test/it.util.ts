@@ -67,17 +67,28 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
 }
 
 /**
- * Empties every fixture table, dependents first. The graph is cyclic (`User` and `Company` point at each
- * other), so the foreign keys that point back up that order, which no delete order satisfies, are cleared first.
+ * Empties every fixture table holding rows, dependents first, found by one probe: a test fills a few, and an
+ * HTTP engine pays a round trip per statement. The graph is cyclic (`User` and `Company` point at each other),
+ * so the foreign keys that point back up that order, which no delete order satisfies, are cleared first.
  */
 export async function clearTables(querier: AbstractSqlQuerier) {
   const { dialect } = querier;
-  const tables = buildSchemaAST(getEntities(), {
+  const order = buildSchemaAST(getEntities(), {
     resolveTableName: (meta) => dialect.resolveTableAlias(meta),
     resolveColumnName: (key, field) => dialect.resolveColumnName(key, field),
   }).getDropOrder();
-  const unlinks = tables.flatMap((table, at) => {
-    const backward = table.outgoingRelations.filter((relation) => tables.indexOf(relation.to.table) <= at);
+  const probes = order.map(({ name }) => {
+    const id = dialect.escapeId(name);
+    return `CASE WHEN EXISTS (SELECT 1 FROM ${id}) THEN 1 ELSE 0 END AS ${id}`;
+  });
+  const [filled] = await querier.all(raw.text(`SELECT ${probes.join(', ')}`));
+  const tables = order.filter(({ name }) => Number(filled[name]));
+  if (!tables.length) {
+    return;
+  }
+  const unlinks = tables.flatMap((table) => {
+    const at = order.indexOf(table);
+    const backward = table.outgoingRelations.filter((relation) => order.indexOf(relation.to.table) <= at);
     const columns = backward.flatMap((relation) => relation.from.columns).filter((column) => column.nullable);
     const assignments = columns.map((column) => `${dialect.escapeId(column.name)} = NULL`);
     return assignments.length ? [`UPDATE ${dialect.escapeId(table.name)} SET ${assignments.join(', ')}`] : [];

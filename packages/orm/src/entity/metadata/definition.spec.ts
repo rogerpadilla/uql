@@ -75,7 +75,7 @@ it('should name the columns of a composite key, and name its row by every one', 
   }
   const meta = getMeta(Seat);
   expect(() => assertSoleId(meta, 'a key lookup')).toThrow(
-    "'Seat' has a composite primary key (row, number), which a key lookup does not support yet.",
+    "'Seat' has a composite primary key (row, number), which a key lookup does not support.",
   );
   expect(idOf(meta, { row: 'F', number: 12, holder: 'Ada' })).toEqual({ row: 'F', number: 12 });
 });

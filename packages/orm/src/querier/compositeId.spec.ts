@@ -7,7 +7,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
-import { assertDefined } from '../test/index.js';
+import { assertDefined, Cohort } from '../test/index.js';
 import type { SchemaDiff, Type } from '../type/index.js';
 import { idKey } from '../type/index.js';
 import { raw, whereIds } from '../util/index.js';
@@ -595,6 +595,26 @@ it('should cascade to the children of the whole key, not of one column of it', a
   // The surviving term shares the year, so a cascade over `termYear` alone would have taken its own.
   expect(await pool.findMany(Session, { $select: { id: true } })).toEqual([{ id: 2 }]);
   expect(await pool.findOneById(Term, { year: 2030, season: 'autumn' })).toBeDefined();
+});
+
+describe('a composite target across a many-to-many', () => {
+  const dialect = new PostgresDialect();
+
+  it('should test a target filter against every column of its key', () => {
+    const ctx = dialect.createContext();
+    dialect.find(ctx, Cohort, { $select: { track: true }, $where: { skills: { note: 'x' } } });
+    expect(ctx.sql).toBe(
+      'SELECT "track" FROM "Cohort" WHERE EXISTS (SELECT 1 FROM "CohortSkill" WHERE "CohortSkill"."cohortYear" = "Cohort"."year" AND "CohortSkill"."cohortTrack" = "Cohort"."track" AND EXISTS (SELECT 1 FROM "Skill" "skills" WHERE "CohortSkill"."skillArea" = "skills"."area" AND "CohortSkill"."skillName" = "skills"."name" AND "skills"."note" = $1))',
+    );
+  });
+
+  it('should read the targets of a parent by every column of their key', () => {
+    const ctx = dialect.createContext();
+    dialect.find(ctx, Cohort, { $select: { track: true }, $populate: { skills: { $select: { note: true } } } });
+    expect(ctx.sql).toBe(
+      `SELECT "Cohort"."track", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json) FROM (SELECT "skills"."note" FROM "Skill" "skills" WHERE EXISTS (SELECT 1 FROM "CohortSkill" WHERE "CohortSkill"."cohortYear" = "Cohort"."year" AND "CohortSkill"."cohortTrack" = "Cohort"."track" AND "CohortSkill"."skillArea" = "skills"."area" AND "CohortSkill"."skillName" = "skills"."name")) "skills" CROSS JOIN LATERAL (SELECT "skills"."note") "_uql_row") "skills" FROM "Cohort"`,
+    );
+  });
 });
 
 /** The table `entity` builds, failing the test where it builds none. */

@@ -5,7 +5,7 @@
   "version": "0.47.1",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18"
   },
   "bin": {
     "uql-codemod": "./dist/bin.js"

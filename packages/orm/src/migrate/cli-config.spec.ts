@@ -6,7 +6,8 @@ import { importFailure, loadConfig, tsxApiFor } from './cli-config.js';
 
 /**
  * A project holding a stub `tsx` whose `register` marks the process, and a config reading the mark: imported by
- * the process itself once registered, so it shares the module instances the CLI loaded.
+ * the process itself once registered, so it shares the module instances the CLI loaded. Its API has a CommonJS
+ * build beside the ESM one, as the real package does, whose `register` fails on Node 22.
  */
 async function projectWithTsx(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(tmpdir(), 'uql-tsx-'));
@@ -14,11 +15,24 @@ async function projectWithTsx(): Promise<string> {
   await fs.mkdir(path.join(tsx, 'dist'), { recursive: true });
   await fs.writeFile(
     path.join(tsx, 'package.json'),
-    JSON.stringify({ name: 'tsx', type: 'module', exports: { './esm/api': './dist/api.js' } }),
+    JSON.stringify({
+      name: 'tsx',
+      exports: {
+        './package.json': './package.json',
+        './esm/api': {
+          import: { default: './dist/api.mjs' },
+          require: { default: './dist/api.cjs' },
+        },
+      },
+    }),
   );
   await fs.writeFile(
-    path.join(tsx, 'dist', 'api.js'),
+    path.join(tsx, 'dist', 'api.mjs'),
     'export const register = () => { globalThis.uqlTsxRegistered = true; return async () => {}; };',
+  );
+  await fs.writeFile(
+    path.join(tsx, 'dist', 'api.cjs'),
+    'exports.register = () => { throw new Error("the CommonJS build registered"); };',
   );
   await fs.writeFile(
     path.join(dir, 'uql.config.ts'),
@@ -147,7 +161,7 @@ describe('cli-config', () => {
     const dir = await projectWithTsx();
     try {
       expect(tsxApiFor(path.join(dir, 'uql.config.ts'), {})).toBe(
-        await fs.realpath(path.join(dir, 'node_modules', 'tsx', 'dist', 'api.js')),
+        await fs.realpath(path.join(dir, 'node_modules', 'tsx', 'dist', 'api.mjs')),
       );
     } finally {
       await fs.rm(dir, { recursive: true, force: true });

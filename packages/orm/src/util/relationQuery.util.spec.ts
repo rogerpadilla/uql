@@ -4,6 +4,7 @@ import { User } from '../test/entityMock.js';
 import type { QueryPopulate } from '../type/index.js';
 import { raw } from './raw.js';
 import {
+  childrenExcept,
   childrenOf,
   countedRelations,
   getRelationRequestSummary,
@@ -11,8 +12,9 @@ import {
   parseRelationAtKey,
   parseRelationQueryValue,
   parentJoins,
+  pointAt,
   populatesRelations,
-  targetKeyColumns,
+  targetJoins,
 } from './relationQuery.util.js';
 
 /** `/http` parses a populate out of client JSON, so a key the types would refuse can still arrive. */
@@ -145,21 +147,21 @@ describe('the columns a relation joins its parent by', () => {
 
   it('should split a junction at the parent key count', () => {
     expect(parentJoins(through, 2)).toEqual([
-      { parent: 'userId', joined: 'membershipUserId' },
-      { parent: 'groupId', joined: 'membershipGroupId' },
+      { key: 'userId', column: 'membershipUserId' },
+      { key: 'groupId', column: 'membershipGroupId' },
     ]);
-    expect(targetKeyColumns(through, 2)).toEqual(['tagId']);
+    expect(targetJoins(through, 2)).toEqual([{ key: 'id', column: 'tagId' }]);
   });
 
   /** Guessing 1 returned the parent's second column as the target's - a real column of the wrong side. */
   it('should do not take a parent column for a target one', () => {
-    expect(targetKeyColumns(through, 2)).not.toContain('membershipGroupId');
+    expect(targetJoins(through, 2).map(({ column }) => column)).not.toContain('membershipGroupId');
   });
 
   /** The ends swap between the two shapes, which is the whole reason this is answered in one place. */
   it('should read a direct relation from the other end', () => {
     const direct = { references: [{ local: 'id', foreign: 'userId' }] };
-    expect(parentJoins(direct, 1)).toEqual([{ parent: 'id', joined: 'userId' }]);
+    expect(parentJoins(direct, 1)).toEqual([{ key: 'id', column: 'userId' }]);
   });
 
   /** Whole keys, so a delete has no chance to take a row no parent pairs with. */
@@ -172,5 +174,21 @@ describe('the columns a relation joins its parent by', () => {
     expect(childrenOf(parentJoins({ references: [{ local: 'id', foreign: 'userId' }] }, 1), [1, 2])).toEqual({
       userId: [1, 2],
     });
+  });
+
+  it('should name the children a set of keys leaves out, by whole keys too', () => {
+    expect(childrenExcept(targetJoins(through, 2), [7])).toEqual({ tagId: { $nin: [7] } });
+    expect(childrenExcept(parentJoins(through, 2), [{ userId: 1, groupId: 2 }])).toEqual({
+      $nor: [{ membershipUserId: 1, membershipGroupId: 2 }],
+    });
+  });
+
+  /** The columns a child or a junction row takes to belong to a parent, one per pair of its key. */
+  it('should point a child at a parent by every column of its key', () => {
+    expect(pointAt(parentJoins(through, 2), { userId: 1, groupId: 2 })).toEqual({
+      membershipUserId: 1,
+      membershipGroupId: 2,
+    });
+    expect(pointAt(targetJoins(through, 2), 7)).toEqual({ tagId: 7 });
   });
 });

@@ -7,6 +7,11 @@ import { raw } from '../util/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
+/** The fixtures MongoDB can hold: a composite key is refused, so those collections are never made. */
+function soleKeyed() {
+  return getEntities().filter((entity) => getMeta(entity).ids.length === 1);
+}
+
 /** A string key left to the driver, so MongoDB mints the `ObjectId` and the read converts it. */
 @Entity()
 class Ticket {
@@ -29,7 +34,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   override async recreateTables(querier: MongodbQuerier) {
     await querier.db.dropDatabase();
     await Promise.all(
-      getEntities().map((entity) => {
+      soleKeyed().map((entity) => {
         const { name } = getMeta(entity);
         assertDefined(name);
         return querier.db.createCollection(name);
@@ -41,7 +46,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   override async clearTables() {
     await withContext({ system: true }, () =>
       Promise.all(
-        getEntities().map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true, hardDelete: true })),
+        soleKeyed().map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true, hardDelete: true })),
       ),
     );
   }

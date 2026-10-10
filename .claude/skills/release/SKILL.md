@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 1. **Review**: run the `review` skill. Here a fix is pinned by exact SQL in a dialect spec, or cross-backend behaviour in the shared suite; a public API change updates `skills/uql-orm/SKILL.md`. `bun run check` needs the databases up (`docker compose up -d --wait`).
 2. **Changelog**: compress the last entry to what users need, related bullets unified. Head it with the version the bump will produce, dated today.
-3. **Level**, from the entry: **minor** for a `**Breaking:**` bullet, new API, or an upgrade-guide step; **patch** otherwise. Pre-1.0 a caret takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked. Prefer patch unless something important ships or breaks.
+3. **Level**: **patch** by default, new API and changes to anything undocumented included. **Minor** only when code written from the docs stops working, which is also what earns an upgrade-guide step; a `**Breaking:**` bullet only as the changelog header says. Pre-1.0 a caret takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked: never ship a documented break in one.
 4. **Commit** the change.
 5. **Bump, tag, push, GitHub Release**:
    ```sh

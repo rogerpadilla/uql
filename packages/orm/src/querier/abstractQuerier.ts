@@ -1,4 +1,4 @@
-import { assertSoleId, getMeta, idOf, namesKey, relationOf, soleIdOf } from '../entity/index.js';
+import { getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
 import type { KeyedRow } from '../entity/metadata/definition.js';
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
@@ -47,6 +47,7 @@ import type {
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import {
+  childrenExcept,
   childrenOf,
   chunk,
   clone,
@@ -59,12 +60,14 @@ import {
   getRelationRequestSummary,
   guardWrite,
   idOnlyQuery,
+  keyJoins,
   keySet,
   isPagedQuery,
   isScalarId,
   LoggerWrapper,
   normalizeScalarFieldSelection,
   parentJoins,
+  pointAt,
   queryLoggerFor,
   parseRelationAtKey,
   parseRelationQueryValue,
@@ -72,7 +75,7 @@ import {
   runHooks,
   securityConditions,
   someKey,
-  targetKeyColumns,
+  targetJoins,
   whereEach,
   whereIds,
   whereKeysIn,
@@ -120,11 +123,6 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
       `'${entity.name}' is addressed by an object carrying every key of its primary key (${ids.join(', ')}); missing ${missing.join(', ')}.`,
     );
   }
-}
-
-/** The column a write matches a parent's sole key against, on the junction or the child. */
-function soleParentColumn(relOpts: RelationMeta): string {
-  return parentJoins(relOpts, 1)[0].joined;
 }
 
 /**
@@ -1373,11 +1371,9 @@ export abstract class AbstractQuerier implements Querier {
   /** Writes each inserted row's children, one set of statements per relation whatever the number of rows. */
   private async insertChildren<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
     const meta = getMeta(entity);
-    const [idKey] = meta.ids;
     for (const relKey of ownedRelations(meta)) {
-      const writes = rows.flatMap((row) => (row[relKey] == null ? [] : [{ id: row[idKey], value: row[relKey] }]));
+      const writes = rows.flatMap((row) => (row[relKey] == null ? [] : [{ id: idOf(meta, row), value: row[relKey] }]));
       if (writes.length) {
-        assertSoleId(meta, 'saving a relation');
         await this.saveChildren(entity, relKey, writes);
       }
     }
@@ -1393,41 +1389,69 @@ export abstract class AbstractQuerier implements Querier {
     ids: EntityId<E>[],
     value: unknown,
   ): Promise<void> {
-    const meta = getMeta(entity);
-    assertSoleId(meta, 'saving a relation');
-    const relOpts = relationOf(meta, relKey);
-    const relEntity: Type<object> = relOpts.entity();
-    const relMeta = getMeta(relEntity);
-    const parentColumn = soleParentColumn(relOpts);
-    const listed = listedRows(value);
-    if (relOpts.through) {
-      const holder = relOpts.through();
-      const [targetColumn] = targetKeyColumns(relOpts, 1);
-      const targetIds = await this.saveTargets(entity, relKey, listed);
-      await this.writeBatches(ids, 1, (batch) =>
-        this.deleteMany(
-          holder,
-          { $where: { [parentColumn]: batch, ...(targetIds.length && { [targetColumn]: { $nin: targetIds } }) } },
-          { hardDelete: true },
-        ),
-      );
-      const linked = await this.internalFindMany(holder, {
-        $where: { [parentColumn]: ids, [targetColumn]: targetIds },
-      });
-      const has = new Set(linked.map((link) => rowKey(link, [parentColumn, targetColumn])));
-      const links = ids.flatMap((id) =>
-        targetIds.map((targetId) => ({ [parentColumn]: id, [targetColumn]: targetId })),
-      );
-      const missing = links.filter((link) => !has.has(rowKey(link, [parentColumn, targetColumn])));
-      await this.insertMany(holder, missing);
+    const relOpts = relationOf(getMeta(entity), relKey);
+    await (relOpts.through
+      ? this.replaceLinks(entity, relKey, relOpts, relOpts.through(), ids, listedRows(value))
+      : this.replaceOwned(entity, relKey, relOpts, ids, value));
+  }
+
+  /** A many-to-many's links: the targets are saved, the parent's links to any other go, and the missing ones are added. */
+  private async replaceLinks<E extends object>(
+    entity: Type<E>,
+    relKey: RelationKey<E>,
+    relOpts: RelationMeta,
+    holder: Type<object>,
+    ids: EntityId<E>[],
+    listed: readonly object[],
+  ): Promise<void> {
+    const keyCount = getMeta(entity).ids.length;
+    const parents = parentJoins(relOpts, keyCount);
+    const targets = targetJoins(relOpts, keyCount);
+    const targetIds = await this.saveTargets(entity, relKey, listed);
+    await this.writeBatches(ids, keyCount, (batch) =>
+      this.deleteMany(
+        holder,
+        { $where: { ...childrenOf(parents, batch), ...(targetIds.length && childrenExcept(targets, targetIds)) } },
+        { hardDelete: true },
+      ),
+    );
+    if (!targetIds.length) {
       return;
     }
-    const keptIds = listed.filter((row) => namesKey(relMeta, row)).map((row) => idOf(relMeta, row));
-    await this.writeBatches(ids, 1, (batch) =>
+    const linked = await this.internalFindMany(holder, {
+      $where: { $and: [childrenOf(parents, ids), childrenOf(targets, targetIds)] },
+    });
+    const columns = [...parents, ...targets].map(({ column }) => column);
+    const has = new Set(linked.map((link) => rowKey(link, columns)));
+    const links = ids.flatMap((id) =>
+      targetIds.map((targetId) => ({ ...pointAt(parents, id), ...pointAt(targets, targetId) })),
+    );
+    await this.insertMany(
+      holder,
+      links.filter((link) => !has.has(rowKey(link, columns))),
+    );
+  }
+
+  /** The rows a parent owns: those it does not list go, and the listed ones are saved pointing at it. */
+  private async replaceOwned<E extends object>(
+    entity: Type<E>,
+    relKey: RelationKey<E>,
+    relOpts: RelationMeta,
+    ids: EntityId<E>[],
+    value: unknown,
+  ): Promise<void> {
+    const keyCount = getMeta(entity).ids.length;
+    const relEntity: Type<object> = relOpts.entity();
+    const relMeta = getMeta(relEntity);
+    const parents = parentJoins(relOpts, keyCount);
+    const keptIds = listedRows(value)
+      .filter((row) => namesKey(relMeta, row))
+      .map((row) => idOf(relMeta, row));
+    await this.writeBatches(ids, keyCount, (batch) =>
       this.deleteMany(relEntity, {
         $where: {
-          [parentColumn]: batch,
-          ...(keptIds.length && { [soleIdOf(relMeta, 'replacing the rows of a relation')]: { $nin: keptIds } }),
+          ...childrenOf(parents, batch),
+          ...(keptIds.length && childrenExcept(keyJoins(relMeta.ids), keptIds)),
         },
       }),
     );
@@ -1444,8 +1468,9 @@ export abstract class AbstractQuerier implements Querier {
     relKey: RelationKey<E>,
     writes: readonly RelationWrite<E>[],
   ): Promise<void> {
-    const relOpts = relationOf(getMeta(entity), relKey);
-    const parentColumn = soleParentColumn(relOpts);
+    const meta = getMeta(entity);
+    const relOpts = relationOf(meta, relKey);
+    const parents = parentJoins(relOpts, meta.ids.length);
     // Each parent gets its own copies, so a row listed for two parents is written twice.
     const children = writes.flatMap(({ id, value }) => listedRows(value).map((row) => ({ id, row })));
     if (!children.length) {
@@ -1454,7 +1479,7 @@ export abstract class AbstractQuerier implements Querier {
     if (!relOpts.through) {
       await this.saveMany(
         relOpts.entity(),
-        children.map(({ id, row }) => ({ ...row, [parentColumn]: id })),
+        children.map(({ id, row }) => ({ ...row, ...pointAt(parents, id) })),
       );
       return;
     }
@@ -1463,10 +1488,10 @@ export abstract class AbstractQuerier implements Querier {
       relKey,
       children.map(({ row }) => row),
     );
-    const [targetColumn] = targetKeyColumns(relOpts, 1);
+    const targets = targetJoins(relOpts, meta.ids.length);
     await this.insertMany(
       relOpts.through(),
-      children.map(({ id }, index) => ({ [parentColumn]: id, [targetColumn]: targetIds[index] })),
+      children.map(({ id }, index) => ({ ...pointAt(parents, id), ...pointAt(targets, targetIds[index]) })),
     );
   }
 

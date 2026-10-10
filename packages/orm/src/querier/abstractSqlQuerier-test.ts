@@ -2,11 +2,18 @@ import { expect } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
+  Cohort,
+  CohortLabel,
+  CohortSkill,
   Coupon,
+  Label,
   Profile,
   recreateTables,
+  Seminar,
+  SeminarSkill,
   Shelf,
   ShelfBook,
+  Skill,
   InventoryAdjustment,
   Invoice,
   InvoiceLine,
@@ -35,6 +42,9 @@ import { queryErrorKind } from './queryError.js';
  * float needs only 15 significant digits, which SQLite writes into JSON before 3.53 and libSQL still does.
  */
 const EXACT_DECIMAL = '12345678901234500000.99';
+
+/** A `Skill` carrying a column besides its key, so saving it writes the row where a bare key only links one. */
+const skill = (area: string, name: string) => ({ area, name, note: name });
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier, AbstractSqlDialect> {
   /** A held lock is only visible to another connection, which a shared-handle pool has not got. */
@@ -702,6 +712,269 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
     expect(ids).toEqual([found.id, 5001]);
     expect(found.lines).toEqual([{ amount: 50 }]);
+  }
+
+  /** Every column of a composite key names the row: one sharing the first column is another row. */
+  async shouldWriteAndAddressARowByItsWholeCompositeKey() {
+    const ids = await this.querier.insertMany(Cohort, [
+      { year: 2026, track: 'a', title: 'a1' },
+      { year: 2026, track: 'b', title: 'b1' },
+    ]);
+    expect(ids).toEqual([
+      { year: 2026, track: 'a' },
+      { year: 2026, track: 'b' },
+    ]);
+
+    await this.querier.updateOneById(Cohort, { year: 2026, track: 'a' }, { title: 'a2' });
+    await this.querier.saveOne(Cohort, { year: 2026, track: 'b', title: 'b2' });
+    await this.querier.saveOne(Cohort, { year: 2027, track: 'a', title: 'c1' });
+
+    const titles = await this.querier.findMany(Cohort, { $select: { title: true }, $sort: { year: 1, track: 1 } });
+    expect(titles).toEqual([{ title: 'a2' }, { title: 'b2' }, { title: 'c1' }]);
+    expect(await this.querier.findOneById(Cohort, { year: 2026, track: 'b' })).toEqual({
+      year: 2026,
+      track: 'b',
+      title: 'b2',
+    });
+
+    await expect(this.querier.deleteOneById(Cohort, { track: 'a' })).rejects.toThrow(/missing year/);
+    await this.querier.deleteOneById(Cohort, { year: 2026, track: 'a' });
+    expect(await this.querier.count(Cohort)).toBe(2);
+  }
+
+  /** A part of the key filters, sorts and projects like any column, whichever order a statement names the key in. */
+  async shouldReadThePartsOfACompositeKeyAsColumns() {
+    await this.querier.insertMany(Cohort, [
+      { year: 2026, track: 'a', title: 'x' },
+      { year: 2026, track: 'b', title: 'y' },
+      { year: 2027, track: 'a', title: 'z' },
+    ]);
+
+    const byYear = await this.querier.findMany(Cohort, { $where: { year: 2026 }, $sort: { track: -1 } });
+    const byTrack = await this.querier.findMany(Cohort, {
+      $select: { track: true },
+      $where: { track: { $in: ['a'] }, year: { $gt: 2026 } },
+    });
+    const whole = await this.querier.findMany(Cohort, { $where: { track: 'b', year: 2026 } });
+    const counted = await this.querier.count(Cohort, { $where: { year: { $in: [2026, 2027] } } });
+
+    expect(byYear.map((it) => it.track)).toEqual(['b', 'a']);
+    expect(byTrack).toEqual([{ track: 'a' }]);
+    expect(whole).toEqual([{ year: 2026, track: 'b', title: 'y' }]);
+    expect(counted).toBe(3);
+  }
+
+  /** The chain compares each part of the key, so a page over a composite key neither skips nor repeats a row. */
+  async shouldPageByCursorOverACompositeKey() {
+    await this.querier.insertMany(Cohort, [
+      { year: 2026, track: 'a' },
+      { year: 2026, track: 'b' },
+      { year: 2027, track: 'a' },
+    ]);
+    const $sort = { year: 1, track: 1 } as const;
+
+    const first = await this.querier.findManyPage(Cohort, { $sort, $limit: 2 });
+    const second = await this.querier.findManyPage(Cohort, { $sort, $limit: 2, $after: first.endCursor });
+
+    expect(first.items.map((it) => [it.year, it.track])).toEqual([
+      [2026, 'a'],
+      [2026, 'b'],
+    ]);
+    expect(second.items.map((it) => [it.year, it.track])).toEqual([[2027, 'a']]);
+  }
+
+  /** The rows a to-many lists point at the whole key of their parent, so a sibling sharing a column keeps its own. */
+  async shouldSaveTheChildrenOfACompositeParent() {
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'a', seminars: [{ title: 's1' }, { title: 's2' }] });
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'b', seminars: [{ title: 's3' }] });
+    const [kept] = await this.querier.findMany(Seminar, { $where: { title: 's1' } });
+
+    await this.querier.updateOneById(
+      Cohort,
+      { year: 2026, track: 'a' },
+      { seminars: [{ id: kept.id, title: 's1b' }, { title: 's4' }] },
+    );
+
+    const seminars = await this.querier.findMany(Seminar, {
+      $select: { id: true, title: true, cohortYear: true, cohortTrack: true },
+      $sort: { title: 1 },
+    });
+    expect(seminars).toEqual([
+      { id: kept.id, title: 's1b', cohortYear: 2026, cohortTrack: 'a' },
+      { id: expect.any(String), title: 's3', cohortYear: 2026, cohortTrack: 'b' },
+      { id: expect.any(String), title: 's4', cohortYear: 2026, cohortTrack: 'a' },
+    ]);
+  }
+
+  async shouldGiveEveryCompositeParentAnUpdateMatchedItsOwnChildren() {
+    await this.querier.insertMany(Cohort, [
+      { year: 2026, track: 'a' },
+      { year: 2026, track: 'b' },
+    ]);
+
+    await this.querier.updateMany(Cohort, { $where: { year: 2026 } }, { seminars: [{ title: 'shared' }] });
+
+    const cohorts = await this.querier.findMany(Cohort, { $populate: { seminars: true }, $sort: { track: 1 } });
+    expect(cohorts.map((cohort) => cohort.seminars?.map((seminar) => seminar.title))).toEqual([['shared'], ['shared']]);
+  }
+
+  /** A link is four columns here, and replacing them takes the ones no longer listed by their whole key. */
+  async shouldLinkACompositeParentToCompositeTargets() {
+    await this.querier.insertOne(Cohort, {
+      year: 2026,
+      track: 'a',
+      skills: [skill('science', 'algebra'), skill('science', 'geometry')],
+    });
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'b', skills: [skill('science', 'geometry')] });
+    const [kept] = await this.querier.findMany(CohortSkill, { $where: { skillName: 'algebra' } });
+
+    await this.querier.updateOneById(
+      Cohort,
+      { year: 2026, track: 'a' },
+      {
+        skills: [skill('science', 'algebra'), skill('arts', 'geometry')],
+      },
+    );
+
+    const links = await this.querier.findMany(CohortSkill, {
+      $select: { id: true, cohortTrack: true, skillArea: true, skillName: true },
+      $where: { cohortTrack: 'a' },
+      $sort: { skillArea: 1 },
+    });
+    const populated = await this.querier.findMany(Cohort, {
+      $select: { track: true },
+      $populate: { skills: { $select: { area: true, name: true }, $sort: { area: 1 } } },
+      $sort: { track: 1 },
+    });
+    expect(links).toEqual([
+      { id: expect.any(String), cohortTrack: 'a', skillArea: 'arts', skillName: 'geometry' },
+      { id: kept.id, cohortTrack: 'a', skillArea: 'science', skillName: 'algebra' },
+    ]);
+    expect(populated).toEqual([
+      {
+        track: 'a',
+        skills: [
+          { area: 'arts', name: 'geometry' },
+          { area: 'science', name: 'algebra' },
+        ],
+      },
+      { track: 'b', skills: [{ area: 'science', name: 'geometry' }] },
+    ]);
+  }
+
+  async shouldLinkACompositeParentToSoleKeyTargets() {
+    const [first, second] = await this.querier.insertMany(Label, [{ name: 'l1' }, { name: 'l2' }]);
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'a', labels: [{ id: first }] });
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'b', labels: [{ id: first }] });
+
+    await this.querier.updateOneById(Cohort, { year: 2026, track: 'a' }, { labels: [{ id: second }] });
+
+    const links = await this.querier.findMany(CohortLabel, {
+      $select: { cohortTrack: true, labelId: true },
+      $sort: { cohortTrack: 1 },
+    });
+    expect(links).toEqual([
+      { cohortTrack: 'a', labelId: second },
+      { cohortTrack: 'b', labelId: first },
+    ]);
+
+    await this.querier.updateOneById(Cohort, { year: 2026, track: 'a' }, { labels: [] });
+
+    expect(await this.querier.count(CohortLabel, { $where: { cohortTrack: 'a' } })).toBe(0);
+    expect(await this.querier.count(CohortLabel, { $where: { cohortTrack: 'b' } })).toBe(1);
+  }
+
+  async shouldLinkASoleKeyParentToCompositeTargets() {
+    const id = await this.querier.insertOne(Seminar, {
+      title: 's',
+      skills: [skill('science', 'algebra'), skill('science', 'geometry')],
+    });
+
+    await this.querier.updateOneById(Seminar, id, { skills: [skill('science', 'geometry')] });
+
+    const found = await this.querier.findOneById(Seminar, id, { $populate: { skills: true } });
+    expect(found?.skills?.map((it) => [it.area, it.name])).toEqual([['science', 'geometry']]);
+    expect(await this.querier.count(SeminarSkill)).toBe(1);
+  }
+
+  async shouldFilterAndCountByAManyToManyWhoseTargetKeyIsComposite() {
+    await this.querier.insertOne(Cohort, {
+      year: 2026,
+      track: 'a',
+      skills: [skill('science', 'algebra'), skill('science', 'geometry')],
+    });
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'b', skills: [skill('science', 'algebra')] });
+
+    const filtered = await this.querier.findMany(Cohort, {
+      $select: { track: true },
+      $where: { skills: { note: 'geometry' } },
+    });
+    const counted = await this.querier.findMany(Cohort, {
+      $select: { track: true },
+      $count: { skills: true },
+      $sort: { track: 1 },
+    });
+
+    expect(filtered).toEqual([{ track: 'a' }]);
+    expect(counted.map((it) => it._count.skills)).toEqual([2, 1]);
+  }
+
+  /** A to-one over several columns joins on every one of them, populated or filtered. */
+  async shouldReadAToOneWhoseTargetKeyIsComposite() {
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'a', title: 'first', seminars: [{ title: 's1' }] });
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'b', title: 'second', seminars: [{ title: 's2' }] });
+
+    const populated = await this.querier.findMany(Seminar, {
+      $select: { title: true },
+      $populate: { cohort: { $select: { title: true } } },
+      $sort: { title: 1 },
+    });
+    const filtered = await this.querier.findMany(Seminar, {
+      $select: { title: true },
+      $where: { cohort: { title: 'second' } },
+    });
+
+    expect(populated).toEqual([
+      { title: 's1', cohort: { year: 2026, track: 'a', title: 'first' } },
+      { title: 's2', cohort: { year: 2026, track: 'b', title: 'second' } },
+    ]);
+    expect(filtered).toEqual([{ title: 's2' }]);
+  }
+
+  async shouldDeleteTheChildrenAndLinksOfACompositeParentWithIt() {
+    await this.querier.insertOne(Cohort, {
+      year: 2026,
+      track: 'a',
+      seminars: [{ title: 's1' }],
+      skills: [skill('science', 'algebra')],
+    });
+    await this.querier.insertOne(Cohort, {
+      year: 2026,
+      track: 'b',
+      seminars: [{ title: 's2' }],
+      skills: [skill('science', 'algebra')],
+    });
+
+    await this.querier.deleteOneById(Cohort, { year: 2026, track: 'a' });
+
+    expect((await this.querier.findMany(Seminar, { $select: { title: true } })).map((it) => it.title)).toEqual(['s2']);
+    expect(await this.querier.count(CohortSkill)).toBe(1);
+    expect(await this.querier.count(Skill)).toBe(1);
+  }
+
+  async shouldUpsertOnAWholeCompositeKey() {
+    await this.querier.insertOne(Cohort, { year: 2026, track: 'a', title: 'old' });
+
+    await this.querier.upsertMany(Cohort, { year: true, track: true }, [
+      { year: 2026, track: 'a', title: 'new' },
+      { year: 2026, track: 'b', title: 'added' },
+    ]);
+
+    const founds = await this.querier.findMany(Cohort, { $sort: { track: 1 } });
+    expect(founds).toEqual([
+      { year: 2026, track: 'a', title: 'new' },
+      { year: 2026, track: 'b', title: 'added' },
+    ]);
   }
 }
 

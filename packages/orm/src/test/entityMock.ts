@@ -635,3 +635,102 @@ export class ShelfBook {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => Shelf, onDelete: 'CASCADE' }) shelfId?: number | null;
 }
+
+/** A composite key (a year and a track) owning a to-many and two many-to-manys, one to a composite target and one to a sole one. */
+@Entity()
+export class Cohort {
+  [idKey]?: 'year' | 'track';
+  @Id({ type: Number }) year?: number;
+  @Id({ type: String }) track?: string;
+  @Field({ type: String }) title?: string | null;
+  @OneToMany({ entity: () => Seminar, mappedBy: (seminar) => seminar.cohort, cascade: true }) seminars?: Seminar[];
+  @ManyToMany({ entity: () => Skill, through: () => CohortSkill, cascade: true }) skills?: Skill[];
+  @ManyToMany({ entity: () => Label, through: () => CohortLabel, cascade: true }) labels?: Label[];
+}
+
+/** A sole-key child of a {@link Cohort}, and a parent of composite targets itself. */
+@Entity()
+export class Seminar {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: Number }) cohortYear?: number | null;
+  @Field({ type: String }) cohortTrack?: string | null;
+  @ManyToOne({
+    entity: () => Cohort,
+    references: (seminar, cohort) => [
+      { local: seminar.cohortYear, foreign: cohort.year },
+      { local: seminar.cohortTrack, foreign: cohort.track },
+    ],
+  })
+  cohort?: Cohort;
+  @ManyToMany({ entity: () => Skill, through: () => SeminarSkill, cascade: true }) skills?: Skill[];
+}
+
+/** A many-to-many target whose key is two columns. */
+@Entity()
+export class Skill {
+  [idKey]?: 'area' | 'name';
+  @Id({ type: String }) area?: string;
+  @Id({ type: String }) name?: string;
+  @Field({ type: String }) note?: string | null;
+}
+
+/** Four key columns, a composite on each side. */
+@Entity()
+export class CohortSkill {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: Number }) cohortYear?: number | null;
+  @Field({ type: String }) cohortTrack?: string | null;
+  @ManyToOne({
+    entity: () => Cohort,
+    references: (link, cohort) => [
+      { local: link.cohortYear, foreign: cohort.year },
+      { local: link.cohortTrack, foreign: cohort.track },
+    ],
+  })
+  cohort?: Cohort;
+  @Field({ type: String }) skillArea?: string | null;
+  @Field({ type: String }) skillName?: string | null;
+  @ManyToOne({
+    entity: () => Skill,
+    references: (link, skill) => [
+      { local: link.skillArea, foreign: skill.area },
+      { local: link.skillName, foreign: skill.name },
+    ],
+  })
+  skill?: Skill;
+}
+
+/** A composite parent linked to a sole-key target. */
+@Entity()
+export class CohortLabel {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: Number }) cohortYear?: number | null;
+  @Field({ type: String }) cohortTrack?: string | null;
+  @ManyToOne({
+    entity: () => Cohort,
+    references: (link, cohort) => [
+      { local: link.cohortYear, foreign: cohort.year },
+      { local: link.cohortTrack, foreign: cohort.track },
+    ],
+  })
+  cohort?: Cohort;
+  @Field({ references: () => Label }) labelId?: string | null;
+}
+
+/** A sole-key parent linked to a composite target. */
+@Entity()
+export class SeminarSkill {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ references: () => Seminar }) seminarId?: string | null;
+  @Field({ type: String }) skillArea?: string | null;
+  @Field({ type: String }) skillName?: string | null;
+  @ManyToOne({
+    entity: () => Skill,
+    references: (link, skill) => [
+      { local: link.skillArea, foreign: skill.area },
+      { local: link.skillName, foreign: skill.name },
+    ],
+  })
+  skill?: Skill;
+}

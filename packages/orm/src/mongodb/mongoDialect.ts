@@ -98,7 +98,7 @@ import {
   parseSortDirection,
   rankedTextSearch,
   someKey,
-  targetKeyColumns,
+  targetJoins,
   textSortOf,
   vectorDistanceOf,
 } from '../util/index.js';
@@ -507,13 +507,13 @@ export class MongoDialect extends AbstractDialect {
     assertSoleId(meta, 'MongoDB');
     assertSoleId(relMeta, 'MongoDB');
     const [parentJoin] = parentJoins(relOpts, meta.ids.length);
-    const [targetColumn] = targetKeyColumns(relOpts, meta.ids.length);
+    const [{ column: targetColumn }] = targetJoins(relOpts, meta.ids.length);
     const scope = this.renderFilter(through, this.scopedWhere(throughMeta, {}));
     return {
       lookup: {
         from: this.resolveTableName(throughMeta),
         localField: ID_KEY,
-        foreignField: this.columnOf(throughMeta, parentJoin.joined),
+        foreignField: this.columnOf(throughMeta, parentJoin.column),
       },
       scope: hasKeys(scope) ? [{ $match: scope }] : [],
       target: this.columnOf(throughMeta, targetColumn),
