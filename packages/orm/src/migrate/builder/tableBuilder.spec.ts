@@ -4,6 +4,16 @@ import { currentTimestamp, uuid, sql } from '../../util/index.js';
 import { formatDefaultValue } from '../ddl/defaultSql.js';
 import { renderIndexDefinition } from '../generator/definitionToNode.js';
 import { TableDefinitionBuilder } from './tableBuilder.js';
+import type { TableDefinition } from './types.js';
+
+/** A built table's indexes as a migration renders them, which is where an unnamed one is named. */
+const dialect = new PostgresDialect();
+
+function rendered(def: TableDefinition) {
+  return def.indexes.map((index) =>
+    renderIndexDefinition(def.name, index, (statement) => dialect.compileDdl(statement)),
+  );
+}
 
 describe('TableDefinitionBuilder', () => {
   describe('basic construction', () => {
@@ -267,7 +277,7 @@ describe('TableDefinitionBuilder', () => {
       const def = table.build();
 
       expect(def.indexes.length).toBe(1);
-      expect(def.indexes[0].name).toBe('users_email_username_uk');
+      expect(rendered(def)[0].name).toBe('users_email_username_uk');
       expect(def.indexes[0].unique).toBe(true);
     });
 
@@ -276,7 +286,7 @@ describe('TableDefinitionBuilder', () => {
       table.unique(['email']);
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('users__email_uk');
+      expect(rendered(def)[0].name).toBe('users__email_uk');
     });
 
     it('should add composite index', () => {
@@ -284,7 +294,7 @@ describe('TableDefinitionBuilder', () => {
       table.index(['lastName', 'firstName'], 'users__name_idx');
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('users__name_idx');
+      expect(rendered(def)[0].name).toBe('users__name_idx');
       expect(def.indexes[0].entries).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
       expect(def.indexes[0].unique).toBe(false);
     });
@@ -294,7 +304,7 @@ describe('TableDefinitionBuilder', () => {
       const table = new TableDefinitionBuilder('users');
       table.index(['email'], { unique: true });
 
-      expect(table.build().indexes).toEqual([
+      expect(rendered(table.build())).toEqual([
         { name: 'users__email_idx', entries: [{ column: 'email' }], unique: true },
       ]);
     });
@@ -307,9 +317,7 @@ describe('TableDefinitionBuilder', () => {
         where: sql`"deletedAt" IS NULL`,
         include: ['title'],
       });
-      expect(
-        renderIndexDefinition(table.build().indexes[0], (statement) => new PostgresDialect().compileDdl(statement)),
-      ).toEqual({
+      expect(rendered(table.build())[0]).toEqual({
         name: 'notes_lookup_idx',
         entries: [
           { column: 'lower("email")', expression: true },
@@ -326,14 +334,14 @@ describe('TableDefinitionBuilder', () => {
       const table = new TableDefinitionBuilder('notes');
       table.index([{ column: 'tenantId' }, { column: 'createdAt', order: 'desc' }]);
 
-      expect(table.build().indexes[0].name).toBe('notes__tenantId_createdAt_idx');
+      expect(rendered(table.build())[0].name).toBe('notes__tenantId_createdAt_idx');
     });
 
     it('should name an expression after its position, as an entity names one', () => {
       const table = new TableDefinitionBuilder('notes');
       table.unique(['tenantId', sql`lower("email")`]);
 
-      expect(table.build().indexes[0].name).toBe('notes__tenantId_expr1_uk');
+      expect(rendered(table.build())[0].name).toBe('notes__tenantId_expr1_uk');
     });
 
     it('should add table-level foreign key with options', () => {
@@ -363,7 +371,7 @@ describe('TableDefinitionBuilder', () => {
       const def = table.build();
 
       expect(def.indexes.length).toBe(1);
-      expect(def.indexes[0].name).toBe('email_idx');
+      expect(rendered(def)[0].name).toBe('email_idx');
     });
 
     it('should auto-generate index name', () => {
@@ -371,7 +379,7 @@ describe('TableDefinitionBuilder', () => {
       table.string('email').index();
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('users__email_idx');
+      expect(rendered(def)[0].name).toBe('users__email_idx');
     });
 
     /** A unique column is a unique index, the one spelling of uniqueness every engine can add and drop. */
@@ -379,7 +387,7 @@ describe('TableDefinitionBuilder', () => {
       const table = new TableDefinitionBuilder('users');
       table.string('email').unique();
 
-      expect(table.build().indexes).toEqual([
+      expect(rendered(table.build())).toEqual([
         { name: 'users__email_idx', entries: [{ column: 'email' }], unique: true },
       ]);
     });
@@ -419,7 +427,7 @@ describe('TableDefinitionBuilder', () => {
       table.index(['email']);
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('users__email_idx');
+      expect(rendered(def)[0].name).toBe('users__email_idx');
       expect(def.indexes[0].unique).toBe(false);
     });
 
@@ -448,9 +456,6 @@ describe('partial-index predicate', () => {
   it('should be rendered for the engine the migration runs on, a value written as its literal', () => {
     const table = new TableDefinitionBuilder('Item');
     table.index(['name'], { where: sql`"stock" > ${0}` });
-    const index = renderIndexDefinition(table.build().indexes[0], (statement) =>
-      new PostgresDialect().compileDdl(statement),
-    );
-    expect(index.where).toBe('"stock" > 0');
+    expect(rendered(table.build())[0].where).toBe('"stock" > 0');
   });
 });

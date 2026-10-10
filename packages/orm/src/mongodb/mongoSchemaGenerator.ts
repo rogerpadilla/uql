@@ -89,15 +89,16 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       const [first] = columns;
       const vector =
         options.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
-      const name = vector
-        ? this.vectorSearchIndexName(options.name, entries[0].column)
-        : declaredIndexName(options.name, collectionName, entries);
+      const predicate =
+        where && this.indexFilter(where, meta.entity, declaredIndexName(options.name, collectionName, entries));
       return {
         ...options,
-        name,
+        name: vector
+          ? this.vectorSearchIndexName(options.name, entries[0].column)
+          : declaredIndexName(options.name, collectionName, entries, { where: predicate }),
         entries,
         unique: options.unique ?? false,
-        where: where && this.indexFilter(where, meta.entity, name),
+        where: predicate,
         distance: options.distance ?? vector?.distance,
         dimensions: vector?.dimensions,
       };
@@ -226,21 +227,24 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** A collection and its indexes, which is all a document store has: a column, a constraint or SQL throws. */
   generateOperation(operation: AnyMigrationOperation): string[] {
-    const render = (index: IndexDefinition) => renderIndexDefinition(index, refuseSql);
+    const render = (table: string, index: IndexDefinition) => renderIndexDefinition(table, index, refuseSql);
     switch (operation.type) {
       case 'createTable': {
         const { name, columns, indexes } = operation.table;
         if (columns.length) {
           throw new UqlUsageError(`mongodb does not support columns in a migration (collection "${name}")`);
         }
-        return this.createCollection(name, indexes.map(render));
+        return this.createCollection(
+          name,
+          indexes.map((index) => render(name, index)),
+        );
       }
       case 'dropTable':
         return [serializeMongoCommand({ action: 'dropCollection', name: operation.tableName })];
       case 'renameTable':
         return [serializeMongoCommand({ action: 'renameCollection', from: operation.oldName, to: operation.newName })];
       case 'createIndex':
-        return [this.generateCreateIndex(operation.tableName, render(operation.index))];
+        return [this.generateCreateIndex(operation.tableName, render(operation.tableName, operation.index))];
       case 'dropIndex':
         return [dropIndex(operation.tableName, operation.indexName)];
       default:

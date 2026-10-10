@@ -646,6 +646,33 @@ describe('SchemaASTBuilder', () => {
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
 
+    it('should name a partial index by its predicate, so an edited predicate is a new name', () => {
+      @Entity({ name: 'Order' })
+      @Index((order) => [order.total], { where: { live: true } })
+      class LiveOrder {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) total?: number | null;
+        @Field({ type: Boolean }) live?: boolean | null;
+      }
+      @Entity({ name: 'Order' })
+      @Index((order) => [order.total], { where: { live: false } })
+      class ArchivedOrder {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) total?: number | null;
+        @Field({ type: Boolean }) live?: boolean | null;
+      }
+      const options: Parameters<typeof buildSchemaAST>[1] = {
+        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
+      };
+
+      const live = buildSchemaAST([LiveOrder], options).getTable('Order')?.indexes[0]?.name;
+      const archived = buildSchemaAST([ArchivedOrder], options).getTable('Order')?.indexes[0]?.name;
+
+      expect(live).toMatch(/^Order__total_[0-9a-f]{6}_idx$/);
+      expect(archived).toMatch(/^Order__total_[0-9a-f]{6}_idx$/);
+      expect(live).not.toBe(archived);
+    });
+
     it('should give each table inheriting an index its own derived name', () => {
       @Index((shared) => [shared.region])
       class Regional {

@@ -61,6 +61,15 @@ describe('describeIndexDifferences', () => {
     expect(describeIndexDifferences(cosine, l2, new Set())).toEqual([]);
   });
 
+  it('should report a predicate the database has and the entity does not, either way round', () => {
+    expect(describeIndexDifferences(index({}), index({ where: '"live" = true' }), new Set())).toEqual([
+      'predicate: "live" = true -> none',
+    ]);
+    expect(describeIndexDifferences(index({ where: '"live" = true' }), index({}), new Set())).toEqual([
+      'predicate: none -> "live" = true',
+    ]);
+  });
+
   /** A vector index of any type is the one index an engine has, so only a plain one standing in for it differs. */
   it('should report a plain index where a vector index is declared, and no vector type against another', () => {
     const vector = new Set(['vector'] as const);
@@ -93,6 +102,23 @@ describe('indexChanges', () => {
     };
 
     expect(indexChanges('users', [], [lowered], new Set())).toEqual({ changes: [{ from: lowered }], kept: [] });
+  });
+
+  /** The predicate is named in the index's own name, so an edit to it is a new name and the old one is dropped. */
+  it('should replace a partial index whose predicate changed, rather than pair it by shape', () => {
+    const live = {
+      name: 'users__email_1a2b3c_idx',
+      table,
+      entries: [{ column: 'email' }],
+      unique: false,
+      where: 'live',
+    };
+    const archived = { ...live, name: 'users__email_4d5e6f_idx', where: 'archived' };
+
+    expect(indexChanges('users', [archived], [live], new Set())).toEqual({
+      changes: [{ to: archived }, { from: live }],
+      kept: [],
+    });
   });
 
   it('should keep an index uql did not name, which may have been made outside it', () => {

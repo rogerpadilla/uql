@@ -55,14 +55,17 @@ export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] 
   return entries.map((entry, at) => (typeof entry.column === 'string' ? entry.column : `expr${at}`));
 }
 
-/** The name an index is created and read by: its own, else one derived from its table, entries' columns and uniqueness. */
+/**
+ * The name an index is created and read by: its own, else one derived from its table, entries, uniqueness and
+ * rendered predicate. A caller renders the predicate first, since an unnamed partial index's name carries its hash.
+ */
 export function declaredIndexName(
   name: string | undefined,
   table: string,
   entries: readonly EntityIndexColumn[],
-  unique = false,
+  { unique = false, where }: { readonly unique?: boolean; readonly where?: string } = {},
 ): string {
-  return name ?? derivedIndexName(table, indexNameParts(entries), unique);
+  return name ?? derivedIndexName(table, indexNameParts(entries), unique, where);
 }
 
 /**

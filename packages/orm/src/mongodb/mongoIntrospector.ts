@@ -15,6 +15,8 @@ type MongoIndex = {
   readonly weights?: Record<string, number>;
   /** The language a text index stems in. */
   readonly default_language?: string;
+  /** A partial index's filter document, which is its predicate. */
+  readonly partialFilterExpression?: Record<string, unknown>;
 };
 
 /** The parts of an Atlas search index description this introspector reads. */
@@ -67,9 +69,10 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         columns: [],
         ...(validator && { checks: [validatorCheck(tableName, validator)] }),
         indexes: [
-          ...indexes.map(({ name, key, unique, weights, default_language }) => ({
+          ...indexes.map(({ name, key, unique, weights, default_language, partialFilterExpression }) => ({
             name,
             unique: !!unique,
+            ...(partialFilterExpression && { where: JSON.stringify(partialFilterExpression) }),
             ...(weights
               ? {
                   entries: Object.entries(weights).map(textIndexEntry),
@@ -133,7 +136,7 @@ async function hasCollection(db: MongoQuerier['db'], name: string): Promise<bool
   return collections.length > 0;
 }
 
-/** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
+/** `listIndexes` keeps a text index's fields in no declared order, so they are compared as a set. */
 const INDEX_FACETS: ReadonlySet<IndexFacet> = new Set(['textIndex']);
 
 /**

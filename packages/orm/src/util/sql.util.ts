@@ -85,10 +85,27 @@ function hashIdentifier(value: string): string {
 
 /**
  * The name a derived index gets when nothing named it: `Order__total_idx`, or `Order__total_uk` for a
- * unique one - which the builder has always spelled apart, and which reads as what it enforces.
+ * unique one. A partial index also carries a hash of its `where`, so an edited predicate is a new name.
  */
-export function derivedIndexName(table: string, columns: readonly string[], unique = false): string {
-  return derivedConstraintName(table, columns, unique ? 'uk' : 'idx');
+export function derivedIndexName(table: string, columns: readonly string[], unique = false, where?: string): string {
+  const parts = where === undefined ? columns : [...columns, hashIdentifier(where)];
+  return derivedConstraintName(table, parts, unique ? 'uk' : 'idx');
+}
+
+/** The hash a partial index's derived name carries before its kind. */
+const PREDICATE_HASH = new RegExp(`_[0-9a-f]{${NAME_HASH_LENGTH}}(?=_(?:idx|uk)$)`);
+
+/**
+ * Whether uql named the index `name` itself from `columns`: `derivedIndexName`'s forms, with a predicate's hash or
+ * without, and the `idx_<table>_<columns>` spelling an older uql gave one.
+ */
+export function isDerivedIndexName(table: string, columns: readonly string[], name: string): boolean {
+  const plain = [derivedIndexName(table, columns), derivedIndexName(table, columns, true)];
+  return (
+    plain.includes(name) ||
+    plain.includes(name.replace(PREDICATE_HASH, '')) ||
+    name === `idx_${table}_${columns.join('_')}`
+  );
 }
 
 /**

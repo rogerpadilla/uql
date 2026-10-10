@@ -521,7 +521,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
         return this.tableDdl.alterColumns(operation.tableName, [{ to: this.definitionColumn(operation.changes) }]);
       case 'createIndex':
         return this.addIndexStatements(operation.tableName, [
-          renderIndexDefinition(operation.index, (sql) => this.dialect.compileDdl(sql)),
+          renderIndexDefinition(operation.tableName, operation.index, (sql) => this.dialect.compileDdl(sql)),
         ]);
       case 'dropIndex':
         return [this.tableDdl.dropIndex(operation.tableName, operation.indexName)];

@@ -1,7 +1,7 @@
 import type { IndexColumnSchema, IndexSchema } from '../type/index.js';
 import { indexDistance, isVectorIndexType } from '../type/vector.js';
 import { fulltextConfig } from '../util/dialect.util.js';
-import { derivedIndexName } from '../util/sql.util.js';
+import { isDerivedIndexName } from '../util/sql.util.js';
 import { isColumnEntry } from './indexColumns.js';
 import { matchByKey } from './matchByKey.js';
 import type { IndexNode } from './types.js';
@@ -22,7 +22,7 @@ export type IndexFacet =
   | 'distance'
   | 'textIndex';
 
-type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique'>;
+type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique' | 'where'>;
 
 /**
  * Whether the table has this index already, by shape rather than name, uniqueness included. An index
@@ -48,15 +48,28 @@ export function indexNameStem(name: string): string {
 
 /**
  * Pairs by name, then what is left by shape: an index the database has under another name is still
- * the one asked for. What stays unpaired is created or dropped.
+ * the one asked for. A partial index pairs by name alone, since its predicate is in its name.
  */
 export function pairIndexes<S extends ComparableIndex, T extends ComparableIndex>(
   source: readonly S[],
   target: readonly T[],
 ) {
   const byName = matchByKey(source, target, (index) => indexNameStem(index.name));
-  const byShape = matchByKey(byName.created, byName.dropped, indexSignature);
-  return { created: byShape.created, dropped: byShape.dropped, matched: [...byName.matched, ...byShape.matched] };
+  const created = splitPartial(byName.created);
+  const dropped = splitPartial(byName.dropped);
+  const byShape = matchByKey(created.plain, dropped.plain, indexSignature);
+  return {
+    created: [...created.partial, ...byShape.created],
+    dropped: [...dropped.partial, ...byShape.dropped],
+    matched: [...byName.matched, ...byShape.matched],
+  };
+}
+
+function splitPartial<I extends ComparableIndex>(indexes: readonly I[]) {
+  return {
+    plain: indexes.filter((index) => index.where === undefined),
+    partial: indexes.filter((index) => index.where !== undefined),
+  };
 }
 
 /** One index change: create (`to`), drop (`from`), or rebuild (both, with a `description` of what differs). */
@@ -95,12 +108,7 @@ export function indexChanges<I extends IndexSchema>(
  */
 function hasDerivedName(table: string, index: ComparableIndex): boolean {
   const parts = index.entries.map((entry, at) => (isColumnEntry(entry) ? entry.column : `expr${at}`));
-  const derived = [
-    derivedIndexName(table, parts),
-    derivedIndexName(table, parts, true),
-    `idx_${table}_${parts.join('_')}`,
-  ];
-  return derived.includes(index.name);
+  return isDerivedIndexName(table, parts, index.name);
 }
 
 /** What this version emits. */
@@ -114,8 +122,9 @@ const KIND_SUFFIX = /_(?:idx|fk|ck|pk|uk|uq)$/i;
 const KIND_PREFIX = /^(?:idx|fk|ck|pk|uk|uq)_/i;
 
 /**
- * What two indexes differ by, comparing only what both sides state structurally: an expression, a JSON
- * path or a predicate is reprinted by the engine, so never compared.
+ * What two indexes differ by, comparing only what both sides state structurally. An expression or a JSON
+ * path is reprinted by the engine, so never compared; a predicate only by whether there is one, its text
+ * being in an unnamed index's name.
  */
 export function describeIndexDifferences(
   source: IndexSchema,
@@ -143,6 +152,10 @@ export function describeIndexDifferences(
     if (expected !== actual) {
       differences.push(`config: ${actual} -> ${expected}`);
     }
+  }
+
+  if ((source.where === undefined) !== (target.where === undefined)) {
+    differences.push(`predicate: ${target.where ?? 'none'} -> ${source.where ?? 'none'}`);
   }
 
   if (source.unique !== target.unique) {

@@ -131,13 +131,15 @@ describe('MigrationOperationBuilder operations', () => {
       expect(ops[0]).toMatchObject({ index: { entries: [{ column: 'email' }] } });
     });
 
-    it('should auto-generate index name', async () => {
+    it('should record an unnamed index, which is named for its table when rendered', async () => {
       const { recorder, operations } = recording();
 
       await recorder.createIndex('users', ['email', 'status']);
 
       const ops = operations;
-      expect(ops[0]).toMatchObject({ index: { name: 'users__email_status_idx' } });
+      expect(ops[0]).toMatchObject({
+        index: { name: undefined, entries: [{ column: 'email' }, { column: 'status' }] },
+      });
     });
 
     it('should use custom index name', async () => {
@@ -322,7 +324,7 @@ describe('MigrationOperationBuilder operations', () => {
       });
 
       expect(operations).toMatchObject([
-        { type: 'createIndex', index: { name: 'users__name_idx', unique: false } },
+        { type: 'createIndex', index: { unique: false } },
         {
           type: 'addForeignKey',
           foreignKey: { columns: ['role_id'], references: { table: 'roles', columns: ['id'] } },

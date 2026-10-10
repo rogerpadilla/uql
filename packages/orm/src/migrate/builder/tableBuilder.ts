@@ -7,6 +7,7 @@
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
 import { DATE_PRECISION } from '../../util/date.js';
+import { declaredIndexName } from '../../util/ddlExpression.util.js';
 import { currentTimestamp } from '../../util/sql.js';
 import { columnForeignKey, columnIndex, indexDefinition } from '../generator/definitionToNode.js';
 import { ColumnDefinitionBuilder } from './columnBuilder.js';
@@ -206,12 +207,12 @@ export class TableDefinitionBuilder implements TableBuilder {
   }
 
   unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    this._indexes.push(indexDefinition(this._name, columns, { ...namedOptions(options), unique: true }, true));
+    this._indexes.push(indexDefinition(columns, { ...namedOptions(options), unique: true }, true));
     return this;
   }
 
   index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    this._indexes.push(indexDefinition(this._name, columns, namedOptions(options)));
+    this._indexes.push(indexDefinition(columns, namedOptions(options)));
     return this;
   }
 
@@ -233,11 +234,17 @@ export class TableDefinitionBuilder implements TableBuilder {
     // Build all columns from builders
     const columns = this._columnBuilders.map((cb) => cb.build());
 
-    // Collect column-level indexes, skipping any a table-level one already names.
+    // Collect column-level indexes, skipping one a table-level index already names.
+    const taken = new Set(
+      this._indexes
+        .filter((idx) => idx.where === undefined)
+        .map((idx) => declaredIndexName(idx.name, this._name, idx.entries, { unique: idx.uniqueName })),
+    );
     for (const col of columns) {
       const index = columnIndex(this._name, col);
-      if (index && !this._indexes.some((idx) => idx.name === index.name)) {
+      if (index && !taken.has(index.name)) {
         this._indexes.push(index);
+        taken.add(index.name);
       }
     }
 

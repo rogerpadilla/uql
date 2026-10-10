@@ -5,6 +5,7 @@ import {
   derivedIndexName,
   derivedPrimaryKeyName,
   escapeSqlId,
+  isDerivedIndexName,
   isPrimaryKey,
 } from './sql.util.js';
 
@@ -34,6 +35,30 @@ it('should escape an identifier with the quote character given', () => {
 });
 
 describe('derived constraint names', () => {
+  it('should name a partial index by a hash of its predicate, so an edited predicate is a new name', () => {
+    const live = derivedIndexName('Order', ['total'], false, '"live" = true');
+
+    expect(live).toMatch(/^Order__total_[0-9a-f]{6}_idx$/);
+    expect(derivedIndexName('Order', ['total'], false, '"live" = true')).toBe(live);
+    expect(derivedIndexName('Order', ['total'], false, '"live" = false')).not.toBe(live);
+    expect(live).not.toBe(derivedIndexName('Order', ['total']));
+  });
+
+  it('should recognise a derived index name with or without a predicate hash, and no other', () => {
+    const hashed = derivedIndexName('Order', ['total'], false, '"live" = true');
+
+    expect(isDerivedIndexName('Order', ['total'], hashed)).toBe(true);
+    expect(isDerivedIndexName('Order', ['total'], derivedIndexName('Order', ['total'], true))).toBe(true);
+    expect(isDerivedIndexName('Order', ['total'], 'Order__total_idx')).toBe(true);
+    expect(isDerivedIndexName('Order', ['total'], 'Order__total_by_dba_idx')).toBe(false);
+    expect(isDerivedIndexName('Order', ['other'], hashed)).toBe(false);
+  });
+
+  it('should recognise a plain name whose column is itself six hex characters', () => {
+    expect(isDerivedIndexName('Order', ['decade'], derivedIndexName('Order', ['decade']))).toBe(true);
+    expect(isDerivedIndexName('Order', ['decade'], 'Order__decade_idx')).toBe(true);
+  });
+
   it('should name each kind after the table and its columns, kind last', () => {
     expect(derivedIndexName('Order', ['total'])).toBe('Order__total_idx');
     expect(derivedIndexName('User', ['email'], true)).toBe('User__email_uk');

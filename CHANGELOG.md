@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.101.6] - 2026-10-10
+
+- An unnamed partial index's name carries a hash of its `where`, so editing the predicate replaces the index; adding or removing a `where` on any index rebuilds it. The first sync or `generate:entities` after upgrading recreates each existing unnamed partial index under its new name.
+
 ## [0.101.5] - 2026-10-10
 
 - A subclass inherits the indexes, checks and triggers its base declares, and may declare no field of its own.

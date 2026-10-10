@@ -69,7 +69,7 @@ class AlterTableOperations implements AlterTableBuilder {
     this.operations.push({
       type: 'createIndex',
       tableName: this.tableName,
-      index: indexDefinition(this.tableName, columns, options),
+      index: indexDefinition(columns, options),
     });
     return this;
   }

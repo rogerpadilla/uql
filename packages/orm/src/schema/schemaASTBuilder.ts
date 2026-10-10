@@ -279,16 +279,17 @@ function addCompositeIndex(
   });
   if (!resolved.length) return;
 
-  const name = declaredIndexName(options.name, table.name, resolved);
+  const predicate =
+    where && ctx.compileIndexPredicate(where, meta.entity, declaredIndexName(options.name, table.name, resolved));
   ctx.ast.addIndex({
     ...options,
-    name,
+    name: declaredIndexName(options.name, table.name, resolved, { where: predicate }),
     table,
     entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
     // An `include` column is named like any other, so a custom naming has to reach it too.
     include: include?.map((column) => fieldColumn(ctx, meta, column) ?? column),
     unique: options.unique ?? false,
-    where: where && ctx.compileIndexPredicate(where, meta.entity, name),
+    where: predicate,
   });
   if (ctx.textScoreIndexes) {
     addTextScoreIndexes(ctx, table, options.type, resolved);

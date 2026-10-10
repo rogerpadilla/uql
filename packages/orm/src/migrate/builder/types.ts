@@ -107,9 +107,13 @@ export interface FullColumnDefinition extends ColumnDefinition {
  * An index as the builder records it, with the entries and options `@Index` takes: its SQL kept as `raw`
  * until a generator renders it for the engine the migration runs on.
  */
-export type IndexDefinition = Except<IndexSchema, 'entries' | 'where'> & {
+export type IndexDefinition = Except<IndexSchema, 'name' | 'entries' | 'where'> & {
+  /** As declared; an unnamed index is named when it is rendered, from its predicate as written. */
+  readonly name?: string;
   readonly entries: readonly EntityIndexColumn[];
   readonly where?: QuerySql;
+  /** Whether an unnamed index takes the `_uk` kind. Only `table.unique` sets it: earlier migrations installed `_uk` there, so `index` keeps `_idx`. */
+  readonly uniqueName?: boolean;
 };
 
 /**

@@ -37,7 +37,7 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryS
     : keyOfColumns(columns.values());
 
   for (const idxDef of def.indexes) {
-    table.indexes.push({ ...renderIndexDefinition(idxDef, render), table });
+    table.indexes.push({ ...renderIndexDefinition(name, idxDef, render), table });
   }
 
   return table;
@@ -76,29 +76,31 @@ export function columnIndex(
 /**
  * The index that `table.index`, `table.unique` and `createIndex` record. Its entries are normalized, since
  * an entry left as written reaches the generator as a column named `[object Object]`. An unnamed index is
- * named after its entries, with `_uk` only for `table.unique`, so names earlier migrations installed stay.
+ * named when rendered, with `_uk` only for `table.unique`, so names earlier migrations installed stay.
  */
 export function indexDefinition(
-  tableName: string,
   columns: readonly IndexColumnInput[],
   { name, unique = false, ...options }: IndexOptions = {},
   uniqueName = false,
 ): IndexDefinition {
-  const entries = columns.map(normalizeIndexColumn);
-  return {
-    ...options,
-    name: declaredIndexName(name, tableName, entries, uniqueName),
-    entries,
-    unique,
-  };
+  return { ...options, name, entries: columns.map(normalizeIndexColumn), unique, uniqueName };
 }
 
-/** An index the builder recorded, its SQL rendered by `render` into the text the schema holds. */
-export function renderIndexDefinition(index: IndexDefinition, render: (sql: QuerySql) => string): IndexSchema {
+/**
+ * An index the builder recorded, its SQL rendered by `render` into the text the schema holds, and named
+ * from that text the way an entity's is.
+ */
+export function renderIndexDefinition(
+  table: string,
+  { uniqueName, ...index }: IndexDefinition,
+  render: (sql: QuerySql) => string,
+): IndexSchema {
+  const where = index.where && render(index.where);
   return {
     ...index,
+    name: declaredIndexName(index.name, table, index.entries, { unique: uniqueName, where }),
+    where,
     entries: index.entries.map((entry) => renderIndexColumn(entry, render)),
-    where: index.where && render(index.where),
   };
 }
 
