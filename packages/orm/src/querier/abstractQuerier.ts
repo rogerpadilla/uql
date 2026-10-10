@@ -32,7 +32,6 @@ import type {
   QueryPopulate,
   QueryProjected,
   QuerySearch,
-  PrimaryKey,
   RelationKey,
   RelationMeta,
   RelationQuery,
@@ -43,6 +42,7 @@ import type {
   UpdateWrite,
   ReturningResult,
   WriteOptions,
+  PrimaryKey,
   WrittenId,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
@@ -225,18 +225,26 @@ function conflictAssignments<E>(row: EntityData<E>, conflictPaths: QueryConflict
  * value was never written to a row the upsert updated. A report aligns with the rows only when it
  * speaks for every one: a `firstId` dialect reports nothing for a batch.
  */
+/** What an upsert reports of a row: the value a driver answers for a lone key, or the key the read back names. */
+export type UpsertedId<E> = PrimaryKey | WrittenId<E>;
+
 function adoptReportedIds<E>(
   meta: EntityMeta<E>,
   rows: EntityData<E>[],
-  reported: readonly (PrimaryKey | undefined)[] | undefined,
+  reported: readonly (UpsertedId<E> | undefined)[] | undefined,
 ): void {
-  if (meta.ids.length !== 1 || reported?.length !== rows.length) {
+  if (reported?.length !== rows.length) {
     return;
   }
   const [idKey] = meta.ids;
-  for (let index = 0; index < rows.length; index++) {
-    rows[index][idKey] ??= reported[index] as E[typeof idKey];
-  }
+  rows.forEach((row, index) => {
+    const id = reported[index];
+    if (meta.ids.length > 1) {
+      Object.assign(row, id);
+    } else {
+      row[idKey] ??= id as E[typeof idKey];
+    }
+  });
 }
 
 /** A read's arguments in either call form: `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
@@ -1124,7 +1132,7 @@ export abstract class AbstractQuerier implements Querier {
     conflictPaths: QueryConflictPaths<E>,
     rows: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(PrimaryKey | undefined)[]> {
+  ): Promise<(UpsertedId<E> | undefined)[]> {
     const meta = getMeta(entity);
     guardWrite(meta, rows, 'insert');
     if (!rows.length) {
@@ -1160,7 +1168,7 @@ export abstract class AbstractQuerier implements Querier {
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(PrimaryKey | undefined)[] | undefined>;
+  ): Promise<(UpsertedId<E> | undefined)[] | undefined>;
 
   deleteOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
@@ -1729,22 +1737,21 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     rows: EntityData<E>[],
-  ): Promise<(PrimaryKey | undefined)[]> {
+  ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    const [idKey] = meta.ids;
     const keys = getKeys(conflictPaths);
     // A null key never conflicts, so no row is read back for it, whether one key names the row or several.
     const named = rows.filter((row) => keys.every((key) => row[key] != null));
     const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
     const found: E[][] = [];
     for (const batch of chunk(distinct, this.dialect.keyListCapacity(keys.length))) {
-      const q: Query<E> = { $select: keySet([idKey, ...keys]), $where: whereKeysIn(keys, batch) };
+      const q: Query<E> = { $select: keySet([...meta.ids, ...keys]), $where: whereKeysIn(keys, batch) };
       found.push(await this.internalFindMany(entity, q, { filters: withoutSoftDeleteFilter(undefined) }));
     }
-    const byConflict = new Map<string, PrimaryKey | undefined>();
+    const byConflict = new Map<string, WrittenId<E> | undefined>();
     for (const row of found.flat()) {
       const key = rowKey(row, keys);
-      byConflict.set(key, byConflict.has(key) ? undefined : (row[idKey] as PrimaryKey));
+      byConflict.set(key, byConflict.has(key) ? undefined : idOf(meta, row));
     }
     return rows.map((row) => byConflict.get(rowKey(row, keys)));
   }

@@ -93,6 +93,16 @@ class Ticket {
   @Field({ type: String }) title?: string | null;
 }
 
+/** A composite whose second column the ORM mints, found again by a unique column of its own. */
+@Entity()
+class Seat {
+  [idKey]?: 'tenant' | 'code';
+  @Id({ type: String }) tenant?: string;
+  @Id({ type: String, onInsert: () => 'minted' }) code?: string;
+  @Field({ type: String, unique: true }) email?: string | null;
+  @Field({ type: String }) label?: string | null;
+}
+
 @Entity()
 class Term {
   [idKey]?: 'year' | 'season';
@@ -133,6 +143,7 @@ beforeAll(async () => {
     EnrolmentBadge,
     Attempt,
     Ticket,
+    Seat,
   ])) {
     await pool.run(raw.text(stmt));
   }
@@ -219,6 +230,15 @@ describe('writing composite rows', () => {
       { studentId: 1, task: 'essay', score: 'A' },
       { studentId: 1, task: 'viva', score: 'C' },
     ]);
+  });
+
+  it('should report the stored key of a row an upsert found by a unique column of its own', async () => {
+    await pool.insertMany(Seat, [{ tenant: 'acme', code: 'kept', email: 'a@x.test', label: 'first' }]);
+
+    const [id] = await pool.upsertMany(Seat, { email: true }, [{ tenant: 'acme', email: 'a@x.test', label: 'second' }]);
+
+    expect(id).toEqual({ tenant: 'acme', code: 'kept' });
+    expect(await pool.findOneById(Seat, { tenant: 'acme', code: 'kept' })).toMatchObject({ label: 'second' });
   });
 
   it('should update one row by its whole key, and nothing that only shares a column', async () => {

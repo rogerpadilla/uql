@@ -1,7 +1,7 @@
-// Re-export core types for convenience
 export type {
   Change,
   ColumnSchema,
+  Config,
   DialectName,
   ForeignKeySchema,
   IndexSchema,
@@ -19,26 +19,21 @@ export type {
   SyncOptions,
   TableSchema,
 } from '../type/index.js';
-export { type Config, isSqlQuerier } from '../type/index.js';
-export { acquireQuerierForMigrations } from './acquireQuerierForMigrations.js';
-export { assertCliConfig } from './assertCliConfig.js';
-// Type-safe migration builder
 export * from './builder/index.js';
-export { loadConfig } from './cli-config.js';
-
-// Entity code generation
-export * from './codegen/index.js';
-
-// Index and table DDL, per dialect family
-export * from './ddl/index.js';
-
-// Drift detection
-export * from './drift/index.js';
-// Schema introspection
-export * from './introspection/index.js';
-// Main migrator
-export { migrationBuilderFor } from './migrationTarget.js';
+export {
+  EntityCodeGenerator,
+  type EntityCodeGeneratorOptions,
+  type GeneratedEntity,
+} from './codegen/entityCodeGenerator.js';
+export {
+  buildMigrationModule,
+  type MigrationModuleOptions,
+  type MigrationQuerierType,
+} from './codegen/migrationFile.js';
+export { AbstractSqlSchemaIntrospector } from './introspection/abstractSqlSchemaIntrospector.js';
+export { MsSqlSchemaIntrospector } from './introspection/mssqlIntrospector.js';
+export { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
+export { CockroachSchemaIntrospector, PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
+export { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
-// Schema generators
-export { reverseDiff } from './schemaChange.js';
 export { SqlSchemaGenerator } from './schemaGenerator.js';

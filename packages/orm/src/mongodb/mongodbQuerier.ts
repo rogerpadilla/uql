@@ -10,6 +10,7 @@ import type {
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
+import type { UpsertedId } from '../querier/abstractQuerier.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type {
   EntityData,
@@ -387,7 +388,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   ) {
     refuseTriggers(entity);
     if (update) {
-      const ids: (PrimaryKey | undefined)[] = [];
+      const ids: (UpsertedId<E> | undefined)[] = [];
       for (const row of payload) {
         ids.push(await this.upsertWithUpdate(entity, conflictPaths, row, update));
       }

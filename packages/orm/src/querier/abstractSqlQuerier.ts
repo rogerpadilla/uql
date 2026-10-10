@@ -17,7 +17,6 @@ import type {
   QueryConflictPaths,
   QueryPage,
   QueryGroupMap,
-  PrimaryKey,
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
@@ -33,7 +32,7 @@ import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, isA
 import { statementOf } from '../util/raw.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { AbstractQuerier } from './abstractQuerier.js';
+import { AbstractQuerier, type UpsertedId } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
 import { rowReader } from './rowReader.js';
@@ -398,7 +397,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(PrimaryKey | undefined)[] | undefined> {
+  ): Promise<(UpsertedId<E> | undefined)[] | undefined> {
     if (!payload.length) {
       return [];
     }
@@ -418,7 +417,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.atomically(async () => {
       // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
       // than it wrote places none.
-      const ids: (PrimaryKey | undefined)[] = new Array(payload.length);
+      const ids: (UpsertedId<E> | undefined)[] = new Array(payload.length);
       for (const indexes of statements) {
         const reported = await this.runUpsert(
           entity,
@@ -441,15 +440,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(PrimaryKey | undefined)[] | undefined> {
+  ): Promise<(UpsertedId<E> | undefined)[] | undefined> {
     const meta = getMeta(entity);
     // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
-    const unnamed = meta.ids.length === 1 && payload.some((row) => !namesKey(meta, row));
+    const unnamed = payload.some((row) => !namesKey(meta, row));
     const { ids } = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload, update));
     const ordered =
       payload.length === 1 ||
       (this.dialect.insertIdSource === 'returning' && this.dialect.features.orderedUpsertReturning);
-    if (ordered && ids?.length === payload.length) {
+    if (meta.ids.length === 1 && ordered && ids?.length === payload.length) {
       return ids;
     }
     // The statement's ids name its rows only in order and for every one. A MySQL batch reports a
