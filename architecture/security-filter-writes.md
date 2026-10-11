@@ -21,7 +21,7 @@ Hibernate `@TenantId`, acts_as_tenant, django-multitenant and Postgres RLS land 
 - **One call site per write**, `guardWrite` in the querier's `insertRows` and `updateRows`, after the `before` hooks and under every caller: cascades, relation saves, `/http`, NestJS.
 - **The upsert reuses `idsByConflict`** and runs in one transaction, so no dialect renders anything new and MongoDB behaves as SQL. It costs two or three statements, only where the condition is not `{}`.
 
-**Rejected: a guarded upsert per dialect** (`DO UPDATE ... WHERE`, `MERGE ... WHEN MATCHED AND`, MySQL's `IF()`). Atomic, but four renderings, and a skipped row is silent everywhere but Postgres. The read-then-write loses only two concurrent upserts of one new key, where the second fails on the key: closed and retryable.
+**Rejected: a guarded upsert per dialect** (`DO UPDATE ... WHERE`, `MERGE ... WHEN MATCHED AND`, MySQL's `IF()`). Atomic, but four renderings, and a skipped row is silent everywhere but Postgres. The read holds the rows it finds until the write (SQLite and MongoDB fail a racing writer instead), so the read-then-write loses only two concurrent upserts of one new key, where the second fails on the key: closed and retryable.
 
 ## Open
 

@@ -89,10 +89,11 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
     expect(this.dialect.commitTransactionCommand).toBe('COMMIT TRANSACTION');
     expect(this.dialect.rollbackTransactionCommand).toBe('ROLLBACK TRANSACTION');
-    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' })).toEqual([
       'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
       'BEGIN TRANSACTION',
     ]);
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true })).toEqual(['BEGIN TRANSACTION']);
   }
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));

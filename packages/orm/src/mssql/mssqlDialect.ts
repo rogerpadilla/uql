@@ -5,6 +5,7 @@ import {
   type RelationRows,
   type SelectTerm,
   relationTermKey,
+  isolationSetBefore,
 } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
@@ -31,6 +32,7 @@ import type {
   UpdatePayload,
   VectorDistance,
   VectorMetric,
+  TransactionOptions,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
@@ -57,6 +59,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
+  writeReturning: false,
   nullsSortLowest: true,
   nullsOrdering: 'case',
   textScoreIndexes: false,
@@ -129,10 +132,12 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * T-SQL has no inline form, so the level is set before the `BEGIN`. What a driver that sends these
-   * as statements would run; `MsSqlQuerier` opens its transactions through the driver instead.
+   * T-SQL has no inline form, so the level is set before the `BEGIN`, and no read-only transaction. What a
+   * driver that sends these as statements would run; `MsSqlQuerier` opens its transactions through the driver.
    */
-  override readonly isolationLevelStrategy = 'setBefore';
+  override getBeginTransactionStatements({ isolationLevel }: TransactionOptions = {}): string[] {
+    return isolationSetBefore(isolationLevel, this.beginTransactionCommand);
+  }
 
   override readonly booleanLiteral = 'integer';
 

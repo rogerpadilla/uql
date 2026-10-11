@@ -114,6 +114,11 @@ class Secret {
   mask(this: Secret) {
     this.code = '***';
   }
+
+  @BeforeDelete()
+  recordBeforeDelete(this: Secret) {
+    log.push(`beforeDelete:${this.code}`);
+  }
 }
 
 @Entity()
@@ -392,6 +397,13 @@ describe('lifecycle hooks', () => {
         expect(log).toEqual(expected);
       });
     }
+
+    it('should hand a delete hook the whole row, though returning names only its key', async () => {
+      const deleted = await querier.deleteOneById(Book, 1, { returning: { id: true } });
+
+      expect(log).toEqual(['afterLoad:Seeded', 'beforeDelete:Seeded', 'afterDelete:Seeded']);
+      expect(deleted).toEqual({ id: 1 });
+    });
   });
 
   it('should persist what a @BeforeInsert hook assigned, having awaited it', async () => {
@@ -421,6 +433,15 @@ describe('lifecycle hooks', () => {
     expect(await querier.insertOne(Secret, { code: 'plaintext' }, { returning: { code: true } })).toEqual({
       code: '***',
     });
+  });
+
+  it('should hand a delete hook the row as read, while @AfterLoad masks what returning reports', async () => {
+    await querier.insertOne(Secret, { code: 'plaintext' });
+
+    const deleted = await querier.deleteOneById(Secret, 1, { returning: { code: true } });
+
+    expect(deleted).toEqual({ code: '***' });
+    expect(log).toEqual(['beforeDelete:plaintext']);
   });
 
   it('should run @AfterLoad once per loaded row', async () => {

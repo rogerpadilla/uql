@@ -159,6 +159,37 @@ describe('AbstractSqlQuerier returning', () => {
   });
 });
 
+describe('AbstractSqlQuerier row locks', () => {
+  /** Records every statement; a read answers one row, a write reports none of its ids. */
+  class RecordingSqlQuerier extends AbstractSqlQuerier {
+    readonly statements: string[] = [];
+
+    protected override async internalAll<T>(query: string): Promise<T[]> {
+      this.statements.push(query);
+      return (query.startsWith('SELECT') ? [{ id: 1, name: 'a' }] : []) as T[];
+    }
+
+    protected override async internalRun(query: string): Promise<QueryUpdateResult> {
+      this.statements.push(query);
+      return { changes: 1 };
+    }
+
+    protected override async internalRelease(): Promise<void> {}
+  }
+
+  /** The ids of rows already written only name them, and a lock outside a transaction would hold nothing. */
+  it('should read back the ids an upsert did not report with no lock and no transaction', async () => {
+    const querier = new RecordingSqlQuerier(new PostgresDialect());
+
+    await querier.upsertMany(HydratedParent, { name: true }, [{ name: 'a' }]);
+
+    expect(querier.statements).toEqual([
+      'INSERT INTO "HydratedParent" ("name") VALUES ($1) ON CONFLICT ("name") DO NOTHING RETURNING "id" "id"',
+      'SELECT "id", "name" FROM "HydratedParent" WHERE "name" = ANY($1)',
+    ]);
+  });
+});
+
 describe('AbstractSqlQuerier error context', () => {
   /** Drains a stream query and returns the error the stub driver ends it with. */
   function streamError(querier: StubSqlQuerier, $where: QueryWhere<HydratedParent> = {}): Promise<QueryError> {

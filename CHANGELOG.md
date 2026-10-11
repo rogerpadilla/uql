@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.0] - 2026-10-11
+
+- **Fixed:** an `updateMany` or `deleteMany` with `returning`, a paged one, and an upsert that reads its rows first could report or write a row another writer changed meanwhile. They now read the rows they write held in one transaction and write those by id, so a racing writer waits (SQLite and MongoDB fail it, retryable).
+- On Postgres, CockroachDB and the SQLite family, an update or hard delete with `returning` is one `UPDATE`/`DELETE ... RETURNING`.
+- `transaction(fn, { readOnly: true })` opens a read-only transaction: Postgres, CockroachDB, MySQL, MariaDB and libSQL refuse its writes.
+- libSQL and Turso begin a write transaction with `BEGIN IMMEDIATE`, so a read then a write waits for another writer instead of failing.
+- On MongoDB, an `updateMany` or `deleteMany` that is paged, filtered through a relation, hooked, cascading or `returning` runs in a transaction, which needs a replica set.
+
 ## [0.101.6] - 2026-10-10
 
 - An unnamed partial index's name carries a hash of its `where`, so editing the predicate replaces the index; adding or removing a `where` on any index rebuilds it. The first sync or `generate:entities` after upgrading recreates each existing unnamed partial index under its new name.

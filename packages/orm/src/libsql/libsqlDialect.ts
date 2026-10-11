@@ -13,6 +13,12 @@ export const LIBSQL_FEATURES: SqlDialectFeatures = { ...SQLITE_FEATURES, ordered
 export class LibsqlDialect extends SqliteDialect {
   override readonly features: SqlDialectFeatures = LIBSQL_FEATURES;
 
+  /**
+   * Every transaction a write one, as `@libsql/client`'s `transaction('write')` opens it: a deferred one that
+   * reads, then writes, cannot upgrade while another connection writes, and fails rather than waiting.
+   */
+  override readonly beginTransactionCommand = 'BEGIN IMMEDIATE';
+
   /** libSQL's built-in vector functions, and the metric its DiskANN index names; no `inner` (only the Rust engine has it) and no `l1`. */
   override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
     ['cosine', { fn: 'vector_distance_cos', index: 'cosine' }],

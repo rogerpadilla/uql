@@ -114,7 +114,7 @@ describe('TursoSessionQuerier', () => {
     });
 
     expect(session.execute.mock.calls.map(([sql]) => sql)).toEqual([
-      'BEGIN TRANSACTION',
+      'BEGIN IMMEDIATE',
       'UPDATE `t` SET `a` = 1',
       'COMMIT',
     ]);

@@ -58,15 +58,23 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     ).toThrow('mysql does not support vector similarity search');
   }
 
+  /** MySQL has no inline level, so it is set by a statement before the `START TRANSACTION`. */
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    // MySQL uses 'setBefore' strategy - two separate statements
-    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'read committed' })).toEqual([
       'SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
       'START TRANSACTION',
     ]);
-    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' })).toEqual([
       'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
       'START TRANSACTION',
+    ]);
+  }
+
+  shouldStartAReadOnlyTransaction() {
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true })).toEqual(['START TRANSACTION READ ONLY']);
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true, isolationLevel: 'serializable' })).toEqual([
+      'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+      'START TRANSACTION READ ONLY',
     ]);
   }
 

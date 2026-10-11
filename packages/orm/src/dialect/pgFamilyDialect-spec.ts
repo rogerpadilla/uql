@@ -83,15 +83,24 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'read committed' })).toEqual([
       'BEGIN ISOLATION LEVEL READ COMMITTED',
     ]);
-    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual(['BEGIN ISOLATION LEVEL SERIALIZABLE']);
-    expect(this.dialect.getBeginTransactionStatements('repeatable read')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' })).toEqual([
+      'BEGIN ISOLATION LEVEL SERIALIZABLE',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'repeatable read' })).toEqual([
       'BEGIN ISOLATION LEVEL REPEATABLE READ',
     ]);
-    expect(this.dialect.getBeginTransactionStatements('read uncommitted')).toEqual([
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'read uncommitted' })).toEqual([
       'BEGIN ISOLATION LEVEL READ UNCOMMITTED',
+    ]);
+  }
+
+  shouldBeginAReadOnlyTransaction() {
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true })).toEqual(['BEGIN READ ONLY']);
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true, isolationLevel: 'serializable' })).toEqual([
+      'BEGIN ISOLATION LEVEL SERIALIZABLE, READ ONLY',
     ]);
   }
 

@@ -13,6 +13,7 @@ import type {
   SqlValues,
   Type,
   UpdatePayload,
+  TransactionOptions,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral } from '../util/sqlLiteral.js';
@@ -23,6 +24,7 @@ import {
   type DerivedRelation,
   type RelationRows,
   type SelectTerm,
+  isolationSetBefore,
 } from './abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
@@ -54,6 +56,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: MYSQL_ROW_LOCKS,
+  writeReturning: false,
   nullsSortLowest: true,
   nullsOrdering: 'expression',
   textScoreIndexes: true,
@@ -126,7 +129,9 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly beginTransactionCommand = 'START TRANSACTION';
 
-  override readonly isolationLevelStrategy = 'setBefore';
+  override getBeginTransactionStatements({ isolationLevel, readOnly }: TransactionOptions = {}): string[] {
+    return isolationSetBefore(isolationLevel, `${this.beginTransactionCommand}${readOnly ? ' READ ONLY' : ''}`);
+  }
 
   override readonly booleanLiteral = 'integer';
 

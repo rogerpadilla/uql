@@ -1,4 +1,4 @@
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
@@ -21,6 +21,7 @@ import {
   LedgerAccount,
   MeasureUnit,
   MeasureUnitCategory,
+  Parcel,
   provisioningTimeout,
   type SpecRequirements,
   type SpecTimeouts,
@@ -43,6 +44,9 @@ import { queryErrorKind } from './queryError.js';
  */
 const EXACT_DECIMAL = '12345678901234500000.99';
 
+/** How long a racing writer gets to land before the write it races goes on: ample for one local statement. */
+const RACE_WINDOW_MS = 300;
+
 /** A `Skill` carrying a column besides its key, so saving it writes the row where a bare key only links one. */
 const skill = (area: string, name: string) => ({ area, name, note: name });
 
@@ -56,6 +60,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       shouldRefuseALockOutsideATransactionOnAStream: rowLocks,
       shouldFindManyAndCountUnderALock: rowLocks,
       shouldSkipOrRefuseLockedRows: rowLocks && !(this.pool instanceof AbstractSharedHandleQuerierPool),
+      shouldRefuseAWriteInAReadOnlyTransaction: this.pool.dialect
+        .getBeginTransactionStatements({ readOnly: true })
+        .some((statement) => statement.includes('READ ONLY')),
+      shouldReturnWhatAnUpdateWroteWhileAnotherWriterRaces: !(this.pool instanceof AbstractSharedHandleQuerierPool),
+      shouldNotOverwriteARowAnotherWriterMovedOutOfAPage: !(this.pool instanceof AbstractSharedHandleQuerierPool),
+      shouldHoldTheRowAnUpsertFound: !(this.pool instanceof AbstractSharedHandleQuerierPool),
     };
   }
 
@@ -163,6 +173,94 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       finishOthers();
       await other.release();
     }
+  }
+
+  /** Where the engine opens a transaction `READ ONLY`, it refuses a write in it. */
+  async shouldRefuseAWriteInAReadOnlyTransaction() {
+    const write = this.querier.transaction(() => this.querier.insertOne(Parcel, { content: 'a' }), { readOnly: true });
+
+    await expect(write).rejects.toThrow();
+  }
+
+  /**
+   * `returning` reports what a paged update wrote, which reads its rows first, though another writer moves a row
+   * out of its filter meanwhile. An unpaged one is a single `UPDATE ... RETURNING` where the engine has it.
+   */
+  async shouldReturnWhatAnUpdateWroteWhileAnotherWriterRaces() {
+    await this.querier.insertMany(Parcel, [{ content: 'a' }, { content: 'b' }]);
+    const { raced, other } = await this.raceTheUpdate((it) =>
+      it.updateMany(Parcel, { $where: { content: 'b' } }, { content: 'x' }),
+    );
+    try {
+      const changed = await this.querier.updateMany(
+        Parcel,
+        { $where: { content: { $in: ['a', 'b'] } }, $sort: { content: 'asc' }, $limit: 2 },
+        { content: 'moved' },
+        { returning: { content: true } },
+      );
+
+      expect(changed).toEqual([{ content: 'moved' }, { content: 'moved' }]);
+      expect(await raced).toBe(0);
+    } finally {
+      await other.release();
+    }
+  }
+
+  /** A paged update writes no row another writer took out of its filter: that writer waits, then finds it moved. */
+  async shouldNotOverwriteARowAnotherWriterMovedOutOfAPage() {
+    await this.querier.insertMany(Parcel, [{ content: 'a' }, { content: 'b' }]);
+    const { raced, other } = await this.raceTheUpdate((it) =>
+      it.updateMany(Parcel, { $where: { content: 'b' } }, { content: 'x' }),
+    );
+    try {
+      const changes = await this.querier.updateMany(
+        Parcel,
+        { $where: { content: { $in: ['a', 'b'] } }, $sort: { content: 'asc' }, $limit: 2 },
+        { content: 'moved' },
+      );
+
+      expect(changes).toBe(2);
+      expect(await raced).toBe(0);
+    } finally {
+      await other.release();
+    }
+  }
+
+  /** An upsert holds the row it found, so another writer deleting it waits rather than the update missing it. */
+  async shouldHoldTheRowAnUpsertFound() {
+    const id = await this.querier.insertOne(InventoryAdjustment, { description: 'there' });
+    const { raced, other } = await this.raceTheUpdate((it) => it.deleteOneById(InventoryAdjustment, id));
+    try {
+      const upserted = await this.querier.upsertOne(
+        InventoryAdjustment,
+        { id: true },
+        { id, description: 'found', itemAdjustments: [{ buyPrice: 7 }] },
+        undefined,
+        { returning: { description: true } },
+      );
+
+      expect(upserted).toEqual({ description: 'found' });
+      expect(await raced).toBe(1);
+    } finally {
+      await other.release();
+    }
+  }
+
+  /**
+   * Runs `write` on another connection between the rows an update reads and its write, then lets the update go on
+   * once `write` lands or the race window passes: a writer the update's rows hold waits for its commit instead.
+   */
+  private async raceTheUpdate(write: (other: AbstractSqlQuerier) => Promise<number>) {
+    const other = await this.pool.getQuerier();
+    const update = this.querier.internalUpdateMany.bind(this.querier);
+    const { promise: raced, resolve } = Promise.withResolvers<number>();
+    vi.spyOn(this.querier, 'internalUpdateMany').mockImplementationOnce(async (...args) => {
+      const pending = write(other);
+      resolve(pending);
+      await Promise.race([pending, new Promise((done) => setTimeout(done, RACE_WINDOW_MS))]);
+      return update(...args);
+    });
+    return { raced, other };
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   type FieldOptions,
   type FieldUpdateOp,
   type IsolationLevel,
+  type TransactionOptions,
   type JsonColumnType,
   type JsonUpdateOp,
   parseQueryLock,
@@ -77,6 +78,7 @@ import {
   getSoftDeleteValue,
   hasKeys,
   idOnlyQuery,
+  keySet,
   whereAnd,
   columnFamily,
   fieldFamily,
@@ -430,8 +432,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `CREATE SCHEMA IF NOT EXISTS ${this.escapeId(schema, true)}`;
   }
 
-  readonly isolationLevelStrategy: 'inline' | 'setBefore' | 'none' = 'inline';
-
   readonly booleanLiteral: 'native' | 'integer' = 'native';
 
   readonly sqlValues: SqlValues = ANSI_SQL_VALUES;
@@ -453,17 +453,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   readonly maxFunctionArgs: number = Infinity;
 
-  getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
-    const level = isolationLevel?.toUpperCase();
-    const strategy = this.isolationLevelStrategy;
-    if (!level || strategy === 'none') {
-      return [this.beginTransactionCommand];
-    }
-    if (strategy === 'inline') {
-      return [`${this.beginTransactionCommand} ISOLATION LEVEL ${level}`];
-    }
-    // 'setBefore' - MySQL/MariaDB pattern
-    return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
+  /** The statements opening a transaction, its modes inline in the `BEGIN` as the Postgres family takes them. */
+  getBeginTransactionStatements({ isolationLevel, readOnly }: TransactionOptions = {}): string[] {
+    const modes = [isolationLevel && `ISOLATION LEVEL ${isolationLevel.toUpperCase()}`, readOnly && 'READ ONLY'];
+    const inline = modes.filter((mode) => typeof mode === 'string');
+    return [inline.length ? `${this.beginTransactionCommand} ${inline.join(', ')}` : this.beginTransactionCommand];
   }
 
   createContext(options: QueryContextOptions = {}): QueryContext {
@@ -547,6 +541,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   returningId<E>(meta: EntityMeta<E>): string {
     const expression = this.returningIdExpression(meta);
     return expression ? `RETURNING ${expression}` : '';
+  }
+
+  /**
+   * ` RETURNING` the fields `keys` names, after an `UPDATE` or `DELETE` this context holds, projected and read as
+   * a read's are: the terms its rows answer under. Only where `features.writeReturning`.
+   */
+  returning<E>(ctx: QueryContext, entity: Type<E>, keys: readonly FieldKey<E>[]): readonly SelectTerm[] {
+    const terms = this.selectTerms(ctx, entity, keySet(keys));
+    ctx.append(` RETURNING ${this.termsSql(terms)}`);
+    return terms;
   }
 
   /** What the returned row is read off, for an engine that names it: SQL Server's `INSERTED.`. */
@@ -747,7 +751,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
     ctx.append(this.selectModifier(q));
-    ctx.append(columns.map((term) => this.termSql(term)).join(', '));
+    ctx.append(this.termsSql(columns));
     ctx.append(` FROM ${ref}${this.lockHint(q)}`);
     this.selectRelationJoins(ctx, meta, alias, joins);
     return { terms, order: carried?.order };
@@ -775,6 +779,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ...this.selectRelationCounts(ctx, meta, q.$count, parent),
       ...this.selectSortProjections(ctx, meta, q, opts.prefix),
     ];
+  }
+
+  /** A projection's list of terms. */
+  private termsSql(terms: readonly SelectTerm[]): string {
+    return terms.map((term) => this.termSql(term)).join(', ');
   }
 
   /** A term as a projection writes it, aliased unless its SQL already answers under its key. */
@@ -3126,4 +3135,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** Reads extracted JSON text as a number, which every engine spells its own way. */
   protected abstract numericCast(expr: string): string;
+}
+
+/** `begin` after the statement setting the level, as T-SQL and the MySQL family take it, having no inline form. */
+export function isolationSetBefore(isolationLevel: IsolationLevel | undefined, begin: string): string[] {
+  return isolationLevel ? [`SET TRANSACTION ISOLATION LEVEL ${isolationLevel.toUpperCase()}`, begin] : [begin];
 }

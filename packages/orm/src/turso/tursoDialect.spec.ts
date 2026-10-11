@@ -24,6 +24,12 @@ function removeCalls(dialect: TursoDialect): number {
 }
 
 describe('TursoDialect', () => {
+  /** A write transaction takes the write lock at `BEGIN`, so a read cannot be left unable to upgrade; a read-only one need not. */
+  it('should begin a write transaction immediate and a read-only one deferred', () => {
+    expect(new TursoDialect().getBeginTransactionStatements()).toEqual(['BEGIN IMMEDIATE']);
+    expect(new TursoDialect().getBeginTransactionStatements({ readOnly: true })).toEqual(['BEGIN DEFERRED']);
+  });
+
   /** A Turso Cloud database runs libSQL unless it was created as `tursodb`, and libSQL caps a call at 127. */
   it('should chain a wide JSON update into calls libSQL takes', () => {
     expect(removeCalls(new TursoDialect())).toBe(2);

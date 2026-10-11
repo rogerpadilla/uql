@@ -29,6 +29,7 @@ import {
   type SqlValues,
   type VectorDistance,
   type VectorMetric,
+  type TransactionOptions,
 } from '../type/index.js';
 import { indexDistance, isVectorIndexType } from '../type/vector.js';
 import { declaredIndexName } from '../util/ddlExpression.util.js';
@@ -61,6 +62,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: false,
+  writeReturning: true,
   nullsSortLowest: true,
   nullsOrdering: 'clause',
   textScoreIndexes: false,
@@ -90,9 +92,12 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly autoIncrementSuffix = 'PRIMARY KEY AUTOINCREMENT';
 
-  override readonly beginTransactionCommand = 'BEGIN TRANSACTION';
+  override readonly beginTransactionCommand: string = 'BEGIN TRANSACTION';
 
-  override readonly isolationLevelStrategy = 'none';
+  /** No level to set: SQLite serializes writers. A read-only transaction defers its lock to its first write. */
+  override getBeginTransactionStatements({ readOnly }: TransactionOptions = {}): string[] {
+    return [readOnly ? 'BEGIN DEFERRED' : this.beginTransactionCommand];
+  }
 
   override readonly booleanLiteral = 'integer';
 

@@ -2660,6 +2660,18 @@ export abstract class AbstractQuerierIt<
     await expect(this.querier.count(User, {})).resolves.toBe(2);
   }
 
+  /** A read-only transaction reads as any other, whatever the engine spells the mode as, at a level asked for too. */
+  async shouldReadInAReadOnlyTransaction() {
+    await this.querier.insertOne(User, {});
+
+    const counted = await this.querier.transaction(() => this.querier.count(User, {}), {
+      readOnly: true,
+      isolationLevel: 'serializable',
+    });
+
+    expect(counted).toBe(1);
+  }
+
   /** What a transaction writes it sees, and a rollback drops, at the default isolation level or one asked for. */
   async shouldRollBackAManualTransaction() {
     await this.querier.beginTransaction();

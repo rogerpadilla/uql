@@ -1,4 +1,4 @@
-import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { ExtraOptions, RawRow, TransactionOptions } from '../type/index.js';
 import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
@@ -60,8 +60,8 @@ export class HranaQuerier extends AbstractSqliteQuerier {
     return { rows: res.rows as RawRow[], changes: res.rowsAffected };
   }
 
-  protected override async internalBegin() {
-    this.tx = await this.client.transaction('write');
+  protected override async internalBegin(opts?: TransactionOptions) {
+    this.tx = await this.client.transaction(opts?.readOnly ? 'read' : 'write');
   }
 
   /**

@@ -32,6 +32,12 @@ export type TransactionOptions = {
    * failed start leaves it on the connection: set it per transaction that needs it.
    */
   readonly isolationLevel?: IsolationLevel;
+  /**
+   * A transaction that only reads, so the engine refuses its writes where it has the mode (Postgres,
+   * CockroachDB, MySQL, MariaDB, libSQL's client), and the SQLite family takes no write lock for it.
+   * SQL Server and MongoDB have no such mode and ignore it.
+   */
+  readonly readOnly?: boolean;
 };
 
 export type DialectName = SqlDialectName | 'mongodb';

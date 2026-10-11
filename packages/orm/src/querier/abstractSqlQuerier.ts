@@ -13,6 +13,7 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryBuildFn,
+  FieldKey,
   QuerySql,
   QueryConflictPaths,
   QueryPage,
@@ -32,7 +33,7 @@ import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, isA
 import { statementOf } from '../util/sql.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { AbstractQuerier, type UpsertedId } from './abstractQuerier.js';
+import { AbstractQuerier, type UpsertedId, type WritesReturning } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
 import { rowReader } from './rowReader.js';
@@ -392,6 +393,30 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return changes;
   }
 
+  /** `UPDATE` and `DELETE` with a `RETURNING` read as a read's rows are, where the engine has it. */
+  protected override get writesReturning(): WritesReturning | undefined {
+    return this.dialect.features.writeReturning ? this.#returningWrites : undefined;
+  }
+
+  readonly #returningWrites: WritesReturning = {
+    update: (entity, q, payload, opts, keys) =>
+      this.reportedRows(entity, keys, (ctx) => this.dialect.update(ctx, entity, q, payload, opts)),
+    delete: (entity, q, opts, keys) =>
+      this.reportedRows(entity, keys, (ctx) => this.dialect.delete(ctx, entity, q, opts)),
+  };
+
+  /** The rows the write `build` renders reports, `RETURNING` the fields `keys` names. */
+  private reportedRows<E extends object>(
+    entity: Type<E>,
+    keys: readonly FieldKey<E>[],
+    build: (ctx: QueryContext) => void,
+  ): Promise<E[]> {
+    return this.readRows((ctx) => {
+      build(ctx);
+      return this.dialect.returning(ctx, entity, keys);
+    });
+  }
+
   protected override async internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
@@ -503,7 +528,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * case it overrides all three. The bookkeeping around them stays above, written once.
    */
   protected async internalBegin(opts?: TransactionOptions): Promise<void> {
-    for (const sql of this.dialect.getBeginTransactionStatements(opts?.isolationLevel)) {
+    for (const sql of this.dialect.getBeginTransactionStatements(opts)) {
       await this.runTransactionCommand(sql);
     }
   }

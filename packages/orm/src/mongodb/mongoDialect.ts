@@ -174,6 +174,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: false,
   rowLocks: false, // its concurrency control is the transaction plus atomic document updates
+  writeReturning: false,
   nullsSortLowest: true,
 };
 

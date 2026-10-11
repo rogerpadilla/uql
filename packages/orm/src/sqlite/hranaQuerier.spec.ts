@@ -88,6 +88,13 @@ describe('HranaQuerier', () => {
     expect(mockTx.commit).toHaveBeenCalled();
   });
 
+  /** libSQL's own read mode, which refuses a write and takes no write lock. */
+  it('should open a read-only transaction in the read mode of the client', async () => {
+    await querier.transaction(async () => {}, { readOnly: true });
+
+    expect(mockClient.transaction).toHaveBeenCalledWith('read');
+  });
+
   it('should roll the session back when the callback throws', async () => {
     await expect(
       querier.transaction(async () => {

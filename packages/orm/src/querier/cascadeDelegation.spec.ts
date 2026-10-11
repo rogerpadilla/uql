@@ -154,7 +154,8 @@ describe('cascade delegation', () => {
 
     expect(changes).toBe(1);
     expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']);
-    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]);
+    expect(run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(run).toHaveBeenNthCalledWith(2, 'DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]);
   });
 
   /** `ORDER BY`/`LIMIT` on an UPDATE is MySQL's alone too, so a paged update settles the same way. */
@@ -170,7 +171,8 @@ describe('cascade delegation', () => {
 
     expect(changes).toBe(1);
     expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']);
-    expect(run).toHaveBeenNthCalledWith(1, 'UPDATE `DelegatedParent` SET `name` = ? WHERE `id` IN (?)', ['q', 1]);
+    expect(run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(run).toHaveBeenNthCalledWith(2, 'UPDATE `DelegatedParent` SET `name` = ? WHERE `id` IN (?)', ['q', 1]);
     // the other row is untouched, which is the whole point of settling first
     await expect(querier.count(DelegatedParent, { $where: { name: 'p' } })).resolves.toBe(1);
   });
@@ -182,7 +184,7 @@ describe('cascade delegation', () => {
     await expect(
       querier.updateMany(DelegatedParent, { $where: { name: 'absent' }, $limit: 1 }, { name: 'q' }),
     ).resolves.toBe(0);
-    expect(run).not.toHaveBeenCalled();
+    expect(run.mock.calls).toEqual([['BEGIN TRANSACTION'], ['COMMIT']]);
   });
 
   /**

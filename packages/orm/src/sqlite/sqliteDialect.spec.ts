@@ -36,10 +36,18 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
+  /** SQLite serializes its writers, so there is no level to set. */
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    // SQLite uses 'none' strategy - isolation level is silently ignored
-    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual(['BEGIN TRANSACTION']);
-    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual(['BEGIN TRANSACTION']);
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' })).toEqual([
+      'BEGIN TRANSACTION',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements({ isolationLevel: 'read committed' })).toEqual([
+      'BEGIN TRANSACTION',
+    ]);
+  }
+  /** A read-only transaction defers its lock, which a write one of libSQL's takes at `BEGIN`. */
+  shouldDeferTheLockOfAReadOnlyTransaction() {
+    expect(this.dialect.getBeginTransactionStatements({ readOnly: true })).toEqual(['BEGIN DEFERRED']);
   }
 
   override shouldUpsert() {

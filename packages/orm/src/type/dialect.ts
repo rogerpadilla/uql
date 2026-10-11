@@ -147,6 +147,12 @@ export interface DialectFeatures {
    */
   readonly correlatedWrites: boolean;
   /**
+   * Whether an `UPDATE` and a `DELETE` report the rows they wrote (`RETURNING`), so a write `returning` them
+   * in one statement reads them off it: the Postgres and SQLite families. MariaDB returns from a `DELETE`
+   * only, and SQL Server's `OUTPUT` fails on a table with a trigger, so both read their rows first.
+   */
+  readonly writeReturning: boolean;
+  /**
    * What the engine's row locks can do, or `false` where it has none: the SQLite family locks the
    * database and MongoDB has no row lock at all, so both refuse `$lock` rather than ignoring it. One
    * value rather than a flag each, since the details mean nothing without a lock.

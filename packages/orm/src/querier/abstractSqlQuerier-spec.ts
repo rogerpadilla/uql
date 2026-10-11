@@ -3,6 +3,7 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import {
   anyUuid,
   Company,
+  Coupon,
   clearTables,
   recreateTables,
   InventoryAdjustment,
@@ -1110,6 +1111,64 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.run).toHaveBeenCalledTimes(8);
   }
 
+  /** An update `returning` its rows is one statement, which reports them: no transaction, no read before or after. */
+  async shouldUpdateManyReturningInOneStatement() {
+    await this.querier.insertOne(Tag, { name: 'a' });
+    this.run.mockClear();
+
+    const changed = await this.querier.updateMany(
+      Tag,
+      { $where: { name: 'a' } },
+      { name: 'b' },
+      { returning: { name: true } },
+    );
+
+    expect(changed).toEqual([{ name: 'b' }]);
+    expect(this.all).toHaveBeenCalledTimes(1);
+    expect(this.all.mock.calls[0]?.[0]).toMatch(/^UPDATE `Tag` SET .* RETURNING /);
+    expect(this.run).toHaveBeenCalledTimes(0);
+  }
+
+  /** A payload writing no column sends no `UPDATE`: `returning` reports the rows it names, read as they are. */
+  async shouldReturnTheRowsAnUpdateWritingNothingNames() {
+    await this.querier.insertOne(Coupon, { code: 'a', label: 'kept' });
+    this.run.mockClear();
+
+    const named = await this.querier.updateMany(Coupon, { $where: { code: 'a' } }, {}, { returning: { label: true } });
+
+    expect(named).toEqual([{ label: 'kept' }]);
+    expect(this.all.mock.calls.map(([query]) => query)).toEqual([
+      'SELECT `label`, `id` FROM `Coupon` WHERE `code` = ?',
+    ]);
+    expect(this.run).toHaveBeenCalledTimes(0);
+  }
+
+  /** A hard delete `returning` its rows is one statement reporting them as they were. */
+  async shouldDeleteManyReturningInOneStatement() {
+    await this.querier.insertOne(Tag, { name: 'a' });
+    this.run.mockClear();
+
+    const deleted = await this.querier.deleteMany(
+      Tag,
+      { $where: { name: 'a' } },
+      { returning: { name: true }, hardDelete: true },
+    );
+
+    expect(deleted).toEqual([{ name: 'a' }]);
+    expect(this.all).toHaveBeenCalledTimes(1);
+    expect(this.all.mock.calls[0]?.[0]).toMatch(/^DELETE FROM `Tag` WHERE .* RETURNING /);
+    expect(this.run).toHaveBeenCalledTimes(0);
+  }
+
+  /** A delete reads only what `returning` names and its ids, unless a delete hook needs whole rows. */
+  async shouldDeleteManyReturningOnlyTheKeysItNames() {
+    await this.querier.insertOne(User, { createdAt: 123 });
+
+    await this.querier.deleteMany(User, { $where: { createdAt: 123 } }, { returning: { createdAt: true } });
+
+    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `createdAt`, `id` FROM `User` WHERE `createdAt` = ?', [123]);
+  }
+
   async shouldDeleteMany() {
     await this.querier.insertOne(User, { createdAt: 123 });
 
@@ -1247,7 +1306,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { isolationLevel: 'read committed' },
     );
 
-    const begin = this.querier.dialect.getBeginTransactionStatements('read committed');
+    const begin = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'read committed' });
     expect(this.run.mock.calls).toEqual([
       ...begin.map((sql) => [sql]),
       ['UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?', ['Hola', 1, '5']],
@@ -1316,13 +1375,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     // Only the outer isolation level SQL should have been emitted
-    const outerStatements = this.querier.dialect.getBeginTransactionStatements('serializable');
+    const outerStatements = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' });
     for (let i = 0; i < outerStatements.length; i++) {
       expect(this.run).toHaveBeenNthCalledWith(i + 1, outerStatements[i]);
     }
 
     // No 'read uncommitted' statements should appear
-    const innerStatements = this.querier.dialect.getBeginTransactionStatements('read uncommitted');
+    const innerStatements = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'read uncommitted' });
     for (const stmt of innerStatements.filter((inner) => !outerStatements.includes(inner))) {
       expect(this.run).not.toHaveBeenCalledWith(stmt);
     }
