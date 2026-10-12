@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.1] - 2026-10-12
+
+- **Fixed:** a JSON `null` in `$pull`, `$push` or `$set` behaves as on MongoDB on every engine (`$pull` of `null` emptied the array on Postgres and CockroachDB), and `$push` onto a `NULL` JSON column creates the document, as `$set` does.
+- **Feat:** `$addToSet` on a JSON field appends a string, finite number or boolean the array does not hold yet, creating a missing or `null` array.
+- **Feat:** a JSON field's `$set` and `$unset` take dotted paths (`{ $set: { 'billing.plan': 'pro' } }`), creating each missing parent.
+- `$regex` opening with `(?i)` ignores case on every engine, as MongoDB's `$options: 'i'` does, except an embedded libSQL file, whose `REGEXP` refuses the flag.
+
 ## [0.102.0] - 2026-10-11
 
 - **Fixed:** `updateMany`/`deleteMany` with `returning`, paged writes and read-first upserts could report or write a row another writer changed meanwhile; they now hold the rows they read until they write.

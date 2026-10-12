@@ -46,6 +46,8 @@ export type CompanyKind = {
   public?: 0 | 1;
   private?: 0 | 1;
   tags?: string[];
+  /** An array holding nulls, which every operator compares as JSON's null. */
+  notes?: (string | null)[];
   /** Second array key, so `$push`/`$pull` on two keys at once stays typed in the specs. */
   labels?: string[];
   /** An array key spelled as SQL's NULL, which a JSON path has to quote. */
@@ -63,7 +65,7 @@ export type CompanyKind = {
   rating?: number;
   description?: string;
   country?: string;
-  theme?: { color?: string };
+  theme?: { color?: string | null; size?: number };
   meta?: Record<string, unknown>;
   isArchived?: boolean;
 };

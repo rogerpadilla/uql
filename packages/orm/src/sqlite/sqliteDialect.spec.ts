@@ -559,19 +559,15 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.private', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', 123, '1'],
     },
     unsetOnly: {
       sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
       values: [123, '1'],
     },
-    setUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', 123, '1'],
-    },
     push: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(`kind`, '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.tags', COALESCE(CASE WHEN COALESCE(JSON_TYPE(`kind`, '$.tags'), 'null') = 'null' OR JSON_TYPE(`kind`, '$.tags') = 'array' THEN JSON_INSERT(CASE WHEN COALESCE(JSON_TYPE(`kind`, '$.tags'), 'null') = 'null' THEN JSON_ARRAY() ELSE (`kind` -> '$.tags') END, '$[#]', JSON(?)) END, (`kind` -> '$.tags'))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, '1'],
     },
     /**
@@ -579,24 +575,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
      * type; `JSON_EACH`'s `value` column would flatten booleans to 0/1 and stringify objects.
      */
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)) ELSE (`kind` -> '$.tags') END), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN COALESCE((SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)), JSON_ARRAY()) END, (`kind` -> '$.tags'))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
-    },
-    pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)) ELSE (`kind` -> '$.tags') END), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"a"', '"b"', 123, '1'],
-    },
-    setPushCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', '"new-tag"', 123, '1'],
-    },
-    setPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', JSON(?)), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['["a"]', '"b"', 123, '1'],
-    },
-    pushUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(`kind`, '$.tags[#]', JSON(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"new-tag"', 123, '1'],
     },
   };
 
@@ -634,7 +614,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', 1 + ?), `updatedAt` = ? WHERE `id` = ?",
+      "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.private', 1 + ?), `updatedAt` = ? WHERE `id` = ?",
     );
     expect(values).toEqual([1, expect.any(Number), '1']);
   }

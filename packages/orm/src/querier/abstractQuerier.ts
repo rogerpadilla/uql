@@ -2,6 +2,7 @@ import { getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
 import type { KeyedRow } from '../entity/metadata/definition.js';
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import { SAVEPOINT_PREFIX } from '../dialect/aliases.js';
 import { namesRows } from '../dialect/operators.js';
 import type {
   BooleanLike,
@@ -333,9 +334,6 @@ function ownedRelations<E>(meta: EntityMeta<E>): RelationKey<E>[] {
 function listedRows(value: unknown): object[] {
   return value == null ? [] : Array.isArray(value) ? value : [value as object];
 }
-
-/** What a savepoint the querier names is called, its depth appended. */
-const SAVEPOINT_PREFIX = '_uql_sp';
 
 /** Runs the callbacks a transaction gathered for its commit, in the order they were registered. */
 async function runCallbacks(callbacks: readonly (() => unknown)[]): Promise<void> {

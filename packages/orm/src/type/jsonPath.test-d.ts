@@ -13,7 +13,7 @@ class Writer {
 class Post {
   id!: number;
   title!: string;
-  kind?: Json<{ public?: 0 | 1; theme?: { color?: string }; labels?: string[] }>;
+  kind?: Json<{ public?: 0 | 1; theme?: { color?: string }; labels?: string[]; items?: { id: string }[] }>;
   data?: Json;
   attachments?: Json<unknown[]>;
   items?: Json<{ id: string; count: number; tags: string[] }>[];
@@ -71,9 +71,10 @@ export async function jsonDotPathSafety() {
   await querier.updateOneById(Post, 1, { title: {} });
 
   // `$push`/`$pull` target array keys only, with the value typed as the element.
-  await querier.updateOneById(Post, 1, { kind: { $push: { labels: 'new' }, $pull: { labels: 'stale' } } });
+  await querier.updateOneById(Post, 1, { kind: { $push: { labels: 'new' } } });
+  await querier.updateOneById(Post, 1, { kind: { $pull: { labels: 'stale' } } });
   await querier.updateOneById(Post, 1, {
-    kind: { $pull: { labels: 'a' }, $push: { labels: 'b' }, $unset: ['public'] },
+    kind: { $pull: { labels: 'a' }, $unset: ['public'] },
   });
   // @ts-expect-error 'public' is not an array key, so it is not a $pull target
   await querier.updateOneById(Post, 1, { kind: { $pull: { public: 1 } } });
@@ -81,6 +82,25 @@ export async function jsonDotPathSafety() {
   await querier.updateOneById(Post, 1, { kind: { $pull: { labels: 7 } } });
   // @ts-expect-error $pull takes one element value per key, not an array of them
   await querier.updateOneById(Post, 1, { kind: { $pull: { labels: ['a', 'b'] } } });
+
+  // A dotted `$set`/`$unset` names a nested object's key, its value typed by the path.
+  await querier.updateOneById(Post, 1, { kind: { $set: { 'theme.color': 'dark' }, $unset: ['theme.color'] } });
+  await querier.updateOneById(Post, 1, { data: { $set: { 'any.depth': 1 }, $unset: ['any.depth'] } });
+  // @ts-expect-error 'theme.color' holds a string
+  await querier.updateOneById(Post, 1, { kind: { $set: { 'theme.color': 7 } } });
+  // @ts-expect-error 'theme.nope' is not a path of Post.kind
+  await querier.updateOneById(Post, 1, { kind: { $set: { 'theme.nope': 'x' } } });
+  // @ts-expect-error a dotted path never steps into an array
+  await querier.updateOneById(Post, 1, { kind: { $unset: ['items.id'] } });
+
+  // `$addToSet` targets an array of scalars, with the value typed as the element.
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { labels: 'new' }, $set: { public: 1 } } });
+  // @ts-expect-error labels holds strings, not numbers
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { labels: 7 } } });
+  // @ts-expect-error 'public' is not an array key
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { public: 1 } } });
+  // @ts-expect-error an element that is a document has no equality every engine shares
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { items: { id: 'a' } } } });
 
   // A payload that is itself an array takes no operators - they all address object keys, and no
   // dialect gives them a meaningful result on such a column. Replace the whole value instead.

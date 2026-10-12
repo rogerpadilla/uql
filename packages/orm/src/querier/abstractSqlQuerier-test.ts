@@ -5,6 +5,7 @@ import {
   Cohort,
   CohortLabel,
   CohortSkill,
+  Company,
   Coupon,
   Label,
   Profile,
@@ -103,6 +104,17 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(await this.querier.findOneById(Tax, id, { $select: { percentage: true } })).toMatchObject({
       percentage: 10,
     });
+  }
+
+  /** SQL at a dotted path is evaluated in place, an untyped literal included, as at a key of the document. */
+  async shouldSetSqlAtANestedJsonPath() {
+    const id = await this.querier.insertOne(Company, { name: 'JSON Nested Sql', kind: { theme: { size: 2 } } });
+
+    // @ts-expect-error SQL in a JSON update is untyped
+    await this.querier.updateOneById(Company, id, { kind: { $set: { 'theme.color': sql`'blue'` } } });
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toEqual({ theme: { color: 'blue', size: 2 } });
   }
 
   /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */

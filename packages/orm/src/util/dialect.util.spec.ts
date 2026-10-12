@@ -9,6 +9,8 @@ import {
   fillOnFields,
   filterFieldKeys,
   findVectorIndex,
+  foldJsonUpdate,
+  writesKeys,
   fulltextWeights,
   getFieldCallbackValue,
   getSoftDeleteValue,
@@ -492,5 +494,95 @@ describe('fillOnFields', () => {
     expect(fillOnFields(getMeta(Zeroed), { id: 1, count: 5, note: 'x', flag: true }, 'onInsert')).toEqual([
       { id: 1, count: 5, note: 'x', flag: true },
     ]);
+  });
+});
+
+describe('foldJsonUpdate', () => {
+  it('names each path once, in operator order', () => {
+    expect(
+      foldJsonUpdate({
+        $pull: { tags: 'a', old: 1 },
+        $set: { theme: { color: 'red' }, 'theme.size': 2, private: 1, old: [0], skipped: undefined },
+        $push: { tags: 'b', old: 2 },
+        $addToSet: { tags: 'a', labels: 'x' },
+        $unset: ['private', 'theme.color', 'gone'],
+      }),
+    ).toEqual({
+      set: { theme: { size: 2 }, old: [0, 2] },
+      arrays: {
+        tags: {
+          pull: { item: 'a' },
+          appends: [
+            { item: 'b', unique: false },
+            { item: 'a', unique: false },
+          ],
+        },
+        labels: { appends: [{ item: 'x', unique: true }] },
+      },
+      unset: ['private', 'gone'],
+    });
+  });
+
+  it('leaves a set value that is no array to an append, and makes an array of a null one', () => {
+    expect(
+      foldJsonUpdate({ $set: { a: 'x', b: null, c: ['y'] }, $push: { a: 1, b: 2 }, $addToSet: { c: 'y' } }),
+    ).toEqual({ set: { a: 'x', b: [2], c: ['y'] }, arrays: {}, unset: [] });
+  });
+
+  it('drops an append under a key a dotted set made an object, and an array write a set or unset replaces', () => {
+    expect(foldJsonUpdate({ $pull: { a: 1 }, $set: { 'b.c': 1 }, $push: { b: 2 }, $unset: ['a'] })).toEqual({
+      set: { 'b.c': 1 },
+      arrays: {},
+      unset: ['a'],
+    });
+  });
+
+  it('writes no key with only a pull and an unset', () => {
+    expect(writesKeys(foldJsonUpdate({ $pull: { tags: 'a' }, $unset: ['old'] }))).toBe(false);
+  });
+
+  it('appends an item once, beside an earlier append of it', () => {
+    expect(foldJsonUpdate({ $push: { tags: 'x' }, $addToSet: { tags: 'x' } }).arrays).toEqual({
+      tags: { appends: [{ item: 'x', unique: false }] },
+    });
+  });
+
+  it('writes and removes inside a value a $set wrote, deeply, making an object of one that is none', () => {
+    expect(
+      foldJsonUpdate({
+        $set: { a: 'x', 'a.b.c': 1, d: { e: { f: 1, g: 2 } }, 'd.e.h': 3, h: 'y', i: { j: 1 } },
+        $unset: ['d.e.f', 'h.k', 'i.missing'],
+      }).set,
+    ).toEqual({ a: { b: { c: 1 } }, d: { e: { g: 2, h: 3 } }, h: 'y', i: { j: 1 } });
+  });
+
+  it('writes a key named after an object member as a key, touching no prototype', () => {
+    const writes = foldJsonUpdate({ $set: { ['__proto__']: { a: 1 }, '__proto__.b': 2, 'constructor.c': 3 } });
+    expect(Object.hasOwn(Object.prototype, 'b')).toBe(false);
+    expect(Object.hasOwn(Object.prototype, 'c')).toBe(false);
+    expect(Object.entries(writes.set)).toEqual([
+      ['__proto__', { a: 1, b: 2 }],
+      ['constructor.c', 3],
+    ]);
+  });
+
+  it('refuses another operator inside a value set by sql', () => {
+    expect(() => foldJsonUpdate({ $set: { tags: sql`'[]'` }, $push: { tags: 'x' } })).toThrow(
+      "'tags' is set by sql, so no other operator can write inside it",
+    );
+    expect(() => foldJsonUpdate({ $set: { theme: sql`'{}'`, 'theme.color': 'x' } })).toThrow(
+      "'theme' is set by sql, so no other operator can write inside it",
+    );
+    expect(() => foldJsonUpdate({ $set: { theme: sql`'{}'` }, $unset: ['theme.color'] })).toThrow(
+      "'theme' is set by sql, so no other operator can write inside it",
+    );
+  });
+
+  it('refuses a path that is not one, and an $addToSet element JSON compares by more than value', () => {
+    expect(() => foldJsonUpdate({ $set: { 'a.$x': 1 } })).toThrow();
+    expect(() => foldJsonUpdate({ $push: { 'a.b': 1 } })).toThrow();
+    expect(() => foldJsonUpdate({ $addToSet: { tags: { id: 1 } } })).toThrow(
+      "$addToSet on 'tags' takes a string, a finite number or a boolean",
+    );
   });
 });

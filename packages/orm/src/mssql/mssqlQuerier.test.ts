@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
-import { createSpec, mssqlConnection } from '../test/index.js';
+import { Company, createSpec, mssqlConnection } from '../test/index.js';
 import type { Type } from '../type/index.js';
 import { sql } from '../util/sql.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
@@ -11,6 +11,18 @@ class MsSqlQuerierIt extends VectorQuerierIt {
   /** A bare literal that wide is NUMERIC on SQL Server, which `tedious` reads as a float. */
   protected override wideIntegerSql() {
     return sql`SELECT CAST(9007199254740993 AS BIGINT) AS big`;
+  }
+
+  /** `JSON_MODIFY` deletes a key it is given NULL for, so SQL Server refuses a null `$set`. */
+  override async shouldSetANullAtANestedJsonPath() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Nested Null Leaf',
+      kind: { theme: { color: 'red' } },
+    });
+
+    await expect(this.querier.updateOneById(Company, id, { kind: { $set: { 'theme.color': null } } })).rejects.toThrow(
+      "mssql cannot $set 'theme.color' to null",
+    );
   }
 
   /** SQL Server keeps its per-partition row count live, so there is nothing to gather first. */

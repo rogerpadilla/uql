@@ -27,7 +27,7 @@ import {
 } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
 import { BYTES_PREFIX, type HydrateKind } from './hydrateColumn.js';
-import { type JsonAccessMode, type JsonSlot, jsonSetTarget } from './jsonSql.js';
+import { type JsonAccessMode, type JsonContainer, type JsonKeyWrite, type JsonSlot } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /** A Postgres-wire dialect's options: the base's, and how its driver binds a parameter. */
@@ -279,13 +279,17 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return `JSONB_ARRAY_ELEMENTS(${this.jsonArray(slot)}) AS ${alias}`;
   }
 
-  protected override jsonIsArray(slot: JsonSlot): string {
-    return `JSONB_TYPEOF(${this.jsonValue(slot)}) = 'array'`;
+  protected override jsonIs(slot: JsonSlot, kind: JsonContainer): string {
+    return `JSONB_TYPEOF(${this.jsonValue(slot)}) = '${kind}'`;
+  }
+
+  protected override jsonIsNull(slot: JsonSlot): string {
+    return `COALESCE(JSONB_TYPEOF(${this.jsonValue(slot)}), 'null') = 'null'`;
   }
 
   /** The array at `slot`, NULL where the value there is none: the array functions fail the whole read on one. */
   private jsonArray(slot: JsonSlot): string {
-    return `CASE WHEN ${this.jsonIsArray(slot)} THEN ${this.jsonValue(slot)} END`;
+    return `CASE WHEN ${this.jsonIs(slot, 'array')} THEN ${this.jsonValue(slot)} END`;
   }
 
   protected override jsonElemDoc(alias: string): string {
@@ -368,52 +372,59 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(`::${vectorType}`);
   }
 
-  /**
-   * `create_if_missing => false` keeps an absent key (and a NULL column) untouched, and a value that is no
-   * array is set back as it is; `WITH ORDINALITY` keeps the surviving elements in their original order.
-   */
-  protected override jsonPullKey(
-    ctx: QueryContext,
-    expr: string,
-    escapedCol: string,
-    key: string,
-    value: unknown,
-  ): string {
-    const slot = { base: escapedCol, path: key };
-    const kept = `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
-    const pulled = `CASE WHEN ${this.jsonIsArray(slot)} THEN COALESCE((${kept}), '[]'::jsonb) ELSE COALESCE(${this.jsonValue(slot)}, 'null') END`;
-    return `JSONB_SET(${expr}, '{"${key}"}', ${pulled}, false)`;
+  /** `WITH ORDINALITY` keeps the surviving elements in their original order. */
+  protected override jsonKept(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
+    return `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonbOf(ctx, item)}`;
   }
 
-  /**
-   * The plain values merge as one bound object; a `sql()` one is an SQL expression rather than JSON,
-   * so it merges through `JSONB_BUILD_OBJECT` and is evaluated in place - stringified with the rest,
-   * it would land as `{}`.
-   */
-  protected override jsonSet(
-    ctx: QueryContext,
-    expr: string,
-    set: Record<string, unknown>,
-    field?: FieldOptions,
-  ): string {
-    const entries = Object.entries(set);
-    const merged = this.jsonVal(ctx, Object.fromEntries(entries.filter(([, value]) => !(value instanceof QuerySql))));
-    const raws = entries.flatMap(([key, value]) =>
-      value instanceof QuerySql ? [` || JSONB_BUILD_OBJECT('${key}', ${this.rawFragment(ctx, value)})`] : [],
+  /** Each key or dotted path set as `jsonb`, which `JSONB_SET` takes and nothing else. */
+  protected override jsonSet(ctx: QueryContext, expr: string, set: Record<string, unknown>): string {
+    return Object.entries(set).reduce(
+      (acc, [path, value]) => this.jsonSetKey(acc, path, this.jsonbOf(ctx, value)),
+      expr,
     );
-    return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${merged}${raws.join('')}`;
   }
 
-  /** The only fragment that references `expr` twice - safe here because placeholders are numbered. */
-  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return Object.entries(push).reduce((acc, [key, value]) => {
-      const ph = this.jsonVal(ctx, value);
-      return `JSONB_SET(${acc}, '{"${key}"}', COALESCE((${acc})->'${key}', '[]'::jsonb) || JSONB_BUILD_ARRAY(${ph}))`;
-    }, expr);
+  /**
+   * A value as `jsonb` inside a document: a null one JSON's, as `JSONB_SET` and a comparison need, and a `sql()`
+   * one read back out of an object, since `TO_JSONB` refuses an untyped literal.
+   */
+  private jsonbOf(ctx: QueryContext, value: unknown): string {
+    if (value instanceof QuerySql) {
+      return `JSONB_BUILD_OBJECT('v', ${this.rawFragment(ctx, value)})->'v'`;
+    }
+    return value === null ? `'null'::jsonb` : this.jsonVal(ctx, value);
+  }
+
+  /** `JSONB_BUILD_ARRAY` takes any type, and a NULL as JSON's null. */
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
+    return `${array} || JSONB_BUILD_ARRAY(${this.jsonVal(ctx, value)})`;
+  }
+
+  protected override readonly jsonEmptyObject = `'{}'::jsonb`;
+
+  protected override readonly jsonEmptyArray = `'[]'::jsonb`;
+
+  /** `JSONB_SET` takes one path, so each key wraps the last. */
+  protected override jsonWriteKeys(
+    expr: string,
+    writes: readonly JsonKeyWrite[],
+    { create }: { create: boolean },
+  ): string {
+    return writes.reduce(
+      (acc, [slot, value]) => this.jsonSetKey(acc, slot.path, this.jsonOrStored(slot, value), { create }),
+      expr,
+    );
+  }
+
+  /** A replace hands an absent key's NULL back, which `JSONB_SET` would answer for the whole document. */
+  private jsonSetKey(expr: string, path: string, value: string, { create = true } = {}): string {
+    const set = create ? value : `COALESCE(${value}, 'null'::jsonb), false`;
+    return `JSONB_SET(${expr}, '${toPgArray(jsonPathKeys(path))}', ${set})`;
   }
 
   protected override jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return `(${expr}) - ${this.addValue(ctx, [...unset])}::text[]`;
+    return unset.reduce((acc, path) => `(${acc}) #- '${toPgArray(jsonPathKeys(path))}'`, expr);
   }
 
   /** Postgres binds JSON with a numbered placeholder and an explicit cast, per driver capability. */

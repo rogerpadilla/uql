@@ -12,6 +12,12 @@ export function jsonPath(path: string, suffix = ''): string {
   return `'$${segments}${suffix}'`;
 }
 
+/** A key a JSON update writes, and the value it writes there, NULL where the stored one stays. */
+export type JsonKeyWrite = readonly [slot: JsonSlot, value: string];
+
+/** The JSON values a path can be asked to hold, beside a scalar. */
+export type JsonContainer = 'array' | 'object';
+
 /** A JSON value a condition reads: `path` of the JSON in `base`, `''` for all of it. */
 export type JsonSlot = { readonly base: string; readonly path: string };
 
@@ -54,23 +60,23 @@ export function chainedCall(
 }
 
 /**
- * `JSON_SET(target, path, value, ...)`, which MySQL and SQLite share, nested past `maxArgs`. `pathSuffix`
- * appends an accessor per key (SQLite's `[#]` append). Values bind in key order through `bindValue`.
+ * `JSON_SET(target, path, value, ...)`, which MySQL and SQLite share, nested past `maxArgs`. Values bind in
+ * key order through `bindValue`.
  */
 export function jsonSetCall(
   bindValue: (value: unknown) => string,
   target: string,
   entries: Record<string, unknown>,
   maxArgs: number,
-  pathSuffix = '',
 ): string {
-  const pairs = Object.entries(entries).map(([key, value]) => `${jsonPath(key, pathSuffix)}, ${bindValue(value)}`);
+  const pairs = Object.entries(entries).map(([key, value]) => `${jsonPath(key)}, ${bindValue(value)}`);
   return chainedCall('JSON_SET', target, pairs, 2, maxArgs);
 }
 
 /**
- * The target a `$set` builds on. A nullable column gets a `COALESCE` fallback; a NOT NULL one goes in bare,
- * which keeps MySQL's partial in-place JSON update, since that needs the column itself as `JSON_SET`'s input.
+ * The document a JSON update writing keys builds on. A nullable column gets a `COALESCE` fallback; a NOT NULL
+ * one goes in bare, which keeps MySQL's partial in-place JSON update, since that needs the column itself as
+ * `JSON_SET`'s input.
  */
 export function jsonSetTarget(expr: string, field: FieldOptions | undefined, empty: string): string {
   return field?.nullable === false ? expr : `COALESCE(${expr}, ${empty})`;
@@ -134,9 +140,4 @@ export function holdsOperator(value: unknown): boolean {
     return value.some(holdsOperator);
   }
   return isOperatorMap(value) && someKey(value, (key) => isOperatorKey(key) || holdsOperator(value[key]));
-}
-
-/** A value an array element is matched to by JSON containment: a string, a finite number or a boolean. */
-export function isJsonScalar(value: unknown): value is string | number | boolean {
-  return typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value);
 }

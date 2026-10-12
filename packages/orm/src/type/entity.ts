@@ -127,19 +127,26 @@ type JsonFieldKey<E> = {
 
 /**
  * The dot-paths into a JSON payload: any suffix on an untyped one, none past a scalar, an array's
- * element's, and an object's keys five levels deep, below which any suffix is accepted.
+ * element's unless `Arrays` is false, and an object's keys five levels deep, below which any suffix is accepted.
  */
-type DeepJsonKeys<T, D extends unknown[] = []> = unknown extends T
+type DeepJsonKeys<T, D extends unknown[] = [], Arrays = true> = unknown extends T
   ? string
   : NonNullable<T> extends Scalar
     ? never
     : NonNullable<T> extends readonly (infer U)[]
-      ? DeepJsonKeys<U, D>
+      ? Arrays extends true
+        ? DeepJsonKeys<U, D, Arrays>
+        : never
       : D['length'] extends 5
         ? string
         : {
-            [K in keyof NonNullable<T> & string]: K | `${K}.${DeepJsonKeys<NonNullable<T>[K], [...D, unknown]>}`;
+            [K in keyof NonNullable<T> & string]:
+              | K
+              | `${K}.${DeepJsonKeys<NonNullable<T>[K], [...D, unknown], Arrays>}`;
           }[keyof NonNullable<T> & string];
+
+/** The dotted paths into `T`'s nested objects, never through an array: what a dotted `$set` and `$unset` name. */
+type JsonNestedPaths<T> = Extract<DeepJsonKeys<T, [], false>, `${string}.${string}`>;
 
 /**
  * The dot-paths into an entity's JSON columns: `kind?: Json<{ theme: { color: string } }>` gives
@@ -173,21 +180,31 @@ export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${in
     : unknown
   : unknown;
 
-/** The array keys of `T`, each mapped to its element type: what `$push` and `$pull` address. */
-export type JsonArrayFields<T> = {
-  [K in keyof T as IsMany<T[K]> extends true ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
+/**
+ * The keys of `T` holding an array of `Element`, each mapped to its element type: what `$push` and `$pull`
+ * address, and with scalar elements, `$addToSet`.
+ */
+export type JsonArrayFields<T, Element = unknown> = {
+  [
+    K in keyof T as IsMany<T[K]> extends true
+      ? Unpacked<NonNullable<T[K]>> extends Element
+        ? K & string
+        : never
+      : never
+  ]?: Unpacked<NonNullable<T[K]>>;
 };
 
 /**
- * A JSON field's update operators, applied `$pull`, `$set`, `$push`, `$unset` on every engine: `$set`
- * assigns top-level keys (no deep merge), `$pull` removes every equal element. See the JSON guide.
+ * A JSON field's update operators, applied in order on every engine, `$pull`, `$set`, `$push`, `$addToSet`,
+ * `$unset`, each seeing what the one before wrote; see the JSON guide.
  * @example `{ kind: { $set: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } }`
  */
 export type JsonUpdateOp<T = unknown> = {
-  readonly $set?: Partial<T>;
-  readonly $unset?: unknown extends T ? readonly string[] : readonly (keyof T & string)[];
+  readonly $set?: Partial<T> & { readonly [P in JsonNestedPaths<T>]?: PathValue<T, P> };
+  readonly $unset?: unknown extends T ? readonly string[] : readonly ((keyof T & string) | JsonNestedPaths<T>)[];
   readonly $push?: JsonArrayFields<T>;
   readonly $pull?: JsonArrayFields<T>;
+  readonly $addToSet?: JsonArrayFields<T, string | number | boolean>;
 };
 
 /**

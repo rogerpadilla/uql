@@ -41,6 +41,7 @@ A view is a read-only entity whose definition is its migration, and its field ty
 
 ## Later
 
+- **From Mongoose.** Entities written from Mongoose schemas by the codemod, beside the copy and shadow-read recipe. [The design](from-mongoose.md).
 - **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.
 - **The maintained aggregate**, `computed: (u) => u.resources.count(), stored: true` kept by triggers on the child, once an unstored one profiles too slow. Only `count` and `sum` turn a row change into a delta, and an aggregate's filter is already row-local, so storing one would change no call site.
 - **Schema-scoped objects.** Extensions, functions and domains declared beside the entities (`objects: [{ kind: 'extension', name: 'pg_trgm' }]`), applied by `sync` and `up` before the tables using them; a function is named by its signature. Variability hand-rolls these in four places.
@@ -61,4 +62,5 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **A nullable column's property admits `null`, and only that.** Family types (`jsonb`, `numeric`) stay narrowable.
 - **Every field option states where it applies**, in `FIELD_OPTION_FAMILY`; only contradictions are rejected.
 - **No computed vector distance on D1 or MySQL.** Both store vectors as JSON, and a distance over it measured 10 ms to 230 ms a row. D1 points at Vectorize, MySQL at HeatWave.
+- **A JSON update is folded to one write per path.** MySQL, MariaDB and SQLite bind by position, so no write may read what an earlier one left: `foldJsonUpdate` works out every operator reaching a value another wrote before any SQL is written, and each write reads the column as stored. SQL Server, whose `JSON_QUERY` refuses a scalar, writes a key's value only where it is not NULL: a NULL one goes to a key that is not there, which `JSON_MODIFY` leaves alone.
 - **No fuzzy-match or `$max`/`$min` update operator.** Neither has a portable form or a caller `sql` does not already serve.

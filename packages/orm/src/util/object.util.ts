@@ -1,5 +1,10 @@
 import type { EntityMeta } from '../type/index.js';
 
+/** A value a JSON document holds whole, and `$addToSet` and an `=` on a JSON path compare by equality. */
+export function isJsonScalar(value: unknown): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value);
+}
+
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {
     return value;

@@ -7,9 +7,17 @@ import {
   relationTermKey,
   isolationSetBefore,
 } from '../dialect/abstractSqlDialect.js';
-import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS, JSON_SKIP_KEY, OUTPUT_TABLE } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
-import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSlotArgs } from '../dialect/jsonSql.js';
+import {
+  type JsonAccessMode,
+  jsonArraySlotArgs,
+  type JsonContainer,
+  type JsonKeyWrite,
+  jsonPath,
+  type JsonSlot,
+  jsonSlotArgs,
+} from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
@@ -89,9 +97,6 @@ function openJsonType(value: unknown): number {
   }
   return typeof value === 'boolean' ? 3 : 1;
 }
-
-/** The table variable an `OUTPUT` fills, `_uql`-prefixed as every name uql invents is. */
-const OUTPUT_TABLE = '@_uql_output';
 
 /** The one key column and its field, or nothing on a composite key. */
 function soleId<E>(meta: EntityMeta<E>): { readonly key: IdKey<E>; readonly field: FieldMeta } | undefined {
@@ -439,12 +444,17 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
-    return `OPENJSON(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}) ${alias}`;
+    return `OPENJSON(${jsonArraySlotArgs(slot, this.jsonIs(slot, 'array'))}) ${alias}`;
   }
 
-  /** `JSON_QUERY` answers an array or an object as written, and a scalar as NULL. */
-  protected override jsonIsArray(slot: JsonSlot): string {
-    return `LEFT(JSON_QUERY(${jsonSlotArgs(slot)}), 1) = '['`;
+  /** `JSON_QUERY` answers an array or an object as written, and a scalar as NULL, so its first character tells which. */
+  protected override jsonIs(slot: JsonSlot, kind: JsonContainer): string {
+    return `LEFT(JSON_QUERY(${jsonSlotArgs(slot)}), 1) = '${kind === 'array' ? '[' : '{'}'`;
+  }
+
+  /** `OPENJSON` answers a JSON null as NULL, as it does a key that is not there. */
+  protected override jsonIsNull(slot: JsonSlot): string {
+    return `${this.jsonValue(slot)} IS NULL`;
   }
 
   /** An object element's `value` is its JSON text, which its fields are paths into. */
@@ -470,19 +480,14 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   protected override jsonLength(slot: JsonSlot): string {
-    return `(SELECT COUNT(*) FROM OPENJSON(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}))`;
+    return `(SELECT COUNT(*) FROM OPENJSON(${jsonArraySlotArgs(slot, this.jsonIs(slot, 'array'))}))`;
   }
 
   /** SQL Server orders JSON as the text `OPENJSON` reads, so a number sorts by its value first. */
   protected override readonly jsonSortModes: readonly JsonAccessMode[] = ['numeric', 'text'];
 
   /** `JSON_MODIFY` takes one path per call, so several keys chain into one expression. */
-  protected override jsonSet(
-    ctx: QueryContext,
-    expr: string,
-    set: Record<string, unknown>,
-    _field?: FieldOptions,
-  ): string {
+  protected override jsonSet(ctx: QueryContext, expr: string, set: Record<string, unknown>): string {
     for (const [key, value] of Object.entries(set)) {
       if (value === null) {
         throw new UqlUsageError(
@@ -492,17 +497,29 @@ export class MsSqlDialect extends MergeSqlDialect {
     }
     return Object.entries(set).reduce(
       (acc, [key, value]) => `JSON_MODIFY(${acc}, ${jsonPath(key)}, ${this.jsonWriteParam(ctx, value)})`,
-      `COALESCE(${expr}, '{}')`,
+      expr,
     );
   }
 
-  /** `'append '` prefixing the path extends the array there, creating it where there is none. */
-  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return Object.entries(push).reduce(
-      (acc, [key, value]) =>
-        `JSON_MODIFY(${acc}, 'append ${jsonPath(key).slice(1, -1)}', ${this.jsonWriteParam(ctx, value)})`,
-      `COALESCE(${expr}, '{}')`,
-    );
+  /** Text, which `JSON_MODIFY` reads as JSON once `JSON_QUERY` marks it. */
+  protected override readonly jsonEmptyObject = `'{}'`;
+
+  protected override readonly jsonEmptyArray = `'[]'`;
+
+  /**
+   * The value chooses the path, not the document: a NULL one, where the stored value stays, goes to a key that is
+   * not there, which `JSON_MODIFY` leaves alone. So the document is read once per key, and a stored scalar, which
+   * `JSON_QUERY` refuses, is never written back.
+   */
+  protected override jsonWriteKeys(expr: string, writes: readonly JsonKeyWrite[]): string {
+    return writes.reduce((acc, [slot, value]) => {
+      const path = `CASE WHEN ${value} IS NULL THEN ${jsonPath(JSON_SKIP_KEY)} ELSE ${jsonPath(slot.path)} END`;
+      return `JSON_MODIFY(${acc}, ${path}, JSON_QUERY(${value}))`;
+    }, expr);
+  }
+
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
+    return `JSON_MODIFY(${array}, 'append $', ${this.jsonWriteParam(ctx, value)})`;
   }
 
   /** Assigning NULL to a path deletes it in lax mode, which is the default. */
@@ -511,33 +528,19 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * The surviving elements are re-aggregated into an array and written back whole - there is no
-   * remove-by-value. `JSON_QUERY` is what marks the rebuilt text as JSON rather than a string. Only an
-   * array is rewritten: `JSON_MODIFY` would create an absent key, and any other value stays as it is.
+   * The surviving elements re-aggregated into an array, there being no remove-by-value. `OPENJSON` hands
+   * back a string element unquoted and a null one as SQL NULL, so each survivor is re-encoded from its
+   * reported `type`, and a null is told apart by `IS NULL`, which `<>` cannot do.
    */
-  protected override jsonPullKey(
-    ctx: QueryContext,
-    expr: string,
-    escapedCol: string,
-    key: string,
-    value: unknown,
-  ): string {
-    const slot = { base: escapedCol, path: key };
+  protected override jsonKept(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
     const val = this.jsonElemDoc(JSON_PULL_ALIAS);
-    // `OPENJSON` hands back a string element unquoted and a null one as SQL NULL, so each survivor is
-    // re-encoded from its reported `type` before the array is put back together - concatenated raw,
-    // the result is text the engine then refuses to parse as JSON.
     const encoded =
       `CASE ${JSON_PULL_ALIAS}.${this.#elem.type}` +
       ` WHEN 0 THEN 'null'` +
       ` WHEN 1 THEN '"' + STRING_ESCAPE(${val}, 'json') + '"'` +
       ` ELSE ${val} END`;
-    // `IS NULL OR` because a JSON null element reads back as SQL NULL, and `<>` against one is
-    // unknown rather than true - which silently dropped every null from the array it rebuilt.
-    const kept =
-      `SELECT '[' + STRING_AGG(${encoded}, ',') + ']' FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)}` +
-      ` WHERE ${val} IS NULL OR ${val} <> ${this.jsonScalarParam(ctx, value)}`;
-    const pulled = `JSON_MODIFY(${expr}, ${jsonPath(key)}, JSON_QUERY(COALESCE((${kept}), '[]')))`;
-    return `CASE WHEN ${this.jsonIsArray(slot)} THEN ${pulled} ELSE ${expr} END`;
+    const differs =
+      item === null ? `${val} IS NOT NULL` : `${val} IS NULL OR ${val} <> ${this.jsonScalarParam(ctx, item)}`;
+    return `SELECT '[' + STRING_AGG(${encoded}, ',') + ']' FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)} WHERE ${differs}`;
   }
 }

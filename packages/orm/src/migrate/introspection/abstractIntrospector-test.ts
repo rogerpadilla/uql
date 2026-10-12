@@ -23,7 +23,17 @@ export const INTROSPECT_TABLES = {
   SET_DEFAULT: 'test_introspect_set_default',
 } as const;
 
-const DROP_ORDER = Object.values(INTROSPECT_TABLES).toReversed();
+/** Each made by one `probe`, which drops it after too, and listed here so a run killed in between cannot leave it. */
+const PROBE_TABLES = [
+  'introspect_partial',
+  'introspect_virtual',
+  'introspect_defaults',
+  'introspect_keyless',
+  'introspect_string_key',
+  'introspect_unique_pair',
+];
+
+const DROP_ORDER = [...Object.values(INTROSPECT_TABLES), ...PROBE_TABLES].toReversed();
 
 /**
  * Shared integration suite for schema introspectors, covering table/column/PK/FK/index/default-value

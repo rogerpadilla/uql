@@ -19,6 +19,7 @@ import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.
 import { assertNoUndefined, assertWhere } from '../util/query.util.js';
 import { qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
+import { OWNED_PREFIX } from './aliases.js';
 import { groupClauses, isGroupOp } from './operators.js';
 
 /**
@@ -136,7 +137,7 @@ export abstract class AbstractDialect {
     if (!PLAIN_NAME.test(alias)) {
       throw new UqlUsageError(`$project '${alias}' is no plain name: letters, digits and '_', not led by a digit`);
     }
-    if (alias === '_id' || alias.startsWith('_uql')) {
+    if (alias === '_id' || alias.startsWith(OWNED_PREFIX)) {
       throw new UqlUsageError(`$project '${alias}' is a name MongoDB or UQL reserves`);
     }
     if (

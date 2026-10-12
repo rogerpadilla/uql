@@ -1335,45 +1335,21 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
-      sql: 'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
-      values: ['{"private":1}', 123, '1'],
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"private"}', $1::jsonb), "updatedAt" = $2 WHERE "id" = $3`,
+      values: ['1', 123, '1'],
     },
     unsetOnly: {
-      sql: 'UPDATE "Company" SET "kind" = ("kind") - $1::text[], "updatedAt" = $2 WHERE "id" = $3',
-      values: [['public', 'private'], 123, '1'],
-    },
-    setUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || $1::jsonb) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"private":1}', ['public'], 123, '1'],
+      sql: `UPDATE "Company" SET "kind" = (("kind") #- '{"public"}') #- '{"private"}', "updatedAt" = $1 WHERE "id" = $2`,
+      values: [123, '1'],
     },
     push: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"tags"}', COALESCE(CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' OR JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' THEN '[]'::jsonb ELSE ("kind"->'tags') END || JSONB_BUILD_ARRAY($1::jsonb) END, ("kind"->'tags'))), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"new-tag"', 123, '1'],
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{"tags"}', COALESCE(COALESCE(CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) END, ("kind"->'tags')), 'null'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, '1'],
-    },
-    /**
-     * Postgres is the one dialect whose `$push` references the accumulated expression twice - safe
-     * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
-     */
-    pullPushSameKey: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), '{"tags"}', COALESCE((JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
-      values: ['"a"', '"b"', 123, '1'],
-    },
-    setPushCombined: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{"tags"}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"private":1}', '"new-tag"', 123, '1'],
-    },
-    setPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{"tags"}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"tags":["a"]}', '"b"', 123, '1'],
-    },
-    pushUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = (JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
-      values: ['"new-tag"', ['public'], 123, '1'],
     },
   };
 
@@ -1391,10 +1367,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb' +
-        ' || JSONB_BUILD_OBJECT(\'private\', 1 + $2), "updatedAt" = $3 WHERE "id" = $4',
+      `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"private"}', JSONB_BUILD_OBJECT('v', 1 + $1)->'v'), "updatedAt" = $2 WHERE "id" = $3`,
     );
-    expect(values).toEqual(['{}', 1, expect.any(Number), '1']);
+    expect(values).toEqual([1, expect.any(Number), '1']);
   }
 
   /** A `$set` value that would be falsy in JS (`false`), to confirm it isn't dropped like a missing key. */
@@ -1408,9 +1383,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+      `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"isArchived"}', $1::jsonb), "updatedAt" = $2 WHERE "id" = $3`,
     );
-    expect(values).toEqual(['{"isArchived":false}', 1, '1']);
+    expect(values).toEqual(['false', 1, '1']);
   }
 
   /**

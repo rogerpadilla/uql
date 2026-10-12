@@ -758,6 +758,18 @@ describe('a write in the body, to another table', () => {
     ).toThrow(`'WriteAudit.tags' cannot accumulate per row in a trigger fired once per statement`);
   });
 
+  /** A constant added once per statement is the set it would be added once per row. */
+  it('should take an $addToSet where the body reads a set', () => {
+    const statement = render(new MsSqlDialect(), {
+      on: 'afterInsert',
+      run: (newRow) =>
+        updateTable(WriteAudit, { $where: { postId: newRow.id } }, { tags: { $addToSet: { list: 'x' } } }),
+    }).join('\n');
+    expect(statement).toContain(
+      `UPDATE "WriteAudit" SET "tags" = JSON_MODIFY(COALESCE("tags", '{}'), CASE WHEN CASE WHEN (SELECT "value" FROM OPENJSON("tags", '$')`,
+    );
+  });
+
   it('should run several writes in one body, each reading the rows it was handed', () => {
     const statement = render(new MsSqlDialect(), {
       on: 'afterDelete',

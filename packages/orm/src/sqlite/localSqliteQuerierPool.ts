@@ -60,9 +60,18 @@ export function extendSqlite(db: LocalSqliteDatabase, extensions: readonly strin
   return db;
 }
 
-/** `value REGEXP pattern`: NULL where the value is, as an operator answers. */
+const CASELESS_FLAG = '(?i)';
+
+/** `value REGEXP pattern`: NULL where the value is, as an operator answers; a leading `(?i)` folds case, as other engines read it. */
 function regexp(pattern: SqlValue, value: SqlValue): SqlValue {
-  return value === null ? null : Number(new RegExp(String(pattern)).test(String(value)));
+  if (value === null) {
+    return null;
+  }
+  const source = String(pattern);
+  const caseless = source.startsWith(CASELESS_FLAG);
+  return Number(
+    new RegExp(caseless ? source.slice(CASELESS_FLAG.length) : source, caseless ? 'i' : '').test(String(value)),
+  );
 }
 
 /** A value SQLite hands a function, and takes back. */

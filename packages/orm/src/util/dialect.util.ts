@@ -35,8 +35,8 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
-import { defaultReadKeys, fieldKeys, isDatabaseWritten } from './field.util.js';
-import { entityName, getKeys, hasKeys, isOperatorObject, isRecord, someKey } from './object.util.js';
+import { defaultReadKeys, fieldKeys, isDatabaseWritten, jsonKey, jsonPathKeys } from './field.util.js';
+import { entityName, getKeys, hasKeys, isJsonScalar, isOperatorObject, isRecord, someKey } from './object.util.js';
 import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
@@ -292,15 +292,163 @@ function indexCoversColumn<E>(index: EntityIndexMeta<E>, key: string): boolean {
 
 /** `satisfies` ties this to {@link JsonUpdateOp}, so renaming an operator breaks it at compile time. */
 const JSON_UPDATE_OPS: readonly string[] = [
-  '$set',
-  '$unset',
-  '$push',
   '$pull',
+  '$set',
+  '$push',
+  '$addToSet',
+  '$unset',
 ] as const satisfies readonly (keyof JsonUpdateOp)[];
 
 /** Type guard: checks whether an update payload value is a JSON operator object. */
 export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
   return isRecord(value) && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
+}
+
+/** An item one array key's writes append, `unique` where it goes in only if the stored array lacks it. */
+type JsonAppend = { readonly item: unknown; readonly unique: boolean };
+
+/** One array key's writes, in order: `pull` removes every element equal to its item, then each append adds one. */
+export type JsonArrayWrites = { readonly pull?: { readonly item: unknown }; readonly appends: readonly JsonAppend[] };
+
+/** A JSON update with each path written once: the value set at each, each array key's writes, and the paths removed. */
+export type JsonWrites = {
+  readonly set: Readonly<Record<string, unknown>>;
+  readonly arrays: Readonly<Record<string, JsonArrayWrites>>;
+  readonly unset: readonly string[];
+};
+
+/** Whether the writes put a key into the document, so a NULL column must first become an object. */
+export function writesKeys({ set, arrays }: JsonWrites): boolean {
+  return hasKeys(set) || Object.values(arrays).some((write) => write.appends.length > 0);
+}
+
+/** One array key's writes while a JSON update folds. */
+type ArrayFold = { pull?: { item: unknown }; appends: JsonAppend[] };
+
+/**
+ * A JSON update as one write per path, its operators applied in order: `$pull`, `$set` in key order, `$push`,
+ * `$addToSet`, `$unset`. Where one reaches a value another wrote, the result is worked out here, so every engine
+ * writes each path once and reads only what is stored. A `$set` of `undefined` writes nothing.
+ */
+export function foldJsonUpdate(value: JsonUpdateOp): JsonWrites {
+  const set = new Map<string, unknown>();
+  const arrays = new Map<string, ArrayFold>();
+  const unset = new Set<string>();
+  for (const [key, item] of Object.entries(value.$pull ?? {})) {
+    arrays.set(jsonKey(key), { pull: { item }, appends: [] });
+  }
+  for (const [path, item] of Object.entries(value.$set ?? {})) {
+    if (item !== undefined) {
+      const keys = jsonPathKeys(path);
+      arrays.delete(keys[0]);
+      dropWithin(set, path);
+      const owner = ownerOf(set, keys);
+      if (owner) {
+        set.set(owner.path, withPath(owner.path, set.get(owner.path), owner.rest, item));
+      } else {
+        set.set(path, item);
+      }
+    }
+  }
+  for (const op of ['$push', '$addToSet'] as const) {
+    for (const [key, item] of Object.entries(value[op] ?? {})) {
+      const unique = op === '$addToSet';
+      if (unique && !isJsonScalar(item)) {
+        throw new UqlUsageError(`$addToSet on '${key}' takes a string, a finite number or a boolean`);
+      }
+      appendTo(set, arrays, jsonKey(key), item, unique);
+    }
+  }
+  for (const path of value.$unset ?? []) {
+    const keys = jsonPathKeys(path);
+    dropWithin(set, path);
+    arrays.delete(path);
+    const owner = ownerOf(set, keys);
+    if (owner) {
+      set.set(owner.path, withoutPath(owner.path, set.get(owner.path), owner.rest));
+    } else {
+      unset.add(path);
+    }
+  }
+  return { set: Object.fromEntries(set), arrays: Object.fromEntries(arrays), unset: [...unset] };
+}
+
+/** `item` appended at `key`: onto the array a `$set` wrote there, or else among the key's array writes. */
+function appendTo(
+  set: Map<string, unknown>,
+  arrays: Map<string, ArrayFold>,
+  key: string,
+  item: unknown,
+  unique: boolean,
+): void {
+  if (set.has(key)) {
+    const written = set.get(key);
+    assertNotSql(key, written);
+    if (written === null) {
+      set.set(key, [item]);
+    } else if (Array.isArray(written) && !(unique && written.includes(item))) {
+      set.set(key, [...written, item]);
+    }
+    return;
+  }
+  if ([...set.keys()].some((path) => path.startsWith(`${key}.`))) {
+    return;
+  }
+  const write = arrays.get(key) ?? { appends: [] };
+  arrays.set(key, write);
+  if (!(unique && write.appends.some((append) => append.item === item))) {
+    write.appends.push({ item, unique: unique && write.pull?.item !== item });
+  }
+}
+
+/** Removes `path` and every path inside it from `set`. */
+function dropWithin(set: Map<string, unknown>, path: string): void {
+  for (const written of set.keys()) {
+    if (written === path || written.startsWith(`${path}.`)) {
+      set.delete(written);
+    }
+  }
+}
+
+/** The path in `set` holding the value `keys` lead into, and the keys left below it. */
+function ownerOf(set: Map<string, unknown>, keys: readonly string[]): { path: string; rest: string[] } | undefined {
+  for (let depth = 1; depth < keys.length; depth++) {
+    const path = keys.slice(0, depth).join('.');
+    if (set.has(path)) {
+      return { path, rest: keys.slice(depth) };
+    }
+  }
+  return undefined;
+}
+
+/** `value` with `item` at `keys`, a value that is no object becoming one, as a dotted `$set` makes it. */
+function withPath(
+  path: string,
+  value: unknown,
+  [key, ...rest]: readonly string[],
+  item: unknown,
+): Record<string, unknown> {
+  assertNotSql(path, value);
+  const object = isRecord(value) ? value : {};
+  const inner = Object.hasOwn(object, key) ? object[key] : undefined;
+  return { ...object, [key]: rest.length > 0 ? withPath(path, inner, rest, item) : item };
+}
+
+/** `value` without `keys`, as it is where they lead nowhere. */
+function withoutPath(path: string, value: unknown, [key, ...rest]: readonly string[]): unknown {
+  assertNotSql(path, value);
+  if (!isRecord(value) || !Object.hasOwn(value, key)) {
+    return value;
+  }
+  const { [key]: inner, ...others } = value;
+  return rest.length > 0 ? { ...others, [key]: withoutPath(path, inner, rest) } : others;
+}
+
+/** Refuses an operator inside a value `sql` sets, whose result the statement cannot know. */
+function assertNotSql(path: string, value: unknown): void {
+  if (value instanceof QuerySql) {
+    throw new UqlUsageError(`'${path}' is set by sql, so no other operator can write inside it`);
+  }
 }
 
 /** `satisfies` ties this to {@link FieldUpdateOp}, so renaming an operator breaks it at compile time. */

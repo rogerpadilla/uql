@@ -1,11 +1,10 @@
+import { CURSOR_ALIAS } from '../dialect/aliases.js';
+
 /**
  * Runs one statement of the cursor protocol on the querier's own connection, which holds the cursor, and
  * not through `all()`, which refuses a statement while a stream holds the querier.
  */
 type CursorExecutor<T> = (query: string, values?: unknown[]) => Promise<T[]>;
-
-/** The cursor a stream declares. Suffixed per call, so two streams on one connection cannot collide. */
-const CURSOR_ALIAS = '_uql_cursor';
 
 /** Rows per round trip, matching `pg-query-stream`'s own default so both paths read the same. */
 const FETCH_SIZE = 100;

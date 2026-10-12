@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import { SqliteLikeQuerierIt } from '../querier/sqliteLikeQuerier-test.js';
-import { createSpec, probeForeignKeys } from '../test/index.js';
+import { createSpec, MeasureUnitCategory, probeForeignKeys } from '../test/index.js';
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
 /** A database file gone, with the journal files beside it. */
@@ -19,7 +19,15 @@ function removeDb(file: string) {
 const dbFile = join(tmpdir(), `uql-libsql-${uuidv7()}.db`);
 afterAll(() => removeDb(dbFile));
 
-createSpec(new SqliteLikeQuerierIt(new LibsqlQuerierPool({ url: `file:${dbFile}` })));
+/** Embedded libSQL matches with SQLite's own `REGEXP`, which takes no inline flag, and its client registers no other. */
+class EmbeddedLibsqlQuerierIt extends SqliteLikeQuerierIt {
+  override async shouldMatchARegexCaseInsensitivelyByALeadingFlag() {
+    await this.querier.insertOne(MeasureUnitCategory, { name: 'Alpha' });
+    await expect(this.categoryNames({ name: { $regex: '(?i)^A' } })).rejects.toThrow("'?' without operand");
+  }
+}
+
+createSpec(new EmbeddedLibsqlQuerierIt(new LibsqlQuerierPool({ url: `file:${dbFile}` })));
 
 describe('foreign key enforcement', () => {
   it('should enforce without the pool setting a pragma, which libSQL does itself', async () => {

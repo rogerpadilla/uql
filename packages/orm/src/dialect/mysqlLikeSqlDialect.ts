@@ -28,7 +28,7 @@ import {
 } from './abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
-import { jsonPath, type JsonSlot } from './jsonSql.js';
+import { type JsonContainer, jsonPath, type JsonSlot } from './jsonSql.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -308,16 +308,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `NOT (${field} <=> ${ph})`;
   }
 
-  /**
-   * `JSON_MERGE_PRESERVE` concatenates arrays and creates absent keys, so every pushed key is
-   * handled in one call that references `expr` once - unlike `JSON_ARRAY_APPEND`, which needs a
-   * second reference for the array source and returns NULL on MariaDB for an absent key.
-   */
-  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    const entries = Object.entries(push).map(
-      ([key, value]) => `'${key}', JSON_ARRAY(${this.jsonScalarParam(ctx, value)})`,
-    );
-    return `JSON_MERGE_PRESERVE(${expr}, JSON_OBJECT(${entries.join(', ')}))`;
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
+    return `JSON_ARRAY_APPEND(${array}, '$', ${this.jsonScalarParam(ctx, value)})`;
   }
 
   /**
@@ -335,11 +327,15 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   /** Only an array's, where `JSON_LENGTH` counts a scalar as 1 and an object by its keys. */
   protected override jsonLength(slot: JsonSlot): string {
-    return `CASE WHEN ${this.jsonIsArray(slot)} THEN JSON_LENGTH(${this.jsonValue(slot)}) END`;
+    return `CASE WHEN ${this.jsonIs(slot, 'array')} THEN JSON_LENGTH(${this.jsonValue(slot)}) END`;
   }
 
-  protected override jsonIsArray(slot: JsonSlot): string {
-    return `JSON_TYPE(${this.jsonValue(slot)}) = 'ARRAY'`;
+  protected override jsonIs(slot: JsonSlot, kind: JsonContainer): string {
+    return `JSON_TYPE(${this.jsonValue(slot)}) = '${kind.toUpperCase()}'`;
+  }
+
+  protected override jsonIsNull(slot: JsonSlot): string {
+    return `COALESCE(JSON_TYPE(${this.jsonValue(slot)}), 'NULL') = 'NULL'`;
   }
 
   /**

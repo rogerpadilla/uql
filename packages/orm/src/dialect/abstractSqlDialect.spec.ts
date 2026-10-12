@@ -56,12 +56,6 @@ class TestSqlDialect extends AbstractSqlDialect {
     return `CAST(${expr} AS NUMERIC)`;
   }
 
-  // The JSON fragments are dialect-specific (see `MysqlLikeSqlDialect`, `PgLikeSqlDialect` and
-  // `SqliteDialect`); this base-only stand-in never exercises them.
-  protected override jsonPullKey(): string {
-    return this.unsupported();
-  }
-
   /** Postgres's chain, which the specs below spell their paths in. */
   protected jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
     const segments = path.split('.');
@@ -75,7 +69,11 @@ class TestSqlDialect extends AbstractSqlDialect {
     return this.unsupported();
   }
 
-  protected jsonIsArray(): string {
+  protected jsonIsNull(): string {
+    return this.unsupported();
+  }
+
+  protected jsonIs(): string {
     return this.unsupported();
   }
 
@@ -87,7 +85,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return this.unsupported();
   }
 
-  protected jsonPush(): string {
+  protected jsonAppended(): string {
     return this.unsupported();
   }
 

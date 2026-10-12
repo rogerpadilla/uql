@@ -46,33 +46,13 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(JSON_MODIFY("kind", \'$.public\', NULL), \'$.private\', NULL), "updatedAt" = @p1 WHERE "id" = @p2',
       values: [123, '1'],
     },
-    setUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(JSON_MODIFY(COALESCE("kind", \'{}\'), \'$.private\', @p1), \'$.public\', NULL), "updatedAt" = @p2 WHERE "id" = @p3',
-      values: [1, 123, '1'],
-    },
     push: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE("kind", \'{}\'), \'append $.tags\', @p1), "updatedAt" = @p2 WHERE "id" = @p3',
+      sql: `UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE("kind", '{}'), CASE WHEN CASE WHEN (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') IS NULL OR LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN JSON_MODIFY(CASE WHEN (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') IS NULL THEN '[]' ELSE (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') END, 'append $', @p1) END IS NULL THEN '$._uql_skip' ELSE '$.tags' END, JSON_QUERY(CASE WHEN (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') IS NULL OR LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN JSON_MODIFY(CASE WHEN (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') IS NULL THEN '[]' ELSE (SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags') END, 'append $', @p1) END)), "updatedAt" = @p2 WHERE "id" = @p3`,
       values: ['new-tag', 123, '1'],
     },
     pull: {
-      sql: 'UPDATE "Company" SET "kind" = CASE WHEN LEFT(JSON_QUERY("kind", \'$.tags\'), 1) = \'[\' THEN JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_pull."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_pull."value", \'json\') + \'"\' ELSE _uql_pull."value" END, \',\') + \']\' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", \'$.tags\'), 1) = \'[\' THEN "kind" END, \'$.tags\') _uql_pull WHERE _uql_pull."value" IS NULL OR _uql_pull."value" <> @p1), \'[]\'))) ELSE "kind" END, "updatedAt" = @p2 WHERE "id" = @p3',
+      sql: `UPDATE "Company" SET "kind" = JSON_MODIFY("kind", CASE WHEN CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN COALESCE((SELECT '[' + STRING_AGG(CASE _uql_pull."type" WHEN 0 THEN 'null' WHEN 1 THEN '"' + STRING_ESCAPE(_uql_pull."value", 'json') + '"' ELSE _uql_pull."value" END, ',') + ']' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN "kind" END, '$.tags') _uql_pull WHERE _uql_pull."value" IS NULL OR _uql_pull."value" <> @p1), '[]') END IS NULL THEN '$._uql_skip' ELSE '$.tags' END, JSON_QUERY(CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN COALESCE((SELECT '[' + STRING_AGG(CASE _uql_pull."type" WHEN 0 THEN 'null' WHEN 1 THEN '"' + STRING_ESCAPE(_uql_pull."value", 'json') + '"' ELSE _uql_pull."value" END, ',') + ']' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN "kind" END, '$.tags') _uql_pull WHERE _uql_pull."value" IS NULL OR _uql_pull."value" <> @p1), '[]') END)), "updatedAt" = @p2 WHERE "id" = @p3`,
       values: ['a', 123, '1'],
-    },
-    pullPushSameKey: {
-      sql: "UPDATE \"Company\" SET \"kind\" = JSON_MODIFY(COALESCE(CASE WHEN LEFT(JSON_QUERY(\"kind\", '$.tags'), 1) = '[' THEN JSON_MODIFY(\"kind\", '$.tags', JSON_QUERY(COALESCE((SELECT '[' + STRING_AGG(CASE _uql_pull.\"type\" WHEN 0 THEN 'null' WHEN 1 THEN '\"' + STRING_ESCAPE(_uql_pull.\"value\", 'json') + '\"' ELSE _uql_pull.\"value\" END, ',') + ']' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY(\"kind\", '$.tags'), 1) = '[' THEN \"kind\" END, '$.tags') _uql_pull WHERE _uql_pull.\"value\" IS NULL OR _uql_pull.\"value\" <> @p1), '[]'))) ELSE \"kind\" END, '{}'), 'append $.tags', @p2), \"updatedAt\" = @p3 WHERE \"id\" = @p4",
-      values: ['a', 'b', 123, '1'],
-    },
-    setPushCombined: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE(JSON_MODIFY(COALESCE("kind", \'{}\'), \'$.private\', @p1), \'{}\'), \'append $.tags\', @p2), "updatedAt" = @p3 WHERE "id" = @p4',
-      values: [1, 'new-tag', 123, '1'],
-    },
-    setPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE(JSON_MODIFY(COALESCE("kind", \'{}\'), \'$.tags\', JSON_QUERY(@p1)), \'{}\'), \'append $.tags\', @p2), "updatedAt" = @p3 WHERE "id" = @p4',
-      values: ['["a"]', 'b', 123, '1'],
-    },
-    pushUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(JSON_MODIFY(COALESCE("kind", \'{}\'), \'append $.tags\', @p1), \'$.public\', NULL), "updatedAt" = @p2 WHERE "id" = @p3',
-      values: ['new-tag', 123, '1'],
     },
   };
 

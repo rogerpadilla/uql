@@ -698,7 +698,7 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Company, { 'kind.$where': 'x' })).toThrow(UqlUsageError);
     // @ts-expect-error: no such key in the document
     expect(() => this.dialect.where(Company, { 'kind.': 'x' })).toThrow(UqlUsageError);
-    expect(() => this.dialect.getUpdateFilter({ kind: { $set: { 'a.b': 1 } } })).toThrow(UqlUsageError);
+    expect(() => this.dialect.getUpdateFilter({ kind: { $set: { 'a.$x': 1 } } })).toThrow(UqlUsageError);
     expect(() => this.dialect.getUpdateFilter({ kind: { $unset: ['$x'] } })).toThrow(UqlUsageError);
   }
 
@@ -1826,60 +1826,80 @@ class MongoDialectSpec implements Spec {
   shouldReturnUndefinedForUndefinedSort() {
     expect(this.dialect.extractVectorSort(undefined)).toBeUndefined();
   }
-  shouldMapJsonOperatorsToNativeOperators() {
+  /** Every update is one pipeline, so a `null` or missing document or array counts as empty, as on SQL. */
+  shouldWriteEveryUpdateAsAPipeline() {
+    const tags = { $ifNull: ['$kind.tags', []] };
+    const labels = { $ifNull: ['$kind.labels', []] };
+    const label = { $literal: 'y' };
+    const children = {
+      private: { $literal: 1 },
+      theme: {
+        $mergeObjects: [
+          { $cond: [{ $eq: [{ $type: '$kind.theme' }, 'object'] }, '$kind.theme', {}] },
+          { color: { $literal: 'x' } },
+        ],
+      },
+      tags: { $cond: [{ $isArray: tags }, { $concatArrays: [tags, [{ $literal: 'x' }]] }, '$kind.tags'] },
+      labels: {
+        $cond: [
+          { $isArray: labels },
+          { $concatArrays: [labels, { $cond: [{ $in: [label, labels] }, [], [label]] }] },
+          '$kind.labels',
+        ],
+      },
+    };
     expect(
       this.dialect.getUpdateFilter({
         name: 'plain',
-        kind: { $set: { private: 1 }, $unset: ['public'], $push: { tags: 'x' } },
+        kind: {
+          $set: { private: 1, 'theme.color': 'x' },
+          $unset: ['public'],
+          $push: { tags: 'x' },
+          $addToSet: { labels: 'y' },
+        },
       }),
-    ).toEqual({
-      $set: { name: 'plain', 'kind.private': 1 },
-      $push: { 'kind.tags': 'x' },
-      $unset: { 'kind.public': '' },
-    });
-  }
-
-  /** Disjoint paths stay on the cheaper single-document form. */
-  shouldKeepUpdateDocumentWhenPathsAreDisjoint() {
-    expect(this.dialect.getUpdateFilter({ kind: { $push: { tags: 'x' }, $unset: ['labels'] } })).toEqual({
-      $push: { 'kind.tags': 'x' },
-      $unset: { 'kind.labels': '' },
-    });
-  }
-
-  /** Native `$pull` fails on a value that is no array, which the pipeline puts back as it is. */
-  shouldUsePipelineForPull() {
-    expect(this.dialect.getUpdateFilter({ kind: { $pull: { labels: 'y' } } })).toEqual([
+    ).toEqual([
       {
         $set: {
-          'kind.labels': {
-            $cond: [
-              { $isArray: '$kind.labels' },
-              { $filter: { input: { $ifNull: ['$kind.labels', []] }, cond: { $ne: ['$$this', { $literal: 'y' }] } } },
-              '$kind.labels',
-            ],
+          name: { $literal: 'plain' },
+          kind: {
+            $cond: [{ $eq: [{ $type: '$kind' }, 'object'] }, { $mergeObjects: ['$kind', children] }, children],
           },
         },
       },
+      { $unset: ['kind.public'] },
     ]);
   }
 
-  /** `$pull` filters the stored array, then `$push` appends to that result. */
-  shouldUsePipelineForPullAndPushOnSamePath() {
-    expect(this.dialect.getUpdateFilter({ kind: { $pull: { tags: 'old' }, $push: { tags: 'new' } } })).toEqual([
+  /** An update only removing keys is the `$unset` stage alone. */
+  shouldWriteAnUnsetAloneAsItsOwnStage() {
+    expect(this.dialect.getUpdateFilter({ kind: { $unset: ['public'] } })).toEqual([{ $unset: ['kind.public'] }]);
+  }
+
+  /** A dotted `$set` through `__proto__` or `constructor` writes a key of the document, never an object every other one inherits. */
+  shouldNotWriteThroughAnObjectPrototype() {
+    const pipeline = this.dialect.getUpdateFilter({
+      data: { $set: { '__proto__.isAdmin': true, 'constructor.prototype.x': 1 } },
+    });
+    expect(Object.hasOwn(Object.prototype, 'isAdmin')).toBe(false);
+    expect(Object.hasOwn(Object.prototype, 'x')).toBe(false);
+    expect(JSON.stringify(pipeline)).toContain('"isAdmin"');
+  }
+
+  /** Native `$pull` fails on a value that is no array, which the pipeline puts back as it is. */
+  /** A `$pull` alone reads the column as stored, so a NULL document stays NULL rather than becoming `{}`. */
+  shouldUsePipelineForPull() {
+    const labels = {
+      $cond: [
+        { $isArray: '$kind.labels' },
+        { $filter: { input: '$kind.labels', cond: { $ne: ['$$this', { $literal: 'y' }] } } },
+        '$kind.labels',
+      ],
+    };
+    expect(this.dialect.getUpdateFilter({ kind: { $pull: { labels: 'y' } } })).toEqual([
       {
         $set: {
-          'kind.tags': {
-            $concatArrays: [
-              {
-                $filter: {
-                  input: { $ifNull: ['$kind.tags', []] },
-                  cond: { $ne: ['$$this', { $literal: 'old' }] },
-                },
-              },
-              [{ $literal: 'new' }],
-            ],
-          },
+          kind: { $cond: [{ $eq: [{ $type: '$kind' }, 'object'] }, { $mergeObjects: ['$kind', { labels }] }, '$kind'] },
         },
       },
     ]);
@@ -1956,17 +1976,6 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
-  /** `$set` replaces the array outright, so the `$push` appends to the set value, not the stored one. */
-  shouldUsePipelineForSetAndPushOnSamePath() {
-    expect(this.dialect.getUpdateFilter({ kind: { $set: { tags: ['kept'] }, $push: { tags: 'appended' } } })).toEqual([
-      {
-        $set: {
-          'kind.tags': { $concatArrays: [{ $literal: ['kept'] }, [{ $literal: 'appended' }]] },
-        },
-      },
-    ]);
-  }
-
   /**
    * A document has one `_id`, and a compound key under it is a sub-document whose field order decides
    * equality - a different document shape rather than a translation. Refused on both sides, or a write
@@ -2021,14 +2030,6 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.aggregationPipeline(Attendance, { $where: { enrolment: { studentId: 1 } } })).toThrow(
       /composite primary key \(studentId, courseId\), which MongoDB does not support/,
     );
-  }
-
-  /** `$unset` is a later stage than `$set`, so it wins on a shared path - as it does in SQL. */
-  shouldUsePipelineForSetAndUnsetOnSamePath() {
-    expect(this.dialect.getUpdateFilter({ kind: { $set: { public: 1 }, $unset: ['public'] } })).toEqual([
-      { $set: { 'kind.public': { $literal: 1 } } },
-      { $unset: ['kind.public'] },
-    ]);
   }
 
   /**

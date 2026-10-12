@@ -1,4 +1,4 @@
-import type { VectorDistance, VectorMetric } from '../type/index.js';
+import type { QueryContext, VectorDistance, VectorMetric } from '../type/index.js';
 import { TursoDialect } from './tursoDialect.js';
 
 /**
@@ -13,4 +13,12 @@ export class TursoLocalDialect extends TursoDialect {
   ]);
 
   override readonly maxFunctionArgs: number = Infinity;
+
+  /** The engine appends nothing for a JSON null at a bare array's `[#]`, and does under a key, so a null goes under one. */
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
+    if (value !== null) {
+      return super.jsonAppended(ctx, array, value);
+    }
+    return `JSON_SET(JSON_OBJECT('a', ${array}), '$.a[#]', ${this.jsonScalarParam(ctx, value)}) -> '$.a'`;
+  }
 }

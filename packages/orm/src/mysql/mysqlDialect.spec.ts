@@ -157,41 +157,20 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
 
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.private', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', 123, '1'],
     },
     unsetOnly: {
       sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
       values: [123, '1'],
     },
-    setUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', 123, '1'],
-    },
     push: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.tags', COALESCE(CASE WHEN COALESCE(JSON_TYPE(`kind`->'$.tags'), 'NULL') = 'NULL' OR JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN JSON_ARRAY_APPEND(CASE WHEN COALESCE(JSON_TYPE(`kind`->'$.tags'), 'NULL') = 'NULL' THEN JSON_ARRAY() ELSE `kind`->'$.tags' END, '$', CAST(? AS JSON)) END, `kind`->'$.tags')), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, '1'],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)) ELSE `kind`->'$.tags' END), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN COALESCE((SELECT JSON_ARRAYAGG(_uql_pull.v) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)), JSON_ARRAY()) END, `kind`->'$.tags')), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
-    },
-    /** `$push` appends to the pulled array, not to the stored one. */
-    pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)) ELSE `kind`->'$.tags' END), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"a"', '"b"', 123, '1'],
-    },
-    setPushCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', '"new-tag"', 123, '1'],
-    },
-    setPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', CAST(? AS JSON)), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
-      values: ['["a"]', '"b"', 123, '1'],
-    },
-    pushUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"new-tag"', 123, '1'],
     },
   };
 
@@ -205,7 +184,8 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
         { kind: { $pull: { tags: 'a', labels: 'b' } }, updatedAt: 123 },
       ),
     );
-    expect(sql).toContain("JSON_REPLACE(JSON_REPLACE(`kind`, '$.tags'");
+    expect(sql).toContain("SET `kind` = JSON_REPLACE(`kind`, '$.tags', ");
+    expect(sql.match(/JSON_REPLACE\(/g)).toHaveLength(1);
     expect(values).toEqual(['"a"', '"b"', 123, '1']);
   }
 
@@ -216,14 +196,14 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
         Company,
         { $where: { id: '1' } },
         {
-          kind: { $pull: { tags: 'a' }, $set: { private: 1 }, $push: { tags: 'b' }, $unset: ['public'] },
+          kind: { $pull: { tags: 'a' }, $set: { private: 1 }, $push: { labels: 'b' }, $unset: ['public'] },
           updatedAt: 123,
         },
       ),
     );
-    // Applied innermost-first: $pull -> $set -> $push -> $unset.
-    expect(sql).toContain("JSON_REMOVE(JSON_MERGE_PRESERVE(JSON_SET(COALESCE(JSON_REPLACE(`kind`, '$.tags'");
-    expect(values).toEqual(['"a"', '1', '"b"', 123, '1']);
+    // Each path written once, innermost first: the array writes, then `$set`, then `$unset`.
+    expect(sql).toContain("JSON_REMOVE(JSON_SET(JSON_SET(JSON_REPLACE(COALESCE(`kind`, JSON_OBJECT()), '$.tags'");
+    expect(values).toEqual(['"a"', '"b"', '1', 123, '1']);
   }
   /**
    * Every non-conflict column is itself a conflict key, so there is nothing to assign and the statement

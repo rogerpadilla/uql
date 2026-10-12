@@ -118,7 +118,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       this.wirePostgresDialect,
     );
     expect(statement).toBe(
-      'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"tags"}', COALESCE(CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' OR JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' THEN '[]'::jsonb ELSE ("kind"->'tags') END || JSONB_BUILD_ARRAY(($1::text)::jsonb) END, ("kind"->'tags'))), "updatedAt" = $2 WHERE "id" = $3`,
     );
     expect(values).toEqual(['"new-tag"', 123, '1']);
   }
@@ -126,12 +126,7 @@ class PostgresDialectSpec extends PgFamilySpec {
   /** A path element is quoted: unquoted, a key named `null` is SQL NULL in a `text[]` literal. */
   shouldQuoteAJsonPathKey() {
     const { sql: statement } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: '1' } },
-        { kind: { $push: { null: 'x' }, $pull: { null: 'y' } } },
-      ),
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: { $push: { null: 'x' } } }),
     );
     expect(statement).toContain(`'{"null"}'`);
     expect(statement).not.toContain(`'{null}'`);

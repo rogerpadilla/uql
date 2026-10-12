@@ -37,7 +37,7 @@ describe('jsonPath', () => {
   });
 
   it('should append an accessor suffix', () => {
-    expect(jsonPath('tags', '[#]')).toBe("'$.tags[#]'");
+    expect(jsonPath('tags', '[*]')).toBe("'$.tags[*]'");
   });
 });
 
@@ -56,12 +56,6 @@ describe('jsonSetCall', () => {
 
     expect(sql).toBe("JSON_SET(`kind`, '$.public', ?, '$.private', ?)");
     expect(bound).toEqual([1, 2]);
-  });
-
-  it('should append the path suffix to every key', () => {
-    const sql = jsonSetCall(() => '?', '`kind`', { tags: 'a' }, Infinity, '[#]');
-
-    expect(sql).toBe("JSON_SET(`kind`, '$.tags[#]', ?)");
   });
 
   /** Past the cap each call assigns what fits onto the one inside it, a key and its value in the same call. */

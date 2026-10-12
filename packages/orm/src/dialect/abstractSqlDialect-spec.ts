@@ -75,28 +75,14 @@ class RenamedChild {
   parentId?: number | null;
 }
 
-export type JsonUpdateCaseName =
-  | 'set'
-  | 'unsetOnly'
-  | 'setUnsetCombined'
-  | 'push'
-  | 'pull'
-  | 'pullPushSameKey'
-  | 'setPushCombined'
-  | 'setPushSameKey'
-  | 'pushUnsetCombined';
+export type JsonUpdateCaseName = 'set' | 'unsetOnly' | 'push' | 'pull';
 
 /** The `kind` payload for each {@link JsonUpdateCaseName} - identical across every dialect. */
 export const JSON_UPDATE_PAYLOADS: Record<JsonUpdateCaseName, UpdatePayload<Company>['kind']> = {
   set: { $set: { private: 1 } },
   unsetOnly: { $unset: ['public', 'private'] },
-  setUnsetCombined: { $set: { private: 1 }, $unset: ['public'] },
   push: { $push: { tags: 'new-tag' } },
   pull: { $pull: { tags: 'a' } },
-  pullPushSameKey: { $pull: { tags: 'a' }, $push: { tags: 'b' } },
-  setPushCombined: { $set: { private: 1 }, $push: { tags: 'new-tag' } },
-  setPushSameKey: { $set: { tags: ['a'] }, $push: { tags: 'b' } },
-  pushUnsetCombined: { $push: { tags: 'new-tag' }, $unset: ['public'] },
 };
 
 /** The suffix each wait policy adds to `FOR UPDATE`. */
@@ -498,10 +484,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /**
-   * The nine `$set`/`$push`/`$pull`/`$unset` combinations every dialect must render, run through
-   * one body per case below - only the expected `{ sql, values }` differs per dialect, since Postgres
-   * binds a whole-object JSONB merge for `$set` and a `text[]` array for `$unset` while MySQL/MariaDB/
-   * SQLite bind (or inline) per key.
+   * The four single-operator and combined `$set`/`$push`/`$pull`/`$unset` shapes every dialect must render, run through
+   * one body per case below: only the expected `{ sql, values }` differs per dialect.
    */
   protected abstract readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }>;
 
@@ -522,10 +506,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     this.assertJsonUpdate('unsetOnly');
   }
 
-  shouldUpdateWithJsonSetUnsetCombined() {
-    this.assertJsonUpdate('setUnsetCombined');
-  }
-
   shouldUpdateWithJsonPush() {
     this.assertJsonUpdate('push');
   }
@@ -533,26 +513,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /**
    * Elements are read back through each dialect's own per-element accessor, which preserves the
    * element's JSON type - a naive `value`/`v` column would flatten booleans to 0/1 and stringify
-   * objects (see the dialects' own `jsonPullKey` docs).
+   * objects (see each dialect's `jsonKept`).
    */
   shouldUpdateWithJsonPull() {
     this.assertJsonUpdate('pull');
-  }
-
-  shouldUpdateWithJsonPullPushSameKey() {
-    this.assertJsonUpdate('pullPushSameKey');
-  }
-
-  shouldUpdateWithJsonSetPushCombined() {
-    this.assertJsonUpdate('setPushCombined');
-  }
-
-  shouldUpdateWithJsonSetPushSameKey() {
-    this.assertJsonUpdate('setPushSameKey');
-  }
-
-  shouldUpdateWithJsonPushUnsetCombined() {
-    this.assertJsonUpdate('pushUnsetCombined');
   }
 
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {

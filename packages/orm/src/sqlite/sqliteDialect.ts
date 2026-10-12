@@ -10,8 +10,8 @@ import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import {
   chainedCall,
   groupsPerCall,
-  jsonSetCall,
   type JsonAccessMode,
+  type JsonContainer,
   jsonPath,
   jsonArraySlotArgs,
   type JsonSlot,
@@ -245,16 +245,20 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   protected override jsonLength(slot: JsonSlot): string {
-    return `JSON_ARRAY_LENGTH(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))})`;
+    return `JSON_ARRAY_LENGTH(${jsonArraySlotArgs(slot, this.jsonIs(slot, 'array'))})`;
   }
 
   /** `JSON_EACH` walks the array at the path itself, each element's `fullkey` naming it from the column. */
   protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
-    return `JSON_EACH(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}) ${alias}`;
+    return `JSON_EACH(${jsonArraySlotArgs(slot, this.jsonIs(slot, 'array'))}) ${alias}`;
   }
 
-  protected override jsonIsArray(slot: JsonSlot): string {
-    return `JSON_TYPE(${jsonSlotArgs(slot)}) = 'array'`;
+  protected override jsonIs(slot: JsonSlot, kind: JsonContainer): string {
+    return `JSON_TYPE(${jsonSlotArgs(slot)}) = '${kind}'`;
+  }
+
+  protected override jsonIsNull(slot: JsonSlot): string {
+    return `COALESCE(JSON_TYPE(${jsonSlotArgs(slot)}), 'null') = 'null'`;
   }
 
   /** An object element's `value` is its JSON text, which its fields are paths into. */
@@ -297,8 +301,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON_GROUP_ARRAY(JSON(${elem}))`;
   }
 
-  /** `[#]` appends, creating the array where it is absent. */
-  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return jsonSetCall((value) => this.jsonScalarParam(ctx, value), expr, push, this.maxFunctionArgs, '[#]');
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
+    return `JSON_INSERT(${array}, '$[#]', ${this.jsonScalarParam(ctx, value)})`;
   }
 }

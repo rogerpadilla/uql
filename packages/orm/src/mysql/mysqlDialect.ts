@@ -24,7 +24,7 @@ export class MySqlDialect extends MysqlLikeSqlDialect {
    */
   protected override jsonAny(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
     const overlaps = `JSON_OVERLAPS(${this.jsonValue(slot)}, ${this.addValue(ctx, JSON.stringify(values))})`;
-    return `(${this.jsonIsArray(slot)} AND ${overlaps})`;
+    return `(${this.jsonIs(slot, 'array')} AND ${overlaps})`;
   }
 
   /**

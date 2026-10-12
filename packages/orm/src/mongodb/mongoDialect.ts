@@ -1,4 +1,4 @@
-import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
+import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import {
   AGGREGATE_VALUE_ALIAS,
@@ -78,12 +78,15 @@ import {
   definedEntries,
   getKeys,
   holdsForeignKey,
-  jsonKey,
   jsonPathKeys,
   getRelationRequestSummary,
   hasKeys,
   isFieldUpdateOp,
   isJsonObject,
+  foldJsonUpdate,
+  type JsonArrayWrites,
+  type JsonWrites,
+  writesKeys,
   isJsonUpdateOp,
   isOperatorMap,
   isOperatorObject,
@@ -149,15 +152,63 @@ type RelationLookups = {
 /** A scalar field's operator as the aggregation operator computing it. */
 const MONGO_ARITHMETIC = { $inc: '$add', $mul: '$multiply' } as const satisfies Record<keyof FieldUpdateOp, string>;
 
-/** An update's operators, grouped by kind and keyed by dotted path. */
-type UpdateGroups = {
-  readonly set: Document;
-  readonly push: Document;
-  readonly pull: Document;
-  /** Each scalar field's operator as the pipeline expression computing it, a `null` or missing value read as 0. */
-  readonly arithmetic: Document;
-  readonly unset: ReadonlySet<string>;
-};
+/**
+ * One array key's writes at `path`, as SQL writes them: the pull, then each append onto `[]` in place of a
+ * missing or null array, a `unique` one only where the array lacks its item; a value that is no array stays.
+ */
+function arrayWrite(path: string, { pull, appends }: JsonArrayWrites): Document {
+  const stored = `$${path}`;
+  const kept = (array: Document | string) =>
+    pull ? { $filter: { input: array, cond: { $ne: ['$$this', { $literal: pull.item }] } } } : array;
+  if (appends.length === 0) {
+    return { $cond: [{ $isArray: stored }, kept(stored), stored] };
+  }
+  const array = { $ifNull: [stored, []] };
+  const addends = appends.map(({ item, unique }) => {
+    const literal = [{ $literal: item }];
+    return unique ? { $cond: [{ $in: [{ $literal: item }, array] }, [], literal] } : literal;
+  });
+  return { $cond: [{ $isArray: array }, { $concatArrays: [kept(array), ...addends] }, stored] };
+}
+
+/** The value at `path`: a `$literal` one as it is, or the object of its nested children, merged in. */
+function assignedAt(path: string, node: Document): Document {
+  return '$literal' in node ? node : mergedObject(path, node);
+}
+
+/** The object at `path` with `children` merged in: as SQL, a stored value that is no object counts as `{}`. */
+function mergedObject(path: string, children: Document): Document {
+  return {
+    $mergeObjects: [
+      { $cond: [{ $eq: [{ $type: `$${path}` }, 'object'] }, `$${path}`, {}] },
+      Object.fromEntries(Object.entries(children).map(([key, child]) => [key, assignedAt(`${path}.${key}`, child)])),
+    ],
+  };
+}
+
+/**
+ * A JSON column's one assignment: each path's write merged into its object, the nested `$set` paths under one
+ * key merged into that key's. A column that is no object becomes one where a key is written, and else stays.
+ */
+function jsonAssignments(column: string, writes: JsonWrites): Document {
+  // Prototype-free, so a key such as `__proto__` is a key of the document and not an object's prototype.
+  const nested: Document = Object.create(null);
+  for (const [key, item] of Object.entries(writes.set)) {
+    const keys = jsonPathKeys(key);
+    const parent = keys.slice(0, -1).reduce<Document>((node, part) => (node[part] ??= Object.create(null)), nested);
+    parent[keys[keys.length - 1]] = { $literal: item };
+  }
+  const children = Object.fromEntries([
+    ...Object.entries(nested).map(([key, node]) => [key, assignedAt(`${column}.${key}`, node)]),
+    ...Object.entries(writes.arrays).map(([key, write]) => [key, arrayWrite(`${column}.${key}`, write)]),
+  ]);
+  if (!hasKeys(children)) {
+    return {};
+  }
+  const isObject = { $eq: [{ $type: `$${column}` }, 'object'] };
+  const otherwise = writesKeys(writes) ? children : `$${column}`;
+  return { [column]: { $cond: [isObject, { $mergeObjects: [`$${column}`, children] }, otherwise] } };
+}
 
 /** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {
@@ -1343,91 +1394,27 @@ export class MongoDialect extends AbstractDialect {
     return this.getPersistables(meta, payload, callbackKey)[0];
   }
 
-  /** One MongoDB update document's operators, grouped by kind and keyed by dotted path. */
-  private groupUpdateOperators<E extends Document>(persistable: Partial<E>): UpdateGroups {
-    const set: Document = {};
-    const push: Document = {};
-    const pull: Document = {};
-    const arithmetic: Document = {};
-    const unset = new Set<string>();
+  /**
+   * A payload as one update pipeline, so every engine's answer holds: a `null` or missing document or array
+   * counts as empty, and values go in as `$literal`, so `$x` stays data.
+   */
+  public getUpdateFilter<E extends Document>(persistable: Partial<E>): Document[] {
+    const assignments: Document = {};
+    const unset: string[] = [];
     for (const [key, value] of Object.entries(persistable)) {
       if (isFieldUpdateOp(value)) {
         const [op, operand] = fieldUpdateOf(key, value);
         assertNoRaw(operand, 'a write');
-        arithmetic[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
-        continue;
-      }
-      if (!isJsonUpdateOp(value)) {
-        set[key] = value;
-        continue;
-      }
-      [...getKeys(value.$set), ...getKeys(value.$push), ...getKeys(value.$pull), ...(value.$unset ?? [])].forEach(
-        jsonKey,
-      );
-      for (const [path, v] of Object.entries(value.$set ?? {})) {
-        set[`${key}.${path}`] = v;
-      }
-      for (const path of value.$unset ?? []) {
-        unset.add(`${key}.${path}`);
-      }
-      for (const [path, v] of Object.entries(value.$push ?? {})) {
-        push[`${key}.${path}`] = v;
-      }
-      for (const [path, v] of Object.entries(value.$pull ?? {})) {
-        pull[`${key}.${path}`] = v;
+        assignments[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
+      } else if (isJsonUpdateOp(value)) {
+        const writes = foldJsonUpdate(value);
+        Object.assign(assignments, jsonAssignments(key, writes));
+        unset.push(...writes.unset.map((path) => `${key}.${path}`));
+      } else {
+        assignments[key] = { $literal: value };
       }
     }
-    return { set, push, pull, arithmetic, unset };
-  }
-
-  /**
-   * Turn a persistable payload into a MongoDB update, mapping UQL's JSON operators onto their native
-   * equivalents: `$set` becomes dotted-path assignments, `$unset`/`$push`/`$pull` map one-to-one.
-   * Plain field values are assigned with `$set`.
-   */
-  public getUpdateFilter<E extends Document>(persistable: Partial<E>): UpdateFilter<E> | Document[] {
-    const groups = this.groupUpdateOperators(persistable);
-    const { set, push, pull, arithmetic, unset } = groups;
-    const exprKeys = [...Object.keys(pull), ...Object.keys(set), ...Object.keys(push)];
-
-    // Native `$pull` fails on a value that is no array, native `$inc`/`$mul` on a `null`, and MongoDB
-    // rejects two operators targeting one path in a single update document: each forces the pipeline form.
-    const allPaths = [...exprKeys, ...unset];
-    if (hasKeys(pull) || hasKeys(arithmetic) || new Set(allPaths).size < allPaths.length) {
-      return this.getUpdatePipeline(groups, new Set(exprKeys));
-    }
-    return {
-      ...(hasKeys(set) && { $set: set }),
-      ...(hasKeys(push) && { $push: push }),
-      ...(unset.size > 0 && { $unset: Object.fromEntries([...unset].map((path) => [path, ''])) }),
-    } as UpdateFilter<E>;
-  }
-
-  /**
-   * An update as one pipeline, since MongoDB refuses two operators on one path: each path composed as
-   * `$pull`, `$set`, `$push`, then `$unset`, as SQL does, with values as `$literal` so `$x` stays data.
-   */
-  private getUpdatePipeline(
-    { set, push, pull, arithmetic, unset }: UpdateGroups,
-    exprPaths: ReadonlySet<string>,
-  ): Document[] {
-    const assignments: Document = { ...arithmetic };
-    for (const path of exprPaths) {
-      let expr: Document = { $ifNull: [`$${path}`, []] };
-      if (path in pull) {
-        expr = { $filter: { input: expr, cond: { $ne: ['$$this', { $literal: pull[path] }] } } };
-      }
-      if (path in set) {
-        expr = { $literal: set[path] };
-      }
-      if (path in push) {
-        expr = { $concatArrays: [expr, [{ $literal: push[path] }]] };
-      }
-      // Only `$set` and `$push` create a key. A `$pull` alone leaves any value that is no array as it is,
-      // and an absent one absent, since a pipeline `$set` of a missing field adds none.
-      assignments[path] = path in set || path in push ? expr : { $cond: [{ $isArray: `$${path}` }, expr, `$${path}`] };
-    }
-    return [{ $set: assignments }, ...(unset.size > 0 ? [{ $unset: [...unset] }] : [])];
+    return [...(hasKeys(assignments) ? [{ $set: assignments }] : []), ...(unset.length > 0 ? [{ $unset: unset }] : [])];
   }
 
   /** Refuses a key left to MongoDB that it cannot mint: only an `ObjectId`, read back as a string, so not a `Number`. */

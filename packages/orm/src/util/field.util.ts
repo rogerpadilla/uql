@@ -170,3 +170,9 @@ export function jsonKey(key: string): string {
 export function jsonPathKeys(path: string): string[] {
   return path.split('.').map(jsonKey);
 }
+
+/** The paths a dotted JSON path passes through, outermost first, not counting the path itself. */
+export function ancestorPaths(path: string): string[] {
+  const keys = jsonPathKeys(path);
+  return keys.slice(0, -1).map((_, depth) => keys.slice(0, depth + 1).join('.'));
+}

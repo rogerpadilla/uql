@@ -210,7 +210,7 @@ describe('SQL generation - JSON path keys', () => {
       expect(() => dialect.find(dialect.createContext(), Company, { $sort })).toThrow(UqlUsageError);
     });
 
-    it.each(['$set', '$push', '$pull'])('should refuse an unsafe key in %s', (op) => {
+    it.each(['$set', '$push', '$pull', '$addToSet'])('should refuse an unsafe key in %s', (op) => {
       const kind: Record<string, unknown> = { [op]: { "x\\'": 1 } };
       expect(() =>
         // @ts-expect-error a key the document type does not declare
@@ -219,12 +219,23 @@ describe('SQL generation - JSON path keys', () => {
     });
 
     it('should refuse an unsafe key in $unset', () => {
-      const kind: Record<string, unknown> = { $unset: ['a.b'] };
+      const kind: Record<string, unknown> = { $unset: ["a.x\\'"] };
       expect(() =>
         // @ts-expect-error a key the document type does not declare
         dialect.update(dialect.createContext(), Company, { $where: { id: 1 } }, { kind }),
       ).toThrow(UqlUsageError);
     });
+
+    it.each([{ a: 1 }, null, 10n, Number.NaN, Number.POSITIVE_INFINITY])(
+      'should refuse an $addToSet element JSON holds no scalar for: %s',
+      (item) => {
+        const kind: Record<string, unknown> = { $addToSet: { tags: item } };
+        expect(() =>
+          // @ts-expect-error an element the document type does not declare
+          dialect.update(dialect.createContext(), Company, { $where: { id: 1 } }, { kind }),
+        ).toThrow("$addToSet on 'tags' takes a string, a finite number or a boolean");
+      },
+    );
 
     it('should take an identifier key of any script', () => {
       const ctx = dialect.createContext();
