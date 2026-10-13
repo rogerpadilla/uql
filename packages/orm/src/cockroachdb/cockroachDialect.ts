@@ -4,7 +4,7 @@ import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
 import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
 
-/** CockroachDB: the Postgres wire and SQL, without `xmax` (so no upsert `created`) and with native vectors. */
+/** CockroachDB: the Postgres wire and SQL, with native vectors. */
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
