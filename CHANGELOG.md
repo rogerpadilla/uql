@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.2] - 2026-10-12
+
+- **Feat:** a JSON array column, `Json<T[]>` or `Json<T>[]`, takes `$pull`, `$push` and `$addToSet`, each a list of elements: `{ tags: { $addToSet: ['news'] } }`.
+- **Fixed:** on MongoDB, a populated relation whose reference is stored under the relation's name (`@Field({ name: 'author' }) authorId`, as Mongoose stores a `ref`) came back in place of the reference.
+- **Fixed:** on SQL Server, a JSON array filter or update failed on a column holding a bare string or number and missed an array stored after whitespace; `$pull` of `'1'` also removed `1`, and of an object or array removed nothing.
+- **Fixed:** on embedded Turso, `$push` and `$addToSet` of `true` or `false` appended nothing.
+
 ## [0.102.1] - 2026-10-12
 
 - **Fixed:** a JSON `null` in `$pull`, `$push` or `$set` now works as on MongoDB on every engine. Before, `$pull: { tags: null }` emptied the array on Postgres and CockroachDB.

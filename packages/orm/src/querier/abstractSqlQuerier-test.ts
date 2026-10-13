@@ -17,6 +17,7 @@ import {
   Skill,
   InventoryAdjustment,
   Invoice,
+  JsonRecord,
   InvoiceLine,
   ItemAdjustment,
   LedgerAccount,
@@ -115,6 +116,18 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
     expect(found?.kind).toEqual({ theme: { color: 'blue', size: 2 } });
+  }
+
+  /** A JSON array another writer stored with whitespace around it is still an array to every operator. */
+  async shouldUpdateAJsonArrayStoredWithWhitespace() {
+    await this.querier.insertOne(JsonRecord, { id: 1, entries: [] });
+    await this.querier.updateOneById(JsonRecord, 1, { entries: sql.text(`'\n\t ["a"] '`) });
+
+    await this.querier.updateOneById(JsonRecord, 1, { entries: { $push: ['b'] } });
+
+    expect(await this.querier.findMany(JsonRecord, { $where: { entries: { $size: 2 } } })).toEqual([
+      { id: 1, entries: ['a', 'b'] },
+    ]);
   }
 
   /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */

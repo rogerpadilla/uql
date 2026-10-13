@@ -40,7 +40,7 @@ export const JSON_ELEM_ALIAS = `${OWNED_PREFIX}_elem`;
 /** The alias a `$pull` reads its surviving elements through, kept distinct from {@link JSON_ELEM_ALIAS}. */
 export const JSON_PULL_ALIAS = `${OWNED_PREFIX}_pull`;
 
-/** The key a SQL Server JSON write aims at where it writes nothing, there being none by that name. */
+/** The key a JSON write aims at where it writes nothing, there being none by that name, nor any key in an array. */
 export const JSON_SKIP_KEY = `${OWNED_PREFIX}_skip`;
 
 /** What a savepoint the querier names is called, its depth appended. */
@@ -66,6 +66,9 @@ export function nullsSortField(path: string): string {
 
 /** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */
 export const REL_TEMP_PREFIX = `${OWNED_PREFIX}_rel_`;
+
+/** Prefix for the field a MongoDB lookup puts a relation's rows on where a stored field has the relation's name. */
+export const REL_FIELD_PREFIX = `${OWNED_PREFIX}_joined_`;
 
 /** The field a ManyToMany lookup nests its target match under, inside the junction's own pipeline. */
 export const REL_NESTED_KEY = `${OWNED_PREFIX}_target`;

@@ -12,6 +12,9 @@ export type MongoId = {
  */
 export type Scalar = string | number | boolean | bigint | Date | RegExp | Uint8Array | MongoId;
 
+/** A value a JSON document holds whole and every engine compares by equality, as `$addToSet` needs. */
+export type JsonScalar = string | number | boolean;
+
 /**
  * Scalar types with a meaningful ordering, accepted by `$lt`/`$lte`/`$gt`/`$gte`/`$between`.
  */

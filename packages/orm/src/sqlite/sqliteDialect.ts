@@ -13,6 +13,7 @@ import {
   type JsonAccessMode,
   type JsonContainer,
   jsonPath,
+  skippablePath,
   jsonArraySlotArgs,
   type JsonSlot,
   jsonSlotArgs,
@@ -301,7 +302,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON_GROUP_ARRAY(JSON(${elem}))`;
   }
 
-  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
-    return `JSON_INSERT(${array}, '$[#]', ${this.jsonScalarParam(ctx, value)})`;
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown, unless?: string): string {
+    return `JSON_INSERT(${array}, ${skippablePath(`'$[#]'`, unless)}, ${this.jsonScalarParam(ctx, value)})`;
   }
 }

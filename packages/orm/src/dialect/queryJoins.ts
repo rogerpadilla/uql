@@ -32,7 +32,7 @@ import { UqlUsageError } from '../util/uqlError.js';
  * `$sort` needs - which joins the same way, filters included, but adds nothing to the result.
  */
 export type QueryJoin = {
-  /** The relation key on its parent, which is how MongoDB names the field a `$lookup` adds. */
+  /** The relation key on its parent. */
   readonly key: string;
   /** Dotted path from the queried entity, which is what a joined row's columns answer under. */
   readonly path: string;

@@ -540,9 +540,8 @@ export class NarrowVectorItem {
 }
 
 /**
- * A JSON array column, dedicated to the dialect specs for the JSON array operators
- * (`$all`/`$size`/`$elemMatch`). The `unknown[]` element type keeps keys and values unchecked so
- * the specs can exercise arbitrary shapes against the generated SQL.
+ * A JSON array column, for the JSON array operators in a filter and an update. The `unknown[]` element
+ * type keeps values unchecked, so a test can store any shape.
  */
 @Entity()
 export class JsonRecord {
@@ -566,6 +565,23 @@ export class JsonValue {
   @Field({ references: () => JsonHolder }) holderId?: string | null;
   @ManyToOne({ entity: () => JsonHolder, references: (jsonValue) => jsonValue.holderId }) holder?: JsonHolder;
   @Field({ type: 'json' }) value?: Json<string | number | boolean | { [key: string]: unknown } | unknown[]> | null;
+}
+
+/** An untyped JSON column, which holds any shape, as documents an older writer left do. */
+@Entity()
+export class LooseDoc {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'jsonb' }) doc?: Json | null;
+}
+
+/** A reference stored under its relation's name, as Mongoose stores a `ref`. */
+@Entity()
+export class Reply {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) text?: string | null;
+  @Field({ name: 'author', references: () => User }) authorId?: string | null;
+  @ManyToOne({ entity: () => User, references: (reply) => reply.authorId }) author?: User;
 }
 
 /** A to-one target several {@link Shipment}s may point at, written before the row holding its key. */

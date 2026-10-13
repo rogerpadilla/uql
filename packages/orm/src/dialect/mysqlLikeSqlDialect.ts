@@ -28,7 +28,7 @@ import {
 } from './abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
-import { type JsonContainer, jsonPath, type JsonSlot } from './jsonSql.js';
+import { type JsonContainer, jsonPath, type JsonSlot, unlessThen } from './jsonSql.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -308,8 +308,13 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `NOT (${field} <=> ${ph})`;
   }
 
-  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
-    return `JSON_ARRAY_APPEND(${array}, '$', ${this.jsonScalarParam(ctx, value)})`;
+  /** A guarded one merges an array of it or of nothing, since MariaDB answers `JSON_ARRAY_APPEND` at a skipping path with NULL. */
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown, unless?: string): string {
+    if (unless === undefined) {
+      return `JSON_ARRAY_APPEND(${array}, '$', ${this.jsonScalarParam(ctx, value)})`;
+    }
+    const added = unlessThen(unless, this.jsonEmptyArray, `JSON_ARRAY(${this.jsonScalarParam(ctx, value)})`);
+    return `JSON_MERGE_PRESERVE(${array}, ${added})`;
   }
 
   /**

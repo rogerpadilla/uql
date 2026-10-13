@@ -1,5 +1,5 @@
 import { type RelationRows, relationTermKey, type SelectTerm } from '../dialect/abstractSqlDialect.js';
-import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
+import { type JsonAccessMode, jsonPath, type JsonSlot } from '../dialect/jsonSql.js';
 import {
   MYSQL_FEATURES,
   MYSQL_ROW_LOCKS,
@@ -91,8 +91,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /** Text-backed JSON compares as text, so `JSON_EQUALS` compares it as JSON, key order aside. */
-  protected override jsonDiffers(elem: string, operand: string): string {
-    return `NOT JSON_EQUALS(${elem}, ${operand})`;
+  protected override jsonElemEquals(ctx: QueryContext, slot: JsonSlot, alias: string, value: unknown): string {
+    return `JSON_EQUALS(${this.jsonElemValue(slot, alias, 'json')}, ${this.jsonScalarParam(ctx, value)})`;
   }
 
   /** `VEC_DISTANCE_COSINE`/`VEC_DISTANCE_EUCLIDEAN`, 11.7+, which the index's `DISTANCE=` names alike. */

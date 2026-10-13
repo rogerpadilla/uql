@@ -13,7 +13,13 @@ class Writer {
 class Post {
   id!: number;
   title!: string;
-  kind?: Json<{ public?: 0 | 1; theme?: { color?: string }; labels?: string[]; items?: { id: string }[] }>;
+  kind?: Json<{
+    public?: 0 | 1;
+    theme?: { color?: string };
+    labels?: string[];
+    items?: { id: string }[];
+    misc?: unknown[];
+  }>;
   data?: Json;
   attachments?: Json<unknown[]>;
   items?: Json<{ id: string; count: number; tags: string[] }>[];
@@ -57,7 +63,7 @@ export async function jsonDotPathSafety() {
   // @ts-expect-error 'nope' is not a key of Post.items' element
   await querier.findMany(Post, { $where: { 'items.nope': 1 } });
 
-  // @ts-expect-error an array of Json takes no JSON update operators; replace the whole value
+  // @ts-expect-error an array of Json has no keys to $set
   await querier.updateOneById(Post, 1, { items: { $set: { id: 'a' } } });
 
   // Untyped array elements accept any keys, but $elemMatch still requires an object of conditions.
@@ -101,13 +107,24 @@ export async function jsonDotPathSafety() {
   await querier.updateOneById(Post, 1, { kind: { $addToSet: { public: 1 } } });
   // @ts-expect-error an element that is a document has no equality every engine shares
   await querier.updateOneById(Post, 1, { kind: { $addToSet: { items: { id: 'a' } } } });
+  // An untyped element takes any scalar, as on a JSON array column.
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { misc: 'x' } } });
+  // @ts-expect-error nor a document there
+  await querier.updateOneById(Post, 1, { kind: { $addToSet: { misc: { a: 1 } } } });
 
-  // A payload that is itself an array takes no operators - they all address object keys, and no
-  // dialect gives them a meaningful result on such a column. Replace the whole value instead.
+  // A payload that is itself an array takes `$push`, `$pull` and `$addToSet`, each a list of its elements.
   await querier.updateOneById(Post, 1, { attachments: ['a', 'b'] });
-  // @ts-expect-error $set on an array payload would concatenate on PostgreSQL and no-op elsewhere
+  await querier.updateOneById(Post, 1, { attachments: { $pull: ['a'], $push: [{ any: 1 }], $addToSet: ['b', 2] } });
+  await querier.updateOneById(Post, 1, { items: { $pull: [{ id: 'a', count: 1, tags: [] }] } });
+  // @ts-expect-error each operand is a list of elements, not one
+  await querier.updateOneById(Post, 1, { attachments: { $push: 'a' } });
+  // @ts-expect-error items holds documents, so a string is no element of it
+  await querier.updateOneById(Post, 1, { items: { $push: ['a'] } });
+  // @ts-expect-error an element that is a document has no equality every engine shares
+  await querier.updateOneById(Post, 1, { items: { $addToSet: [{ id: 'a', count: 1, tags: [] }] } });
+  // @ts-expect-error an array has no keys to $set
   await querier.updateOneById(Post, 1, { attachments: { $set: { 0: 'x' } } });
-  // @ts-expect-error $unset on an array payload would target array method names
+  // @ts-expect-error an array has no keys to $unset
   await querier.updateOneById(Post, 1, { attachments: { $unset: ['length'] } });
 
   // An untyped payload is not an array, so it keeps the full operator set.

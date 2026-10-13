@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
-import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
+import type { JsonArrayUpdateOp, QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
 import {
   applyFilters,
   isSelectList,
   fillOnFields,
   filterFieldKeys,
   findVectorIndex,
-  foldJsonUpdate,
+  foldJson,
   writesKeys,
   fulltextWeights,
   getFieldCallbackValue,
@@ -497,10 +497,45 @@ describe('fillOnFields', () => {
   });
 });
 
-describe('foldJsonUpdate', () => {
+describe('foldJson', () => {
+  it('pulls each element, then pushes each, then adds each once, unguarded where a pull removed it', () => {
+    expect(foldJson({ $pull: ['a', null], $push: ['b', 'b'], $addToSet: ['a', 'c', 'c', 'b'] })).toEqual({
+      array: {
+        pulls: ['a', null],
+        appends: [
+          { item: 'b', unique: false },
+          { item: 'b', unique: false },
+          { item: 'a', unique: false },
+          { item: 'c', unique: true },
+        ],
+      },
+    });
+  });
+
+  it('folds an update whose operands are maps of keys as an object update', () => {
+    expect(foldJson({ $pull: { tags: 'a' } })).toEqual({
+      object: { set: {}, arrays: { tags: { pulls: ['a'], appends: [] } }, unset: [] },
+    });
+  });
+
+  it('refuses a map of keys or a $set beside a list, and an $addToSet element that is no scalar', () => {
+    const message = 'a JSON array takes $pull, $push and $addToSet, each a list of elements';
+    const pullingKeys: JsonArrayUpdateOp = { $push: ['a'] };
+    const setting: JsonArrayUpdateOp = { $push: ['a'] };
+    const addingObjects: JsonArrayUpdateOp = {};
+    Reflect.set(pullingKeys, '$pull', { tags: 'a' });
+    Reflect.set(setting, '$set', { a: 1 });
+    Reflect.set(addingObjects, '$addToSet', [{ a: 1 }]);
+    expect(() => foldJson(pullingKeys)).toThrow(message);
+    expect(() => foldJson(setting)).toThrow(message);
+    expect(() => foldJson(addingObjects)).toThrow('$addToSet takes a string, a finite number or a boolean');
+  });
+});
+
+describe('foldJson of an object update', () => {
   it('names each path once, in operator order', () => {
     expect(
-      foldJsonUpdate({
+      foldJson({
         $pull: { tags: 'a', old: 1 },
         $set: { theme: { color: 'red' }, 'theme.size': 2, private: 1, old: [0], skipped: undefined },
         $push: { tags: 'b', old: 2 },
@@ -508,80 +543,81 @@ describe('foldJsonUpdate', () => {
         $unset: ['private', 'theme.color', 'gone'],
       }),
     ).toEqual({
-      set: { theme: { size: 2 }, old: [0, 2] },
-      arrays: {
-        tags: {
-          pull: { item: 'a' },
-          appends: [
-            { item: 'b', unique: false },
-            { item: 'a', unique: false },
-          ],
+      object: {
+        set: { theme: { size: 2 }, old: [0, 2] },
+        arrays: {
+          tags: {
+            pulls: ['a'],
+            appends: [
+              { item: 'b', unique: false },
+              { item: 'a', unique: false },
+            ],
+          },
+          labels: { pulls: [], appends: [{ item: 'x', unique: true }] },
         },
-        labels: { appends: [{ item: 'x', unique: true }] },
+        unset: ['private', 'gone'],
       },
-      unset: ['private', 'gone'],
     });
   });
 
   it('leaves a set value that is no array to an append, and makes an array of a null one', () => {
-    expect(
-      foldJsonUpdate({ $set: { a: 'x', b: null, c: ['y'] }, $push: { a: 1, b: 2 }, $addToSet: { c: 'y' } }),
-    ).toEqual({ set: { a: 'x', b: [2], c: ['y'] }, arrays: {}, unset: [] });
+    expect(foldJson({ $set: { a: 'x', b: null, c: ['y'] }, $push: { a: 1, b: 2 }, $addToSet: { c: 'y' } })).toEqual({
+      object: { set: { a: 'x', b: [2], c: ['y'] }, arrays: {}, unset: [] },
+    });
   });
 
   it('drops an append under a key a dotted set made an object, and an array write a set or unset replaces', () => {
-    expect(foldJsonUpdate({ $pull: { a: 1 }, $set: { 'b.c': 1 }, $push: { b: 2 }, $unset: ['a'] })).toEqual({
-      set: { 'b.c': 1 },
-      arrays: {},
-      unset: ['a'],
+    expect(foldJson({ $pull: { a: 1 }, $set: { 'b.c': 1 }, $push: { b: 2 }, $unset: ['a'] })).toEqual({
+      object: { set: { 'b.c': 1 }, arrays: {}, unset: ['a'] },
     });
   });
 
   it('writes no key with only a pull and an unset', () => {
-    expect(writesKeys(foldJsonUpdate({ $pull: { tags: 'a' }, $unset: ['old'] }))).toBe(false);
+    expect(writesKeys({ set: {}, arrays: { tags: { pulls: ['a'], appends: [] } }, unset: ['old'] })).toBe(false);
   });
 
   it('appends an item once, beside an earlier append of it', () => {
-    expect(foldJsonUpdate({ $push: { tags: 'x' }, $addToSet: { tags: 'x' } }).arrays).toEqual({
-      tags: { appends: [{ item: 'x', unique: false }] },
+    expect(foldJson({ $push: { tags: 'x' }, $addToSet: { tags: 'x' } })).toEqual({
+      object: { set: {}, arrays: { tags: { pulls: [], appends: [{ item: 'x', unique: false }] } }, unset: [] },
     });
   });
 
   it('writes and removes inside a value a $set wrote, deeply, making an object of one that is none', () => {
     expect(
-      foldJsonUpdate({
+      foldJson({
         $set: { a: 'x', 'a.b.c': 1, d: { e: { f: 1, g: 2 } }, 'd.e.h': 3, h: 'y', i: { j: 1 } },
         $unset: ['d.e.f', 'h.k', 'i.missing'],
-      }).set,
-    ).toEqual({ a: { b: { c: 1 } }, d: { e: { g: 2, h: 3 } }, h: 'y', i: { j: 1 } });
+      }),
+    ).toEqual({
+      object: { set: { a: { b: { c: 1 } }, d: { e: { g: 2, h: 3 } }, h: 'y', i: { j: 1 } }, arrays: {}, unset: [] },
+    });
   });
 
   it('writes a key named after an object member as a key, touching no prototype', () => {
-    const writes = foldJsonUpdate({ $set: { ['__proto__']: { a: 1 }, '__proto__.b': 2, 'constructor.c': 3 } });
+    const update = foldJson({ $set: { ['__proto__']: { a: 1 }, '__proto__.b': 2, 'constructor.c': 3 } });
     expect(Object.hasOwn(Object.prototype, 'b')).toBe(false);
     expect(Object.hasOwn(Object.prototype, 'c')).toBe(false);
-    expect(Object.entries(writes.set)).toEqual([
-      ['__proto__', { a: 1, b: 2 }],
-      ['constructor.c', 3],
-    ]);
+    expect(update).toEqual({
+      object: { set: { ['__proto__']: { a: 1, b: 2 }, 'constructor.c': 3 }, arrays: {}, unset: [] },
+    });
   });
 
   it('refuses another operator inside a value set by sql', () => {
-    expect(() => foldJsonUpdate({ $set: { tags: sql`'[]'` }, $push: { tags: 'x' } })).toThrow(
+    expect(() => foldJson({ $set: { tags: sql`'[]'` }, $push: { tags: 'x' } })).toThrow(
       "'tags' is set by sql, so no other operator can write inside it",
     );
-    expect(() => foldJsonUpdate({ $set: { theme: sql`'{}'`, 'theme.color': 'x' } })).toThrow(
+    expect(() => foldJson({ $set: { theme: sql`'{}'`, 'theme.color': 'x' } })).toThrow(
       "'theme' is set by sql, so no other operator can write inside it",
     );
-    expect(() => foldJsonUpdate({ $set: { theme: sql`'{}'` }, $unset: ['theme.color'] })).toThrow(
+    expect(() => foldJson({ $set: { theme: sql`'{}'` }, $unset: ['theme.color'] })).toThrow(
       "'theme' is set by sql, so no other operator can write inside it",
     );
   });
 
   it('refuses a path that is not one, and an $addToSet element JSON compares by more than value', () => {
-    expect(() => foldJsonUpdate({ $set: { 'a.$x': 1 } })).toThrow();
-    expect(() => foldJsonUpdate({ $push: { 'a.b': 1 } })).toThrow();
-    expect(() => foldJsonUpdate({ $addToSet: { tags: { id: 1 } } })).toThrow(
+    expect(() => foldJson({ $set: { 'a.$x': 1 } })).toThrow();
+    expect(() => foldJson({ $push: { 'a.b': 1 } })).toThrow();
+    expect(() => foldJson({ $addToSet: { tags: { id: 1 } } })).toThrow(
       "$addToSet on 'tags' takes a string, a finite number or a boolean",
     );
   });

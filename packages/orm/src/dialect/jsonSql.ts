@@ -2,6 +2,7 @@ import type { FieldOptions, FieldType } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
 import { columnFamily, jsonPathKeys } from '../util/field.util.js';
 import { isOperatorKey, someKey } from '../util/object.util.js';
+import { JSON_SKIP_KEY } from './aliases.js';
 
 /**
  * A `'$.a.b'` JSON path literal, and `'$'` for an empty path, the document itself. `suffix` appends an
@@ -10,6 +11,16 @@ import { isOperatorKey, someKey } from '../util/object.util.js';
 export function jsonPath(path: string, suffix = ''): string {
   const segments = path && `.${jsonPathKeys(path).join('.')}`;
   return `'$${segments}${suffix}'`;
+}
+
+/** `then`, or `skip` where the condition `unless` holds. */
+export function unlessThen(unless: string | undefined, skip: string, then: string): string {
+  return unless === undefined ? then : `CASE WHEN ${unless} THEN ${skip} ELSE ${then} END`;
+}
+
+/** `path`, or a key no document has, which a write leaves alone, where the condition `unless` holds. */
+export function skippablePath(path: string, unless: string | undefined): string {
+  return unlessThen(unless, jsonPath(JSON_SKIP_KEY), path);
 }
 
 /** A key a JSON update writes, and the value it writes there, NULL where the stored one stays. */

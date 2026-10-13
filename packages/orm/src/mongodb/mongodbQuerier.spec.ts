@@ -197,9 +197,9 @@ describe('MongodbQuerier vector search', () => {
     // `$addFields` rather than `$project`: projecting here would drop the join key and the joined doc
     expect(pipeline[1]).toEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
     expect(pipeline[2]).toEqual({
-      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
+      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: '_uql_joined_author' },
     });
-    expect(pipeline[3]).toEqual({ $unwind: { path: '$author', preserveNullAndEmptyArrays: true } });
+    expect(pipeline[3]).toEqual({ $unwind: { path: '$_uql_joined_author', preserveNullAndEmptyArrays: true } });
     expect(pipeline.some((stage) => '$project' in stage)).toBe(false);
   });
 
@@ -217,7 +217,7 @@ describe('MongodbQuerier vector search', () => {
     const unwindIndex = pipeline.findIndex((stage) => '$unwind' in stage);
     const projectIndex = pipeline.findIndex((stage) => '$project' in stage);
     expect(projectIndex).toBeGreaterThan(unwindIndex);
-    expect(pipeline[projectIndex]).toEqual({ $project: { text: 1, author: 1, score: 1, _id: 0 } });
+    expect(pipeline[projectIndex]).toEqual({ $project: { text: 1, _uql_joined_author: 1, score: 1, _id: 0 } });
   });
 
   /**
@@ -422,7 +422,9 @@ describe('MongodbQuerier findManyStream', () => {
 
   /** A stream runs the pipeline `findMany` does, so it loads what `findMany` loads. */
   it('should stream the relations a query populates through the pipeline', async () => {
-    const { querier, aggregate, find } = createRecordingQuerier([{ _id: 1, author: { _id: 2, name: 'ada' } }]);
+    const { querier, aggregate, find } = createRecordingQuerier([
+      { _id: 1, _uql_joined_author: { _id: 2, name: 'ada' } },
+    ]);
     const rows: unknown[] = [];
     for await (const row of querier.findManyStream(Post, { $populate: { author: true } })) {
       rows.push(row);
@@ -431,7 +433,7 @@ describe('MongodbQuerier findManyStream', () => {
     expect(rows).toEqual([{ id: 1, author: { id: 2, name: 'ada' } }]);
     expect(find).not.toHaveBeenCalled();
     expect(pipelineOf(aggregate.mock.calls)).toContainEqual({
-      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
+      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: '_uql_joined_author' },
     });
   });
 
@@ -454,7 +456,7 @@ describe('MongodbQuerier findManyStream', () => {
     }
 
     expect(find).not.toHaveBeenCalled();
-    expect(pipelineOf(aggregate.mock.calls)).toContainEqual({ $sort: { 'author.name': 1 } });
+    expect(pipelineOf(aggregate.mock.calls)).toContainEqual({ $sort: { '_uql_joined_author.name': 1 } });
   });
 });
 

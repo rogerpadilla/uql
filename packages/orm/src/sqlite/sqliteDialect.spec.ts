@@ -575,8 +575,12 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
      * type; `JSON_EACH`'s `value` column would flatten booleans to 0/1 and stringify objects.
      */
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN COALESCE((SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)), JSON_ARRAY()) END, (`kind` -> '$.tags'))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN COALESCE((SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE NOT (`kind` -> _uql_pull.fullkey = JSON(?))), JSON_ARRAY()) END, (`kind` -> '$.tags'))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
+    },
+    addToSet: {
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.tags', COALESCE(CASE WHEN COALESCE(JSON_TYPE(`kind`, '$.tags'), 'null') = 'null' OR JSON_TYPE(`kind`, '$.tags') = 'array' THEN JSON_INSERT(CASE WHEN COALESCE(JSON_TYPE(`kind`, '$.tags'), 'null') = 'null' THEN JSON_ARRAY() ELSE (`kind` -> '$.tags') END, CASE WHEN EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_elem WHERE `kind` -> _uql_elem.fullkey = JSON(?)) THEN '$._uql_skip' ELSE '$[#]' END, JSON(?)) END, (`kind` -> '$.tags'))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"x"', '"x"', 123, '1'],
     },
   };
 

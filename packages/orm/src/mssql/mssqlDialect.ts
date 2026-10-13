@@ -7,9 +7,10 @@ import {
   relationTermKey,
   isolationSetBefore,
 } from '../dialect/abstractSqlDialect.js';
-import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS, JSON_SKIP_KEY, OUTPUT_TABLE } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS, OUTPUT_TABLE } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import {
+  skippablePath,
   type JsonAccessMode,
   jsonArraySlotArgs,
   type JsonContainer,
@@ -45,7 +46,7 @@ import type {
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
 import { isAutoIncrement, isExactDecimal, jsonPathKeys } from '../util/field.util.js';
-import { assertNonNegativeInteger } from '../util/index.js';
+import { assertNonNegativeInteger, isOperatorMap } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -90,12 +91,21 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   namedLocks: 'transaction',
 };
 
-/** The `type` `OPENJSON` reports for the JSON scalar an element is compared with; anything else binds as a string. */
+/** The `type` `OPENJSON` reports for each JSON kind. */
+const OPENJSON_TYPE = { null: 0, string: 1, number: 2, boolean: 3, array: 4, object: 5 } as const;
+
+/** The `type` `OPENJSON` reports for an element of `value`'s JSON type; anything else binds as a string. */
 function openJsonType(value: unknown): number {
-  if (typeof value === 'number') {
-    return 2;
+  if (Array.isArray(value)) {
+    return OPENJSON_TYPE.array;
   }
-  return typeof value === 'boolean' ? 3 : 1;
+  if (isOperatorMap(value)) {
+    return OPENJSON_TYPE.object;
+  }
+  if (typeof value === 'number') {
+    return OPENJSON_TYPE.number;
+  }
+  return typeof value === 'boolean' ? OPENJSON_TYPE.boolean : OPENJSON_TYPE.string;
 }
 
 /** The one key column and its field, or nothing on a composite key. */
@@ -447,9 +457,15 @@ export class MsSqlDialect extends MergeSqlDialect {
     return `OPENJSON(${jsonArraySlotArgs(slot, this.jsonIs(slot, 'array'))}) ${alias}`;
   }
 
-  /** `JSON_QUERY` answers an array or an object as written, and a scalar as NULL, so its first character tells which. */
+  /**
+   * Its first character: the one `JSON_QUERY` answers, NULL for a scalar, or the document's own first past any
+   * whitespace, since `JSON_QUERY` refuses a document that is a scalar and copying it costs its length.
+   */
   protected override jsonIs(slot: JsonSlot, kind: JsonContainer): string {
-    return `LEFT(JSON_QUERY(${jsonSlotArgs(slot)}), 1) = '${kind === 'array' ? '[' : '{'}'`;
+    const first = slot.path
+      ? `LEFT(JSON_QUERY(${jsonSlotArgs(slot)}), 1)`
+      : `SUBSTRING(${slot.base}, PATINDEX(N'%[^ ' + CHAR(9) + CHAR(10) + CHAR(13) + N']%', ${slot.base}), 1)`;
+    return `${first} = '${kind === 'array' ? '[' : '{'}'`;
   }
 
   /** `OPENJSON` answers a JSON null as NULL, as it does a key that is not there. */
@@ -470,7 +486,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   protected override jsonElemEquals(ctx: QueryContext, _slot: JsonSlot, alias: string, value: unknown): string {
     const type = `${alias}.${this.#elem.type}`;
     if (value === null) {
-      return `${type} = 0`;
+      return `${type} = ${OPENJSON_TYPE.null}`;
     }
     const elem = this.jsonElemDoc(alias);
     const param = this.jsonScalarParam(ctx, value);
@@ -513,13 +529,13 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   protected override jsonWriteKeys(expr: string, writes: readonly JsonKeyWrite[]): string {
     return writes.reduce((acc, [slot, value]) => {
-      const path = `CASE WHEN ${value} IS NULL THEN ${jsonPath(JSON_SKIP_KEY)} ELSE ${jsonPath(slot.path)} END`;
+      const path = skippablePath(jsonPath(slot.path), `${value} IS NULL`);
       return `JSON_MODIFY(${acc}, ${path}, JSON_QUERY(${value}))`;
     }, expr);
   }
 
-  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
-    return `JSON_MODIFY(${array}, 'append $', ${this.jsonWriteParam(ctx, value)})`;
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown, unless?: string): string {
+    return `JSON_MODIFY(${array}, ${skippablePath(`'append $'`, unless)}, ${this.jsonWriteParam(ctx, value)})`;
   }
 
   /** Assigning NULL to a path deletes it in lax mode, which is the default. */
@@ -528,19 +544,16 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * The surviving elements re-aggregated into an array, there being no remove-by-value. `OPENJSON` hands
-   * back a string element unquoted and a null one as SQL NULL, so each survivor is re-encoded from its
-   * reported `type`, and a null is told apart by `IS NULL`, which `<>` cannot do.
+   * The surviving elements re-aggregated into an array, there being no remove-by-value. `OPENJSON` hands back a
+   * string element unquoted and a null one as SQL NULL, so each survivor is re-encoded from its reported `type`.
    */
-  protected override jsonKept(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
+  protected override jsonKeptAggregate(): string {
     const val = this.jsonElemDoc(JSON_PULL_ALIAS);
     const encoded =
       `CASE ${JSON_PULL_ALIAS}.${this.#elem.type}` +
-      ` WHEN 0 THEN 'null'` +
-      ` WHEN 1 THEN '"' + STRING_ESCAPE(${val}, 'json') + '"'` +
+      ` WHEN ${OPENJSON_TYPE.null} THEN 'null'` +
+      ` WHEN ${OPENJSON_TYPE.string} THEN '"' + STRING_ESCAPE(${val}, 'json') + '"'` +
       ` ELSE ${val} END`;
-    const differs =
-      item === null ? `${val} IS NOT NULL` : `${val} IS NULL OR ${val} <> ${this.jsonScalarParam(ctx, item)}`;
-    return `SELECT '[' + STRING_AGG(${encoded}, ',') + ']' FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)} WHERE ${differs}`;
+    return `'[' + STRING_AGG(${encoded}, ',') + ']'`;
   }
 }

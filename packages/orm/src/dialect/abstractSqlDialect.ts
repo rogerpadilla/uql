@@ -15,6 +15,7 @@ import {
   type IsolationLevel,
   type TransactionOptions,
   type JsonColumnType,
+  type JsonArrayUpdateOp,
   type JsonUpdateOp,
   parseQueryLock,
   type Query,
@@ -89,7 +90,7 @@ import {
   isFieldUpdateOp,
   isJsonObject,
   isJsonUpdateOp,
-  foldJsonUpdate,
+  foldJson,
   type JsonArrayWrites,
   writesKeys,
   isOperatorMap,
@@ -141,6 +142,7 @@ import {
   jsonSetCall,
   jsonSetTarget,
   type JsonSlot,
+  unlessThen,
 } from './jsonSql.js';
 import {
   betweenBounds,
@@ -2488,11 +2490,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected formatJsonUpdate(
     ctx: QueryContext,
     escapedCol: string,
-    value: JsonUpdateOp,
+    value: JsonUpdateOp | JsonArrayUpdateOp,
     field?: FieldOptions,
     current = escapedCol,
   ): void {
-    const writes = foldJsonUpdate(value);
+    const update = foldJson(value);
+    if ('array' in update) {
+      const slot = { base: current, path: '' };
+      ctx.append(`${escapedCol} = ${this.jsonOrStored(slot, this.jsonArrayWrite(ctx, slot, update.array))}`);
+      return;
+    }
+    const writes = update.object;
     const arrays = Object.entries(writes.arrays);
     const keyWrites = (appending: boolean) =>
       arrays
@@ -2520,31 +2528,25 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * The array at `slot` as `write` leaves it, or NULL where a value that is no array stays: its pull, then each
-   * append, onto `[]` in place of a missing or null array. With a `unique` append, a second branch writes the array
-   * without it where the stored one holds its item; each branch is built in the order it binds.
+   * The array at `slot` as `write` leaves it, or NULL where a value that is no array stays: its pulls, then each
+   * append onto `[]` in place of a missing or null array, a `unique` one only where the stored array lacks its item.
    */
-  private jsonArrayWrite(ctx: QueryContext, slot: JsonSlot, { pull, appends }: JsonArrayWrites): string {
+  private jsonArrayWrite(ctx: QueryContext, slot: JsonSlot, { pulls, appends }: JsonArrayWrites): string {
     const isArray = this.jsonIs(slot, 'array');
-    const kept = () => (pull ? this.jsonPulled(ctx, slot, pull.item) : this.jsonValue(slot));
+    const kept =
+      pulls.length > 0
+        ? `COALESCE((${this.jsonKept(ctx, slot, pulls)}), ${this.jsonEmptyArray})`
+        : this.jsonValue(slot);
     if (appends.length === 0) {
-      return `CASE WHEN ${isArray} THEN ${kept()} END`;
+      return `CASE WHEN ${isArray} THEN ${kept} END`;
     }
     const isNull = this.jsonIsNull(slot);
-    const appended = (included: JsonArrayWrites['appends']) =>
-      included.reduce(
-        (array, { item }) => this.jsonAppended(ctx, array, item),
-        `CASE WHEN ${isNull} THEN ${this.jsonEmptyArray} ELSE ${kept()} END`,
-      );
-    const unique = appends.find((append) => append.unique);
-    if (!unique) {
-      return `CASE WHEN ${isNull} OR ${isArray} THEN ${appended(appends)} END`;
-    }
-    const lacks = `${isNull} OR ${isArray} AND NOT ${this.jsonContains(ctx, slot, [unique.item])}`;
-    const withUnique = `WHEN ${lacks} THEN ${appended(appends)}`;
-    const others = appends.filter((append) => append !== unique);
-    const without = pull || others.length > 0 ? ` WHEN ${isArray} THEN ${appended(others)}` : '';
-    return `CASE ${withUnique}${without} END`;
+    const appended = appends.reduce(
+      (array, { item, unique }) =>
+        this.jsonAppended(ctx, array, item, unique ? this.jsonContains(ctx, slot, [item]) : undefined),
+      `CASE WHEN ${isNull} THEN ${this.jsonEmptyArray} ELSE ${kept} END`,
+    );
+    return `CASE WHEN ${isNull} OR ${isArray} THEN ${appended} END`;
   }
 
   /**
@@ -2561,16 +2563,27 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `COALESCE(${value}, ${this.jsonValue(slot)})`;
   }
 
-  /** The array at `slot` without the elements equal to `item`, an empty one where it keeps none. */
-  protected jsonPulled(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
-    return `COALESCE((${this.jsonKept(ctx, slot, item)}), ${this.jsonEmptyArray})`;
+  /** The elements of `slot` no pulled item equals, as one array, or NULL where none is left. */
+  protected jsonKept(ctx: QueryContext, slot: JsonSlot, items: readonly unknown[]): string {
+    return `SELECT ${this.jsonKeptAggregate(slot)} FROM ${this.jsonKeptFrom(slot)} WHERE ${this.jsonEqualsNone(ctx, slot, items)}`;
   }
 
-  /** The surviving elements of `slot` as one array, or NULL where there are none: `jsonPulled` supplies the empty one. */
-  protected jsonKept(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
-    const elem = this.jsonElemValue(slot, JSON_PULL_ALIAS, 'json');
-    const differs = this.jsonDiffers(elem, this.jsonScalarParam(ctx, item));
-    return `SELECT ${this.jsonArrayOf(elem)} FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)} WHERE ${differs}`;
+  /** The one row per element of `slot` a pull reads, each as {@link JSON_PULL_ALIAS}. */
+  protected jsonKeptFrom(slot: JsonSlot): string {
+    return this.jsonElemFrom(slot, JSON_PULL_ALIAS);
+  }
+
+  /** The row {@link jsonKept} returns: the elements that survive, aggregated into one array. */
+  protected jsonKeptAggregate(slot: JsonSlot): string {
+    return this.jsonArrayOf(this.jsonElemValue(slot, JSON_PULL_ALIAS, 'json'));
+  }
+
+  /** Whether the element a pull reads equals none of `items`, each compared as {@link jsonElemEquals} compares one. */
+  protected jsonEqualsNone(ctx: QueryContext, slot: JsonSlot, items: readonly unknown[]): string {
+    return chain(
+      items.map((item) => `NOT (${this.jsonElemEquals(ctx, slot, JSON_PULL_ALIAS, item)})`),
+      'AND',
+    );
   }
 
   /** The elements a `$pull` keeps, aggregated into one array. */
@@ -2578,18 +2591,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `JSON_ARRAYAGG(${elem})`;
   }
 
-  /** Whether an element is not the pulled value, both read as JSON. */
-  protected jsonDiffers(elem: string, operand: string): string {
-    return `${elem} <> ${operand}`;
-  }
-
   /** Each key or dotted path assigned, its parents already there, through `JSON_SET`. */
   protected jsonSet(ctx: QueryContext, expr: string, set: Record<string, unknown>): string {
     return jsonSetCall((value) => this.jsonScalarParam(ctx, value), expr, set, this.maxFunctionArgs);
   }
 
-  /** The JSON `array` with `value` appended. */
-  protected abstract jsonAppended(ctx: QueryContext, array: string, value: unknown): string;
+  /** The JSON `array` with `value` appended, unless the condition `unless` holds. */
+  protected abstract jsonAppended(ctx: QueryContext, array: string, value: unknown, unless?: string): string;
 
   /** A JSON object with no keys, as a key write takes it. */
   protected readonly jsonEmptyObject: string = 'JSON_OBJECT()';
@@ -2605,7 +2613,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const parents = new Set(paths.flatMap(ancestorPaths));
     return [...parents].map((path) => {
       const slot = { base: current, path };
-      return [slot, `CASE WHEN ${this.jsonIs(slot, 'object')} THEN NULL ELSE ${this.jsonEmptyObject} END`];
+      return [slot, unlessThen(this.jsonIs(slot, 'object'), 'NULL', this.jsonEmptyObject)];
     });
   }
 

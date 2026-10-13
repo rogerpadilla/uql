@@ -11,6 +11,8 @@ import {
   type FieldUpdateOp,
   type FilterOnMissing,
   type FilterOptions,
+  type JsonArrayUpdateOp,
+  type JsonScalar,
   type JsonUpdateOp,
   type OnFieldCallback,
   type QueryAggMap,
@@ -300,15 +302,15 @@ const JSON_UPDATE_OPS: readonly string[] = [
 ] as const satisfies readonly (keyof JsonUpdateOp)[];
 
 /** Type guard: checks whether an update payload value is a JSON operator object. */
-export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
+export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp | JsonArrayUpdateOp {
   return isRecord(value) && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
 }
 
-/** An item one array key's writes append, `unique` where it goes in only if the stored array lacks it. */
+/** An item one array's writes append, `unique` where it goes in only if the stored array lacks it. */
 type JsonAppend = { readonly item: unknown; readonly unique: boolean };
 
-/** One array key's writes, in order: `pull` removes every element equal to its item, then each append adds one. */
-export type JsonArrayWrites = { readonly pull?: { readonly item: unknown }; readonly appends: readonly JsonAppend[] };
+/** One array's writes, in order: each pull removes every element equal to it, then each append adds one. */
+export type JsonArrayWrites = { readonly pulls: readonly unknown[]; readonly appends: readonly JsonAppend[] };
 
 /** A JSON update with each path written once: the value set at each, each array key's writes, and the paths removed. */
 export type JsonWrites = {
@@ -322,20 +324,52 @@ export function writesKeys({ set, arrays }: JsonWrites): boolean {
   return hasKeys(set) || Object.values(arrays).some((write) => write.appends.length > 0);
 }
 
-/** One array key's writes while a JSON update folds. */
-type ArrayFold = { pull?: { item: unknown }; appends: JsonAppend[] };
+/** One array's writes while a JSON update folds. */
+type ArrayFold = { pulls: unknown[]; appends: JsonAppend[] };
+
+/** A JSON update as its writes: those of an array column, or those of an object's keys. */
+export type JsonUpdate = { readonly array: JsonArrayWrites } | { readonly object: JsonWrites };
+
+/** A JSON update folded as an array column's, where its operands are lists of elements, else as an object's. */
+export function foldJson(value: JsonUpdateOp | JsonArrayUpdateOp): JsonUpdate {
+  return isJsonArrayUpdate(value) ? { array: foldJsonArrayUpdate(value) } : { object: foldJsonUpdate(value) };
+}
+
+/** Whether a JSON update writes the column as an array, its operands lists of elements rather than maps of keys. */
+function isJsonArrayUpdate(value: JsonUpdateOp | JsonArrayUpdateOp): value is JsonArrayUpdateOp {
+  return [value.$pull, value.$push, value.$addToSet].some(Array.isArray);
+}
+
+/**
+ * A JSON array column's update as its writes: each `$pull`, then each `$push`, then each `$addToSet` once. Its
+ * operands are lists, so one that is a map of keys means the update was written for an object.
+ */
+function foldJsonArrayUpdate(value: JsonArrayUpdateOp): JsonArrayWrites {
+  const { $pull = [], $push = [], $addToSet = [], ...others } = value;
+  if (hasKeys(others) || ![$pull, $push, $addToSet].every(Array.isArray)) {
+    throw new UqlUsageError('a JSON array takes $pull, $push and $addToSet, each a list of elements');
+  }
+  const write: ArrayFold = { pulls: [...$pull], appends: [] };
+  for (const item of $push) {
+    append(write, item, false);
+  }
+  for (const item of $addToSet) {
+    append(write, assertSetElement('$addToSet', item), true);
+  }
+  return write;
+}
 
 /**
  * A JSON update as one write per path, its operators applied in order: `$pull`, `$set` in key order, `$push`,
  * `$addToSet`, `$unset`. Where one reaches a value another wrote, the result is worked out here, so every engine
  * writes each path once and reads only what is stored. A `$set` of `undefined` writes nothing.
  */
-export function foldJsonUpdate(value: JsonUpdateOp): JsonWrites {
+function foldJsonUpdate(value: JsonUpdateOp): JsonWrites {
   const set = new Map<string, unknown>();
   const arrays = new Map<string, ArrayFold>();
   const unset = new Set<string>();
   for (const [key, item] of Object.entries(value.$pull ?? {})) {
-    arrays.set(jsonKey(key), { pull: { item }, appends: [] });
+    arrays.set(jsonKey(key), { pulls: [item], appends: [] });
   }
   for (const [path, item] of Object.entries(value.$set ?? {})) {
     if (item !== undefined) {
@@ -350,14 +384,11 @@ export function foldJsonUpdate(value: JsonUpdateOp): JsonWrites {
       }
     }
   }
-  for (const op of ['$push', '$addToSet'] as const) {
-    for (const [key, item] of Object.entries(value[op] ?? {})) {
-      const unique = op === '$addToSet';
-      if (unique && !isJsonScalar(item)) {
-        throw new UqlUsageError(`$addToSet on '${key}' takes a string, a finite number or a boolean`);
-      }
-      appendTo(set, arrays, jsonKey(key), item, unique);
-    }
+  for (const [key, item] of Object.entries(value.$push ?? {})) {
+    appendTo(set, arrays, jsonKey(key), item, false);
+  }
+  for (const [key, item] of Object.entries(value.$addToSet ?? {})) {
+    appendTo(set, arrays, jsonKey(key), assertSetElement(`$addToSet on '${key}'`, item), true);
   }
   for (const path of value.$unset ?? []) {
     const keys = jsonPathKeys(path);
@@ -394,11 +425,24 @@ function appendTo(
   if ([...set.keys()].some((path) => path.startsWith(`${key}.`))) {
     return;
   }
-  const write = arrays.get(key) ?? { appends: [] };
+  const write = arrays.get(key) ?? { pulls: [], appends: [] };
   arrays.set(key, write);
-  if (!(unique && write.appends.some((append) => append.item === item))) {
-    write.appends.push({ item, unique: unique && write.pull?.item !== item });
+  append(write, item, unique);
+}
+
+/** `item` appended to `write`: a `unique` one only once, and unguarded where a pull removed it. */
+function append(write: ArrayFold, item: unknown, unique: boolean): void {
+  if (!(unique && write.appends.some((appended) => appended.item === item))) {
+    write.appends.push({ item, unique: unique && !write.pulls.includes(item) });
   }
+}
+
+/** `item`, refused unless a scalar: the one element every engine compares alike, which `$addToSet` needs. */
+function assertSetElement(operator: string, item: unknown): JsonScalar {
+  if (!isJsonScalar(item)) {
+    throw new UqlUsageError(`${operator} takes a string, a finite number or a boolean`);
+  }
+  return item;
 }
 
 /** Removes `path` and every path inside it from `set`. */

@@ -1,7 +1,7 @@
-import type { EntityMeta } from '../type/index.js';
+import type { EntityMeta, JsonScalar } from '../type/index.js';
 
-/** A value a JSON document holds whole, and `$addToSet` and an `=` on a JSON path compare by equality. */
-export function isJsonScalar(value: unknown): value is string | number | boolean {
+/** Whether `value` is a {@link JsonScalar}, which `$addToSet` and an `=` on a JSON path compare by equality. */
+export function isJsonScalar(value: unknown): value is JsonScalar {
   return typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value);
 }
 

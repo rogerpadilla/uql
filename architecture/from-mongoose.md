@@ -22,6 +22,7 @@ One entity file per `model(name, schema)`, beside the Mongoose code, which stays
 | `_id` (an `ObjectId`)                           | `@Id({ type: String })`, the 24-hex text                                                   |
 | `{ type: ObjectId, ref: 'User' }` on `author`   | `@Field({ name: 'author', references: () => User }) authorId` and `@ManyToOne author`      |
 | a nested object or sub-schema, `[subSchema]`    | `Json<T>` / `Json<T>[]`, `T` written from the sub-schema                                   |
+| `[String]`, `[Number]`                          | `Json<string[]>`, `Json<number[]>`, which `$push`, `$pull` and `$addToSet` update          |
 | `Mixed`, `Map`                                  | `Json`                                                                                     |
 | `required: true`                                | `nullable: false` and a `!` property; otherwise `?` and `\| null`                          |
 | `enum`, `unique`, `index: true`                 | `enum`, `unique`, `@Index`                                                                 |

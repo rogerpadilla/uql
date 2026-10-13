@@ -169,8 +169,12 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, '1'],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN COALESCE((SELECT JSON_ARRAYAGG(_uql_pull.v) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)), JSON_ARRAY()) END, `kind`->'$.tags')), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', COALESCE(CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN COALESCE((SELECT JSON_ARRAYAGG(_uql_pull.v) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE NOT (_uql_pull.v = CAST(? AS JSON))), JSON_ARRAY()) END, `kind`->'$.tags')), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
+    },
+    addToSet: {
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, JSON_OBJECT()), '$.tags', COALESCE(CASE WHEN COALESCE(JSON_TYPE(`kind`->'$.tags'), 'NULL') = 'NULL' OR JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN JSON_MERGE_PRESERVE(CASE WHEN COALESCE(JSON_TYPE(`kind`->'$.tags'), 'NULL') = 'NULL' THEN JSON_ARRAY() ELSE `kind`->'$.tags' END, CASE WHEN JSON_CONTAINS(`kind`->'$.tags', ?) THEN JSON_ARRAY() ELSE JSON_ARRAY(CAST(? AS JSON)) END) END, `kind`->'$.tags')), `updatedAt` = ? WHERE `id` = ?",
+      values: ['["x"]', '"x"', 123, '1'],
     },
   };
 

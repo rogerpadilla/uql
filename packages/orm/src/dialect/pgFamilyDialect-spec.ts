@@ -1348,8 +1348,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{"tags"}', COALESCE(COALESCE(CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) END, ("kind"->'tags')), 'null'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{"tags"}', COALESCE(COALESCE(CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(_uql_pull, ord) WHERE NOT (_uql_pull = $1::jsonb)), '[]'::jsonb) END, ("kind"->'tags')), 'null'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, '1'],
+    },
+    addToSet: {
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", '{}'::jsonb), '{"tags"}', COALESCE(CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' OR JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN CASE WHEN COALESCE(JSONB_TYPEOF(("kind"->'tags')), 'null') = 'null' THEN '[]'::jsonb ELSE ("kind"->'tags') END || CASE WHEN ("kind"->'tags') @> $1::jsonb THEN '[]'::jsonb ELSE JSONB_BUILD_ARRAY($2::jsonb) END END, ("kind"->'tags'))), "updatedAt" = $3 WHERE "id" = $4`,
+      values: ['["x"]', '"x"', 123, '1'],
     },
   };
 

@@ -6,13 +6,14 @@ import {
   assertDefined,
   Company,
   Carrier,
-  type CompanyKind,
   Label,
   Parcel,
   Shipment,
   ShipmentLabel,
   JsonHolder,
+  JsonRecord,
   JsonValue,
+  LooseDoc,
   InventoryAdjustment,
   Item,
   ItemAdjustment,
@@ -21,6 +22,7 @@ import {
   MeasureUnit,
   MeasureUnitCategory,
   Profile,
+  Reply,
   type Spec,
   type SpecRequirements,
   Tag,
@@ -528,6 +530,37 @@ export abstract class AbstractQuerierIt<
     expect('itemAdjustments' in unpopulated).toBe(false);
   }
 
+  /** A reference stored under its relation's name reads back as its key and, populated, as the related row. */
+  async shouldPopulateARelationStoredUnderItsOwnName() {
+    const [ada, linus] = await this.querier.insertMany(User, [{ name: 'Ada' }, { name: 'Linus' }]);
+    await this.querier.insertMany(Reply, [
+      { text: 'first', authorId: ada },
+      { text: 'second', authorId: linus },
+    ]);
+
+    const replies = await this.querier.findMany(Reply, {
+      $select: { text: true, authorId: true },
+      $populate: { author: { $select: { name: true } } },
+      $where: { author: { name: 'Ada' } },
+      $sort: { author: { name: 'asc' } },
+    });
+
+    expect(replies).toEqual([{ text: 'first', authorId: ada, author: { id: ada, name: 'Ada' } }]);
+  }
+
+  /** A relation stored under its own name populates without its reference where the query leaves that out. */
+  async shouldPopulateARelationStoredUnderItsOwnNameAlone() {
+    const ada = await this.querier.insertOne(User, { name: 'Ada' });
+    await this.querier.insertOne(Reply, { text: 'only', authorId: ada });
+
+    const replies = await this.querier.findMany(Reply, {
+      $select: { text: true },
+      $populate: { author: { $select: { name: true } } },
+    });
+
+    expect(replies).toEqual([{ text: 'only', author: { id: ada, name: 'Ada' } }]);
+  }
+
   /**
    * The other half of the asymmetry: a to-one joins with a LEFT JOIN, so populating one whose key is
    * null leaves it absent rather than empty. That is why a populated to-one stays optional in the
@@ -854,28 +887,15 @@ export abstract class AbstractQuerierIt<
 
   /** A `$pull` leaves a key holding no array as it is, as an older writer may have left it. */
   async shouldPullFromANonArrayJsonKeyAsNoop() {
-    const scalar: CompanyKind = { public: 1 };
-    const object: CompanyKind = { public: 1 };
-    Reflect.set(scalar, 'tags', 'a');
-    Reflect.set(object, 'tags', { k: 'a' });
-    await this.querier.insertMany(Company, [
-      { name: 'JSON Pull Scalar', kind: scalar },
-      { name: 'JSON Pull Object', kind: object },
-      { name: 'JSON Pull Array', kind: { public: 1, tags: ['a', 'b'] } },
+    const ids = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Pull Scalar', doc: { public: 1, tags: 'a' } },
+      { name: 'JSON Pull Object', doc: { public: 1, tags: { k: 'a' } } },
+      { name: 'JSON Pull Array', doc: { public: 1, tags: ['a', 'b'] } },
     ]);
 
-    await this.querier.updateMany(
-      Company,
-      { $where: { name: { $startsWith: 'JSON Pull ' } } },
-      { kind: { $pull: { tags: 'a' } } },
-    );
+    await this.querier.updateMany(LooseDoc, { $where: { id: ids } }, { doc: { $pull: { tags: 'a' } } });
 
-    const found = await this.querier.findMany(Company, {
-      $select: { name: true, kind: true },
-      $where: { name: { $startsWith: 'JSON Pull ' } },
-      $sort: { name: 1 },
-    });
-    expect(found.map(({ name, kind }) => [name, kind])).toEqual([
+    expect(await this.namedDocs(ids)).toEqual([
       ['JSON Pull Array', { public: 1, tags: ['b'] }],
       ['JSON Pull Object', { public: 1, tags: { k: 'a' } }],
       ['JSON Pull Scalar', { public: 1, tags: 'a' }],
@@ -1274,14 +1294,14 @@ export abstract class AbstractQuerierIt<
     return found?.kind;
   }
 
-  /** The `[name, kind]` of each company in `ids`, by name. */
-  protected async namedKinds(ids: Company['id'][]) {
-    const found = await this.querier.findMany(Company, {
-      $select: { name: true, kind: true },
+  /** Each loose document's name and JSON, by name. */
+  protected async namedDocs(ids: LooseDoc['id'][]) {
+    const found = await this.querier.findMany(LooseDoc, {
+      $select: { name: true, doc: true },
       $where: { id: ids },
       $sort: { name: 1 },
     });
-    return found.map(({ name, kind }) => [name, kind]);
+    return found.map(({ name, doc }) => [name, doc]);
   }
 
   /** The names `$where` matches, in code-unit order whatever the column's collation. */
@@ -2146,25 +2166,21 @@ export abstract class AbstractQuerierIt<
    * NULL, or no object, a NULL column included.
    */
   async shouldSetANestedJsonPath() {
-    const scalarTheme: CompanyKind = { public: 1 };
-    const arrayTheme: CompanyKind = { public: 1 };
-    Reflect.set(scalarTheme, 'theme', 'dark');
-    Reflect.set(arrayTheme, 'theme', [{ color: 'red' }]);
-    const ids = await this.querier.insertMany(Company, [
-      { name: 'JSON Nested Kept', kind: { public: 1, theme: { color: 'red', size: 2 } } },
-      { name: 'JSON Nested Absent', kind: { public: 1 } },
-      { name: 'JSON Nested Scalar', kind: scalarTheme },
-      { name: 'JSON Nested Array', kind: arrayTheme },
-      { name: 'JSON Nested Null', kind: null },
+    const ids = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Nested Kept', doc: { public: 1, theme: { color: 'red', size: 2 } } },
+      { name: 'JSON Nested Absent', doc: { public: 1 } },
+      { name: 'JSON Nested Scalar', doc: { public: 1, theme: 'dark' } },
+      { name: 'JSON Nested Array', doc: { public: 1, theme: [{ color: 'red' }] } },
+      { name: 'JSON Nested Null', doc: null },
     ]);
 
     await this.querier.updateMany(
-      Company,
+      LooseDoc,
       { $where: { id: ids } },
-      { kind: { $set: { 'theme.color': 'blue', 'meta.a.b': 1 } } },
+      { doc: { $set: { 'theme.color': 'blue', 'meta.a.b': 1 } } },
     );
 
-    expect(await this.namedKinds(ids)).toEqual([
+    expect(await this.namedDocs(ids)).toEqual([
       ['JSON Nested Absent', { public: 1, theme: { color: 'blue' }, meta: { a: { b: 1 } } }],
       ['JSON Nested Array', { public: 1, theme: { color: 'blue' }, meta: { a: { b: 1 } } }],
       ['JSON Nested Kept', { public: 1, theme: { color: 'blue', size: 2 }, meta: { a: { b: 1 } } }],
@@ -2190,19 +2206,15 @@ export abstract class AbstractQuerierIt<
    * is no array as it is.
    */
   async shouldAddToSetOnAnythingButAnArray() {
-    const nullTags: CompanyKind = { public: 1 };
-    const scalarTags: CompanyKind = { public: 1 };
-    Reflect.set(nullTags, 'tags', null);
-    Reflect.set(scalarTags, 'tags', 'x');
-    const ids = await this.querier.insertMany(Company, [
-      { name: 'JSON Add To Set Null Key', kind: nullTags },
-      { name: 'JSON Add To Set Null Column', kind: null },
-      { name: 'JSON Add To Set Scalar', kind: scalarTags },
+    const ids = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Add To Set Null Key', doc: { public: 1, tags: null } },
+      { name: 'JSON Add To Set Null Column', doc: null },
+      { name: 'JSON Add To Set Scalar', doc: { public: 1, tags: 'x' } },
     ]);
 
-    await this.querier.updateMany(Company, { $where: { id: ids } }, { kind: { $addToSet: { tags: 'a' } } });
+    await this.querier.updateMany(LooseDoc, { $where: { id: ids } }, { doc: { $addToSet: { tags: 'a' } } });
 
-    expect(await this.namedKinds(ids)).toEqual([
+    expect(await this.namedDocs(ids)).toEqual([
       ['JSON Add To Set Null Column', { tags: ['a'] }],
       ['JSON Add To Set Null Key', { public: 1, tags: ['a'] }],
       ['JSON Add To Set Scalar', { public: 1, tags: 'x' }],
@@ -2211,20 +2223,18 @@ export abstract class AbstractQuerierIt<
 
   /** A dotted `$unset` removes one nested key, keeping its siblings, and leaves an absent one, or one under a scalar, as it is. */
   async shouldUnsetANestedJsonPath() {
-    const scalarTheme: CompanyKind = { public: 1 };
-    Reflect.set(scalarTheme, 'theme', 'dark');
-    const [object, scalar] = await this.querier.insertMany(Company, [
-      { name: 'JSON Nested Unset Object', kind: { public: 1, theme: { color: 'red', size: 2 } } },
-      { name: 'JSON Nested Unset Scalar', kind: scalarTheme },
+    const ids = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Nested Unset Object', doc: { public: 1, theme: { color: 'red', size: 2 } } },
+      { name: 'JSON Nested Unset Scalar', doc: { public: 1, theme: 'dark' } },
     ]);
 
     await this.querier.updateMany(
-      Company,
-      { $where: { id: [object, scalar] } },
-      { kind: { $unset: ['theme.color', 'meta.absent'] } },
+      LooseDoc,
+      { $where: { id: ids } },
+      { doc: { $unset: ['theme.color', 'meta.absent'] } },
     );
 
-    expect(await this.namedKinds([object, scalar])).toEqual([
+    expect(await this.namedDocs(ids)).toEqual([
       ['JSON Nested Unset Object', { public: 1, theme: { size: 2 } }],
       ['JSON Nested Unset Scalar', { public: 1, theme: 'dark' }],
     ]);
@@ -2279,18 +2289,15 @@ export abstract class AbstractQuerierIt<
 
   /** Operators naming one value, or one inside another, apply in order: `$pull`, `$set`, `$push`, `$addToSet`, `$unset`. */
   async shouldApplyJsonOperatorsOnOneValueInOrder() {
-    const nullTags: CompanyKind = {};
-    Reflect.set(nullTags, 'tags', null);
-    const [readded, kept, merged, removed, appended, created] = await this.querier.insertMany(Company, [
-      { name: 'JSON Order 1 Readded', kind: { tags: ['a', 'b'] } },
-      { name: 'JSON Order 2 Kept', kind: { tags: ['a', 'b'] } },
-      { name: 'JSON Order 3 Merged', kind: { theme: { color: 'red', size: 1 } } },
-      { name: 'JSON Order 4 Removed', kind: { public: 1, theme: { color: 'red' } } },
-      { name: 'JSON Order 5 Appended', kind: { tags: ['a'] } },
-      { name: 'JSON Order 6 Created', kind: nullTags },
+    const [readded, kept, merged, removed, appended, created] = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Order 1 Readded', doc: { tags: ['a', 'b'] } },
+      { name: 'JSON Order 2 Kept', doc: { tags: ['a', 'b'] } },
+      { name: 'JSON Order 3 Merged', doc: { theme: { color: 'red', size: 1 } } },
+      { name: 'JSON Order 4 Removed', doc: { public: 1, theme: { color: 'red' } } },
+      { name: 'JSON Order 5 Appended', doc: { tags: ['a'] } },
+      { name: 'JSON Order 6 Created', doc: { tags: null } },
     ]);
-    const update = (id: Company['id'], kind: JsonUpdateOp<CompanyKind>) =>
-      this.querier.updateOneById(Company, id, { kind });
+    const update = (id: LooseDoc['id'], doc: JsonUpdateOp) => this.querier.updateOneById(LooseDoc, id, { doc });
 
     await update(readded, { $pull: { tags: 'a' }, $addToSet: { tags: 'a' } });
     await update(kept, { $pull: { tags: 'a' }, $addToSet: { tags: 'b' } });
@@ -2299,7 +2306,7 @@ export abstract class AbstractQuerierIt<
     await update(appended, { $push: { tags: 'x' }, $addToSet: { tags: 'x' } });
     await update(created, { $pull: { tags: 'a' }, $push: { tags: 'z' } });
 
-    expect(await this.namedKinds([readded, kept, merged, removed, appended, created])).toEqual([
+    expect(await this.namedDocs([readded, kept, merged, removed, appended, created])).toEqual([
       ['JSON Order 1 Readded', { tags: ['b', 'a'] }],
       ['JSON Order 2 Kept', { tags: ['b'] }],
       ['JSON Order 3 Merged', { theme: { color: 'blue', size: 2 } }],
@@ -2327,17 +2334,15 @@ export abstract class AbstractQuerierIt<
    * create the document, and it appends to an array already there.
    */
   async shouldPushOntoAnAbsentOrNullJsonValue() {
-    const nullNotes: CompanyKind = {};
-    Reflect.set(nullNotes, 'notes', null);
-    const ids = await this.querier.insertMany(Company, [
-      { name: 'JSON Push Null Key', kind: nullNotes },
-      { name: 'JSON Push Null Column', kind: null },
-      { name: 'JSON Push Missing Key', kind: { public: 1 } },
+    const ids = await this.querier.insertMany(LooseDoc, [
+      { name: 'JSON Push Null Key', doc: { notes: null } },
+      { name: 'JSON Push Null Column', doc: null },
+      { name: 'JSON Push Missing Key', doc: { public: 1 } },
     ]);
 
-    await this.querier.updateMany(Company, { $where: { id: ids } }, { kind: { $push: { notes: 'a' } } });
+    await this.querier.updateMany(LooseDoc, { $where: { id: ids } }, { doc: { $push: { notes: 'a' } } });
 
-    expect(await this.namedKinds(ids)).toEqual([
+    expect(await this.namedDocs(ids)).toEqual([
       ['JSON Push Missing Key', { public: 1, notes: ['a'] }],
       ['JSON Push Null Column', { notes: ['a'] }],
       ['JSON Push Null Key', { notes: ['a'] }],
@@ -2387,6 +2392,69 @@ export abstract class AbstractQuerierIt<
     expect(await this.kindOf(id)).toEqual({ public: 1, ...expected });
   }
 
+  /**
+   * On a JSON array column the operators take lists of elements, applied in order: `$pull` each, then `$push`
+   * each, then `$addToSet` each the array lacks. A NULL column counts as an empty array.
+   */
+  async shouldUpdateAJsonArrayColumn() {
+    await this.querier.insertMany(JsonRecord, [
+      { id: 1, entries: ['a', 'b', 'c', 'b'] },
+      { id: 2, entries: null },
+      { id: 3, entries: [] },
+    ]);
+
+    await this.querier.updateMany(
+      JsonRecord,
+      { $where: { id: [1, 2, 3] } },
+      { entries: { $pull: ['b', 'x'], $push: ['d', 'd'], $addToSet: ['a', 'e', 'e', 'c'] } },
+    );
+
+    expect(await this.querier.findMany(JsonRecord, { $sort: { id: 'asc' } })).toEqual([
+      { id: 1, entries: ['a', 'c', 'd', 'd', 'e'] },
+      { id: 2, entries: ['d', 'd', 'a', 'e', 'c'] },
+      { id: 3, entries: ['d', 'd', 'a', 'e', 'c'] },
+    ]);
+  }
+
+  /** Elements compare by type as well as value, as in JavaScript: `true`, `1` and `'1'` are three elements. */
+  async shouldCompareJsonArrayElementsByType() {
+    await this.querier.insertOne(JsonRecord, { id: 1, entries: [1, 'a'] });
+
+    await this.querier.updateOneById(JsonRecord, 1, {
+      entries: { $pull: [true, '1'], $addToSet: [1, 'a', true, '1'] },
+    });
+
+    expect(await this.querier.findOneById(JsonRecord, 1)).toEqual({ id: 1, entries: [1, 'a', true, '1'] });
+  }
+
+  /** A JSON array column's elements may be objects or arrays. */
+  async shouldUpdateAJsonArrayColumnOfObjects() {
+    await this.querier.insertOne(JsonRecord, { id: 1, entries: [{ by: 'ada' }, { by: 'linus' }, ['x']] });
+
+    await this.querier.updateOneById(JsonRecord, 1, {
+      entries: { $pull: [{ by: 'linus' }, ['x']], $push: [{ by: 'grace', tags: ['x'] }] },
+    });
+
+    expect(await this.querier.findOneById(JsonRecord, 1)).toEqual({
+      id: 1,
+      entries: [{ by: 'ada' }, { by: 'grace', tags: ['x'] }],
+    });
+  }
+
+  /** Array operators leave a stored value that is no array as it is, a string or an object, as on an array key. */
+  async shouldLeaveAStoredValueThatIsNoArray() {
+    await this.querier.insertMany(JsonValue, [
+      { position: 1, value: 'x' },
+      { position: 2, value: { a: 1 } },
+      { position: 3, value: ['a'] },
+    ]);
+
+    await this.querier.updateMany(JsonValue, { $where: { position: [1, 2, 3] } }, { value: { $push: ['b'] } });
+
+    const read = await this.querier.findMany(JsonValue, { $select: { value: true }, $sort: { position: 'asc' } });
+    expect(read.map((row) => row.value)).toEqual(['x', { a: 1 }, ['a', 'b']]);
+  }
+
   /** Many dotted paths in one update all land, their parents created alike. */
   async shouldSetManyNestedJsonPathsInOneUpdate() {
     const parents = Array.from({ length: 24 }, (_, index) => `p${index}`);
@@ -2413,13 +2481,15 @@ export abstract class AbstractQuerierIt<
 
   /** A `$set` beside a nested object keeps every typed value under it, whatever its engine stores JSON as. */
   async shouldKeepNestedJsonTypesWhenSettingOneLeaf() {
-    const kind: CompanyKind = { public: 1 };
-    Reflect.set(kind, 'theme', { color: 'red', nested: { n: 1.5, list: [true, null, 'x'] } });
-    const id = await this.querier.insertOne(Company, { name: 'JSON Nested Types', kind });
+    const id = await this.querier.insertOne(LooseDoc, {
+      name: 'JSON Nested Types',
+      doc: { public: 1, theme: { color: 'red', nested: { n: 1.5, list: [true, null, 'x'] } } },
+    });
 
-    await this.querier.updateOneById(Company, id, { kind: { $set: { 'theme.color': 'blue' } } });
+    await this.querier.updateOneById(LooseDoc, id, { doc: { $set: { 'theme.color': 'blue' } } });
 
-    expect(await this.kindOf(id)).toEqual({
+    const found = await this.querier.findOneById(LooseDoc, id, { $select: { doc: true } });
+    expect(found?.doc).toEqual({
       public: 1,
       theme: { color: 'blue', nested: { n: 1.5, list: [true, null, 'x'] } },
     });

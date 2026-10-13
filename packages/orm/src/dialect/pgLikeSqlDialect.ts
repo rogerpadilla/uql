@@ -27,7 +27,7 @@ import {
 } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
 import { BYTES_PREFIX, type HydrateKind } from './hydrateColumn.js';
-import { type JsonAccessMode, type JsonContainer, type JsonKeyWrite, type JsonSlot } from './jsonSql.js';
+import { type JsonAccessMode, type JsonContainer, type JsonKeyWrite, type JsonSlot, unlessThen } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /** A Postgres-wire dialect's options: the base's, and how its driver binds a parameter. */
@@ -372,9 +372,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(`::${vectorType}`);
   }
 
-  /** `WITH ORDINALITY` keeps the surviving elements in their original order. */
-  protected override jsonKept(ctx: QueryContext, slot: JsonSlot, item: unknown): string {
-    return `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonbOf(ctx, item)}`;
+  /** `WITH ORDINALITY` numbers each element, which the aggregate orders by to keep the survivors in their order. */
+  protected override jsonKeptFrom(slot: JsonSlot): string {
+    return `JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(${JSON_PULL_ALIAS}, ord)`;
+  }
+
+  protected override jsonKeptAggregate(): string {
+    return `JSONB_AGG(${JSON_PULL_ALIAS} ORDER BY ${JSON_PULL_ALIAS}.ord)`;
   }
 
   /** Each key or dotted path set as `jsonb`, which `JSONB_SET` takes and nothing else. */
@@ -397,8 +401,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /** `JSONB_BUILD_ARRAY` takes any type, and a NULL as JSON's null. */
-  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown): string {
-    return `${array} || JSONB_BUILD_ARRAY(${this.jsonVal(ctx, value)})`;
+  protected override jsonAppended(ctx: QueryContext, array: string, value: unknown, unless?: string): string {
+    return `${array} || ${unlessThen(unless, this.jsonEmptyArray, `JSONB_BUILD_ARRAY(${this.jsonVal(ctx, value)})`)}`;
   }
 
   protected override readonly jsonEmptyObject = `'{}'::jsonb`;
@@ -429,7 +433,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   /** Postgres binds JSON with a numbered placeholder and an explicit cast, per driver capability. */
   protected override jsonScalarParam(ctx: QueryContext, value: unknown): string {
-    return this.jsonVal(ctx, value);
+    return this.jsonbOf(ctx, value);
   }
 
   /**

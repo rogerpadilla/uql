@@ -1,7 +1,13 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
-import { AGGREGATE_VALUE_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
+import {
+  AGGREGATE_VALUE_ALIAS,
+  REL_FIELD_PREFIX,
+  REL_NESTED_KEY,
+  REL_TEMP_PREFIX,
+  TEXT_SCORE_ALIAS,
+} from '../dialect/aliases.js';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
@@ -13,6 +19,7 @@ import {
   JsonRecord,
   MeasureUnit,
   MeasureUnitCategory,
+  Reply,
   type Spec,
   Tax,
   TaxCategory,
@@ -233,8 +240,8 @@ class MongoDialectSpec implements Spec {
       this.dialect.aggregationPipeline(User, { $where: { email: 'a@b.c' }, $populate: { profile: true } }),
     ).toEqual([
       { $match: { email: 'a@b.c' } },
-      { $lookup: { from: 'user_profile', localField: '_id', foreignField: 'creatorId', as: 'profile' } },
-      { $unwind: { path: '$profile', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'user_profile', localField: '_id', foreignField: 'creatorId', as: '_uql_joined_profile' } },
+      { $unwind: { path: '$_uql_joined_profile', preserveNullAndEmptyArrays: true } },
     ]);
   }
 
@@ -247,10 +254,10 @@ class MongoDialectSpec implements Spec {
           localField: 'taxId',
           foreignField: '_id',
           pipeline: [{ $match: { name: 'VAT' } }],
-          as: 'tax',
+          as: '_uql_joined_tax',
         },
       },
-      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: true } },
     ]);
   }
 
@@ -277,24 +284,24 @@ class MongoDialectSpec implements Spec {
                 localField: 'categoryId',
                 foreignField: '_id',
                 pipeline: [{ $project: { name: 1 } }],
-                as: 'category',
+                as: '_uql_joined_category',
               },
             },
-            { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
-            { $project: { name: 1, category: 1 } },
+            { $unwind: { path: '$_uql_joined_category', preserveNullAndEmptyArrays: true } },
+            { $project: { name: 1, _uql_joined_category: 1 } },
           ],
-          as: 'tax',
+          as: '_uql_joined_tax',
         },
       },
-      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
-      { $project: { _id: 1, tax: 1 } },
+      { $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: true } },
+      { $project: { _id: 1, _uql_joined_tax: 1 } },
     ]);
   }
 
   /** `$required` drops parents with no match - the aggregation equivalent of an INNER JOIN. */
   shouldDropUnmatchedParentsForRequiredPopulate() {
     const [, unwind] = this.dialect.aggregationPipeline(Item, { $populate: { tax: { $required: true } } });
-    expect(unwind).toEqual({ $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } });
+    expect(unwind).toEqual({ $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: false } });
   }
 
   /** `$exclude` of the primary key needs `_id: 0`: MongoDB returns `_id` unless told not to. */
@@ -308,9 +315,9 @@ class MongoDialectSpec implements Spec {
       $exclude: { id: true },
       $populate: { tax: true, tags: true },
     });
-    const projections = pipeline.filter((stage) => stage.$project && stage.$project['tax']);
+    const projections = pipeline.filter((stage) => stage.$project && stage.$project['_uql_joined_tax']);
     expect(projections).toHaveLength(1);
-    expect(projections[0].$project).toMatchObject({ _id: 0, tax: 1, tags: 1 });
+    expect(projections[0].$project).toMatchObject({ _id: 0, _uql_joined_tax: 1, _uql_joined_tags: 1 });
   }
 
   /**
@@ -603,17 +610,17 @@ class MongoDialectSpec implements Spec {
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
   shouldSortByRelationField() {
     expect(this.dialect.sort(Item, { $sort: { tax: { name: -1 } }, $populate: { tax: true } })).toEqual({
-      'tax.name': -1,
+      '_uql_joined_tax.name': -1,
     });
     expect(this.dialect.sort(User, { $sort: { profile: { picture: 1 } }, $populate: { profile: true } })).toEqual({
-      'profile.image': 1,
+      '_uql_joined_profile.image': 1,
     });
     // As many of its fields as the caller asks for, and alongside the parent's own columns.
     expect(
       this.dialect.sort(Item, { $sort: { tax: { name: 1, percentage: -1 }, code: -1 }, $populate: { tax: true } }),
     ).toEqual({
-      'tax.name': 1,
-      'tax.percentage': -1,
+      '_uql_joined_tax.name': 1,
+      '_uql_joined_tax.percentage': -1,
       code: -1,
     });
   }
@@ -625,11 +632,11 @@ class MongoDialectSpec implements Spec {
    * it asked for, in the order it asked for.
    */
   shouldSortByAnUnpopulatedRelation() {
-    expect(this.dialect.sort(Item, { $sort: { tax: { name: 1 } } })).toEqual({ 'tax.name': 1 });
+    expect(this.dialect.sort(Item, { $sort: { tax: { name: 1 } } })).toEqual({ '_uql_joined_tax.name': 1 });
 
     const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } });
     expect(pipeline.map((stage) => Object.keys(stage)[0])).toEqual(['$lookup', '$unwind', '$sort', '$unset']);
-    expect(pipeline.at(-1)).toEqual({ $unset: ['tax'] });
+    expect(pipeline.at(-1)).toEqual({ $unset: ['_uql_joined_tax'] });
   }
 
   /**
@@ -662,7 +669,7 @@ class MongoDialectSpec implements Spec {
     );
     // Every level of the path gets its own lookup, so a nested ordering resolves without populating.
     expect(this.dialect.sort(Item, { $sort: { tax: { category: { name: 1 } } } })).toEqual({
-      'tax.category.name': 1,
+      '_uql_joined_tax._uql_joined_category.name': 1,
     });
     // Populating the whole path orders by the same nested alias the SQL dialects join to.
     expect(
@@ -670,7 +677,7 @@ class MongoDialectSpec implements Spec {
         $sort: { tax: { category: { name: -1 } } },
         $populate: { tax: { $populate: { category: true } } },
       }),
-    ).toEqual({ 'tax.category.name': -1 });
+    ).toEqual({ '_uql_joined_tax._uql_joined_category.name': -1 });
   }
 
   /** A `$lookup` for a to-one unwinds one document per parent, so it pages and orders no better than a join. */
@@ -737,7 +744,7 @@ class MongoDialectSpec implements Spec {
 
     // A to-many is a lookup of its own read, joined on the parent's key like a to-one.
     expect(this.dialect.aggregationPipeline(User, { $populate: { users: true } })).toEqual([
-      { $lookup: { from: 'User', localField: '_id', foreignField: 'creatorId', as: 'users' } },
+      { $lookup: { from: 'User', localField: '_id', foreignField: 'creatorId', as: '_uql_joined_users' } },
     ]);
 
     expect(
@@ -764,12 +771,12 @@ class MongoDialectSpec implements Spec {
           from: 'User',
           localField: 'creatorId',
           foreignField: '_id',
-          as: 'creator',
+          as: '_uql_joined_creator',
         },
       },
       {
         $unwind: {
-          path: '$creator',
+          path: '$_uql_joined_creator',
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -792,22 +799,22 @@ class MongoDialectSpec implements Spec {
           localField: 'measureUnitId',
           foreignField: '_id',
           pipeline: [{ $match: { deletedAt: null } }],
-          as: 'measureUnit',
+          as: '_uql_joined_measureUnit',
         },
       },
       {
-        $unwind: { path: '$measureUnit', preserveNullAndEmptyArrays: true },
+        $unwind: { path: '$_uql_joined_measureUnit', preserveNullAndEmptyArrays: true },
       },
       {
         $lookup: {
           from: 'Tax',
           localField: 'taxId',
           foreignField: '_id',
-          as: 'tax',
+          as: '_uql_joined_tax',
         },
       },
       {
-        $unwind: { path: '$tax', preserveNullAndEmptyArrays: true },
+        $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: true },
       },
     ]);
 
@@ -830,12 +837,12 @@ class MongoDialectSpec implements Spec {
           from: 'user_profile',
           localField: '_id',
           foreignField: 'creatorId',
-          as: 'profile',
+          as: '_uql_joined_profile',
         },
       },
       {
         $unwind: {
-          path: '$profile',
+          path: '$_uql_joined_profile',
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -860,12 +867,12 @@ class MongoDialectSpec implements Spec {
           from: 'user_profile',
           localField: '_id',
           foreignField: 'creatorId',
-          as: 'profile',
+          as: '_uql_joined_profile',
         },
       },
       {
         $unwind: {
-          path: '$profile',
+          path: '$_uql_joined_profile',
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -896,12 +903,12 @@ class MongoDialectSpec implements Spec {
           from: 'user_profile',
           localField: '_id',
           foreignField: 'creatorId',
-          as: 'profile',
+          as: '_uql_joined_profile',
         },
       },
       {
         $unwind: {
-          path: '$profile',
+          path: '$_uql_joined_profile',
           preserveNullAndEmptyArrays: true,
         },
       },
@@ -927,14 +934,14 @@ class MongoDialectSpec implements Spec {
           foreignField: '_id',
           // no `_id` key: MongoDB returns it by default, which is how the joined row keeps its id
           pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }, { $project: { name: 1 } }],
-          as: 'related',
+          as: '_uql_joined_related',
         },
       },
       {
-        $unwind: { path: '$related', preserveNullAndEmptyArrays: true },
+        $unwind: { path: '$_uql_joined_related', preserveNullAndEmptyArrays: true },
       },
       {
-        $project: { _id: 1, related: 1 },
+        $project: { _id: 1, _uql_joined_related: 1 },
       },
     ]);
   }
@@ -1075,11 +1082,11 @@ class MongoDialectSpec implements Spec {
       },
     });
     expect(stages).toEqual([
-      { $lookup: { from: 'Tax', localField: 'taxId', foreignField: '_id', as: 'tax' } },
-      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } },
+      { $lookup: { from: 'Tax', localField: 'taxId', foreignField: '_id', as: '_uql_joined_tax' } },
+      { $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: false } },
       {
         $group: {
-          _id: { taxName: '$tax.name' },
+          _id: { taxName: '$_uql_joined_tax.name' },
           sold: { $sum: { $cond: [sold, '$salePrice', null] } },
           _uql_count_sold: { $sum: { $cond: [sold, { $cond: [isNull('$salePrice'), 0, 1] }, 0] } },
           n: { $sum: { $cond: [{ $or: [{ $eq: ['$code', 'b'] }, isNull('$code')] }, 1, 0] } },
@@ -1096,6 +1103,17 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
+  /** A group path two relations deep reads the inner lookup's field under the outer one's. */
+  shouldGroupByARelationTwoDeep() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { category: { tax: { category: { name: true } } } },
+      $select: { n: { $count: '*' } },
+    });
+    expect(stages[2]).toEqual({
+      $group: { _id: { category: '$_uql_joined_tax._uql_joined_category.name' }, n: { $sum: 1 } },
+    });
+  }
+
   /** A filter on the relation the group path joins runs inside that `$lookup`, not in a second one. */
   shouldFilterAGroupedRelationInsideItsLookup() {
     const stages = this.dialect.buildAggregateStages(Item, {
@@ -1110,10 +1128,10 @@ class MongoDialectSpec implements Spec {
           localField: 'taxId',
           foreignField: '_id',
           pipeline: [{ $match: { name: 'vat' } }],
-          as: 'tax',
+          as: '_uql_joined_tax',
         },
       },
-      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } },
+      { $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: false } },
     ]);
   }
 
@@ -1892,7 +1910,7 @@ class MongoDialectSpec implements Spec {
     const labels = {
       $cond: [
         { $isArray: '$kind.labels' },
-        { $filter: { input: '$kind.labels', cond: { $ne: ['$$this', { $literal: 'y' }] } } },
+        { $filter: { input: '$kind.labels', cond: { $not: [{ $in: ['$$this', { $literal: ['y'] }] }] } } },
         '$kind.labels',
       ],
     };
@@ -1903,6 +1921,43 @@ class MongoDialectSpec implements Spec {
         },
       },
     ]);
+  }
+
+  /** A JSON array column is written whole, as an array key is: its pulls, then each append, one guarded per `$addToSet`. */
+  shouldWriteAJsonArrayColumnAsAPipeline() {
+    const array = { $ifNull: ['$entries', []] };
+    expect(this.dialect.getUpdateFilter({ entries: { $pull: ['a', 'b'], $push: ['c'], $addToSet: ['d'] } })).toEqual([
+      {
+        $set: {
+          entries: {
+            $cond: [
+              { $isArray: array },
+              {
+                $concatArrays: [
+                  { $filter: { input: array, cond: { $not: [{ $in: ['$$this', { $literal: ['a', 'b'] }] }] } } },
+                  [{ $literal: 'c' }],
+                  { $cond: [{ $in: [{ $literal: 'd' }, array] }, [], [{ $literal: 'd' }]] },
+                ],
+              },
+              '$entries',
+            ],
+          },
+        },
+      },
+    ]);
+  }
+
+  /** A lookup puts a relation stored under its own name, as a Mongoose `ref` is, on a field of its own. */
+  shouldLookUpARelationStoredUnderItsOwnNameApart() {
+    const field = `${REL_FIELD_PREFIX}author`;
+    const [lookup, unwind] = this.dialect.aggregationPipeline(Reply, { $populate: { author: true } });
+    expect(lookup).toMatchObject({ $lookup: { localField: 'author', as: field } });
+    expect(unwind).toEqual({ $unwind: { path: `$${field}`, preserveNullAndEmptyArrays: true } });
+    const doc = { author: 'u1', [field]: { _id: 'u1', name: 'Ada' } };
+    expect(this.dialect.normalizeId(getMeta(Reply), doc)).toEqual({
+      authorId: 'u1',
+      author: { id: 'u1', name: 'Ada' },
+    });
   }
 
   /** Native `$inc` fails on a stored `null`, which the pipeline counts as 0, as SQL does. */

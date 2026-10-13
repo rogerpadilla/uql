@@ -3,6 +3,7 @@ import { AbstractDialect } from '../dialect/abstractDialect.js';
 import {
   AGGREGATE_VALUE_ALIAS,
   REL_NESTED_KEY,
+  REL_FIELD_PREFIX,
   REL_TEMP_PREFIX,
   SUM_COUNT_ALIAS,
   nullsSortField,
@@ -83,7 +84,7 @@ import {
   hasKeys,
   isFieldUpdateOp,
   isJsonObject,
-  foldJsonUpdate,
+  foldJson,
   type JsonArrayWrites,
   type JsonWrites,
   writesKeys,
@@ -143,6 +144,19 @@ type MongoReadStages = {
   };
 };
 
+/** A relation as `normalizeId` reads it: its key, the field a lookup put its rows on, and its entity. */
+type RelationRead = { readonly key: string; readonly field: string; readonly meta: EntityMeta<object> };
+
+/** The field a lookup puts a relation's rows on, prefixed so a stored field of the same name (a Mongoose `ref`) survives. */
+function relationField(relKey: string): string {
+  return `${REL_FIELD_PREFIX}${relKey}`;
+}
+
+/** Where a join's rows are on the queried document: its relation's field, under its parent's. */
+function joinedPath(join: QueryJoin): string {
+  return join.parent ? `${joinedPath(join.parent)}.${relationField(join.key)}` : relationField(join.key);
+}
+
 /** Accumulator threaded through `$where` rendering: the relation lookups it needs, and their temp fields. */
 type RelationLookups = {
   readonly stages: MongoAggregationPipelineEntry<Document>[];
@@ -153,13 +167,15 @@ type RelationLookups = {
 const MONGO_ARITHMETIC = { $inc: '$add', $mul: '$multiply' } as const satisfies Record<keyof FieldUpdateOp, string>;
 
 /**
- * One array key's writes at `path`, as SQL writes them: the pull, then each append onto `[]` in place of a
+ * One array's writes at `path`, as SQL writes them: the pulls, then each append onto `[]` in place of a
  * missing or null array, a `unique` one only where the array lacks its item; a value that is no array stays.
  */
-function arrayWrite(path: string, { pull, appends }: JsonArrayWrites): Document {
+function arrayWrite(path: string, { pulls, appends }: JsonArrayWrites): Document {
   const stored = `$${path}`;
   const kept = (array: Document | string) =>
-    pull ? { $filter: { input: array, cond: { $ne: ['$$this', { $literal: pull.item }] } } } : array;
+    pulls.length > 0
+      ? { $filter: { input: array, cond: { $not: [{ $in: ['$$this', { $literal: pulls }] }] } } }
+      : array;
   if (appends.length === 0) {
     return { $cond: [{ $isArray: stored }, kept(stored), stored] };
   }
@@ -749,7 +765,7 @@ export class MongoDialect extends AbstractDialect {
     // pipeline actually produces cannot drift apart - `$sort` contributes its own to-one joins here
     // exactly as it does on the SQL dialects.
     const joins = resolveQueryJoins(meta, { $populate: populate, $sort: sort });
-    this.collectSort(meta, sort, joins, '', nearest, columns, placed);
+    this.collectSort(meta, sort, joins, { path: '' }, nearest, columns, placed);
     const flags = Object.fromEntries(
       placed.map((path) => [nullsSortField(path), { $cond: [{ $eq: [{ $ifNull: [`$${path}`, null] }, null] }, 1, 0] }]),
     );
@@ -761,12 +777,15 @@ export class MongoDialect extends AbstractDialect {
     };
   }
 
-  /** Walks `$sort` against the metadata of the entity each level addresses, as the SQL dialects do. */
+  /**
+   * Walks `$sort` against the metadata of the entity each level addresses, as the SQL dialects do. `at` is where the
+   * level is: the relations walked to it (`path`, ending in a dot), and the join its rows came from, if any.
+   */
   private collectSort<E>(
     meta: EntityMeta<E>,
     sort: QuerySortMap<E> | undefined,
     joins: QueryJoins,
-    path: string,
+    at: { readonly path: string; readonly join?: QueryJoin },
     nearest: Record<string, 1>,
     out: Record<string, 1 | -1>,
     placed: string[],
@@ -774,9 +793,9 @@ export class MongoDialect extends AbstractDialect {
     for (const [key, value] of Object.entries(sort ?? {})) {
       const relation = meta.relations[key];
       if (key === '$text') {
-        if (path) {
+        if (at.path) {
           throw new UqlUsageError(
-            `$sort by $text is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
+            `$sort by $text is only supported on the queried entity, not on relation '${at.path.slice(0, -1)}'`,
           );
         }
         const { order, project } = textSortOf(sort)!;
@@ -789,26 +808,26 @@ export class MongoDialect extends AbstractDialect {
         if (isVectorSearch(value)) {
           throw new UqlUsageError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
         }
-        const docPath = path + this.pathOf(meta, key);
+        const field = (at.join ? `${joinedPath(at.join)}.` : '') + this.pathOf(meta, key);
         const { desc, nulls } = parseSortDirection(value);
         if (nulls) {
-          placed.push(docPath);
+          placed.push(field);
           // The flag holds 1 for a null, so ordering by it descending brings the null block to the front.
-          out[nullsSortField(docPath)] = nulls === 'first' ? -1 : 1;
+          out[nullsSortField(field)] = nulls === 'first' ? -1 : 1;
         }
-        out[docPath] = desc ? -1 : 1;
+        out[field] = desc ? -1 : 1;
         continue;
       }
       // A `$lookup` is what puts the relation's fields on the document, and only `$populate` asks for
       // one: ordering by a relation nothing looked up reads a field that is not there, which MongoDB
       // ranks as all-equal rather than rejecting. The SQL dialects can add the join themselves.
-      const relPath = `${path}${key}`;
+      const relPath = `${at.path}${key}`;
       const { aggregates, rest } = relationSortTerms(key, relPath, value);
       for (const { spec, direction } of aggregates) {
         // The value rides on a field {@link sortAggregateStages} adds, which only the queried entity's
         // own pipeline has: a nested one is built inside its parent's `$lookup`, where there is no
         // parent document left to hang it off.
-        if (path) {
+        if (at.path) {
           throw new UqlUsageError(
             `$sort by '${relPath}.${spec.field ?? '$count'}' is only supported on the queried entity`,
           );
@@ -829,7 +848,7 @@ export class MongoDialect extends AbstractDialect {
         joins,
         `cannot $sort by relation '${relPath}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
       );
-      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, nearest, out, placed);
+      this.collectSort(join.meta, relationSort, joins, { path: `${relPath}.`, join }, nearest, out, placed);
     }
   }
 
@@ -978,7 +997,16 @@ export class MongoDialect extends AbstractDialect {
     const pipeline = read.length ? { pipeline: read } : {};
     const from = this.resolveTableName(relMeta);
     if (!relOpts.through) {
-      return [{ $lookup: { from, ...this.joinKeys(meta, relMeta, relOpts), ...pipeline, as: relKey } }];
+      return [
+        {
+          $lookup: {
+            from,
+            ...this.joinKeys(meta, relMeta, relOpts),
+            ...pipeline,
+            as: relationField(relKey),
+          },
+        },
+      ];
     }
     const junction = this.junctionOf(meta, relOpts, relMeta, relOpts.through());
     const temp = `${REL_TEMP_PREFIX}${relKey}`;
@@ -997,7 +1025,7 @@ export class MongoDialect extends AbstractDialect {
           localField: `${temp}.${junction.target}`,
           foreignField: ID_KEY,
           ...pipeline,
-          as: relKey,
+          as: relationField(relKey),
         },
       },
     ];
@@ -1100,8 +1128,8 @@ export class MongoDialect extends AbstractDialect {
     // A `$lookup` the ordering asked for puts a field on the document the caller never requested,
     // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
     // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
-    const sortOnly = [...joins.values()].filter((join) => !join.projected).map((join) => join.path);
-    const dropped = [...sortOnly, ...aggregated.fields, ...ordering.fields];
+    const sortOnly = [...joins.values()].filter((join) => !join.projected);
+    const dropped = [...sortOnly.map((join) => joinedPath(join)), ...aggregated.fields, ...ordering.fields];
     const unset = dropped.length ? [{ $unset: dropped }] : [];
 
     // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
@@ -1114,7 +1142,7 @@ export class MongoDialect extends AbstractDialect {
     }
     if (q.$distinct && sortOnly.length) {
       throw new UqlUsageError(
-        `cannot $sort by relation '${sortOnly[0]}' with $distinct unless '${sortOnly[0]}' is populated: the grouping keeps only the columns it projects`,
+        `cannot $sort by relation '${sortOnly[0].path}' with $distinct unless '${sortOnly[0].path}' is populated: the grouping keeps only the columns it projects`,
       );
     }
 
@@ -1169,8 +1197,9 @@ export class MongoDialect extends AbstractDialect {
       return undefined;
     }
     const projection = this.select(entity, q.$select, q.$exclude);
-    for (const relKey of getRelationRequestSummary(getMeta(entity), q.$populate).requestedKeys) {
-      projection[relKey] = 1;
+    const meta = getMeta(entity);
+    for (const relKey of getRelationRequestSummary(meta, q.$populate).requestedKeys) {
+      projection[relationField(relKey)] = 1;
     }
     if (q.$count) {
       projection[COUNT_RESULT_KEY] = 1;
@@ -1218,12 +1247,14 @@ export class MongoDialect extends AbstractDialect {
           from: this.resolveTableName(join.meta),
           ...this.joinKeys(parentMeta, join.meta, join.relation),
           ...(lookupPipeline.length ? { pipeline: lookupPipeline } : {}),
-          as: join.key,
+          as: relationField(join.key),
         },
       });
 
       // `$required` drops parents with no match, the aggregation equivalent of an INNER JOIN.
-      pipeline.push({ $unwind: { path: `$${join.key}`, preserveNullAndEmptyArrays: !join.required } });
+      pipeline.push({
+        $unwind: { path: `$${relationField(join.key)}`, preserveNullAndEmptyArrays: !join.required },
+      });
     }
 
     return pipeline;
@@ -1263,6 +1294,20 @@ export class MongoDialect extends AbstractDialect {
     return renamed;
   }
 
+  /** Each relation's key, the field its rows are read from, and its entity, memoized per entity for `normalizeId`. */
+  private relationReads<E>(meta: EntityMeta<E>): readonly RelationRead[] {
+    let reads = this.#relationReads.get(meta);
+    if (!reads) {
+      reads = definedEntries(meta.relations).map(([key, relation]) => ({
+        key,
+        field: relationField(key),
+        meta: getMeta(relation.entity()),
+      }));
+      this.#relationReads.set(meta, reads);
+    }
+    return reads;
+  }
+
   private referenceKeys<E>(meta: EntityMeta<E>): readonly string[] {
     let keys = this.#referenceKeys.get(meta);
     if (!keys) {
@@ -1275,6 +1320,7 @@ export class MongoDialect extends AbstractDialect {
   // Keyed by the meta object itself; entity metadata is immutable once defined.
   readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
   readonly #referenceKeys = new WeakMap<object, readonly string[]>();
+  readonly #relationReads = new WeakMap<object, readonly RelationRead[]>();
 
   public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[]): E[] {
     return docs.map((doc) => this.normalizeId(meta, doc));
@@ -1318,10 +1364,10 @@ export class MongoDialect extends AbstractDialect {
     // number it is where exact and its exact text past 2^53, as every SQL driver decodes one.
     decodeBigIntsExcept(res, (key) => meta.fields[key]?.type === BigInt);
 
-    for (const [relKey, relation] of definedEntries(meta.relations)) {
-      const value = res[relKey];
+    for (const { key: relKey, field, meta: relMeta } of this.relationReads(meta)) {
+      const value = res[field];
+      delete res[field];
       if (value) {
-        const relMeta = getMeta(relation.entity());
         res[relKey] = Array.isArray(value)
           ? this.normalizeIds(relMeta, value as Document[])
           : this.normalizeId(relMeta, value as Document);
@@ -1407,9 +1453,13 @@ export class MongoDialect extends AbstractDialect {
         assertNoRaw(operand, 'a write');
         assignments[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
       } else if (isJsonUpdateOp(value)) {
-        const writes = foldJsonUpdate(value);
-        Object.assign(assignments, jsonAssignments(key, writes));
-        unset.push(...writes.unset.map((path) => `${key}.${path}`));
+        const update = foldJson(value);
+        if ('array' in update) {
+          assignments[key] = arrayWrite(key, update.array);
+        } else {
+          Object.assign(assignments, jsonAssignments(key, update.object));
+          unset.push(...update.object.unset.map((path) => `${key}.${path}`));
+        }
       } else {
         assignments[key] = { $literal: value };
       }
@@ -1587,7 +1637,7 @@ export class MongoDialect extends AbstractDialect {
         `cannot $group by '${path.join('.')}' on MongoDB: a joined row's relation aggregate is not read`,
       );
     }
-    return `${join.path}.${this.columnOf(join.meta, key)}`;
+    return `${joinedPath(join)}.${this.columnOf(join.meta, key)}`;
   }
 
   /**

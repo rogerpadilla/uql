@@ -75,7 +75,7 @@ class RenamedChild {
   parentId?: number | null;
 }
 
-export type JsonUpdateCaseName = 'set' | 'unsetOnly' | 'push' | 'pull';
+export type JsonUpdateCaseName = 'set' | 'unsetOnly' | 'push' | 'pull' | 'addToSet';
 
 /** The `kind` payload for each {@link JsonUpdateCaseName} - identical across every dialect. */
 export const JSON_UPDATE_PAYLOADS: Record<JsonUpdateCaseName, UpdatePayload<Company>['kind']> = {
@@ -83,6 +83,7 @@ export const JSON_UPDATE_PAYLOADS: Record<JsonUpdateCaseName, UpdatePayload<Comp
   unsetOnly: { $unset: ['public', 'private'] },
   push: { $push: { tags: 'new-tag' } },
   pull: { $pull: { tags: 'a' } },
+  addToSet: { $addToSet: { tags: 'x' } },
 };
 
 /** The suffix each wait policy adds to `FOR UPDATE`. */
@@ -517,6 +518,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldUpdateWithJsonPull() {
     this.assertJsonUpdate('pull');
+  }
+
+  /** Each `$addToSet` append is guarded in line by its own containment test, so the statement stays linear. */
+  shouldUpdateWithJsonAddToSet() {
+    this.assertJsonUpdate('addToSet');
   }
 
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {

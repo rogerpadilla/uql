@@ -12,6 +12,7 @@ import type {
   JsonBrand,
   IsMany,
   Json,
+  JsonScalar,
   Scalar,
   Type,
   Unpacked,
@@ -180,18 +181,20 @@ export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${in
     : unknown
   : unknown;
 
-/**
- * The keys of `T` holding an array of `Element`, each mapped to its element type: what `$push` and `$pull`
- * address, and with scalar elements, `$addToSet`.
- */
-export type JsonArrayFields<T, Element = unknown> = {
+/** The keys of `T` holding an array, each mapped to its element type: what `$push` and `$pull` address. */
+export type JsonArrayFields<T> = {
+  [K in keyof T as IsMany<T[K]> extends true ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
+};
+
+/** The keys of `T` holding an array with an element `$addToSet` takes, each mapped to that element. */
+type JsonSetFields<T> = {
   [
     K in keyof T as IsMany<T[K]> extends true
-      ? Unpacked<NonNullable<T[K]>> extends Element
-        ? K & string
-        : never
+      ? [JsonSetElement<Unpacked<NonNullable<T[K]>>>] extends [never]
+        ? never
+        : K & string
       : never
-  ]?: Unpacked<NonNullable<T[K]>>;
+  ]?: JsonSetElement<Unpacked<NonNullable<T[K]>>>;
 };
 
 /**
@@ -204,17 +207,34 @@ export type JsonUpdateOp<T = unknown> = {
   readonly $unset?: unknown extends T ? readonly string[] : readonly ((keyof T & string) | JsonNestedPaths<T>)[];
   readonly $push?: JsonArrayFields<T>;
   readonly $pull?: JsonArrayFields<T>;
-  readonly $addToSet?: JsonArrayFields<T, string | number | boolean>;
+  readonly $addToSet?: JsonSetFields<T>;
 };
 
 /**
- * The {@link JsonUpdateOp} a field takes: `never` on a non-JSON field, and on a JSON array, whose
- * operators would address keys it does not have (engines disagree on what that does).
+ * A JSON array column's update operators, each taking a list of elements, applied in order on every engine:
+ * `$pull` each, `$push` each, then `$addToSet` each the array lacks. A NULL column counts as an empty array,
+ * and a stored value that is no array stays as it is.
+ * @example `{ tags: { $pull: ['stale'], $addToSet: ['new'] } }`
+ */
+export type JsonArrayUpdateOp<T = unknown> = {
+  readonly $pull?: readonly T[];
+  readonly $push?: readonly T[];
+  readonly $addToSet?: readonly JsonSetElement<T>[];
+};
+
+/** What `$addToSet` takes from an array of `T`: its scalars, any scalar where `T` is untyped. */
+type JsonSetElement<T> = unknown extends T ? JsonScalar : Extract<T, JsonScalar>;
+
+/**
+ * The update operators a field takes: {@link JsonArrayUpdateOp} on a JSON array, `Json<T[]>` or `Json<T>[]`,
+ * {@link JsonUpdateOp} on any other JSON field, and `never` on a field that is no JSON.
  */
 type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
-  ? never
+  ? IsJsonColumn<V> extends true
+    ? JsonArrayUpdateOp<JsonPayload<V>>
+    : never
   : IsMany<T> extends true
-    ? never
+    ? JsonArrayUpdateOp<Unpacked<T>>
     : JsonUpdateOp<T>;
 
 /**
