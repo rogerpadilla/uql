@@ -9,7 +9,7 @@
         "@types/supertest": "^7.2.1",
         "@vitest/coverage-v8": "^5.0.4",
         "esbuild": "^0.28.2",
-        "lerna": "^10.1.0",
+        "lerna": "^10.1.1",
         "oxfmt": "^0.73.0",
         "oxlint": "^1.88.0",
         "publint": "^0.3.25",

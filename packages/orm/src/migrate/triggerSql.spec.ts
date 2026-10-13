@@ -12,7 +12,7 @@ import { idKey } from '../type/index.js';
 import type { EntityTriggerMeta, Json } from '../type/index.js';
 import { sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
-import { dropTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
+import { dropTrigger, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
 @Entity()
 class Post {
@@ -940,5 +940,21 @@ describe('an upsert in the body, to another table', () => {
     expect(() => render(new MsSqlDialect(), counted)).toThrow(
       "'Tally.count' cannot accumulate per row in a trigger fired once per statement",
     );
+  });
+});
+
+describe('namesAny', () => {
+  it('should find a column named quoted, bare or in another case', () => {
+    expect(namesAny('WHEN (NEW."leftAt" IS NULL)', ['leftAt'])).toBe(true);
+    expect(namesAny('left_at', ['left_at'])).toBe(true);
+    expect(namesAny('SET `LEFT_AT` = 1', ['left_at'])).toBe(true);
+  });
+
+  it('should not take a longer identifier for the column it begins or ends with', () => {
+    expect(namesAny('NEW."left_at_utc" + NEW."was_left_at"', ['left_at'])).toBe(false);
+  });
+
+  it('should find the column after a longer identifier containing it', () => {
+    expect(namesAny('NEW.left_at_utc, NEW.left_at', ['left_at'])).toBe(true);
   });
 });

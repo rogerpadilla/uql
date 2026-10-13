@@ -42,7 +42,16 @@ import {
   migrationBuilderFor,
   migrationTargetFor,
 } from './migrationTarget.js';
-import { dropped, lacksValue, newlyRequired, nonEmpty, reverseDiff, sides, withoutRebuild } from './schemaChange.js';
+import {
+  dropped,
+  lacksValue,
+  newlyRequired,
+  nonEmpty,
+  rollbackDiff,
+  sides,
+  unfillableRestores,
+  withoutRebuild,
+} from './schemaChange.js';
 import { constraintNameOf, dropsForeignKeysFirst } from './schemaGenerator.js';
 import { DEFAULT_MIGRATIONS_TABLE, type MigrationStorage } from './storage/databaseStorage.js';
 
@@ -249,7 +258,7 @@ export class Migrator {
 
     // Diff by diff in reverse, each rolled back in the order its generator wrote it.
     const down = [
-      ...altered.toReversed().flatMap((diff) => generator.generateAlterTable(reverseDiff(diff))),
+      ...altered.toReversed().flatMap((diff) => generator.generateAlterTable(rollbackDiff(diff))),
       ...generator.generateDropSchema(this.createdEntities(created), { ifExists: true }),
     ];
     const { emit } = this.target.source;
@@ -264,20 +273,26 @@ export class Migrator {
 
   /**
    * What a generated migration does that its reader must not miss: each column it drops or retypes, which
-   * can lose data, and each table it creates empty while the database holds one no entity names with the
-   * same columns, which may be the table renamed. That one is never renamed here: it may be another's.
+   * can lose data, or its rollback puts back nullable; and each table it creates empty while the database holds
+   * one no entity names with the same columns, which may be the table renamed, never renamed here.
    */
   private async noteChanges(
     generator: SchemaGenerator,
     created: readonly string[],
     altered: readonly SchemaDiff[],
   ): Promise<void> {
-    for (const { tableName, columns = [] } of altered) {
+    for (const diff of altered) {
+      const { tableName, columns = [] } = diff;
       for (const { from, to } of columns.filter((change) => change.isBreaking)) {
         this.logger.logWarn(
           to
             ? `Retypes "${tableName}"."${to.name}" from ${from?.type} to ${to.type}: a value that does not fit is lost or refused.`
             : `Drops "${tableName}"."${from?.name}", losing what it holds.`,
+        );
+      }
+      for (const column of unfillableRestores(diff)) {
+        this.logger.logWarn(
+          `Rolls "${tableName}"."${column.name}" back nullable, with nothing to fill it: require it in the down once filled.`,
         );
       }
     }

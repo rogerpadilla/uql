@@ -470,6 +470,29 @@ describe('Migrator', () => {
       await migrator.down();
       expect([await columns('First'), await columns('Second')]).toEqual([['id'], ['id', 'b']]);
     });
+
+    /** Its drop emptied it, and no engine adds a required column with no default to rows that hold none. */
+    it('should roll a dropped required column back nullable, saying it needs filling', async () => {
+      @Entity({ name: 'Code' })
+      class Code {
+        @Id({ type: Number }) id?: number;
+      }
+      await pool.run(sql.text('CREATE TABLE `Code` (`id` INTEGER PRIMARY KEY, `expiresAt` TEXT NOT NULL)'));
+      await pool.run(sql.text("INSERT INTO `Code` (`id`, `expiresAt`) VALUES (1, 'soon')"));
+      const migrator = migratorOf({ entities: [Code] });
+
+      const filePath = await migrator.generateFromEntities('drop_expiry');
+      const down = (await readFile(filePath, 'utf-8')).split('async down')[1];
+
+      expect(down).toContain('ALTER TABLE \\`Code\\` ADD COLUMN \\`expiresAt\\` TEXT;');
+      expect(logger).toHaveBeenCalledWith(
+        'Rolls "Code"."expiresAt" back nullable, with nothing to fill it: require it in the down once filled.',
+      );
+      await linkUqlOrmSource(filePath);
+      await migrator.up();
+      await migrator.down();
+      expect(await columns('Code')).toEqual(['id', 'expiresAt']);
+    });
   });
 
   describe('sync', () => {

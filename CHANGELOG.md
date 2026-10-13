@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.5] - 2026-10-13
+
+- **Fixed:** an unstored `computed` field is parenthesized wherever it's inlined, so a comparison used as a boolean (`$where: { onTime: true }`) no longer fails on Postgres.
+- **Fixed:** `generate:entities` drops and recreates a table's triggers around a changed column only when they name that column.
+- **Fixed:** a generated `down` re-adds a dropped required column with no default as nullable, with a warning, instead of failing on a table with rows.
+
 ## [0.102.4] - 2026-10-13
 
 - **Feat:** on MongoDB, an aggregate's own `$where` takes every operator a query's `$where` takes except `$text`, adding the string operators, `$regex`, `$all`, `$size` and `$elemMatch`.

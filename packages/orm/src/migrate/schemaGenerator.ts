@@ -51,7 +51,7 @@ import {
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
 import { added, alterations, dropped, needsRebuild, newlyRequired, nonEmpty, sides } from './schemaChange.js';
-import { dropTrigger, dropTriggerBody, renderTrigger, stampTriggers } from './triggerSql.js';
+import { dropTrigger, dropTriggerBody, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
 /** The SQL schema generator, one for every SQL engine, its spellings taken from the dialect and its DDL classes. */
 export class SqlSchemaGenerator implements SchemaGenerator {
@@ -213,8 +213,14 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   generateAlterTable(diff: SchemaDiff): string[] {
     const { tableName, primaryKey, columns, rebuild } = diff;
     const fills = this.defaultFills(columns);
-    const moved = Boolean(rebuild || diff.renamedColumns?.length || sides(columns, 'from').length);
-    const triggers = (diff.triggers ?? []).filter(({ from, to }) => moved || !from || !to);
+    const moved = [
+      ...sides(columns, 'from').map(({ name }) => name),
+      ...(diff.renamedColumns ?? []).flatMap(({ from, to }) => [from, to]),
+    ];
+    // A rebuild drops every trigger with its table; an alter, only a kept one naming a column it moves.
+    const triggers = (diff.triggers ?? []).filter(
+      ({ from, to }) => rebuild || !from || !to || to.statements.some((statement) => namesAny(statement, moved)),
+    );
     const triggerDrops = terminated(
       sides(triggers, 'from').flatMap((trigger) => dropTrigger(this.dialect, tableName, trigger.name)),
     );
@@ -354,7 +360,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ),
       foreignKeys: nonEmpty(foreignKeys),
       checks: nonEmpty(tableDiff?.checks ?? []),
-      // A kept trigger as both sides, which the alter cycles only where a column moves under it.
+      // A kept trigger as both sides, which the alter cycles only where a column it names moves under it.
       triggers: nonEmpty([
         ...(tableDiff?.triggers ?? []),
         ...matchByKey(desired.triggers, currentTable.triggers, (it) => it.name).matched.map(([to, from]) => ({

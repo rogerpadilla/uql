@@ -114,6 +114,7 @@ import {
   aggregateOf,
   sql,
   refs,
+  columnRef,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
@@ -637,12 +638,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   private fieldTerm<E>(ctx: QueryContext, meta: EntityMeta<E>, key: FieldKey<E>, opts: SelectOptions): SelectTerm {
     const field = fieldOf(meta, key);
     const kind = this.fieldKind(meta, field, opts.json);
-    if (isInlinedExpression(field)) {
-      // Qualified even when nothing else in this statement is: the expression is spliced in, and one
-      // that opens a correlated subquery has the inner table's columns in scope, so a bare `"id"`
-      // would bind to *that* table instead of this one.
-      const sql = this.rawFragment(ctx, field.computed, opts.prefix ?? this.resolveTableAlias(meta), meta.entity);
-      return { sql: opts.json ? this.carried(`(${sql})`, field) : sql, key, kind };
+    const inlined = this.inlinedOperand(ctx, meta, key, opts.prefix);
+    if (inlined) {
+      return { sql: opts.json ? this.carried(inlined, field) : inlined, key, kind };
     }
     const columnName = this.resolveColumnName(key, field);
     const column = this.escapeId(opts.prefix, true, true) + this.escapeId(columnName);
@@ -1119,26 +1117,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryRenderOptions): string {
     const meta = getMeta(entity);
     const field = meta.fields[key];
-    return (
-      this.inlinedOperand(ctx, field, opts.prefix ?? this.resolveTableAlias(meta), entity) ??
-      this.columnWithPrefix(key, field, opts)
-    );
+    return this.inlinedOperand(ctx, meta, key, opts.prefix) ?? this.columnWithPrefix(key, field, opts);
   }
 
   /**
-   * The expression an inlined computed field stands for, or nothing when the field is a real column.
-   *
-   * Every clause that names such a field needs the expression itself, never the output alias: an
-   * alias exists only when the field was also selected, which `$where` and `$sort` cannot assume.
+   * The expression an inlined computed field stands for, or nothing when the field is a real column. Every
+   * clause names it by the expression, never the output alias, which exists only when it was selected; and
+   * qualified even when nothing else is, since one opening a correlated subquery has the inner table in scope.
    */
-  private inlinedOperand(
-    ctx: QueryContext,
-    field: FieldMeta | undefined,
-    prefix: string | undefined,
-    entity: Type<unknown>,
-  ) {
-    const inlined = field && isInlinedExpression(field) ? field.computed : undefined;
-    return inlined ? this.rawFragment(ctx, inlined, prefix, entity) : undefined;
+  private inlinedOperand<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, prefix: string | undefined) {
+    const field = meta.fields[key];
+    return field && isInlinedExpression(field)
+      ? this.rawFragment(ctx, columnRef(meta.entity, key), prefix ?? this.resolveTableAlias(meta), meta.entity)
+      : undefined;
   }
 
   /** {@link fieldCondition}, appended. */
@@ -1545,9 +1536,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): Pick<SortTerm, 'expr' | 'output'>[] {
     const field = meta.fields[key];
     if (field) {
-      const expr =
-        this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta), meta.entity) ??
-        this.columnWithPrefix(key, field, { prefix });
+      const expr = this.inlinedOperand(ctx, meta, key, prefix) ?? this.columnWithPrefix(key, field, { prefix });
       return [{ expr, output: false }];
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
@@ -1772,11 +1761,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     key: string,
     prefix: string | undefined,
   ): AggregateValue {
-    const field = getMeta(entity).fields[key];
-    return {
-      sql: this.resolveOperandField(ctx, entity, key, { prefix }),
-      bare: field === undefined || !isInlinedExpression(field),
-    };
+    const meta = getMeta(entity);
+    const field = meta.fields[key];
+    const inlined = this.inlinedOperand(ctx, meta, key, prefix);
+    return { sql: inlined ?? this.columnWithPrefix(key, field, { prefix }), bare: !inlined };
   }
 
   /**

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Change, SchemaDiff } from '../type/index.js';
-import { added, alterations, dropped, nonEmpty, reverseDiff, sides } from './schemaChange.js';
+import type { Change, ColumnSchema, SchemaDiff } from '../type/index.js';
+import {
+  added,
+  alterations,
+  dropped,
+  nonEmpty,
+  reverseDiff,
+  rollbackDiff,
+  sides,
+  unfillableRestores,
+} from './schemaChange.js';
 
 const [a, b, c, d] = [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }];
 
@@ -61,5 +70,31 @@ describe('schema changes', () => {
       foreignKeys: undefined,
     });
     expect(added(reverseDiff(reverseDiff(diff)).columns)).toEqual(added(diff.columns));
+  });
+});
+
+describe('rollbackDiff', () => {
+  const required: ColumnSchema = {
+    name: 'expiresAt',
+    type: 'TEXT',
+    nullable: false,
+    isPrimaryKey: false,
+    isAutoIncrement: false,
+    isUnique: false,
+  };
+  const dropsRequired: SchemaDiff = { tableName: 'Code', type: 'alter', columns: [{ from: required }] };
+
+  it('should put a dropped required column with no default back nullable', () => {
+    expect(unfillableRestores(dropsRequired)).toEqual([required]);
+    expect(rollbackDiff(dropsRequired).columns).toEqual([{ to: { ...required, nullable: true } }]);
+  });
+
+  it('should leave a rebuild, which restores its table verbatim, as reversed', () => {
+    const rebuilt: SchemaDiff = {
+      ...dropsRequired,
+      rebuild: { from: { statements: [], columns: ['id', 'expiresAt'] }, to: { statements: [], columns: ['id'] } },
+    };
+    expect(unfillableRestores(rebuilt)).toEqual([]);
+    expect(rollbackDiff(rebuilt)).toEqual(reverseDiff(rebuilt));
   });
 });

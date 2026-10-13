@@ -296,7 +296,7 @@ export interface SchemaGenerator {
    */
   generateDropSchema(entities: readonly Type<object>[], options?: DropSchemaOptions): string[];
 
-  /** The statements taking a table through `diff`; its rollback is the diff reversed, see `reverseDiff`. */
+  /** The statements taking a table through `diff`; its rollback is `rollbackDiff(diff)`. */
   generateAlterTable(diff: SchemaDiff): string[];
 
   /**

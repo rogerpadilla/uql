@@ -105,6 +105,8 @@ class RefLedger {
   label?: string | null;
   @Field({ type: Number, computed: (ledger) => sql`${ledger.creditLimit} * 2` })
   double?: number | null;
+  @Field({ type: Boolean, computed: (ledger) => sql`${ledger.creditLimit} <= 0` })
+  exhausted?: boolean | null;
 }
 
 describe('AbstractSqlDialect', () => {
@@ -1014,6 +1016,35 @@ describe('AbstractSqlDialect', () => {
       expect(ctx.sql).toBe('SELECT `id` FROM `Item` ORDER BY `name`');
     });
   });
+  /** A comparison spliced in bare would chain with the one around it: `a <= 0 = ?` is a syntax error. */
+  describe('an inlined computed expression', () => {
+    const exhausted = '(`RefLedger`.`creditLimit` <= 0)';
+
+    it('should parenthesize it in $where', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, RefLedger, { $select: { id: true }, $where: { exhausted: true } });
+      expect(ctx.sql).toBe(`SELECT \`id\` FROM \`RefLedger\` WHERE ${exhausted} = ?`);
+    });
+
+    it('should parenthesize it in $sort', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, RefLedger, { $select: { id: true }, $sort: { exhausted: -1 } });
+      expect(ctx.sql).toBe(`SELECT \`id\` FROM \`RefLedger\` ORDER BY ${exhausted} DESC`);
+    });
+
+    it('should parenthesize it in $select', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, RefLedger, { $select: { exhausted: true } });
+      expect(ctx.sql).toBe(`SELECT ${exhausted} \`exhausted\` FROM \`RefLedger\``);
+    });
+
+    it("should parenthesize it in an aggregate's own $where", () => {
+      const ctx = dialect.createContext();
+      dialect.aggregate(ctx, RefLedger, { $select: { n: { $count: '*', $where: { exhausted: true } } } });
+      expect(ctx.sql).toContain(`${exhausted} = ?`);
+    });
+  });
+
   describe('$distinct', () => {
     it('should generate SELECT DISTINCT with $distinct: true', () => {
       const ctx = dialect.createContext();

@@ -1468,11 +1468,12 @@ describe('SqlSchemaGenerator creating a table only where it is missing', () => {
 });
 
 describe('triggers', () => {
-  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: () => sql`PERFORM 1;` } })
+  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: (post) => sql`PERFORM ${post.title};` } })
   @Entity({ name: 'GenPost' })
   class GenPost {
     @Id({ type: Number }) id?: number;
     @Field({ type: String }) title?: string | null;
+    @Field({ type: String }) titleNote?: string | null;
   }
 
   const generator = new SqlSchemaGenerator(new PostgresDialect());
@@ -1559,6 +1560,27 @@ describe('triggers', () => {
     const sql = generator.generateAlterTable(alter(table));
     expect(sql[0]).toBe(`DROP TRIGGER IF EXISTS "${audit.name}" ON "GenPost";`);
     expect(sql.at(-1)).toMatch(/^CREATE TRIGGER/);
+  });
+
+  // `titleNote` begins with `title`, which a match on the bare text would take for it.
+  it('should leave a kept trigger on around a column it does not name', () => {
+    const { table, declared } = installedAs();
+    table.triggers.push(...declared);
+    const titleNote = table.columns.get('titleNote');
+    assertDefined(titleNote);
+    table.columns.set('titleNote', { ...titleNote, nullable: false });
+    expect(generator.generateAlterTable(alter(table))).toEqual([
+      'ALTER TABLE "GenPost" ALTER COLUMN "titleNote" DROP NOT NULL;',
+    ]);
+  });
+
+  it('should leave a kept trigger on while a column it does not name is dropped', () => {
+    const { table, declared } = installedAs();
+    table.triggers.push(...declared);
+    const title = table.columns.get('title');
+    assertDefined(title);
+    table.columns.set('legacy', { ...title, name: 'legacy' });
+    expect(generator.generateAlterTable(alter(table))).toEqual(['ALTER TABLE "GenPost" DROP COLUMN "legacy";']);
   });
 });
 

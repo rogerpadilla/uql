@@ -211,7 +211,7 @@ export function rowRefs<E>(entity: Type<E>, qualifier: TriggerRowName): RefMap<E
  * One field as SQL, against its own entity or, read off a definition, the entity rendering it. A
  * `qualifier` names the row it reads from, `NEW` or `OLD`, instead of the alias in scope.
  */
-function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
+export function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
   return new ColumnRef(key, (opts) => {
     const owner = entity ?? opts.entity;
     if (!owner) {
@@ -237,12 +237,18 @@ function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderO
           'with no table in scope to correlate a subquery to. Name the columns it is derived from instead.',
       );
     }
-    scope.ctx.append('(');
-    field.computed.render(scope);
-    scope.ctx.append(')');
+    grouped(field.computed).render(scope);
     return;
   }
   scope.ctx.append(scope.escapedPrefix + scope.dialect.escapeId(scope.dialect.columnOf(meta, key), true));
+}
+
+/**
+ * An inlined computed field's expression as every clause splices it: grouped, so a comparison inside cannot
+ * chain with one around it (`a <= b = ?`). A relation aggregate is a subquery, grouped already.
+ */
+function grouped(computed: QuerySql): QuerySql {
+  return computed instanceof RelationAggregate ? computed : sql`(${computed})`;
 }
 
 /** @deprecated Renamed to {@link sql}, the tag editors recognise for SQL highlighting. */

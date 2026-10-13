@@ -348,3 +348,19 @@ function rowsFrom<E>(
     operation === 'UPDATE' ? `${$new} JOIN ${$old} ON ${keyed.join(' AND ')}` : operation === 'INSERT' ? $new : $old;
   return { from, where: filter || undefined };
 }
+
+const IDENTIFIER_CHAR = /[\p{L}\p{N}_$]/u;
+
+/** Whether `statement` names any of `columns` as a whole identifier, quoted or not, in any case. */
+export function namesAny(statement: string, columns: readonly string[]): boolean {
+  const text = statement.toLowerCase();
+  return columns.some((column) => {
+    const name = column.toLowerCase();
+    for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) {
+      if (!IDENTIFIER_CHAR.test(text.charAt(at - 1)) && !IDENTIFIER_CHAR.test(text.charAt(at + name.length))) {
+        return true;
+      }
+    }
+    return false;
+  });
+}

@@ -57,6 +57,27 @@ export function withoutRebuild(diff: SchemaDiff): SchemaDiff {
   };
 }
 
+/**
+ * The columns `diff` drops that its rollback puts back nullable: required, with nothing to fill the rows. A
+ * rebuild restores its table verbatim instead.
+ */
+export function unfillableRestores(diff: SchemaDiff): ColumnSchema[] {
+  return diff.rebuild ? [] : dropped(diff.columns).filter(lacksValue);
+}
+
+/**
+ * `diff` as a rollback runs it: reversed, its {@link unfillableRestores} put back nullable, since no engine
+ * adds a required column to rows holding none.
+ */
+export function rollbackDiff(diff: SchemaDiff): SchemaDiff {
+  const unfillable = new Set(unfillableRestores(diff));
+  const reversed = reverseDiff(diff);
+  const columns = reversed.columns?.map((change) =>
+    change.to && unfillable.has(change.to) ? { ...change, to: { ...change.to, nullable: true } } : change,
+  );
+  return { ...reversed, columns };
+}
+
 /** `items`, or nothing where it has none, so an empty change list is left off a diff. */
 export function nonEmpty<T>(items: readonly T[]): readonly T[] | undefined {
   return items.length ? items : undefined;
