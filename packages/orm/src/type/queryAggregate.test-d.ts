@@ -311,8 +311,19 @@ export async function anAggregateFiltersItsOwnRows() {
   void entries;
 
   await querier.aggregate(Entry, {
-    // @ts-expect-error a filter reads the entity's own fields; a relation there is a subquery inside the aggregate
     $select: { n: { $count: '*', $where: { transaction: { kind: 'x' } } } },
+  });
+  await querier.aggregate(Entry, {
+    // @ts-expect-error a misspelled relation inside an aggregate's own filter
+    $select: { n: { $count: '*', $where: { transactoin: { kind: 'x' } } } },
+  });
+  await querier.aggregate(Entry, {
+    // @ts-expect-error a misspelled field inside a relation an aggregate's own filter reads
+    $select: { n: { $count: '*', $where: { transaction: { kidn: 'x' } } } },
+  });
+  await querier.aggregate(Entry, {
+    // @ts-expect-error a misspelled field inside a logical operator of an aggregate's own filter
+    $select: { n: { $count: '*', $where: { $or: [{ acount: 'a' }] } } },
   });
   await querier.aggregate(Entry, {
     // @ts-expect-error 'acount' is not a field of Entry

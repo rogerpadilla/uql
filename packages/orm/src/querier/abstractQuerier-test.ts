@@ -1483,6 +1483,50 @@ export abstract class AbstractQuerierIt<
     expect(orphans?.adjustments).toBe(1);
   }
 
+  /**
+   * Each aggregate filters its own rows by a relation, to-many included, beside the statement's `$where`.
+   * Grouped, each group tallies its own rows, so the same relation filter answers per group.
+   */
+  async shouldFilterEachAggregateByARelation() {
+    const [alpha, beta] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'per-op alpha' },
+      { name: 'per-op beta' },
+      { name: 'per-op gamma' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'per-op kg', categoryId: alpha },
+      { name: 'per-op g', categoryId: alpha },
+      { name: 'per-op l', categoryId: beta },
+    ]);
+    const $where = { name: { $istartsWith: 'per-op' } };
+
+    const [totals] = await this.querier.aggregate(MeasureUnitCategory, {
+      $where,
+      $select: {
+        all: { $count: '*' },
+        kg: { $count: '*', $where: { measureUnits: { name: 'per-op kg' } } },
+        either: {
+          $count: '*',
+          $where: { $or: [{ measureUnits: { name: 'per-op kg' } }, { measureUnits: { name: 'per-op l' } }] },
+        },
+        twoUnits: { $count: '*', $where: { measureUnits: { $size: 2 } } },
+      },
+    });
+    expect(totals).toEqual({ all: 3, kg: 1, either: 2, twoUnits: 1 });
+
+    const byUnits = await this.querier.aggregate(MeasureUnitCategory, {
+      $where,
+      $group: { unitCount: true },
+      $select: { categories: { $count: '*' }, kg: { $count: '*', $where: { measureUnits: { name: 'per-op kg' } } } },
+      $sort: { unitCount: 1 },
+    });
+    expect(byUnits).toEqual([
+      { unitCount: 0, categories: 1, kg: 0 },
+      { unitCount: 1, categories: 1, kg: 0 },
+      { unitCount: 2, categories: 1, kg: 1 },
+    ]);
+  }
+
   /** An aggregate's `$where` constrains a relation as a find's does. */
   async shouldAggregateRowsFilteredByARelation() {
     const [alpha] = await this.querier.insertMany(MeasureUnitCategory, [

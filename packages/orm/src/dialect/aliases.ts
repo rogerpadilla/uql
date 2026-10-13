@@ -64,8 +64,10 @@ export function nullsSortField(path: string): string {
   return `${OWNED_PREFIX}_nulls_${path.replace(/[._]/g, (char) => (char === '.' ? '_o' : '__'))}`;
 }
 
-/** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */
-export const REL_TEMP_PREFIX = `${OWNED_PREFIX}_rel_`;
+/** The field a MongoDB lookup parks its result on, named by what it reads so two lookups alive at once cannot share one. */
+export function relTempField(kind: 'cond' | 'field' | 'sort' | 'count' | 'rel', name: string | number): string {
+  return `${OWNED_PREFIX}_rel_${kind}_${name}`;
+}
 
 /** Prefix for the field a MongoDB lookup puts a relation's rows on where a stored field has the relation's name. */
 export const REL_FIELD_PREFIX = `${OWNED_PREFIX}_joined_`;

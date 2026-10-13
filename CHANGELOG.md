@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.3] - 2026-10-13
+
+- **Feat:** an aggregate's own `$where` filters through a relation, as a query's does: `{ $count: '*', $where: { lines: { title: 'x' } } }`.
+- **Fixed:** on MongoDB, a find with no `$select` sorted by a relation's `$count` or nearest vector answered with an internal `_uql_rel_sort_` field on each row.
+
 ## [0.102.2] - 2026-10-12
 
 - **Feat:** a JSON array column, `Json<T[]>` or `Json<T>[]`, takes `$pull`, `$push` and `$addToSet`, each a list of elements: `{ tags: { $addToSet: ['news'] } }`.

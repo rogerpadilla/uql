@@ -4,7 +4,7 @@ import {
   AGGREGATE_VALUE_ALIAS,
   REL_NESTED_KEY,
   REL_FIELD_PREFIX,
-  REL_TEMP_PREFIX,
+  relTempField,
   SUM_COUNT_ALIAS,
   nullsSortField,
   sortAggregateField,
@@ -157,11 +157,16 @@ function joinedPath(join: QueryJoin): string {
   return join.parent ? `${joinedPath(join.parent)}.${relationField(join.key)}` : relationField(join.key);
 }
 
-/** Accumulator threaded through `$where` rendering: the relation lookups it needs, and their temp fields. */
-type RelationLookups = {
-  readonly stages: MongoAggregationPipelineEntry<Document>[];
-  readonly temps: string[];
-};
+/** Lookup stages, and the temp fields they fill, which the pipeline takes back out once read. */
+type Lookup = { stages: MongoAggregationPipelineEntry<Document>[]; temps: string[] };
+
+const mergeLookups = (lookups: Lookup[]): Lookup => ({
+  stages: lookups.flatMap((lookup) => lookup.stages),
+  temps: lookups.flatMap((lookup) => lookup.temps),
+});
+
+const unsetOf = (temps: string[]): MongoAggregationPipelineEntry<Document>[] =>
+  temps.length ? [{ $unset: temps }] : [];
 
 /** A scalar field's operator as the aggregation operator computing it. */
 const MONGO_ARITHMETIC = { $inc: '$add', $mul: '$multiply' } as const satisfies Record<keyof FieldUpdateOp, string>;
@@ -376,44 +381,37 @@ export class MongoDialect extends AbstractDialect {
   /**
    * The stages every pipeline starts with: the `$lookup` each relation condition needs, into a temporary
    * field so `$or` keeps its meaning, the `$match` reading them, and the temporaries taken back out. Each
-   * relation aggregate the `$where` or `named` reads is left on the document, once, under its column.
+   * relation aggregate the `$where` or `fields` reads is left on the document, once, under its column.
+   * `lookup` keeps the temporaries used, so a later lookup neither repeats nor reuses one.
    */
   public matchStages<E extends Document>(
     entity: Type<E>,
     where: QueryWhere<E> = {},
     opts: QueryOptions = {},
-    named: readonly string[] = [],
+    fields: readonly string[] = [],
+    lookup: Lookup = { stages: [], temps: [] },
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
-    const lookups: RelationLookups = { stages: [], temps: [] };
-    for (const key of named) {
-      this.appendAggregateField(meta, key, lookups);
+    for (const key of fields) {
+      this.appendAggregateField(meta, key, lookup);
     }
-    const filter = this.renderFilter(entity, this.scopedWhere(meta, where, opts), lookups);
-    return [
-      ...lookups.stages,
-      ...(hasKeys(filter) ? [{ $match: filter }] : []),
-      ...(lookups.temps.length ? [{ $unset: lookups.temps }] : []),
-    ];
+    const filter = this.renderFilter(entity, this.scopedWhere(meta, where, opts), lookup);
+    return [...lookup.stages, ...(hasKeys(filter) ? [{ $match: filter }] : []), ...unsetOf(lookup.temps)];
   }
 
   /**
    * Renders a `$where` tree without applying entity filters (used for same-scope group-operator
    * recursion). A relation, or a relation aggregate, needs `$lookup` stages, so it is only accepted
-   * when `lookups` is given - a plain `find`/`updateMany` filter has nowhere to put them.
+   * when `lookup` is given - a plain `find`/`updateMany` filter has nowhere to put them.
    */
-  protected renderFilter<E extends Document>(
-    entity: Type<E>,
-    where: QueryWhere<E> = {},
-    lookups?: RelationLookups,
-  ): Filter<E> {
+  protected renderFilter<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, lookup?: Lookup): Filter<E> {
     const meta = getMeta(entity);
     const filter: Record<string, unknown> = {};
     for (const [rawKey, rawVal] of Object.entries(where)) {
       let key = rawKey;
       let val: unknown = rawVal;
       if (isGroupOp(key)) {
-        this.appendLogicalOperator(filter, entity, key, val as QueryWhereArray<E>, lookups);
+        this.appendLogicalOperator(filter, entity, key, val as QueryWhereArray<E>, lookup);
       } else if (key === '$text') {
         // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
         // the way it does elsewhere - the same shape as `$distance` being index-defined here.
@@ -421,18 +419,18 @@ export class MongoDialect extends AbstractDialect {
         filter['$text'] = { $search: $value, ...($config && { $language: textLanguage($config) }) };
       } else if (meta.relations[key]) {
         assertNoRaw(val, '$where');
-        if (!lookups) {
+        if (!lookup) {
           throw new UqlUsageError(`filtering by relation '${key}' is not supported here on MongoDB`);
         }
-        this.appendRelationLookup(filter, meta, key, val, lookups);
+        andExpr(filter, this.relationExpression(meta, key, val, lookup));
       } else {
         assertNoRaw(val, '$where');
         this.assertKnownPathRoot(meta, key);
         if (aggregateOf(meta.fields[key])) {
-          if (!lookups) {
+          if (!lookup) {
             throw new UqlUsageError(`filtering by relation aggregate '${key}' is not supported here on MongoDB`);
           }
-          this.appendAggregateField(meta, key, lookups);
+          this.appendAggregateField(meta, key, lookup);
         }
         const keyed = this.holdsKeys(meta, key);
         key = this.pathOf(meta, key);
@@ -469,13 +467,13 @@ export class MongoDialect extends AbstractDialect {
     entity: Type<E>,
     key: QueryGroupOp,
     val: QueryWhereArray<E>,
-    lookups?: RelationLookups,
+    lookup?: Lookup,
   ): void {
     const { join, negate } = GROUP_OPS[key];
     const parts = groupClauses(key, val)
       .map((filterIt) => {
         assertNoRaw(filterIt, '$where');
-        return this.renderFilter(entity, filterIt, lookups);
+        return this.renderFilter(entity, filterIt, lookup);
       })
       .filter((part) => Object.keys(part).length > 0);
 
@@ -493,29 +491,24 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * Emits the correlated `$lookup` for one relation condition, and adds to `filter` the condition testing
-   * its result: presence of a row for a plain relation filter, a comparison against the row count for
-   * `$size`. The target's (and, for ManyToMany, the junction's) own filters scope the lookup, so a
-   * relation subquery can no more read out-of-scope rows than a direct query on the target can.
+   * One relation condition as an expression over the correlated `$lookup` it adds to `lookup`: a row exists
+   * for a plain filter, the row count compared for a `$size`. The target's (and, for ManyToMany, the
+   * junction's) own filters scope the lookup, so a relation subquery can no more read out-of-scope rows
+   * than a direct query on the target can.
    */
-  private appendRelationLookup<E>(
-    filter: Record<string, unknown>,
+  private relationExpression<E>(
     meta: EntityMeta<E>,
     relKey: string,
     val: unknown,
-    lookups: RelationLookups,
-  ): void {
-    const temp = `${REL_TEMP_PREFIX}${lookups.temps.length}`;
+    lookup: Lookup,
+  ): Record<string, unknown> {
     const sizeVal = parseRelationSize(val);
+    const temp = relTempField('cond', lookup.temps.length);
     const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: AGGREGATE_VALUE_ALIAS }];
     const where = (sizeVal === undefined ? val : {}) as QueryWhere<object>;
-    lookups.temps.push(temp);
-    lookups.stages.push(this.relationLookup(meta, meta.relations[relKey]!, where, temp, tail));
-    if (sizeVal === undefined) {
-      filter[`${temp}.0`] = { $exists: true };
-    } else {
-      andExpr(filter, compareCount(this.tally(temp), sizeVal));
-    }
+    lookup.temps.push(temp);
+    lookup.stages.push(this.relationLookup(meta, meta.relations[relKey]!, where, temp, tail));
+    return sizeVal === undefined ? { $gt: [{ $size: `$${temp}` }, 0] } : compareCount(this.tally(temp), sizeVal);
   }
 
   /**
@@ -860,16 +853,16 @@ export class MongoDialect extends AbstractDialect {
   public sortAggregateStages<E extends Document>(
     entity: Type<E>,
     sort: QuerySortMap<E> | undefined,
-  ): { readonly stages: MongoAggregationPipelineEntry<Document>[]; readonly fields: string[] } {
+  ): Lookup & { readonly fields: string[] } {
     const meta = getMeta(entity);
     const specs = Object.entries(sort ?? {}).flatMap(([key, value]) =>
       meta.relations[key] ? relationSortTerms(key, key, value).aggregates.map(({ spec }) => spec) : [],
     );
     const fields = specs.map(sortAggregateField);
-    const stages = specs.flatMap((spec, index) =>
-      this.aggregateStages(meta, spec, `${REL_TEMP_PREFIX}${fields[index]}`, fields[index]),
+    const lookups = specs.map((spec, index) =>
+      this.aggregateStages(meta, spec, relTempField('sort', fields[index]), fields[index]),
     );
-    return { stages, fields };
+    return { ...mergeLookups(lookups), fields };
   }
 
   /** Whether a read answers with a relation aggregate, which only the pipeline can build. */
@@ -889,14 +882,15 @@ export class MongoDialect extends AbstractDialect {
    * {@link aggregateStages} builds from the same spec SQL renders as a subquery. Once however many
    * clauses read it; a key computing none adds nothing.
    */
-  private appendAggregateField<E>(meta: EntityMeta<E>, key: string, lookups: RelationLookups): void {
+  private appendAggregateField<E>(meta: EntityMeta<E>, key: string, lookup: Lookup): void {
     const spec = aggregateOf(meta.fields[key]);
-    const temp = `${REL_TEMP_PREFIX}${key}`;
-    if (!spec || lookups.temps.includes(temp)) {
+    const temp = relTempField('field', key);
+    if (!spec || lookup.temps.includes(temp)) {
       return;
     }
-    lookups.temps.push(temp);
-    lookups.stages.push(...this.aggregateStages(meta, spec, temp, this.columnOf(meta, key)));
+    const { stages, temps } = this.aggregateStages(meta, spec, temp, this.columnOf(meta, key));
+    lookup.stages.push(...stages);
+    lookup.temps.push(...temps);
   }
 
   /**
@@ -907,12 +901,7 @@ export class MongoDialect extends AbstractDialect {
    * Every aggregate MongoDB answers is built here: a `$count` a query asks for, an ordering by one, and
    * a field a `computed` declares, which is the same spec the SQL dialects render as one subquery.
    */
-  private aggregateStages<E>(
-    meta: EntityMeta<E>,
-    spec: RelationAggregateSpec,
-    temp: string,
-    field: string,
-  ): MongoAggregationPipelineEntry<Document>[] {
+  private aggregateStages<E>(meta: EntityMeta<E>, spec: RelationAggregateSpec, temp: string, field: string): Lookup {
     const relOpts = relationOf(meta, spec.relation as RelationKey<E>);
     const relMeta = getMeta(relOpts.entity());
     const page = spec.page ?? {};
@@ -940,10 +929,13 @@ export class MongoDialect extends AbstractDialect {
           }
         : { $count: AGGREGATE_VALUE_ALIAS },
     ];
-    return [
-      this.relationLookup(meta, relOpts, spec.where ?? {}, temp, tail),
-      { $addFields: { [field]: this.tally(temp, spec.op) } },
-    ];
+    return {
+      stages: [
+        this.relationLookup(meta, relOpts, spec.where ?? {}, temp, tail),
+        { $addFields: { [field]: this.tally(temp, spec.op) } },
+      ],
+      temps: [temp],
+    };
   }
 
   /**
@@ -965,18 +957,16 @@ export class MongoDialect extends AbstractDialect {
     q: Query<E>,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
-    const stages: MongoAggregationPipelineEntry<Document>[] = [];
-    const temps: string[] = [];
-    for (const relKey of getRelationRequestSummary(meta, q.$populate).toManyKeys) {
-      stages.push(...this.toManyLookup(meta, relKey, parseRelationAtKey(relKey, q.$populate).query, temps));
-    }
-    for (const { relKey, where } of countedRelations(meta, q.$count)) {
-      const temp = `${REL_TEMP_PREFIX}count_${relKey}`;
-      temps.push(temp);
+    const toMany = getRelationRequestSummary(meta, q.$populate).toManyKeys.map((relKey) =>
+      this.toManyLookup(meta, relKey, parseRelationAtKey(relKey, q.$populate).query),
+    );
+    const counts = countedRelations(meta, q.$count).map(({ relKey, where }): Lookup => {
+      const temp = relTempField('count', relKey);
       const spec: RelationAggregateSpec = { relation: relKey, op: '$count', where };
-      stages.push(...this.aggregateStages(meta, spec, temp, `${COUNT_RESULT_KEY}.${relKey}`));
-    }
-    return temps.length ? [...stages, { $unset: temps }] : stages;
+      return this.aggregateStages(meta, spec, temp, `${COUNT_RESULT_KEY}.${relKey}`);
+    });
+    const { stages, temps } = mergeLookups([...toMany, ...counts]);
+    return [...stages, ...unsetOf(temps)];
   }
 
   /**
@@ -984,12 +974,7 @@ export class MongoDialect extends AbstractDialect {
    * parent inside it. A many-to-many reads its targets, each once, by the ids its junction pairs the
    * parent with, parked in a temporary field of the parent's.
    */
-  private toManyLookup<E>(
-    meta: EntityMeta<E>,
-    relKey: RelationKey<E>,
-    query: RelationQuery,
-    temps: string[],
-  ): MongoAggregationPipelineEntry<Document>[] {
+  private toManyLookup<E>(meta: EntityMeta<E>, relKey: RelationKey<E>, query: RelationQuery): Lookup {
     const relOpts = relationOf(meta, relKey);
     const relEntity = relOpts.entity();
     const relMeta = getMeta(relEntity);
@@ -997,38 +982,36 @@ export class MongoDialect extends AbstractDialect {
     const pipeline = read.length ? { pipeline: read } : {};
     const from = this.resolveTableName(relMeta);
     if (!relOpts.through) {
-      return [
+      return {
+        stages: [
+          { $lookup: { from, ...this.joinKeys(meta, relMeta, relOpts), ...pipeline, as: relationField(relKey) } },
+        ],
+        temps: [],
+      };
+    }
+    const junction = this.junctionOf(meta, relOpts, relMeta, relOpts.through());
+    const temp = relTempField('rel', relKey);
+    return {
+      temps: [temp],
+      stages: [
+        {
+          $lookup: {
+            ...junction.lookup,
+            pipeline: [...junction.scope, { $project: { [junction.target]: 1 } }],
+            as: temp,
+          },
+        },
         {
           $lookup: {
             from,
-            ...this.joinKeys(meta, relMeta, relOpts),
+            localField: `${temp}.${junction.target}`,
+            foreignField: ID_KEY,
             ...pipeline,
             as: relationField(relKey),
           },
         },
-      ];
-    }
-    const junction = this.junctionOf(meta, relOpts, relMeta, relOpts.through());
-    const temp = `${REL_TEMP_PREFIX}${relKey}`;
-    temps.push(temp);
-    return [
-      {
-        $lookup: {
-          ...junction.lookup,
-          pipeline: [...junction.scope, { $project: { [junction.target]: 1 } }],
-          as: temp,
-        },
-      },
-      {
-        $lookup: {
-          from,
-          localField: `${temp}.${junction.target}`,
-          foreignField: ID_KEY,
-          ...pipeline,
-          as: relationField(relKey),
-        },
-      },
-    ];
+      ],
+    };
   }
 
   /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
@@ -1129,8 +1112,13 @@ export class MongoDialect extends AbstractDialect {
     // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
     // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
     const sortOnly = [...joins.values()].filter((join) => !join.projected);
-    const dropped = [...sortOnly.map((join) => joinedPath(join)), ...aggregated.fields, ...ordering.fields];
-    const unset = dropped.length ? [{ $unset: dropped }] : [];
+    const dropped = [
+      ...sortOnly.map((join) => joinedPath(join)),
+      ...aggregated.temps,
+      ...aggregated.fields,
+      ...ordering.fields,
+    ];
+    const unset = unsetOf(dropped);
 
     // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
     // that reads a lookup those columns do not carry. Refused rather than answered all-equal, and in
@@ -1464,7 +1452,7 @@ export class MongoDialect extends AbstractDialect {
         assignments[key] = { $literal: value };
       }
     }
-    return [...(hasKeys(assignments) ? [{ $set: assignments }] : []), ...(unset.length > 0 ? [{ $unset: unset }] : [])];
+    return [...(hasKeys(assignments) ? [{ $set: assignments }] : []), ...unsetOf(unset)];
   }
 
   /** Refuses a key left to MongoDB that it cannot mint: only an `ObjectId`, read back as a string, so not a `Number`. */
@@ -1521,13 +1509,18 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
     const { joins, where } = resolveGroupJoins(meta, q);
-    const { groupId, accumulators, columns, named } = this.buildGroupSpec(
+    const matched: Lookup = { stages: [], temps: [] };
+    const match = this.matchStages(entity, where, opts, [], matched);
+    const { groupId, accumulators, columns, lookups } = this.buildGroupSpec(
       meta,
       parseGroupMap(q.$group, q.$select),
       joins,
+      matched.temps,
     );
     const pipeline: MongoAggregationPipelineEntry<Document>[] = [
-      ...this.matchStages(entity, where, opts, named),
+      ...match,
+      // What the `$group` reads off each matched row through a lookup, the temporaries it then drops.
+      ...lookups,
       ...this.lookupStages(meta, joins),
       { $group: { _id: hasKeys(groupId) ? groupId : null, ...accumulators } },
       // `$group` answers with `_id` even when grouping by nothing, and with what `columns` read to the end.
@@ -1563,18 +1556,20 @@ export class MongoDialect extends AbstractDialect {
   /**
    * Resolve parsed group entries into the `_id` keys and accumulators of a `$group` stage, and the
    * `columns` its `$project` reads each result from: a group key out of `_id`, a DISTINCT set by its
-   * size, and a `$sum` as null where it read no value, as SQL answers it. `named` is every field it reads,
-   * filters included, so each relation aggregate among them is put on the document first.
+   * size, and a `$sum` as null where it read no value, as SQL answers it. `lookups` puts on each matched
+   * row what the group reads through one: a relation aggregate, and an aggregate's relation condition,
+   * past the `matched` temporaries, whose relation aggregates are on the row already.
    */
   private buildGroupSpec<E>(
     meta: EntityMeta<E>,
     groupEntries: ParsedGroupEntry<E>[],
     joins: QueryJoins,
+    matched: readonly string[],
   ): {
     groupId: Record<string, string>;
     accumulators: Record<string, Record<string, unknown>>;
     columns: Record<string, unknown>;
-    named: string[];
+    lookups: MongoAggregationPipelineEntry<Document>[];
   } {
     if (!groupEntries.length) {
       throw new UqlUsageError('aggregate requires at least one $group column or $select function');
@@ -1582,20 +1577,20 @@ export class MongoDialect extends AbstractDialect {
     const groupId: Record<string, string> = {};
     const accumulators: Record<string, Record<string, unknown>> = {};
     const columns: Record<string, unknown> = {};
-    const named: string[] = [];
+    const lookup: Lookup = { stages: [], temps: [...matched] };
 
     for (const entry of groupEntries) {
       // Aliases stay as the caller wrote them ($project maps them back); the *refs* address columns.
       if (entry.kind === 'key') {
-        groupId[entry.alias] = `$${this.groupedPath(meta, joins, entry.path, named)}`;
+        groupId[entry.alias] = `$${this.groupedPath(meta, joins, entry.path, lookup)}`;
         columns[entry.alias] = `$_id.${entry.alias}`;
         continue;
       }
       const { field } = entry;
       if (field !== undefined) {
-        named.push(field);
+        this.appendAggregateField(meta, field, lookup);
       }
-      const test = entry.where && this.whereExpression(meta, entry.where, named);
+      const test = entry.where && this.whereExpression(meta, entry.where, lookup);
       // What the accumulator reads from a row its own `$where` passes, and from one it does not.
       const read = (passed: unknown, failed: unknown) => (test ? { $cond: [test, passed, failed] } : passed);
       columns[entry.alias] = 1;
@@ -1622,14 +1617,14 @@ export class MongoDialect extends AbstractDialect {
       }
     }
 
-    return { groupId, accumulators, columns, named };
+    return { groupId, accumulators, columns, lookups: lookup.stages };
   }
 
   /** The field a grouped path reads, on the document or on the joined one its lookup unwound. */
-  private groupedPath<E>(meta: EntityMeta<E>, joins: QueryJoins, path: readonly string[], named: string[]): string {
+  private groupedPath<E>(meta: EntityMeta<E>, joins: QueryJoins, path: readonly string[], lookup: Lookup): string {
     const { key, join } = groupPathField(joins, path);
     if (!join) {
-      named.push(key);
+      this.appendAggregateField(meta, key, lookup);
       return this.columnOf(meta, key);
     }
     if (aggregateOf(join.meta.fields[key])) {
@@ -1642,24 +1637,28 @@ export class MongoDialect extends AbstractDialect {
 
   /**
    * An aggregate's own `$where` as the expression a `$cond` tests, which a query filter is not: the
-   * comparisons and the logical operators translate, anything else is refused by name. `named` gathers
-   * the fields it reads, so a relation aggregate among them is on the document first.
+   * comparisons, the logical operators and relations translate, anything else is refused by name. `lookup`
+   * gathers the lookups it tests: a relation condition's, and a relation aggregate's it compares.
    */
-  private whereExpression<E>(meta: EntityMeta<E>, where: QueryWhere<E>, named: string[]): unknown {
+  private whereExpression<E>(meta: EntityMeta<E>, where: QueryWhere<E>, lookup: Lookup): unknown {
     const terms = getKeys(where).map((key): unknown => {
       if (isGroupOp(key)) {
         const { join, negate } = GROUP_OPS[key];
         const clauses = groupClauses(key, where[key]).map((clause) => {
           assertNoRaw(clause, 'an aggregate $where');
-          return this.whereExpression(meta, clause, named);
+          return this.whereExpression(meta, clause, lookup);
         });
         return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
+      }
+      if (meta.relations[key]) {
+        assertNoRaw(where[key], 'an aggregate $where');
+        return this.relationExpression(meta, key, where[key], lookup);
       }
       if (key.startsWith('$')) {
         throw new UqlUsageError(`aggregate $where operator '${key}' is not supported on MongoDB`);
       }
       const val: unknown = where[key];
-      named.push(key);
+      this.appendAggregateField(meta, key, lookup);
       const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : (value: unknown) => value;
       return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
     });

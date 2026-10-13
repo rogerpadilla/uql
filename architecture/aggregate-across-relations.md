@@ -48,10 +48,10 @@ $group: { account: true, orderId: { transaction: { orderId: true } } }
 held: { $sum: { amount: true }, $where: { account: 'buyer_clearing' } }
 ```
 
-- **The entity's own fields only**, by type. A relation there would be a subquery inside an aggregate, which SQL Server refuses (Msg 130).
+- **The entity's fields and relations**, as a find's `$where` takes them. A relation is the `EXISTS` it is everywhere else, read in the derived table below, so no aggregate holds a subquery (SQL Server's Msg 130).
 - **The entity's filters are not applied again**: the statement's rows already passed them.
 - **`CASE WHEN`, on every engine**: `SUM(CASE WHEN … THEN "amount" END)`, `COUNT(CASE WHEN … THEN 1 END)` for `'*'`. `FILTER (WHERE …)` exists on Postgres, CockroachDB and SQLite only, and measured the same (474 against 487 ms over 3M rows), so one rendering serves all.
-- **MongoDB** accumulates `{ $cond: [<condition>, '$amount', null] }`. A condition there is an aggregation expression, not a query filter, so the comparisons translate - `$eq`, `$ne`, `$gt(e)`, `$lt(e)`, `$in`, `$nin`, `$between`, `$isNull`, `$isNotNull`, under `$and`, `$or`, `$not`, `$nor` - and any other is refused by name. A null or missing field is tested with `$ifNull`, since an expression compares a missing field as neither null nor a value.
+- **MongoDB** accumulates `{ $cond: [<condition>, '$amount', null] }`. A condition there is an aggregation expression, not a query filter, so the comparisons translate - `$eq`, `$ne`, `$gt(e)`, `$lt(e)`, `$in`, `$nin`, `$between`, `$isNull`, `$isNotNull`, under `$and`, `$or`, `$not`, `$nor` - and any other is refused by name. A relation is a `$lookup` before the `$group`, tested by its row count. A null or missing field is tested with `$ifNull`, since an expression compares a missing field as neither null nor a value.
 - **A total over no rows is null**, as SQL answers it. MongoDB's `$sum` answers 0, so a count of the values it read sits beside it and the projection reads null where that count is 0.
 
 ## The rows an aggregate reads

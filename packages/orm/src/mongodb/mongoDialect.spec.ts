@@ -5,7 +5,7 @@ import {
   AGGREGATE_VALUE_ALIAS,
   REL_FIELD_PREFIX,
   REL_NESTED_KEY,
-  REL_TEMP_PREFIX,
+  relTempField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
@@ -33,6 +33,11 @@ import { sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
+
+const cond = (n: number) => relTempField('cond', n);
+
+/** A relation condition's test: its lookup found a row. */
+const exists = (temp: string) => ({ $gt: [{ $size: `$${temp}` }, 0] });
 
 /** A string key and a string reference: the shape the two wire seams convert. */
 @Entity()
@@ -326,10 +331,12 @@ class MongoDialectSpec implements Spec {
    */
   shouldReadARelationAggregateAsALookup() {
     const [lookup, added] = this.dialect.aggregationPipeline(Item, { $select: { tagsCount: true } });
-    expect(lookup).toMatchObject({ $lookup: { from: 'ItemTag', as: `${REL_TEMP_PREFIX}tagsCount` } });
+    expect(lookup).toMatchObject({ $lookup: { from: 'ItemTag', as: relTempField('field', 'tagsCount') } });
     expect(added).toEqual({
       $addFields: {
-        tagsCount: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}tagsCount.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] },
+        tagsCount: {
+          $ifNull: [{ $arrayElemAt: [`$${relTempField('field', 'tagsCount')}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0],
+        },
       },
     });
   }
@@ -359,7 +366,9 @@ class MongoDialectSpec implements Spec {
     });
     expect(added).toEqual({
       $addFields: {
-        topPrice: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}topPrice.${AGGREGATE_VALUE_ALIAS}`, 0] }, null] },
+        topPrice: {
+          $ifNull: [{ $arrayElemAt: [`$${relTempField('field', 'topPrice')}.${AGGREGATE_VALUE_ALIAS}`, 0] }, null],
+        },
       },
     });
   }
@@ -380,7 +389,9 @@ class MongoDialectSpec implements Spec {
     });
     expect(added).toEqual({
       $addFields: {
-        laterTotal: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}laterTotal.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] },
+        laterTotal: {
+          $ifNull: [{ $arrayElemAt: [`$${relTempField('field', 'laterTotal')}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0],
+        },
       },
     });
   }
@@ -439,11 +450,11 @@ class MongoDialectSpec implements Spec {
           localField: '_id',
           foreignField: 'categoryId',
           pipeline: [{ $match: { name: 'kg', deletedAt: null } }, { $limit: 1 }],
-          as: '_uql_rel_0',
+          as: cond(0),
         },
       },
-      { $match: { '_uql_rel_0.0': { $exists: true }, deletedAt: null } },
-      { $unset: ['_uql_rel_0'] },
+      { $match: { $expr: exists(cond(0)), deletedAt: null } },
+      { $unset: [cond(0)] },
     ]);
   }
 
@@ -468,17 +479,17 @@ class MongoDialectSpec implements Spec {
             { $match: { '_uql_target.0': { $exists: true } } },
             { $limit: 1 },
           ],
-          as: '_uql_rel_0',
+          as: cond(0),
         },
       },
-      { $match: { '_uql_rel_0.0': { $exists: true } } },
-      { $unset: ['_uql_rel_0'] },
+      { $match: { $expr: exists(cond(0)) } },
+      { $unset: [cond(0)] },
     ]);
   }
 
   /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
   shouldCompareRelationSize() {
-    const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$${cond(0)}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] };
 
     const exact = this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: 0 } });
     expect(exact[0]?.$lookup?.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: AGGREGATE_VALUE_ALIAS }]);
@@ -528,7 +539,7 @@ class MongoDialectSpec implements Spec {
 
     expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(2);
     expect(stages).toContainEqual({
-      $match: { $expr: { $and: [{ $eq: [tally('_uql_rel_0'), 1] }, { $eq: [tally('_uql_rel_1'), 2] }] } },
+      $match: { $expr: { $and: [{ $eq: [tally(cond(0)), 1] }, { $eq: [tally(cond(1)), 2] }] } },
     });
   }
 
@@ -551,7 +562,7 @@ class MongoDialectSpec implements Spec {
     });
     expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(1);
     expect(stages).toContainEqual({
-      $match: { $or: [{ name: 'weight' }, { '_uql_rel_0.0': { $exists: true } }], deletedAt: null },
+      $match: { $or: [{ name: 'weight' }, { $expr: exists(cond(0)) }], deletedAt: null },
     });
   }
 
@@ -605,6 +616,41 @@ class MongoDialectSpec implements Spec {
     ]);
     expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(1);
     expect(stages).toContainEqual({ $match: { $or: [{ tagsCount: 1 }, { tagsCount: { $gt: 3 } }] } });
+  }
+
+  /** An aggregate's own `$where` reads a relation through a `$lookup` before the `$group`, tested by its row count. */
+  shouldLookUpAnAggregatesRelationConditionBeforeTheGroup() {
+    const stages = this.dialect.buildAggregateStages(MeasureUnitCategory, {
+      $select: {
+        kg: { $count: '*', $where: { measureUnits: { name: 'kg' } } },
+        either: { $count: '*', $where: { $or: [{ measureUnits: { name: 'g' } }, { measureUnits: { name: 'l' } }] } },
+      },
+    });
+    expect(stages.map((stage) => Object.keys(stage)[0])).toEqual([
+      '$match',
+      '$lookup',
+      '$lookup',
+      '$lookup',
+      '$group',
+      '$project',
+    ]);
+    expect(stages.slice(1, 4).map((stage) => stage.$lookup?.as)).toEqual([cond(0), cond(1), cond(2)]);
+    expect(stages[4]).toEqual({
+      $group: {
+        _id: null,
+        kg: { $sum: { $cond: [exists(cond(0)), 1, 0] } },
+        either: { $sum: { $cond: [{ $or: [exists(cond(1)), exists(cond(2))] }, 1, 0] } },
+      },
+    });
+  }
+
+  /** An aggregate's relation condition takes a temporary the statement's `$where` has not used. */
+  shouldNameAnAggregatesRelationConditionPastTheMatch() {
+    const stages = this.dialect.buildAggregateStages(MeasureUnitCategory, {
+      $where: { measureUnits: { name: 'g' } },
+      $select: { kg: { $count: '*', $where: { measureUnits: { name: 'kg' } } } },
+    });
+    expect(stages.filter((stage) => '$lookup' in stage).map((stage) => stage.$lookup?.as)).toEqual([cond(0), cond(1)]);
   }
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
@@ -1197,13 +1243,14 @@ class MongoDialectSpec implements Spec {
     ).toThrow("aggregate $where operator '$startsWith' is not supported on MongoDB");
   }
 
-  /** A relation aggregate the statement names is on the document before `$group` reads it. */
+  /** A relation aggregate only the `$group` reads is computed after the `$match`, over the rows it kept. */
   shouldBuildAggregateStagesOverARelationAggregate() {
     const stages = this.dialect.buildAggregateStages(MeasureUnitCategory, {
       $group: { unitCount: true },
       $select: { n: { $count: '*' } },
     });
-    expect(stages[0]).toHaveProperty('$lookup');
+    expect(stages[0]).toEqual({ $match: { deletedAt: null } });
+    expect(stages[1]).toHaveProperty('$lookup');
     expect(stages.slice(-2)).toEqual([
       { $group: { _id: { unitCount: '$unitCount' }, n: { $sum: 1 } } },
       { $project: { _id: 0, unitCount: '$_id.unitCount', n: 1 } },
@@ -1448,6 +1495,13 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { $and: undefined })).toBe(false);
   }
 
+  /** An ordering by a relation's tally takes back out both the lookup's rows and the tally it lifted. */
+  shouldUnsetWhatASortByARelationAggregateParked() {
+    const pipeline = this.dialect.aggregationPipeline(MeasureUnitCategory, { $sort: { measureUnits: { $count: -1 } } });
+    const field = '_uql_sort_count_measureUnits';
+    expect(pipeline.at(-1)).toEqual({ $unset: [relTempField('sort', field), field] });
+  }
+
   /** A `$lookup` brings a relation in one row at a time, so there is nothing under it to rank by distance. */
   /** A parent ranks by its nearest related row, read by the same lookup a relation `$count` sorts by. */
   shouldRankByTheNearestRowOfARelation() {
@@ -1457,14 +1511,14 @@ class MongoDialectSpec implements Spec {
     const field = '_uql_sort_min_chunks_vec';
     const [lookup, lifted] = pipeline;
 
-    expect(lookup.$lookup?.as).toBe(`${REL_TEMP_PREFIX}${field}`);
+    expect(lookup.$lookup?.as).toBe(relTempField('sort', field));
     expect(lookup.$lookup?.pipeline?.at(-1)).toEqual({
       $group: { _id: null, [AGGREGATE_VALUE_ALIAS]: { $min: vectorDistanceExpr('vec', [3, 4, 0], 'l2') } },
     });
     expect(lifted.$addFields?.[field]).toBeDefined();
     // The distance orders first wherever it appears, as on the SQL dialects.
     expect(pipeline.find((stage) => stage.$sort)?.$sort).toEqual({ [field]: 1, name: 1 });
-    expect(pipeline.at(-1)).toEqual({ $unset: [field] });
+    expect(pipeline.at(-1)).toEqual({ $unset: [relTempField('sort', field), field] });
   }
 
   /** A many-to-many's lookup reads its junction's rows, so each is swapped for its target before the aggregate. */

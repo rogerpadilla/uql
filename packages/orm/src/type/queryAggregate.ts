@@ -1,7 +1,6 @@
 import { UqlUsageError } from '../util/uqlError.js';
 import type { FieldKey, FieldKeyOf, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
-import type { QuerySql } from './querySql.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 import type { ExactlyOne, IsMany, RejectKeys } from './utility.js';
 
@@ -91,18 +90,15 @@ type QueryAggregateArgMap<E> = Record<'$count', QueryAggregateArg<E>> &
 /**
  * An aggregate over one field, exactly one op per entry: `{ $sum: { amount: true } }` is `SUM("amount")`,
  * `{ $countDistinct: { id: true } }` is `COUNT(DISTINCT "id")`, and only `$count` takes `'*'`. Its own
- * `$where` narrows the rows it reads to those matching, over the entity's own fields.
+ * `$where` narrows the rows it reads to those matching, as a query's `$where` does.
  */
 export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>> & {
-  readonly $where?: QueryAggregateWhere<E>;
+  readonly $where?: QueryWhere<E>;
 };
-
-/** What an aggregate's own `$where` reads: the entity's fields, since a relation there is a subquery inside it. */
-type QueryAggregateWhere<E> = QueryWhere<E, QuerySql, FieldKey<E>>;
 
 /** An aggregate's `$where` naming a key it does not have, refused: a captured `$select` skips the excess-property check. */
 type AggregateWhereKeys<E, Fn> = Fn extends { readonly $where: infer W }
-  ? { readonly $where: RejectKeys<Exclude<keyof W, keyof QueryAggregateWhere<E>>> }
+  ? { readonly $where: RejectKeys<Exclude<keyof W, keyof QueryWhere<E>>> }
   : unknown;
 
 /** A single-key `{ [op]: Arg }` shape for each op in `Ops`, matched to infer that op's result or its argument. */

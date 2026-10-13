@@ -11,6 +11,7 @@ import {
   ItemAdjustment,
   JsonRecord,
   MeasureUnit,
+  MeasureUnitCategory,
   Profile,
   type Spec,
   type SpecRequirements,
@@ -2828,6 +2829,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       `SELECT ${e}code${e}, SUM(${e}sold${e}) ${e}sold${e}, COUNT(*) ${e}n${e}, COUNT(${e}named${e}) ${e}named${e} FROM (SELECT ${e}code${e}, CASE WHEN ${e}name${e} = ${this.ph(1)} THEN ${e}salePrice${e} END ${e}sold${e}, CASE WHEN ${e}name${e} IS NOT NULL THEN 1 END ${e}named${e} FROM ${e}Item${e}) ${e}_uql_rows${e} GROUP BY ${e}code${e} HAVING SUM(${e}sold${e}) > ${this.ph(2)}`,
     );
     expect(values).toEqual(['a', 5]);
+  }
+
+  /**
+   * An aggregate's own `$where` reads a relation as the `EXISTS` it is everywhere else, in the rows it
+   * aggregates: never inside the aggregate, which SQL Server refuses (Msg 130).
+   */
+  shouldFilterAnAggregateByARelationInTheRowsItReads() {
+    const e = this.dialect.escapeIdChar;
+    const { sql: statement, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, MeasureUnitCategory, {
+        $select: { kg: { $count: '*', $where: { measureUnits: { name: 'kg' } } } },
+      }),
+    );
+    expect(statement).toBe(
+      `SELECT COUNT(${e}kg${e}) ${e}kg${e} FROM (SELECT CASE WHEN EXISTS (SELECT 1 FROM ${e}MeasureUnit${e} ${e}measureUnits${e} WHERE ${e}measureUnits${e}.${e}categoryId${e} = ${e}MeasureUnitCategory${e}.${e}id${e} AND ${e}measureUnits${e}.${e}name${e} = ${this.ph(1)} AND ${e}measureUnits${e}.${e}deletedAt${e} IS NULL) THEN 1 END ${e}kg${e} FROM ${e}MeasureUnitCategory${e} WHERE ${e}deletedAt${e} IS NULL) ${e}_uql_rows${e}`,
+    );
+    expect(values).toEqual(['kg']);
   }
 
   /** A joined row's relation aggregate is a subquery, so the rows computing it are read first, the join inside. */
