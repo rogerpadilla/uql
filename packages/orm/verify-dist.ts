@@ -204,7 +204,7 @@ const BUDGETS: Record<string, number> = {
   // The root is decorators, types and helpers: no querier or dialect is reachable from it.
   '.': 8_600,
   './postgres': 42_100,
-  './migrate': 60_200,
+  './migrate': 60_600,
   './browser': 2_100,
 };
 

@@ -56,6 +56,12 @@ const thrownValue = (thrown: unknown) => thrown;
 const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantId }, fn);
 const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
 
+/** The rows a find matched are those each tally counted, by id. */
+const expectSameRows = (rows: readonly { id?: unknown }[], tallies: readonly { id?: unknown; n: number }[]) => {
+  const ids = (it: readonly { id?: unknown }[]) => it.map(({ id }) => String(id)).sort();
+  expect(ids(tallies.filter(({ n }) => n > 0))).toEqual(ids(rows));
+};
+
 export abstract class AbstractQuerierIt<
   Q extends Querier,
   D extends AbstractDialect = AbstractDialect,
@@ -1304,14 +1310,26 @@ export abstract class AbstractQuerierIt<
     return found.map(({ name, doc }) => [name, doc]);
   }
 
-  /** The names `$where` matches, in code-unit order whatever the column's collation. */
+  /**
+   * The names `$where` matches, in code-unit order whatever the column's collation. An aggregate's own
+   * `$where` must match the same rows, so every filter here also pins that it means one thing in both.
+   */
   protected async categoryNames($where: QueryWhere<MeasureUnitCategory>) {
-    const rows = await this.querier.findMany(MeasureUnitCategory, { $select: { name: true }, $where });
+    const [rows, tallies] = await Promise.all([
+      this.querier.findMany(MeasureUnitCategory, { $select: { id: true, name: true }, $where }),
+      this.querier.aggregate(MeasureUnitCategory, { $group: { id: true }, $select: { n: { $count: '*', $where } } }),
+    ]);
+    expectSameRows(rows, tallies);
     return rows.map((it) => it.name).sort();
   }
 
+  /** As {@link categoryNames}, over companies. */
   private async companyNames($where: QueryWhere<Company>) {
-    const rows = await this.querier.findMany(Company, { $select: { name: true }, $where });
+    const [rows, tallies] = await Promise.all([
+      this.querier.findMany(Company, { $select: { id: true, name: true }, $where }),
+      this.querier.aggregate(Company, { $group: { id: true }, $select: { n: { $count: '*', $where } } }),
+    ]);
+    expectSameRows(rows, tallies);
     return rows.map((it) => it.name).sort();
   }
 
@@ -1375,6 +1393,16 @@ export abstract class AbstractQuerierIt<
   async shouldNotMatchANullValueByARegex() {
     await this.querier.insertMany(MeasureUnitCategory, [{ name: null }, { name: 'null' }]);
     expect(await this.categoryNames({ name: { $regex: 'ul' } })).toEqual(['null']);
+  }
+
+  /** A value is compared as written, a leading `$` included, and a field's `$not` negates a value or a list as it does an operator. */
+  async shouldMatchAValueAsWritten() {
+    await this.querier.insertMany(MeasureUnitCategory, [{ name: '$name' }, { name: 'name' }, { name: 'other' }]);
+    expect(await this.categoryNames({ name: '$name' })).toEqual(['$name']);
+    expect(await this.categoryNames({ name: { $in: ['$name'] } })).toEqual(['$name']);
+    expect(await this.categoryNames({ name: { $startsWith: '$' } })).toEqual(['$name']);
+    expect(await this.categoryNames({ name: { $not: 'name' } })).toEqual(['$name', 'other']);
+    expect(await this.categoryNames({ name: { $not: ['name', 'other'] } })).toEqual(['$name']);
   }
 
   /** A relation aggregate groups and aggregates like any field: the rows computing it are read first. */
@@ -2092,6 +2120,7 @@ export abstract class AbstractQuerierIt<
       $sort: { 'kind.meta.score': 1 },
     });
     expect(byScore.map(({ name }) => name)).toEqual(['JSON Mixed Nine', 'JSON Mixed Ten']);
+    expect(await this.companyNames({ 'kind.meta.score': { $gt: 1 } })).toEqual(['JSON Mixed Nine', 'JSON Mixed Ten']);
 
     expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $eq: 1 } } })).toEqual(['JSON Mixed Nine']);
     expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $in: ['1', 'x'] } } })).toEqual([

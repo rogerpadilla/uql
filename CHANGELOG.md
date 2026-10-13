@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.4] - 2026-10-13
+
+- **Feat:** on MongoDB, an aggregate's own `$where` takes every operator a query's `$where` takes except `$text`, adding the string operators, `$regex`, `$all`, `$size` and `$elemMatch`.
+- **Fixed:** on MongoDB, an aggregate's own `$where` read a value starting with `$` as a field name, and let a string pass `$gt: 1`.
+- **Fixed:** on MongoDB, a field's `$not` with a plain value or a list, `{ name: { $not: 'a' } }`, was refused by the server.
+
 ## [0.102.3] - 2026-10-13
 
 - **Feat:** an aggregate's own `$where` filters through a relation, as a query's does: `{ $count: '*', $where: { lines: { title: 'x' } } }`.

@@ -28,7 +28,7 @@ import {
   VectorDoc,
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
-import { type FieldKey, idKey, type QuerySql, type QueryWhere } from '../type/index.js';
+import { idKey, type QueryWhere } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
@@ -154,6 +154,12 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Item, { name: { $gt: 'a', toString: 'b' } })).toThrow('unknown operator: toString');
     // @ts-expect-error: no such operator
     expect(() => this.dialect.where(Item, { name: { $not: { $bogus: 'a' } } })).toThrow('unknown operator: $bogus');
+  }
+
+  /** A field's `$not` negates a value or a list as the operator it means, which native `$not` takes alone. */
+  shouldNegateAFieldValueOrList() {
+    expect(this.dialect.where(Item, { name: { $not: 'a' } })).toEqual({ name: { $not: { $eq: 'a' } } });
+    expect(this.dialect.where(Item, { name: { $not: ['a', 'b'] } })).toEqual({ name: { $not: { $in: ['a', 'b'] } } });
   }
 
   shouldBuildWhere() {
@@ -1118,7 +1124,10 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesAcrossARelationFilteringEachAggregate() {
     const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
     const sold = {
-      $and: [{ $eq: ['$code', 'a'] }, { $and: [{ $not: [isNull('$salePrice')] }, { $lt: ['$salePrice', 5] }] }],
+      $and: [
+        { $eq: ['$code', { $literal: 'a' }] },
+        { $and: [{ $isNumber: '$salePrice' }, { $lt: ['$salePrice', 5] }] },
+      ],
     };
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { taxName: { tax: { name: true } } },
@@ -1135,7 +1144,7 @@ class MongoDialectSpec implements Spec {
           _id: { taxName: '$_uql_joined_tax.name' },
           sold: { $sum: { $cond: [sold, '$salePrice', null] } },
           _uql_count_sold: { $sum: { $cond: [sold, { $cond: [isNull('$salePrice'), 0, 1] }, 0] } },
-          n: { $sum: { $cond: [{ $or: [{ $eq: ['$code', 'b'] }, isNull('$code')] }, 1, 0] } },
+          n: { $sum: { $cond: [{ $or: [{ $eq: ['$code', { $literal: 'b' }] }, isNull('$code')] }, 1, 0] } },
         },
       },
       {
@@ -1182,48 +1191,97 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * Each comparison an aggregate's own `$where` takes, as the expression a `$cond` tests. A null or
-   * missing field compares below every value there, so an upper bound asks for one to be present.
+   * Each operator an aggregate's own `$where` takes, as the expression a `$cond` tests, matching what a
+   * query's filter matches: an ordering compares within the operand's type, a string test reads strings
+   * only, an array operator arrays only, and every value is a literal, never a field or an operator.
    */
   shouldTranslateAnAggregateFilterIntoAnExpression() {
-    const counting = (where: QueryWhere<Item, QuerySql, FieldKey<Item>>) =>
-      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: where } } })[0];
     const counted = (test: unknown) => ({ $group: { _id: null, n: { $sum: { $cond: [test, 1, 0] } } } });
+    const counting = (where: QueryWhere<Item>) =>
+      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: where } } })[0];
+    const countingCompanies = (where: QueryWhere<Company>) =>
+      this.dialect.buildAggregateStages(Company, { $select: { n: { $count: '*', $where: where } } })[0];
+    const lit = (value: unknown) => ({ $literal: value });
     const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
     const present = (ref: string) => ({ $not: [isNull(ref)] });
+    const numeric = (op: string, ref: string, value: number) => ({
+      $and: [{ $isNumber: ref }, { [op]: [ref, value] }],
+    });
+    const textual = (ref: string, match: Record<string, unknown>) => ({
+      $cond: [{ $eq: [{ $type: ref }, 'string'] }, { $regexMatch: { input: ref, ...match } }, false],
+    });
+    const anyElement = (ref: string, test: unknown) => ({
+      $cond: [{ $isArray: ref }, { $anyElementTrue: [{ $map: { input: ref, in: test } }] }, false],
+    });
+    const within = (ref: string, values: unknown[]) => ({ $in: [{ $ifNull: [ref, null] }, lit(values)] });
 
-    expect(counting({ code: { $eq: 'a' } })).toEqual(counted({ $eq: ['$code', 'a'] }));
-    expect(counting({ code: { $ne: 'a' } })).toEqual(counted({ $not: [{ $eq: ['$code', 'a'] }] }));
+    expect(counting({ code: { $eq: 'a' } })).toEqual(counted({ $eq: ['$code', lit('a')] }));
+    expect(counting({ code: '$name' })).toEqual(counted({ $eq: ['$code', lit('$name')] }));
+    expect(counting({ code: { $ne: 'a' } })).toEqual(counted({ $not: [{ $eq: ['$code', lit('a')] }] }));
     expect(counting({ code: { $ne: null } })).toEqual(counted({ $not: [isNull('$code')] }));
     expect(counting({ salePrice: { $gte: 1, $lt: 9 } })).toEqual(
-      counted({ $and: [{ $gte: ['$salePrice', 1] }, { $and: [present('$salePrice'), { $lt: ['$salePrice', 9] }] }] }),
+      counted({ $and: [numeric('$gte', '$salePrice', 1), numeric('$lt', '$salePrice', 9)] }),
     );
-    expect(counting({ salePrice: { $gt: 1 } })).toEqual(counted({ $gt: ['$salePrice', 1] }));
     expect(counting({ salePrice: { $between: [1, 9] } })).toEqual(
-      counted({ $and: [{ $gte: ['$salePrice', 1] }, { $lte: ['$salePrice', 9] }] }),
+      counted({ $and: [numeric('$gte', '$salePrice', 1), numeric('$lte', '$salePrice', 9)] }),
     );
-    expect(counting({ code: ['a', 'b'] })).toEqual(counted({ $in: ['$code', ['a', 'b']] }));
+    expect(counting({ code: { $gt: 'm' } })).toEqual(
+      counted({ $and: [{ $eq: [{ $type: '$code' }, { $type: lit('m') }] }, { $gt: ['$code', lit('m')] }] }),
+    );
+    expect(counting({ code: ['a', 'b'] })).toEqual(counted(within('$code', ['a', 'b'])));
     expect(counting({ code: { $in: ['a'], $nin: ['b'] } })).toEqual(
-      counted({ $and: [{ $in: ['$code', ['a']] }, { $not: [{ $in: ['$code', ['b']] }] }] }),
+      counted({ $and: [within('$code', ['a']), { $not: [within('$code', ['b'])] }] }),
     );
     expect(counting({ code: { $isNull: true } })).toEqual(counted(isNull('$code')));
     expect(counting({ code: { $isNull: false } })).toEqual(counted(present('$code')));
     expect(counting({ code: { $isNotNull: true } })).toEqual(counted(present('$code')));
     expect(counting({ code: { $isNotNull: false } })).toEqual(counted(isNull('$code')));
+    expect(counting({ code: { $not: 'a' } })).toEqual(counted({ $not: [{ $eq: ['$code', lit('a')] }] }));
+    expect(counting({ code: { $not: { $in: ['a'] } } })).toEqual(counted({ $not: [within('$code', ['a'])] }));
+    expect(counting({ name: { $startsWith: 'a.' } })).toEqual(
+      counted(textual('$name', { regex: lit(String.raw`^a\.`) })),
+    );
+    expect(counting({ name: { $iincludes: '%' } })).toEqual(
+      counted(textual('$name', { regex: lit('%'), options: 'i' })),
+    );
+    expect(counting({ name: { $regex: '^a' } })).toEqual(counted(textual('$name', { regex: lit('^a') })));
     expect(counting({ $not: [{ code: 'a' }], $nor: [{ code: 'b' }, { code: 'c' }] })).toEqual(
       counted({
         $and: [
-          { $not: [{ $and: [{ $eq: ['$code', 'a'] }] }] },
-          { $not: [{ $or: [{ $eq: ['$code', 'b'] }, { $eq: ['$code', 'c'] }] }] },
+          { $not: [{ $and: [{ $eq: ['$code', lit('a')] }] }] },
+          { $not: [{ $or: [{ $eq: ['$code', lit('b')] }, { $eq: ['$code', lit('c')] }] }] },
         ],
       }),
     );
     // A key holds an `ObjectId` on the document, so its hex spelling is converted as a query's is.
     const taxId = '65f0c0ffee0000000000abcd';
-    expect(counting({ taxId })).toEqual(counted({ $eq: ['$taxId', new ObjectId(taxId)] }));
+    expect(counting({ taxId })).toEqual(counted({ $eq: ['$taxId', lit(new ObjectId(taxId))] }));
+
+    expect(countingCompanies({ 'kind.tags': { $size: { $gte: 2 } } })).toEqual(
+      counted({
+        $and: [
+          { $isArray: '$kind.tags' },
+          { $gte: [{ $size: { $cond: [{ $isArray: '$kind.tags' }, '$kind.tags', []] } }, 2] },
+        ],
+      }),
+    );
+    expect(countingCompanies({ 'kind.tags': { $all: ['a', 'b'] } })).toEqual(
+      counted({
+        $and: ['a', 'b'].map((tag) => ({
+          $cond: [{ $isArray: '$kind.tags' }, { $in: [lit(tag), '$kind.tags'] }, false],
+        })),
+      }),
+    );
+    expect(countingCompanies({ 'kind.items': { $elemMatch: { name: 'a', count: { $gt: 1 } } } })).toEqual(
+      counted(
+        anyElement('$kind.items', {
+          $and: [{ $eq: ['$$this.name', lit('a')] }, numeric('$gt', '$$this.count', 1)],
+        }),
+      ),
+    );
   }
 
-  /** An aggregate's own `$where` translates the comparisons, and refuses by name what an expression has none of. */
+  /** An aggregate's own `$where` refuses by name what an expression cannot read. */
   shouldRefuseAnAggregateFilterItCannotTranslate() {
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
@@ -1237,10 +1295,21 @@ class MongoDialectSpec implements Spec {
       this.dialect.buildAggregateStages(MeasureUnit, { $group: { units: { category: { unitCount: true } } } }),
     ).toThrow("cannot $group by 'category.unitCount' on MongoDB: a joined row's relation aggregate is not read");
     expect(() =>
-      this.dialect.buildAggregateStages(Item, {
-        $select: { n: { $count: '*', $where: { name: { $startsWith: 'a' } } } },
+      this.dialect.buildAggregateStages(Company, {
+        $select: { n: { $count: '*', $where: { 'kind.items': { $elemMatch: { name: 'a', $gt: 1 } } } } },
       }),
-    ).toThrow("aggregate $where operator '$startsWith' is not supported on MongoDB");
+    ).toThrow('unknown operator: name');
+    expect(() =>
+      this.dialect.buildAggregateStages(VectorDoc, {
+        $select: { n: { $count: '*', $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 0.3 } } } } },
+      }),
+    ).toThrow('$near is not supported on MongoDB');
+    expect(() =>
+      this.dialect.buildAggregateStages(Company, {
+        // @ts-expect-error: `$size` takes a number or its bounds
+        $select: { n: { $count: '*', $where: { 'kind.tags': { $size: '3' } } } },
+      }),
+    ).toThrow('$size expects a number or bounds, got string');
   }
 
   /** A relation aggregate only the `$group` reads is computed after the `$match`, over the rows it kept. */

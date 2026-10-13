@@ -12,6 +12,7 @@ import {
 } from '../dialect/aliases.js';
 import {
   betweenBounds,
+  inOperands,
   GROUP_OPS,
   groupClauses,
   isGroupOp,
@@ -106,7 +107,7 @@ import {
   textSortOf,
   vectorDistanceOf,
 } from '../util/index.js';
-import { UqlUsageError } from '../util/uqlError.js';
+import { kindOf, UqlUsageError } from '../util/uqlError.js';
 import { decodeBigIntsExcept } from '../util/wideNumber.js';
 import { textLanguage } from './textLanguage.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
@@ -294,31 +295,76 @@ function andExpr(filter: Record<string, unknown>, expr: Record<string, unknown>)
 }
 
 /**
- * `$size` against bounds, which MongoDB's own `$size` takes only as a number: the array at `path` counted
- * in an `$expr`, which no other value satisfies. `$and` may evaluate every operand, so the count reads an
- * empty array in place of any other value.
+ * `value` as an expression reads it, verbatim: bare, a string could name a field (`'$name'`), an object
+ * an operator, and an array its elements' expressions. A number reads as itself.
  */
-function arraySize(path: string, size: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  const value = `$${path}`;
-  const count = { $size: { $cond: [{ $isArray: value }, value, []] } };
-  return { $and: [{ $isArray: value }, compareCount(count, size)] };
+function literal(value: unknown): unknown {
+  return typeof value === 'number' ? value : { $literal: value };
+}
+
+/** Every term true: the term itself when it is the only one. */
+function allOf<T>(terms: T[]): T | { $and: T[] } {
+  return terms.length === 1 ? terms[0] : { $and: terms };
+}
+
+/**
+ * The array at `ref` has `size` elements, or a count in its bounds: an expression, since MongoDB's own
+ * `$size` takes only a number. No other value has a size, and `$and` may evaluate every operand, so the
+ * count reads an empty array in place of one.
+ */
+function arraySize(ref: string, size: unknown): Record<string, unknown> {
+  const count = { $size: { $cond: [{ $isArray: ref }, ref, []] } };
+  return { $and: [{ $isArray: ref }, compareCount(count, size)] };
 }
 
 /** `count` compared with `size`, a number or its bounds, as an aggregation expression. */
-function compareCount(count: unknown, size: number | Readonly<Record<string, unknown>>): Record<string, unknown> {
+function compareCount(count: unknown, size: unknown): Record<string, unknown> {
   if (typeof size === 'number') {
     return { $eq: [count, size] };
   }
-  const comparisons: Record<string, unknown>[] = Object.entries(size).flatMap(
-    ([op, bound]): Record<string, unknown>[] =>
-      op === '$between' && Array.isArray(bound)
-        ? [{ $gte: [count, bound[0]] }, { $lte: [count, bound[1]] }]
-        : [{ [op]: [count, bound] }],
-  );
+  if (!isRecord(size)) {
+    throw new UqlUsageError(`$size expects a number or bounds, got ${kindOf(size)}`);
+  }
+  const comparisons = Object.entries(size).flatMap(([op, bound]): Record<string, unknown>[] => {
+    if (op !== '$between') {
+      return [{ [op]: [count, literal(bound)] }];
+    }
+    const [min, max] = betweenBounds(bound);
+    return [{ $gte: [count, literal(min)] }, { $lte: [count, literal(max)] }];
+  });
   if (!comparisons.length) {
     throw new UqlUsageError('$size needs at least one comparison');
   }
-  return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
+  return allOf(comparisons);
+}
+
+/** Whether the array at `ref` has an element `test` passes, reading it as `$$this`. No other value has one. */
+function anyElement(ref: string, test: unknown): Record<string, unknown> {
+  return { $cond: [{ $isArray: ref }, { $anyElementTrue: [{ $map: { input: ref, in: test } }] }, false] };
+}
+
+/**
+ * Whether `ref` holds a value of `operand`'s type, the only one a query's ordering compares it with: an
+ * expression orders across types, every string above a number and a null below it.
+ */
+function sameType(ref: string, operand: unknown): Record<string, unknown> {
+  return typeof operand === 'number' || typeof operand === 'bigint'
+    ? { $isNumber: ref }
+    : { $eq: [{ $type: ref }, { $type: literal(operand) }] };
+}
+
+/** Whether the string at `ref` matches `regex`. Any other value matches none, where `$regexMatch` would fail. */
+function regexMatch(ref: string, regex: string, insensitive = false): Record<string, unknown> {
+  const match = { $regexMatch: { input: ref, regex: literal(regex), ...(insensitive && { options: 'i' }) } };
+  return { $cond: [{ $eq: [{ $type: ref }, 'string'] }, match, false] };
+}
+
+/** Atlas offers only a similarity threshold, on the index's own scale: converting a distance would mean guessing the metric. */
+function nearRefusal(): UqlUsageError {
+  return new UqlUsageError(
+    '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
+      "Project the score with $sort's $project and filter on it instead.",
+  );
 }
 
 /** MongoDB native operators - pass through as-is. */
@@ -448,7 +494,7 @@ export class MongoDialect extends AbstractDialect {
         if (!isRecord(size)) {
           filter[key] = operators(val);
         } else {
-          andExpr(filter, arraySize(key, size));
+          andExpr(filter, arraySize(`$${key}`, size));
           if (hasKeys(ops)) {
             filter[key] = operators(ops);
           }
@@ -595,7 +641,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** Transform UQL operators to MongoDB operators, refusing as `refusal` a key that is none. */
-  private transformOperators(ops: Record<string, unknown>, refusal = 'unknown operator'): Record<string, unknown> {
+  private transformOperators(ops: unknown, refusal = 'unknown operator'): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [op, val] of whereOperators(ops, refusal)) {
       // `$elemMatch`'s value is itself a condition, so the operators inside it need the same
@@ -605,8 +651,9 @@ export class MongoDialect extends AbstractDialect {
         result[op] = this.held(val);
         continue;
       }
-      // `$not` wraps a condition too, so a uql-only operator inside it (`$isNull`, `$startsWith`) is mapped.
-      if (op === '$not' && isOperatorObject(val)) {
+      // `$not` wraps a condition too: a value or a list as the operator it means, which native `$not` refuses,
+      // and a uql-only operator inside it (`$isNull`, `$startsWith`) mapped.
+      if (op === '$not') {
         result[op] = this.transformOperators(val, refusal);
         continue;
       }
@@ -643,12 +690,7 @@ export class MongoDialect extends AbstractDialect {
           result[val ? '$ne' : '$eq'] = null;
           break;
         case '$near':
-          // Atlas offers only a similarity threshold, on the index's own scale, which UQL neither emits nor
-          // reads: converting a distance would mean guessing the metric, so this refuses.
-          throw new UqlUsageError(
-            '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
-              "Project the score with $sort's $project and filter on it instead.",
-          );
+          throw nearRefusal();
       }
     }
     return result;
@@ -1636,9 +1678,9 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * An aggregate's own `$where` as the expression a `$cond` tests, which a query filter is not: the
-   * comparisons, the logical operators and relations translate, anything else is refused by name. `lookup`
-   * gathers the lookups it tests: a relation condition's, and a relation aggregate's it compares.
+   * An aggregate's own `$where` as the expression a `$cond` tests, matching the rows {@link renderFilter}
+   * would: a `$match` cannot sit inside a `$group`, and `$text`, bound to the pipeline's first stage, is
+   * refused by name. `lookup` gathers the lookups it tests: a relation condition's, and a relation aggregate's.
    */
   private whereExpression<E>(meta: EntityMeta<E>, where: QueryWhere<E>, lookup: Lookup): unknown {
     const terms = getKeys(where).map((key): unknown => {
@@ -1650,58 +1692,109 @@ export class MongoDialect extends AbstractDialect {
         });
         return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
       }
+      const val: unknown = where[key];
+      assertNoRaw(val, 'an aggregate $where');
       if (meta.relations[key]) {
-        assertNoRaw(where[key], 'an aggregate $where');
-        return this.relationExpression(meta, key, where[key], lookup);
+        return this.relationExpression(meta, key, val, lookup);
       }
       if (key.startsWith('$')) {
         throw new UqlUsageError(`aggregate $where operator '${key}' is not supported on MongoDB`);
       }
-      const val: unknown = where[key];
+      this.assertKnownPathRoot(meta, key);
       this.appendAggregateField(meta, key, lookup);
-      const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : (value: unknown) => value;
+      const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : undefined;
       return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
     });
-    return terms.length === 1 ? terms[0] : { $and: terms };
+    return allOf(terms);
   }
 
-  /** One field's condition as an expression: a value it equals, a list it is in, or a map of comparisons. */
-  private fieldExpression(ref: string, val: unknown, wire: (value: unknown) => unknown): unknown {
-    const equals = (value: unknown) => (value === null ? isNullExpr(ref) : { $eq: [ref, wire(value)] });
-    if (!isOperatorMap(val)) {
-      return Array.isArray(val) ? { $in: [ref, wire(val)] } : equals(val);
+  /**
+   * One field's condition as an expression, read as {@link transformOperators} reads it in a query: a value
+   * it equals, a list it is in, or operators. `wire` converts what a key field is compared with.
+   */
+  private fieldExpression(ref: string, val: unknown, wire = (value: unknown) => value): unknown {
+    const equals = (value: unknown) => (value === null ? isNullExpr(ref) : { $eq: [ref, literal(wire(value))] });
+    const within = (op: string, values: unknown) => ({
+      $in: [{ $ifNull: [ref, null] }, literal(wire(inOperands(op, values)))],
+    });
+    const ordered = (op: string, operand: unknown) => {
+      const value = wire(operand);
+      return { $and: [sameType(ref, value), { [op]: [ref, literal(value)] }] };
+    };
+    if (!isOperatorObject(val)) {
+      return Array.isArray(val) ? within('$in', val) : equals(val);
     }
-    // A null or missing field compares below every value in an expression, where SQL leaves it unmatched.
-    const present = { $not: [isNullExpr(ref)] };
     const terms = Object.entries(val).map(([op, operand]): unknown => {
+      const like = LIKE_OPS.get(op);
+      if (like) {
+        return regexMatch(ref, likeRegex(like.pattern(String(operand))), like.insensitive);
+      }
       switch (op) {
         case '$eq':
           return equals(operand);
         case '$ne':
           return { $not: [equals(operand)] };
+        case '$not':
+          return { $not: [this.fieldExpression(ref, operand, wire)] };
         case '$gt':
         case '$gte':
-          return { [op]: [ref, wire(operand)] };
         case '$lt':
         case '$lte':
-          return { $and: [present, { [op]: [ref, wire(operand)] }] };
-        case '$in':
-          return { $in: [ref, wire(operand)] };
-        case '$nin':
-          return { $not: [{ $in: [ref, wire(operand)] }] };
+          return ordered(op, operand);
         case '$between': {
-          const [min, max] = operand as [unknown, unknown];
-          return { $and: [{ $gte: [ref, wire(min)] }, { $lte: [ref, wire(max)] }] };
+          const [min, max] = betweenBounds(operand);
+          return { $and: [ordered('$gte', min), ordered('$lte', max)] };
         }
+        case '$in':
+          return within(op, operand);
+        case '$nin':
+          return { $not: [within(op, operand)] };
         case '$isNull':
-          return operand ? isNullExpr(ref) : present;
         case '$isNotNull':
-          return operand ? present : isNullExpr(ref);
+          return (op === '$isNull') === Boolean(operand) ? equals(null) : { $not: [equals(null)] };
+        case '$regex':
+          return regexMatch(ref, String(operand));
+        case '$size':
+          return arraySize(ref, operand);
+        case '$all':
+          return this.allHeld(ref, inOperands(op, operand));
+        case '$elemMatch':
+          return this.allHeld(ref, [operand]);
+        case '$near':
+          throw nearRefusal();
         default:
-          throw new UqlUsageError(`aggregate $where operator '${op}' is not supported on MongoDB`);
+          throw new UqlUsageError(`unknown operator: ${op}`);
       }
     });
-    return terms.length === 1 ? terms[0] : { $and: terms };
+    return allOf(terms);
+  }
+
+  /**
+   * What `ref` satisfies to hold `value`, as {@link held} reads it in a query: an array each of its
+   * elements, an object each of its keys as a path, anything else as a field condition.
+   */
+  private heldExpression(ref: string, value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return this.allHeld(ref, value);
+    }
+    if (isJsonObject(value)) {
+      return allOf(Object.entries(value).map(([key, item]) => this.heldExpression(`${ref}.${key}`, item)));
+    }
+    return this.fieldExpression(ref, value);
+  }
+
+  /**
+   * `$all`, as {@link allHolding} reads it: the array at `ref` has an element holding each value, a scalar
+   * by `$in`, which stops at the first match where testing each element would map them all.
+   */
+  private allHeld(ref: string, values: readonly unknown[]): unknown {
+    return allOf(
+      values.map((value) =>
+        isOperatorMap(value) || Array.isArray(value)
+          ? anyElement(ref, this.heldExpression('$$this', value))
+          : { $cond: [{ $isArray: ref }, { $in: [literal(value), ref] }, false] },
+      ),
+    );
   }
 
   private buildHavingFilter(having: Record<string, unknown>): Record<string, unknown> {
