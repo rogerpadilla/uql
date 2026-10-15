@@ -4,9 +4,9 @@
  * left behind, so a key whose type stops linking back to the entity property is caught. Type-checked
  * like any `.test-d.ts`.
  */
-import { defineEntity, Entity, Field, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
-import { sql, refs } from '../util/index.js';
-import type { Querier } from './index.js';
+import { defineEntity, Entity, Field, Id, Index, keyOf, ManyToOne, OneToMany } from '../entity/index.js';
+import { sortOf, sql, refs } from '../util/index.js';
+import type { KeyMap, Querier } from './index.js';
 
 @Entity()
 class Studio {
@@ -78,6 +78,7 @@ export async function find() {
     $where: { movies: { $size: { $gte: 1 } } },
   });
   const excluded = await querier.findMany(Movie, { $exclude: { rating: true } });
+  await querier.findMany(Movie, { $sort: sortOf<Movie>([[keyOf((movie: KeyMap<Movie>) => movie.title), 'asc']]) });
   return [found[0].title, found[0].rating, found[0].studioId, found[0].studio, studios[0].movies, excluded[0].title];
 }
 

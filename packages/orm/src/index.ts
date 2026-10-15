@@ -12,6 +12,7 @@ export {
   defineTrigger,
   getMeta,
   idOf,
+  keyOf,
   removeEntity,
 } from './entity/metadata/definition.js';
 export * from './namingStrategy/index.js';
@@ -19,6 +20,7 @@ export { type QueryError, queryErrorKind } from './querier/queryError.js';
 export type * from './type/index.js';
 export { idKey, isSqlQuerier, versionKey } from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
+export { sortOf } from './util/query.util.js';
 export type { HookContext } from './util/hook.util.js';
 export { DefaultLogger } from './util/logger.js';
 export { currentDate, currentTime, currentTimestamp, raw, refs, sql, uuid, uuidv7 } from './util/sql.js';

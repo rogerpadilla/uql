@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
-import { assertWhere, whereIds, whereKeysIn } from './query.util.js';
+import { assertWhere, sortOf, whereIds, whereKeysIn } from './query.util.js';
 import { sql } from './sql.js';
 
 @Entity()
@@ -72,5 +72,16 @@ describe('whereKeysIn', () => {
         { name: 'b', email: 'y' },
       ],
     });
+  });
+});
+
+describe('sortOf', () => {
+  it('should sort by the keys in the order given', () => {
+    const sort = sortOf<User>([
+      ['name', 'descNullsLast'],
+      ['email', 1],
+    ]);
+    expect(sort).toEqual({ name: 'descNullsLast', email: 1 });
+    expect(Object.keys(sort)).toEqual(['name', 'email']);
   });
 });

@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.6] - 2026-10-15
+
+- **Feat:** `keyOf` names a member from a selector and `sortOf` builds a `$sort` from `[key, direction]` pairs, for code generic over its entity.
+
 ## [0.102.5] - 2026-10-13
 
 - **Fixed:** an unstored `computed` field is parenthesized wherever it's inlined, so a comparison used as a boolean (`$where: { onTime: true }`) no longer fails on Postgres.

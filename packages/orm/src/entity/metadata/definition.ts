@@ -121,7 +121,7 @@ export function relationRegistration<T extends object, O>({
   const joined = references?.(keyMap<O>(), keyMap<T>());
   return {
     ...opts,
-    ...(mappedBy && { mappedBy: mappedBy(keyMap<T>()) }),
+    ...(mappedBy && { mappedBy: keyOf(mappedBy) }),
     ...(joined && { references: typeof joined === 'string' ? joined : [...joined] }),
   };
 }
@@ -129,6 +129,14 @@ export function relationRegistration<T extends object, O>({
 /** Every entity's key map: a callback only reads one property off it, and that property is its own key. */
 function keyMap<E>(): KeyMap<E> {
   return KEY_MAP as KeyMap<E>;
+}
+
+/**
+ * The member `pick` reads, `keyOf((post: KeyMap<Post>) => post.title)` answering `'title'`: how code generic over its
+ * entity names one, since a selector follows a rename and a string does not.
+ */
+export function keyOf<E, K extends keyof E>(pick: (keys: KeyMap<E>) => K): K {
+  return pick(keyMap<E>());
 }
 
 const KEY_MAP = new Proxy({}, { get: (_, key) => key });

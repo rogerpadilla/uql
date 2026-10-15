@@ -20,6 +20,7 @@ import {
 import {
   type EntityMeta,
   type IdKey,
+  type KeyMap,
   SQL_FN,
   RelationAggregate,
   idKey,
@@ -42,6 +43,7 @@ import {
   getEntities,
   getMeta,
   idOf,
+  keyOf,
   relationOf,
 } from './definition.js';
 
@@ -2073,4 +2075,9 @@ it('should keep the name and schema a first defineEntity set', () => {
   expect(meta.name).toBe('composed_rows');
   expect(meta.schema).toBe('cms');
   expect(Object.keys(meta.fields)).toEqual(['id', 'title', 'extra']);
+});
+
+it('keyOf should answer the member a selector reads', () => {
+  expect(keyOf((user: KeyMap<User>) => user.email)).toBe('email');
+  expect(keyOf((user: KeyMap<User>) => user.profile)).toBe('profile');
 });

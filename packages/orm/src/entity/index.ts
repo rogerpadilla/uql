@@ -15,6 +15,7 @@ export {
   assertSoleId,
   fieldOf,
   idOf,
+  keyOf,
   namesKey,
   relationOf,
   soleIdOf,
