@@ -30,7 +30,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
     return new MariadbQuerier(() => this.pool.getConnection(), this.dialect, this.extra);
   }
 
-  async end() {
+  override async end() {
     await this.pool.end();
   }
 }

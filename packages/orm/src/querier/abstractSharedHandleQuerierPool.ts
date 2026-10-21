@@ -35,7 +35,7 @@ export abstract class AbstractSharedHandleQuerierPool<
     return this.buildQuerier(await this.opening);
   }
 
-  async end() {
+  override async end() {
     const opening = this.opening;
     this.opening = undefined;
     // An open still in flight is awaited rather than abandoned: closing is what releases its file or port.

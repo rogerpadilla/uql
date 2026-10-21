@@ -1,5 +1,5 @@
-import { asyncScope } from '../context/context.js';
 import type { Querier } from '../type/index.js';
+import { asyncScope } from '../util/asyncScope.js';
 import { cachedIn } from '../util/object.util.js';
 
 /**

@@ -129,7 +129,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected abstract execute(sql: string, values?: unknown[]): Promise<SqlExecution>;
 
   /** What a write reports: the rows it changed, and their ids, inferred from a header's first id where the dialect reads them so. */
-  private updateResultOf(result: SqlExecution): QueryUpdateResult {
+  private updateResultOf(result: SqlExecution): Required<QueryUpdateResult> {
     return buildUpdateResult({
       ...result,
       insertIdSource: this.dialect.insertIdSource,
@@ -234,27 +234,22 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /** What the write `build` writes reports. */
-  private async changesOf(build: QueryBuildFn | QuerySql): Promise<QueryUpdateResult> {
+  private async changesOf(build: QueryBuildFn | QuerySql): Promise<Required<QueryUpdateResult>> {
     const [result] = await this.runStatements([this.bound(build)]);
     return this.updateResultOf(result);
   }
 
-  /**
-   * The `SET`s tuning an ANN index for the query, leading its read, refused where they would apply to nothing: a
-   * `SET LOCAL` outside a transaction. None for a query with no vector search, or on a field with no ANN index,
-   * which then demands no transaction either.
-   */
+  /** The `SET`s tuning an ANN index for the query, leading its read: none without a vector search or an ANN index. */
   private vectorTuning<E>(entity: Type<E>, q: Query<E>): readonly BoundStatement[] {
     if (q.$candidates === undefined) {
       return [];
     }
-    const statements = this.dialect.vectorTuningStatements(getMeta(entity), q);
-    if (statements.length && this.dialect.features.vectorTuningNeedsTransaction && !this.scopeHere()) {
-      throw new UqlUsageError(
-        `$candidates requires an open transaction on ${this.dialect.engineName}; run the query inside pool.transaction(...)`,
-      );
-    }
-    return statements.map((sql) => ({ sql, values: [] }));
+    return this.dialect.vectorTuningStatements(getMeta(entity), q).map((sql) => ({ sql, values: [] }));
+  }
+
+  /** Whether `tuning` applies only inside a transaction, as a `SET LOCAL` does: a read opens one, or joins the open one. */
+  private tunedInTransaction(tuning: readonly BoundStatement[]): boolean {
+    return tuning.length > 0 && this.dialect.features.vectorTuningNeedsTransaction;
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
@@ -290,7 +285,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return [rows, total];
   }
 
-  /** The rows a read of `entity` matches, each as its statement reads it, the vector search's tuning leading it. */
+  /**
+   * The rows a read of `entity` matches, each as its statement reads it, the vector search's tuning leading it, in a
+   * transaction of its own where the tuning needs one and none is open.
+   */
   private selectRows<E extends object, T = E>(
     entity: Type<E>,
     q: Query<E>,
@@ -298,35 +296,43 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     totalAlias?: string,
   ): Promise<T[]> {
     const tuning = this.vectorTuning(entity, q);
-    return this.readRows<T>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias), tuning);
+    const build = (ctx: QueryContext) => this.dialect.find(ctx, entity, q, opts, totalAlias);
+    return this.readRows<T>(build, tuning, this.tunedInTransaction(tuning));
   }
 
   /** The rows of a statement the dialect builds, each as the terms it returns say, after the `leading` ones. */
   private async readRows<T>(
     build: (ctx: QueryContext) => readonly SelectTerm[],
     leading: readonly BoundStatement[] = [],
+    atomic = false,
   ): Promise<T[]> {
     let terms: readonly SelectTerm[] = [];
     const statement = this.bound((ctx) => {
       terms = build(ctx);
     });
-    const results = await this.runStatements([...leading, statement]);
+    const results = await this.runStatements([...leading, statement], atomic);
     return results[leading.length].rows.map(rowReader<T>(terms));
   }
 
   /**
    * The one read not going through `runStatements`: it holds the connection for its loop, so it checks its budget
-   * and connects on its own, its values going as the context holds them, each normalized as it was bound.
+   * and connects on its own, its values going as the context holds them, each normalized as it was bound. Tuning
+   * that needs a transaction is refused outside one, which would otherwise stay open for the whole loop.
    */
   protected override async *internalFindManyStream<E extends object>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ) {
+    const tuning = this.vectorTuning(entity, q);
+    if (this.tunedInTransaction(tuning) && !this.scopeHere()) {
+      throw new UqlUsageError(
+        `a streamed $candidates needs an open transaction on ${this.dialect.engineName}; run the stream inside pool.transaction(...)`,
+      );
+    }
     const ctx = this.dialect.createContext();
     const read = rowReader<E>(this.dialect.find(ctx, entity, q, opts));
     this.assertBindBudget(ctx.values);
-    const tuning = this.vectorTuning(entity, q);
     await this.lazyConnect();
     for (const { sql } of tuning) {
       await this.timed(sql, undefined, () => this.execute(sql));
@@ -420,7 +426,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     results.forEach((result, at) => {
       const { indexes, idsReliable } = statements[at];
       if (idsReliable) {
-        const { ids = [] } = this.updateResultOf(result);
+        const { ids } = this.updateResultOf(result);
         indexes.forEach((index, position) => {
           rows[index][idKey] ??= ids[position] as E[typeof idKey];
         });
@@ -434,7 +440,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ) {
-    const { changes = 0 } = await this.changesOf((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
+    const { changes } = await this.changesOf((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
     return changes;
   }
 
@@ -518,7 +524,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   /** The ids an upsert reports of its rows: its `RETURNING` rows' in order, or its one row's in the header. */
   private reportedIds(result: SqlExecution): (PrimaryKey | undefined)[] {
     if (result.rows.length) {
-      return this.updateResultOf(result).ids ?? [];
+      return this.updateResultOf(result).ids;
     }
     return result.id ? [result.id] : [];
   }
@@ -528,7 +534,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: QuerySearch<E>,
     opts?: QueryOptions,
   ) {
-    const { changes = 0 } = await this.changesOf((ctx) => this.dialect.delete(ctx, entity, q, opts));
+    const { changes } = await this.changesOf((ctx) => this.dialect.delete(ctx, entity, q, opts));
     return changes;
   }
 

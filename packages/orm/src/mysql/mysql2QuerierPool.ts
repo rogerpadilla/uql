@@ -25,7 +25,7 @@ export class MySql2QuerierPool extends AbstractSqlQuerierPool<MySql2Querier, MyS
     return new MySql2Querier(promisify(pool.getConnection.bind(pool)), this.dialect, this.extra);
   }
 
-  async end() {
+  override async end() {
     await this.pool.end();
   }
 }

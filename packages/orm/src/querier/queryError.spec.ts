@@ -6,7 +6,7 @@ import {
   UqlSecurityError,
   UqlUsageError,
 } from '../util/uqlError.js';
-import { queryErrorKind } from './queryError.js';
+import { failedIndexOf, queryErrorKind } from './queryError.js';
 
 describe('queryErrorKind', () => {
   it.each<[string, unknown, QueryErrorKind]>([
@@ -74,6 +74,18 @@ describe('queryErrorKind', () => {
     ['null', null],
   ])('names nothing for %s', (_, err) => {
     expect(queryErrorKind(err)).toBeUndefined();
+  });
+});
+
+describe('failedIndexOf', () => {
+  it('should read the failed statement off libSQL and Turso errors', () => {
+    expect(failedIndexOf(Object.assign(new Error('x'), { statementIndex: 1 }))).toBe(1);
+    expect(failedIndexOf(Object.assign(new Error('x'), { batchIndex: 2 }))).toBe(2);
+  });
+
+  it('should name none for an error without one, or a value that is no error', () => {
+    expect(failedIndexOf(new Error('x'))).toBeUndefined();
+    expect(failedIndexOf({ batchIndex: 2 })).toBeUndefined();
   });
 });
 

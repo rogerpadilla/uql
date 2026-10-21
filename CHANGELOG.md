@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.103.0] - 2026-10-21
+
+- **Feat:** `NeonQuerierPool` holds no connection, so one pool at module scope serves every request on Cloudflare Workers, transactions included. It takes Neon's `ClientConfig`.
+- **Feat:** `$candidates` works outside a transaction on Postgres, CockroachDB and Neon: the tuned read opens its own (one HTTP request on Neon). A tuned `findManyStream` still needs one.
+- **Fixed:** on Cloudflare Workers (`nodejs_compat`), a `transaction(callback)` hung, and `withContext` was lost after the first `await`.
+
 ## [0.102.7] - 2026-10-20
 
 - **Feat:** a large `insertMany` or `upsertMany` is all-or-nothing on every database, Cloudflare D1 included, and takes one round trip on D1, libSQL, Turso and Neon.

@@ -42,7 +42,7 @@ export class MsSqlQuerierPool extends AbstractSqlQuerierPool<MsSqlQuerier, MsSql
   }
 
   /** `mssql` refuses to close a pool mid-connect, so the connect under way settles first. */
-  async end() {
+  override async end() {
     const connecting = this.#connection;
     this.#connection = 'ended';
     await Promise.allSettled([connecting]);

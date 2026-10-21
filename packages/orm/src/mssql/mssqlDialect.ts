@@ -45,7 +45,7 @@ import type {
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
 import { isAutoIncrement, isExactDecimal, jsonPathKeys } from '../util/field.util.js';
-import { assertNonNegativeInteger, isOperatorMap } from '../util/index.js';
+import { assertNonNegativeInteger, isOperatorMap, RETURNED_ID } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -279,7 +279,7 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   private writeRows<E>(ctx: QueryContext, meta: EntityMeta<E>, payload: E | E[], write: () => void): void {
     const id = soleId(meta);
-    const column = this.escapeId('id');
+    const column = this.escapeId(RETURNED_ID);
     const identity = this.identityInsertTarget(meta, payload);
     if (id) {
       ctx.append(

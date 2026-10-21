@@ -21,7 +21,7 @@ export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, Mong
     return new MongodbQuerier(this.dialect, conn, this.extra);
   }
 
-  async end() {
+  override async end() {
     await this.client.close();
   }
 }

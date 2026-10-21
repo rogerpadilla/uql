@@ -24,7 +24,4 @@ export class TursoQuerierPool extends AbstractSqlQuerierPool<TursoSessionQuerier
     const { Session } = await import('@tursodatabase/serverless');
     return new TursoSessionQuerier(new Session(this.conf), this.dialect, this.extra);
   }
-
-  /** Nothing to close: every querier closes its own session. */
-  async end() {}
 }

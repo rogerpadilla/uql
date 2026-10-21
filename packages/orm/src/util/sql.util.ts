@@ -153,6 +153,9 @@ export type SqlExecution = {
   readonly id?: PrimaryKey;
 };
 
+/** The column a `RETURNING` reports ids under: uql's own statements alias the key to it, and a raw `run()` names it so. */
+export const RETURNED_ID = 'id';
+
 /** A statement's result, and how its dialect reports inserted ids, to build a {@link QueryUpdateResult} from. */
 export type BuildUpdateResultPayload = SqlExecution & {
   readonly insertIdSource?: InsertIdSource;
@@ -165,10 +168,10 @@ export type BuildUpdateResultPayload = SqlExecution & {
 
 /**
  * A driver's result as a {@link QueryUpdateResult}: a statement returning rows counts them, which a driver's own
- * count is not always (Hrana answers 0); `RETURNING` rows name their id `id`; a MySQL header's first id is extended
+ * count is not always (Hrana answers 0); `RETURNING` rows name their id {@link RETURNED_ID}; a MySQL header's first id is extended
  * by the increment, which holds only where auto-increment allocation is contiguous (`innodb_autoinc_lock_mode` 0, 1).
  */
-export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
+export function buildUpdateResult(payload: BuildUpdateResultPayload): Required<QueryUpdateResult> {
   const { rows, id, insertIdSource } = payload;
   const changes = rows.length || payload.changes || 0;
   const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
@@ -177,7 +180,7 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
   // counts the rows (false for a MySQL upsert batch, whose querier reads ids back instead). `0` means none.
   let ids: PrimaryKey[] = [];
   if (rows.length) {
-    ids = rows.map((r) => r['id'] as PrimaryKey);
+    ids = rows.map((r) => r[RETURNED_ID] as PrimaryKey);
   } else if (insertIdSource !== 'returning' && isPrimaryKey(id) && id) {
     if (typeof id === 'string') {
       if (changes === 1) ids = [id];

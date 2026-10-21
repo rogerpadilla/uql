@@ -15,8 +15,6 @@ class MockQuerierPool<Q extends Querier, D extends AbstractDialect> extends Abst
     this.getQuerier = getQuerier;
     this.getMigrationQuerier = getMigrationQuerier;
   }
-
-  override async end(): Promise<void> {}
 }
 
 export function createMockQuerierPool<Q extends Querier, D extends AbstractDialect>(

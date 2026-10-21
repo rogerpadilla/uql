@@ -68,6 +68,7 @@ import { utcTimestamp } from '../util/date.js';
 import { ancestorPaths, isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
 import {
   isAutoIncrement,
+  RETURNED_ID,
   isSelectList,
   assertNonNegativeInteger,
   assertNoUndefined,
@@ -550,7 +551,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return '?';
   }
 
-  /** `RETURNING <id column> id`, or nothing on a composite key, whose every column the payload already names. */
+  /** `RETURNING <id column>` as {@link RETURNED_ID}, or nothing on a composite key, whose every column the payload already names. */
   returningId<E>(meta: EntityMeta<E>): string {
     const expression = this.returningIdExpression(meta);
     return expression ? `RETURNING ${expression}` : '';
@@ -569,11 +570,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** What the returned row is read off, for an engine that names it: SQL Server's `INSERTED.`. */
   protected readonly returnedRowPrefix: string = '';
 
-  /** `<id column> AS id` on its own, for a statement composing a `RETURNING` list of several items. */
+  /** `<id column> AS` {@link RETURNED_ID} on its own, for a statement composing a `RETURNING` list of several items. */
   protected returningIdExpression<E>(meta: EntityMeta<E>): string {
     const [idKey] = meta.ids;
     return meta.ids.length === 1
-      ? `${this.returnedRowPrefix}${this.escapedColumnName(meta, idKey)} ${this.escapeId('id')}`
+      ? `${this.returnedRowPrefix}${this.escapedColumnName(meta, idKey)} ${this.escapeId(RETURNED_ID)}`
       : '';
   }
 

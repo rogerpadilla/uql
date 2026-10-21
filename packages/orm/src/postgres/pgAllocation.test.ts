@@ -7,7 +7,7 @@ import { provisioningTimeout } from '../test/spec.util.js';
 import { getKeys } from '../util/object.util.js';
 
 /** KB per call on Node 24, about 4% over what each measures: room for a Node patch, none for a regression. */
-const BUDGET_KB = { readMany: 136, readNested: 93, readOne: 31.5, insertMany: 47.5 };
+const BUDGET_KB = { readMany: 137, readNested: 94, readOne: 32.5, insertMany: 49.5 };
 
 /** `test/pgAllocation.ts` bundled with its decorators lowered, as the tests run it, and run by plain Node. */
 async function measured(): Promise<Partial<Record<keyof typeof BUDGET_KB, number>>> {

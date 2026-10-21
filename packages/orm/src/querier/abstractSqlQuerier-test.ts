@@ -75,6 +75,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   timeouts(): SpecTimeouts<this> {
     return {
       shouldWriteRowsPastEveryLimit: provisioningTimeout,
+      shouldWriteNothingOfASplitInsertWhoseLastStatementFails: provisioningTimeout,
+      shouldSplitAnInsertInsideAnOpenTransaction: provisioningTimeout,
     };
   }
 

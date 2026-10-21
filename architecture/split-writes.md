@@ -23,7 +23,7 @@ A statement is `{ sql, values }`. A driver answers two methods: `execute(sql, va
 | Neon                   | over HTTP, `sql.transaction([...])`; inside an open transaction, its WebSocket session in turn |
 | every other SQL engine | each in turn, in a transaction that joins an open one where two or more write                  |
 
-One statement runs alone everywhere. A list asks for a transaction only where it is a split write, `runStatements(statements, atomic)`: an `insertMany` sent as two or more statements, an `upsertMany` of two or more upserts. The `SET`s tuning a vector search and its read need none on one connection, and cost Postgres and MySQL no `BEGIN` and `COMMIT`.
+One statement runs alone everywhere. A list asks for a transaction only where it is a split write, `runStatements(statements, atomic)`: an `insertMany` sent as two or more statements, an `upsertMany` of two or more upserts, and a vector search tuned by `SET LOCAL` outside a transaction, which the setting needs. A stream tuned so is refused outside one instead, since its transaction would stay open for the whole loop.
 
 `runStatements` is the outermost step a statement takes, in this order: a list with no `executeBatch` where two or more write opens its transaction, whose `BEGIN` waits on the querier's queue; then the queue is taken, the connection made, and the driver runs the statement, the list in turn, or the list as one request, timed as one.
 
@@ -31,15 +31,15 @@ The `SET LOCAL`s tuning a vector search lead its read's list. An upsert's read-b
 
 ### Neon over HTTP first
 
-`NeonQuerierPool` holds both of Neon's transports, and its querier picks per call:
+`NeonQuerierPool` holds no connection, and its querier picks a transport per call, by whether it holds a session:
 
-| What                                                                                   | Transport                                                                     |
-| :------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| a statement, and a list of them outside a transaction (a split write)                  | HTTP: `sql.query`, and `sql.transaction([...])` for a list                    |
-| `transaction()`, `beginTransaction()` (`$lock` and `$candidates` inside one), a stream | a WebSocket session from its `Pool`, serving the querier until it is released |
-| a migration                                                                            | a WebSocket session throughout, since its lock is the session's               |
+| What                                                                          | Transport                                                          |
+| :---------------------------------------------------------------------------- | :----------------------------------------------------------------- |
+| a statement on a querier holding no session, and a list outside a transaction | HTTP: `sql.query`, and `sql.transaction([...])` for a list         |
+| `transaction()`, `beginTransaction()` (`$lock` inside one), a stream          | a WebSocket session of the querier's own, which its release closes |
+| a migration                                                                   | a WebSocket session throughout, since its lock is the session's    |
 
-HTTP needs only `fetch`, so the same pool runs on Node, Bun, Deno and Workers; on an edge runtime a WebSocket session stays inside one request, as Neon requires. A list inside an open transaction runs in turn on its session, which it joins; outside one it is an HTTP transaction, even on a querier holding a session. Neon ignores `types` given to `neon()`, so every query passes the pool's wire types itself, and a timestamp decodes as it does over the wire protocol rather than in the process's time zone. Each query is awaited once: a Neon query re-runs on every `then`. Neon's proxy binds at most 32,767 values a statement over HTTP, half what Postgres takes, which the pool's `NeonDialect` states, so a write splits within it and a message names Neon. A Neon error carries the Postgres code, which `queryErrorKind` reads as it reads `pg`'s.
+HTTP needs only `fetch`, and no session outlives the querier that opened it, so the pool holds no connection: one at module scope serves every request of an edge isolate, as Neon requires of a WebSocket. Reusing sessions is left to `PgQuerierPool` over TCP, which Neon recommends for a long-running server. A statement on a querier holding a session runs on it. A list inside an open transaction runs in turn on its session, which it joins; outside one it is an HTTP transaction (a split write, a tuned search), even on a querier holding a session. Neon ignores `types` given to `neon()`, so every query passes the pool's wire types itself, and a timestamp decodes as it does over the wire protocol rather than in the process's time zone. Each query is awaited once: a Neon query re-runs on every `then`. Neon's proxy binds at most 32,767 values a statement over HTTP, half what Postgres takes, which the pool's `NeonDialect` states, so a write splits within it and a message names Neon. A Neon error carries the Postgres code, which `queryErrorKind` reads as it reads `pg`'s.
 
 ## Not in this change
 

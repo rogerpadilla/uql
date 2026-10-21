@@ -53,7 +53,7 @@ function checkDeclaredPaths(): number {
   }
 
   const paths = new Set<string>();
-  for (const field of [pkg.main, pkg.types, pkg.bin, pkg.exports, pkg.browser]) collect(field, paths);
+  for (const field of [pkg.main, pkg.types, pkg.bin, pkg.exports]) collect(field, paths);
 
   const problems: string[] = [];
   for (const relPath of paths) {
@@ -86,14 +86,13 @@ function importsOf(file: string): string[] {
 }
 
 /**
- * Node-only modules must be remapped via the package.json `browser` map (like `context/context.js`),
- * which browser bundlers apply and Node ignores. A static walk suffices because tsc emits only plain
+ * No browser-facing module imports a Node builtin: one that needs one reads it at run time, as `util/asyncScope.js`
+ * reads `node:async_hooks`. A static walk suffices because tsc emits only plain
  * `import`/`export ... from` and bare side-effect `import '...'`. A bundler would not substitute: Bun
  * silently polyfills Node builtins for browser targets, passing on the exact graph that broke real
  * Vite/esbuild consumers.
  */
 function checkBrowserGraph(): number {
-  const browserMap: Record<string, string> = pkg.browser ?? {};
   const isBuiltin = (specifier: string) => specifier.startsWith('node:') || builtinModules.includes(specifier);
   const violations: string[] = [];
   const seen = new Set<string>();
@@ -102,12 +101,11 @@ function checkBrowserGraph(): number {
   // import entities and types from `uql-orm` directly.
   const queue = ['./dist/index.js', './dist/browser/index.js', './dist/http/index.js'];
   for (let relPath = queue.pop(); relPath !== undefined; relPath = queue.pop()) {
-    const mapped = browserMap[relPath] ?? relPath;
-    if (seen.has(mapped)) continue;
-    seen.add(mapped);
-    for (const specifier of importsOf(join(pkgDir, mapped))) {
-      if (isBuiltin(specifier)) violations.push(`${mapped} imports ${specifier}`);
-      else if (specifier.startsWith('.')) queue.push(`./${join(mapped, '..', specifier).replace(/\\/g, '/')}`);
+    if (seen.has(relPath)) continue;
+    seen.add(relPath);
+    for (const specifier of importsOf(join(pkgDir, relPath))) {
+      if (isBuiltin(specifier)) violations.push(`${relPath} imports ${specifier}`);
+      else if (specifier.startsWith('.')) queue.push(`./${join(relPath, '..', specifier).replace(/\\/g, '/')}`);
       // bare specifiers (real deps) are the consumer bundler's concern, not a Node-builtin leak
     }
   }

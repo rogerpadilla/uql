@@ -119,8 +119,6 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
   readonly restoreMany: UniversalQuerier['restoreMany'] = (...args) =>
     this.withQuerier((querier) => querier.restoreMany(...args));
 
-  /**
-   * end the pool.
-   */
-  abstract end(): Promise<void>;
+  /** Closes what the pool holds: nothing where each querier closes its own connection, or there is none to close. */
+  async end(): Promise<void> {}
 }

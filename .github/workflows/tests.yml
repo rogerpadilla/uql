@@ -136,9 +136,9 @@ jobs:
           name: compose-logs-${{ strategy.job-index }}
           path: compose.log
       # Bun-only code (`bun:sql`, `bun:sqlite`) runs only in the bun leg, so each suite reports what it ran
-      # and Coveralls merges the two into one figure.
+      # and Coveralls merges the two into one figure. A failing test still reports, or the figure is Bun's alone.
       - name: Submit coverage
-        if: matrix.node == 'lts/*'
+        if: ${{ !cancelled() && matrix.node == 'lts/*' }}
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

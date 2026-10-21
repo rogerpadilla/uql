@@ -19,6 +19,4 @@ export class D1QuerierPool extends AbstractSqlQuerierPool<D1Querier, D1SqliteDia
   async getQuerier() {
     return new D1Querier(this.db, this.dialect, this.extra);
   }
-
-  async end() {}
 }

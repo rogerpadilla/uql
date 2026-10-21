@@ -74,7 +74,7 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
     return new BunSqlQuerier(() => this.sql.reserve(), this.dialect, this.extra);
   }
 
-  async end() {
+  override async end() {
     await this.sql.close();
   }
 }

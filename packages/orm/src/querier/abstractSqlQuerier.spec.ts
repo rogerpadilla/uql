@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { Coupon } from '../test/entityMock.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryWhere, RawRow } from '../type/index.js';
 import { sql } from '../util/sql.js';
@@ -9,6 +12,7 @@ import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
+import { TunedItem } from './vectorTuning-test.js';
 
 @Entity()
 class HydratedChild {
@@ -43,8 +47,8 @@ class StubSqlQuerier extends AbstractSqlQuerier {
   releases = 0;
   handedBackWithOpenTransaction = false;
 
-  constructor(extra?: ExtraOptions) {
-    super(new SqliteDialect({}), extra);
+  constructor(extra?: ExtraOptions, dialect: AbstractSqlDialect = new SqliteDialect({})) {
+    super(dialect, extra);
   }
 
   /** A read answers {@link rows}; any other statement is recorded, and the one {@link failOn} names fails. */
@@ -365,6 +369,50 @@ it('should refuse a statement past the bind budget', async () => {
   await expect(querier.all(sql(({ ctx }) => ctx.append('SELECT 1').pushValue(...values)))).rejects.toThrow(
     UqlUsageError,
   );
+});
+
+describe('AbstractSqlQuerier upsert ids', () => {
+  /** MySQL leaves `LAST_INSERT_ID` unset where the found row already holds every value, so the header names none. */
+  it('should read back the id of a found row whose upsert reported none', async () => {
+    const querier = new StubSqlQuerier(undefined, new MySqlDialect({}));
+    querier.rows = [{ id: 5, code: 'a' }];
+
+    expect(await querier.upsertOne(Coupon, { code: true }, { code: 'a', label: 'x' })).toBe(5);
+  });
+});
+
+describe('AbstractSqlQuerier vector tuning', () => {
+  it('should open a transaction for a tuned read outside one, so its `SET LOCAL` applies', async () => {
+    const querier = new StubSqlQuerier(undefined, new PostgresDialect({}));
+
+    await querier.findMany(TunedItem, { $sort: { vec: { $vector: [0, 1, 0] } }, $limit: 3, $candidates: 100 });
+
+    expect(querier.statements).toEqual(['BEGIN', 'SET LOCAL hnsw.ef_search = 100', 'COMMIT']);
+  });
+
+  it('should join an open transaction for a tuned read', async () => {
+    const querier = new StubSqlQuerier(undefined, new PostgresDialect({}));
+
+    await querier.transaction(() =>
+      querier.findMany(TunedItem, { $sort: { vec: { $vector: [0, 1, 0] } }, $limit: 3, $candidates: 100 }),
+    );
+
+    expect(querier.statements).toEqual(['BEGIN', 'SET LOCAL hnsw.ef_search = 100', 'COMMIT']);
+  });
+
+  it('should refuse a tuned stream outside a transaction, which would stay open for its whole loop', async () => {
+    const querier = new StubSqlQuerier(undefined, new PostgresDialect({}));
+    const stream = querier.findManyStream(TunedItem, {
+      $sort: { vec: { $vector: [0, 1, 0] } },
+      $limit: 3,
+      $candidates: 100,
+    });
+
+    await expect(Array.fromAsync(stream)).rejects.toThrow(
+      'a streamed $candidates needs an open transaction on PostgreSQL; run the stream inside pool.transaction(...)',
+    );
+    expect(querier.statements).toEqual([]);
+  });
 });
 
 describe('AbstractSqlQuerier stream', () => {

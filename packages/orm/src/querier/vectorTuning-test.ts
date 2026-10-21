@@ -8,8 +8,9 @@ import type { SqlQuerierPool } from '../type/index.js';
 const TABLE = 'vector_tuning';
 
 @Index((tunedItem) => [tunedItem.vec], { type: 'hnsw', distance: 'cosine', name: 'ix_vector_tuning_vec' })
+/** Three vectors under an HNSW index, which `$candidates` tunes. */
 @Entity({ name: TABLE })
-class TunedItem {
+export class TunedItem {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) name?: string | null;
   @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
@@ -82,18 +83,16 @@ export function describeVectorTuning(name: string, createPool: () => SqlQuerierP
       expect(rows.map((row) => row.name)).toEqual(['north', 'northeast']);
     });
 
-    /**
-     * `SET LOCAL` outside a transaction is accepted by the server and applies to nothing, so the query
-     * would run at the default recall while looking tuned. Refused rather than emitted.
-     */
-    it('should refuse to tune outside a transaction', async () => {
-      await expect(
-        pool.findMany(TunedItem, {
-          $sort: { vec: { $vector: [0, 1, 0] } },
-          $limit: 3,
-          $candidates: 100,
-        }),
-      ).rejects.toThrow(`$candidates requires an open transaction on ${pool.dialect.engineName}`);
+    /** `SET LOCAL` applies only inside a transaction, so a tuned read outside one opens its own. */
+    it('should tune a vector search outside a transaction', async () => {
+      const rows = await pool.findMany(TunedItem, {
+        $select: { name: true },
+        $sort: { vec: { $vector: [0, 1, 0] } },
+        $limit: 3,
+        $candidates: 100,
+      });
+
+      expect(rows.map((row) => row.name)).toEqual(['north', 'northeast', 'east']);
     });
 
     /** No ANN index on the column means no knob to turn, so the query runs untuned rather than failing. */

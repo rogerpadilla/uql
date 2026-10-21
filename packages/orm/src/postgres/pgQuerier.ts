@@ -15,14 +15,14 @@ const ignoreError = () => {};
 
 /**
  * Querier for every client with node-postgres' API: `pg` itself, for Postgres and CockroachDB, and
- * Neon's serverless driver. Generic over the client alone - the dialect is whichever the pool built.
+ * Neon's serverless driver; the dialect is whichever the pool built.
  */
-export class PgQuerier<C extends PgAnyClient = PgAnyClient> extends AbstractPoolQuerier<C> {
+export class PgQuerier extends AbstractPoolQuerier<PgAnyClient> {
   /**
    * A client the server drops while held emits `error` with no statement to report it to, which unheard ends
-   * the process: the querier hears it while it holds the client, `pg-pool` while it idles, never both at once.
+   * the process: the querier hears it while it holds the client, and what it hands the client back to after it.
    */
-  protected override acquired(conn: C): C {
+  protected override acquired(conn: PgAnyClient): PgAnyClient {
     conn.on('error', ignoreError);
     return conn;
   }
@@ -36,7 +36,7 @@ export class PgQuerier<C extends PgAnyClient = PgAnyClient> extends AbstractPool
     yield* this.getConn().query(new QueryStream(query, values));
   }
 
-  protected override async releaseConn(conn: C, discard: boolean) {
+  protected override async releaseConn(conn: PgAnyClient, discard: boolean) {
     conn.removeListener('error', ignoreError);
     await conn.release(discard);
   }

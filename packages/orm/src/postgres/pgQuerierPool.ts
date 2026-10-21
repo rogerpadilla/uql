@@ -1,11 +1,11 @@
-import { Pool, type PoolClient, type PoolConfig, types } from 'pg';
+import { Pool, type PoolConfig, types } from 'pg';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 import { AbstractPgQuerierPool } from './abstractPgQuerierPool.js';
 import { wireTypes } from './pgWireTypes.js';
 import { PostgresDialect } from './postgresDialect.js';
 
-export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PostgresDialect> {
+export class PgQuerierPool extends AbstractPgQuerierPool<PostgresDialect> {
   declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
