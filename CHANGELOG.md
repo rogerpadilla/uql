@@ -4,8 +4,8 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.103.0] - 2026-10-21
 
-- **Feat:** `NeonQuerierPool` holds no connection, so one pool at module scope serves every request on Cloudflare Workers, transactions included. It takes Neon's `ClientConfig`.
 - **Feat:** `$candidates` works outside a transaction on Postgres, CockroachDB and Neon: the tuned read opens its own (one HTTP request on Neon). A tuned `findManyStream` still needs one.
+- **Feat:** `NeonQuerierPool` holds no connection, so one pool at module scope serves every request on Cloudflare Workers, transactions included.
 - **Fixed:** on Cloudflare Workers (`nodejs_compat`), a `transaction(callback)` hung, and `withContext` was lost after the first `await`.
 
 ## [0.102.7] - 2026-10-20
