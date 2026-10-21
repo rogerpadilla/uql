@@ -56,22 +56,30 @@ export function extendSqlite(db: LocalSqliteDatabase, extensions: readonly strin
   for (const extension of extensions) {
     db.loadExtension(extension);
   }
-  db.function?.('regexp', { deterministic: true }, regexp);
+  db.function?.('regexp', { deterministic: true }, regexp());
   return db;
 }
 
 const CASELESS_FLAG = '(?i)';
 
-/** `value REGEXP pattern`: NULL where the value is, as an operator answers; a leading `(?i)` folds case, as other engines read it. */
-function regexp(pattern: SqlValue, value: SqlValue): SqlValue {
-  if (value === null) {
-    return null;
-  }
-  const source = String(pattern);
-  const caseless = source.startsWith(CASELESS_FLAG);
-  return Number(
-    new RegExp(caseless ? source.slice(CASELESS_FLAG.length) : source, caseless ? 'i' : '').test(String(value)),
-  );
+/**
+ * `value REGEXP pattern`: NULL where the value is, as an operator answers; a leading `(?i)` folds case, as other
+ * engines read it. The last pattern stays compiled, since a statement tests every row against the same one.
+ */
+function regexp(): (pattern: SqlValue, value: SqlValue) => SqlValue {
+  let last: { readonly pattern: string; readonly compiled: RegExp } | undefined;
+  return (pattern, value) => {
+    if (value === null) {
+      return null;
+    }
+    const text = String(pattern);
+    if (last?.pattern !== text) {
+      const caseless = text.startsWith(CASELESS_FLAG);
+      const compiled = new RegExp(caseless ? text.slice(CASELESS_FLAG.length) : text, caseless ? 'i' : '');
+      last = { pattern: text, compiled };
+    }
+    return Number(last.compiled.test(String(value)));
+  };
 }
 
 /** A value SQLite hands a function, and takes back. */

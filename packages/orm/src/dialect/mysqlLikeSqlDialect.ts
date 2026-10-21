@@ -154,7 +154,12 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
     const insert = this.buildFragment(ctx, (fragment) => this.appendInsertValues(fragment, entity, payload));
     const idReturning = this.insertedIdReturning(meta);
-    ctx.append(`${this.onDuplicateKey(insert, assignments)}${idReturning && ` ${idReturning}`}`);
+    const rows = Array.isArray(payload) ? payload.length : 1;
+    const headerId = assignments && this.insertIdSource === 'firstId' && this.upsertReportsIds(meta, rows);
+    // Qualified: where the rows name the key, the new row's alias carries a column of the same name.
+    const key = headerId ? `${this.escapedTableName(meta)}.${this.escapedColumnName(meta, meta.ids[0])}` : '';
+    const assigned = key ? `${key} = LAST_INSERT_ID(${key}), ${assignments}` : assignments;
+    ctx.append(`${this.onDuplicateKey(insert, assigned)}${idReturning && ` ${idReturning}`}`);
     ctx.pushValue(...updateCtx.values);
   }
 

@@ -74,7 +74,7 @@ class CockroachDialectSpec extends PgFamilySpec {
     const ctx = this.dialect.createContext();
     expect(() =>
       this.dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'l1' } } }),
-    ).toThrow('cockroachdb does not support vector distance metric: l1');
+    ).toThrow('CockroachDB does not support vector distance metric: l1');
   }
 
   shouldNotResolveAMetricViaThePrototypeChain() {
@@ -82,7 +82,7 @@ class CockroachDialectSpec extends PgFamilySpec {
     expect(() =>
       // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
       this.dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' } } }),
-    ).toThrow('cockroachdb does not support vector distance metric: toString');
+    ).toThrow('CockroachDB does not support vector distance metric: toString');
   }
 
   /** v26.3 has neither `regconfig` nor `WEBSEARCH_TO_TSQUERY`: the config is text, the search plain words. */

@@ -1,4 +1,5 @@
 import { getContext } from '../context/context.js';
+import { namesKey } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
@@ -16,6 +17,7 @@ import {
   type JsonUpdateOp,
   type OnFieldCallback,
   type QueryAggMap,
+  type QueryConflictPaths,
   type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
@@ -32,13 +34,23 @@ import {
   type QueryWhere,
   type RelationKey,
   resolveAggregateOp,
-  SOFT_DELETE_FILTER,
   type UpdatePayload,
   type VectorDistance,
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { defaultReadKeys, fieldKeys, isDatabaseWritten, jsonKey, jsonPathKeys } from './field.util.js';
-import { entityName, getKeys, hasKeys, isJsonScalar, isOperatorObject, isRecord, someKey } from './object.util.js';
+import { withDeleted } from './filters.util.js';
+import {
+  clone,
+  entityName,
+  getKeys,
+  omitKeys,
+  hasKeys,
+  isJsonScalar,
+  isOperatorObject,
+  isRecord,
+  someKey,
+} from './object.util.js';
 import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
@@ -110,11 +122,54 @@ export function getFieldCallbackValue(val: OnFieldCallback) {
 }
 
 /**
- * Resolves the value stamped on the soft-delete field when deleting a row.
- * `true` stamps the current timestamp (`new Date()`); any other marker is an {@link OnFieldCallback}.
+ * The value a soft delete stamps on `field`: `true` stamps the current timestamp (`new Date()`); any other marker
+ * is an {@link OnFieldCallback}.
  */
-export function getSoftDeleteValue(field: FieldOptions) {
+function softDeleteValue(field: FieldOptions): unknown {
   return field.softDelete === true ? new Date() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
+}
+
+/** A delete as {@link deletionOf} plans it. */
+type Deletion<O> = {
+  readonly stamp?: { readonly key: string; readonly field: FieldOptions; value(): unknown };
+  readonly opts: O;
+};
+
+/**
+ * How a delete of `meta` goes: a soft one stamps its field (`stamp`, whose `value()` the writer takes, so a
+ * callback runs only where a row is written), reading the rows as `opts` filters them; a hard one, asked for or on
+ * an entity with no soft-delete field, removes them, soft-deleted ones included.
+ */
+export function deletionOf<E, O extends QueryOptions>(meta: EntityMeta<E>, opts: O): Deletion<O> {
+  const key = opts.hardDelete ? undefined : meta.softDelete;
+  const field = key === undefined ? undefined : meta.fields[key];
+  if (key === undefined || !field) {
+    return { opts: withDeleted(opts) };
+  }
+  return { stamp: { key, field, value: () => softDeleteValue(field) }, opts };
+}
+
+/** What an upsert of `row` assigns a row it finds: the payload and the `onUpdate` fills, less its key and what it matched on. */
+export function upsertAssigned<E>(
+  meta: EntityMeta<E>,
+  row: EntityData<E>,
+  conflictPaths: QueryConflictPaths<E>,
+): EntityData<E> {
+  const [updated] = fillOnFields(meta, clone(row), 'onUpdate');
+  const kept: readonly string[] = [...meta.ids, ...getKeys(conflictPaths)];
+  const assigned: readonly string[] = filterFieldKeys(meta, updated, 'onUpdate');
+  return omitKeys(
+    updated,
+    getKeys(updated).filter((key) => kept.includes(key) || !assigned.includes(key)),
+  );
+}
+
+/**
+ * Whether an upsert of `row` lands under the key it names: it names one and matches on it, so a row it finds
+ * has that key too. Elsewhere the key is the found row's, which the upsert reads back.
+ */
+export function upsertKeepsOwnKey<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>, row: E): boolean {
+  return namesKey(meta, row) && meta.ids.every((key) => Object.hasOwn(conflictPaths, key));
 }
 
 /** Fills each field `callbackKey` generates on `payload` in place, where the caller left it unset. */
@@ -512,11 +567,6 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
     throw new UqlUsageError(`'${key}' takes one of $inc and $mul`);
   }
   return value.$inc === undefined ? ['$mul', value.$mul] : ['$inc', value.$inc];
-}
-
-/** Returns a `QueryOptions.filters` value with the built-in soft-delete filter disabled (used by hard delete). */
-export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): QueryOptions['filters'] {
-  return filters === false ? false : { ...filters, [SOFT_DELETE_FILTER]: false };
 }
 
 /**

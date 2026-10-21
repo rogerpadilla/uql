@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { anyUuid, Company, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
+import { anyUuid, Company, Coupon, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
 import type { QueryConflictPaths } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
@@ -41,6 +41,22 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid, expect.any(Number)]);
   }
 
+  /** One row's generated key comes back in the header for a found row too, assigned through `LAST_INSERT_ID`. */
+  shouldUpsertOneRowAssigningItsKeyThroughLastInsertId() {
+    const one = this.exec((ctx) => this.dialect.upsert(ctx, Coupon, { code: true }, { code: 'a', label: 'x' }));
+    const many = this.exec((ctx) =>
+      this.dialect.upsert(ctx, Coupon, { code: true }, [
+        { code: 'a', label: 'x' },
+        { code: 'b', label: 'y' },
+      ]),
+    );
+    const nothing = this.exec((ctx) => this.dialect.upsert(ctx, Coupon, { code: true }, { code: 'a' }, {}));
+
+    expect(one.sql).toMatch(/ ON DUPLICATE KEY UPDATE `Coupon`\.`id` = LAST_INSERT_ID\(`Coupon`\.`id`\), `label` = /);
+    expect(many.sql).not.toMatch(/LAST_INSERT_ID/);
+    expect(nothing.sql).toMatch(/^INSERT IGNORE INTO /);
+  }
+
   shouldThrowForVectorSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
@@ -55,7 +71,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('mysql does not support vector similarity search');
+    ).toThrow('MySQL does not support vector similarity search');
   }
 
   /** MySQL has no inline level, so it is set by a statement before the `START TRANSACTION`. */

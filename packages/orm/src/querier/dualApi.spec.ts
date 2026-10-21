@@ -46,8 +46,8 @@ class MockQuerier extends AbstractQuerier {
     return 0;
   }
 
-  protected override async internalUpsertMany(): Promise<undefined> {
-    return undefined;
+  protected override async internalUpsertMany(): Promise<never[]> {
+    return [];
   }
 
   protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
@@ -68,7 +68,6 @@ class MockQuerier extends AbstractQuerier {
 
   protected override async openTransaction() {}
   protected override async endTransaction() {}
-  protected override async internalRelease() {}
   hasOpenTransaction = false;
 }
 

@@ -111,13 +111,15 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    */
   private indexFilter(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
     if (where instanceof QuerySql) {
-      throw new UqlUsageError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
+      throw new UqlUsageError(
+        `${this.engineName} does not support partial indexes from a SQL predicate (index "${indexName}")`,
+      );
     }
-    assertIndexPredicate(where, this.dialectName, indexName);
+    assertIndexPredicate(where, this, indexName);
     const filter = this.renderFilter(entity, where);
     const refused = refusedFilterValue(filter);
     if (refused) {
-      throw refusedIndexPredicate(this.dialectName, refused, indexName);
+      throw refusedIndexPredicate(this.engineName, refused, indexName);
     }
     return JSON.stringify(filter);
   }
@@ -139,12 +141,16 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
   /** A check's filter, refused where it is SQL or holds what a migration cannot carry as JSON. */
   private checkFilter(where: EntityWhereMeta<object>, entity: Type<object>, collectionName: string): MongoValidator {
     if (where instanceof QuerySql) {
-      throw new UqlUsageError(`mongodb does not support checks from a SQL predicate (collection "${collectionName}")`);
+      throw new UqlUsageError(
+        `${this.engineName} does not support checks from a SQL predicate (collection "${collectionName}")`,
+      );
     }
     const filter = this.renderFilter(entity, where);
     const refused = refusedFilterValue(filter, true);
     if (refused) {
-      throw new UqlUsageError(`mongodb does not support ${refused} in a check (collection "${collectionName}")`);
+      throw new UqlUsageError(
+        `${this.engineName} does not support ${refused} in a check (collection "${collectionName}")`,
+      );
     }
     return filter;
   }
@@ -172,11 +178,11 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
-    assertIndexType(index, MONGO_INDEX_TYPES, this.dialectName);
+    assertIndexType(index, MONGO_INDEX_TYPES, this.engineName);
     if (index.type === 'vectorSearch') {
       return this.generateCreateSearchIndex(tableName, index);
     }
-    assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.dialectName);
+    assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.engineName);
     const key: MongoIndexKey = {};
     for (const entry of index.entries) {
       key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
@@ -199,7 +205,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** An Atlas vector search index: its vector field first, then each field a `$vectorSearch` pre-filters on. */
   private generateCreateSearchIndex(tableName: string, index: IndexSchema): string {
-    assertIndexFeatures(index, new Set(), this.dialectName);
+    assertIndexFeatures(index, new Set(), this.engineName);
     const [vector, ...filters] = index.entries;
     if (!vector || index.dimensions === undefined) {
       throw new UqlUsageError(`an Atlas vector search index states its field's dimensions (index "${index.name}")`);
@@ -207,7 +213,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     const distance = indexDistance(index);
     const similarity = ATLAS_SIMILARITY[distance];
     if (!similarity) {
-      throw unsupportedVectorMetric(this.dialectName, distance, index.name);
+      throw unsupportedVectorMetric(this.engineName, distance, index.name);
     }
     return serializeMongoCommand({
       action: 'createSearchIndex',
@@ -232,7 +238,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       case 'createTable': {
         const { name, columns, indexes } = operation.table;
         if (columns.length) {
-          throw new UqlUsageError(`mongodb does not support columns in a migration (collection "${name}")`);
+          throw new UqlUsageError(`${this.engineName} does not support columns in a migration (collection "${name}")`);
         }
         return this.createCollection(
           name,
@@ -248,7 +254,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       case 'dropIndex':
         return [dropIndex(operation.tableName, operation.indexName)];
       default:
-        throw new UqlUsageError(`mongodb does not support ${operation.type} in a migration`);
+        throw new UqlUsageError(`${this.engineName} does not support ${operation.type} in a migration`);
     }
   }
 
@@ -277,7 +283,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
 /** A collection has no SQL to render a check, a computed column or an index expression into. */
 function refuseSql(): never {
-  throw new UqlUsageError('mongodb has no SQL to render a check, a computed column or an index expression into');
+  throw new UqlUsageError('MongoDB has no SQL to render a check, a computed column or an index expression into');
 }
 
 /** The command dropping an index, a search index by its own. */

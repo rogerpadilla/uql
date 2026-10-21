@@ -1,4 +1,5 @@
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
+import { soleId, valueFieldOf } from '../entity/metadata/definition.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -40,6 +41,7 @@ import {
   type QuerySqlFnOptions,
   type QuerySearch,
   type QuerySelectValue,
+  type QueryOrderedOp,
   type QuerySizeComparisonOps,
   type QuerySortMap,
   type QueryTextSearchOptions,
@@ -65,6 +67,7 @@ import {
 import { utcTimestamp } from '../util/date.js';
 import { ancestorPaths, isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
 import {
+  isAutoIncrement,
   isSelectList,
   assertNonNegativeInteger,
   assertNoUndefined,
@@ -76,7 +79,7 @@ import {
   getInsertFieldKeys,
   getKeys,
   getRelationRequestSummary,
-  getSoftDeleteValue,
+  deletionOf,
   hasKeys,
   idOnlyQuery,
   keySet,
@@ -116,9 +119,9 @@ import {
   refs,
   columnRef,
   throwUnknownAggregateColumn,
-  withoutSoftDeleteFilter,
+  upsertAssigned,
 } from '../util/index.js';
-import { isJsonScalar } from '../util/object.util.js';
+import { cachedIn, isJsonScalar } from '../util/object.util.js';
 import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 import {
@@ -147,7 +150,6 @@ import {
 } from './jsonSql.js';
 import {
   betweenBounds,
-  COMPARE_OPS,
   EQUALITY_OPS,
   GROUP_OPS,
   groupClauses,
@@ -158,6 +160,8 @@ import {
   LIKE_OPS,
   namesRows,
   ORDERED_OPS,
+  ORDERED_SYMBOLS,
+  sizeComparisons,
   VECTOR_QUERY_KEY_SET,
   whereOperators,
 } from './operators.js';
@@ -677,7 +681,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     _search: QueryTextSearchOptions<E>,
     _prefix: string | undefined,
   ): void {
-    throw new UqlUsageError(`${this.dialectName} does not support $text full-text search`);
+    throw new UqlUsageError(`${this.engineName} does not support $text full-text search`);
   }
 
   /**
@@ -721,7 +725,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     _keys: readonly string[],
     _prefix: string | undefined,
   ): void {
-    throw new UqlUsageError(`${this.dialectName} does not support $text full-text search`);
+    throw new UqlUsageError(`${this.engineName} does not support $text full-text search`);
   }
 
   /** The columns a `$text` over `keys` reads, qualified by `prefix` where the statement joins, as any column is. */
@@ -1178,11 +1182,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     val: unknown,
     bind: (value: unknown) => string = (value) => this.addValue(ctx, value),
   ): string | undefined {
-    const compareOp = COMPARE_OPS.get(op);
-    if (compareOp) {
-      return `${operand}${compareOp}${bind(val)}`;
-    }
-
     const like = this.likeCondition(ctx, operand, op, val);
     if (like) {
       return like;
@@ -1190,24 +1189,45 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
     switch (op) {
       case '$eq':
-        return val === null ? `${operand} IS NULL` : `${operand} = ${bind(val)}`;
       case '$ne':
-        return val === null ? `${operand} IS NOT NULL` : `${operand} <> ${bind(val)}`;
+      case '$gt':
+      case '$gte':
+      case '$lt':
+      case '$lte':
+      case '$between':
+        return this.comparisonCondition(operand, op, val, bind);
       case '$regex':
         return this.regexCondition(operand, this.addValue(ctx, val));
       case '$in':
       case '$nin':
         return this.formatIn(ctx, operand, inOperands(op, val), op === '$nin', bind);
-      case '$between': {
-        const [min, max] = betweenBounds(val);
-        return `${operand} BETWEEN ${bind(min)} AND ${bind(max)}`;
-      }
       case '$isNull':
         return operand + (val ? ' IS NULL' : ' IS NOT NULL');
       case '$isNotNull':
         return operand + (val ? ' IS NOT NULL' : ' IS NULL');
       default:
         return undefined;
+    }
+  }
+
+  /** `<operand> <op> <value>` for a comparison a number takes: an equality, an ordered one or `$between`. */
+  private comparisonCondition(
+    operand: string,
+    op: keyof QuerySizeComparisonOps,
+    val: unknown,
+    bind: (value: unknown) => string,
+  ): string {
+    switch (op) {
+      case '$eq':
+        return val === null ? `${operand} IS NULL` : `${operand} = ${bind(val)}`;
+      case '$ne':
+        return val === null ? `${operand} IS NOT NULL` : `${operand} <> ${bind(val)}`;
+      case '$between': {
+        const [min, max] = betweenBounds(val);
+        return `${operand} BETWEEN ${bind(min)} AND ${bind(max)}`;
+      }
+      default:
+        return `${operand} ${ORDERED_SYMBOLS[op]} ${bind(val)}`;
     }
   }
 
@@ -1584,7 +1604,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     joins ??= resolveQueryJoins(getMeta(entity), q);
     if (joins.size > 0) {
       throw new UqlUsageError(
-        `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined relation`,
+        `${this.engineName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined relation`,
       );
     }
   }
@@ -1660,7 +1680,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * caller reached for this to avoid, and only say so by taking a long time.
    */
   estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
-    throw new UqlUsageError(`${this.dialectName} does not support estimatedCount`);
+    throw new UqlUsageError(`${this.engineName} does not support estimatedCount`);
   }
   aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     ctx: QueryContext,
@@ -2251,16 +2271,34 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
   }
 
-  /** What an upsert's assignments bind once per statement beside its rows, which all assign as `row` does. */
-  upsertAssignmentBinds<E>(
+  /**
+   * What an upsert of rows shaped as `row` assigns a row it finds: the values its assignments bind once per
+   * statement beside its rows, and whether there are any, where none is `DO NOTHING`, which skips that row.
+   */
+  upsertAssignments<E>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     row: E,
     update?: UpdatePayload<E>,
-  ): number {
+  ): { readonly binds: number; readonly assigns: boolean } {
     const ctx = this.createContext();
-    this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, row, update);
-    return ctx.values.length;
+    const assignments = this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, row, update);
+    return { binds: ctx.values.length, assigns: assignments !== '' };
+  }
+
+  /**
+   * Whether an upsert of `rows` rows that assigns a found row something reports each row's sole key in order, so
+   * nothing reads them back: `RETURNING`, in order on an engine answering so, and for one row on any; the header,
+   * for one row's generated key, a found row's too, since the upsert assigns it through `LAST_INSERT_ID`.
+   */
+  upsertReportsIds<E>(meta: EntityMeta<E>, rows: number): boolean {
+    const id = soleId(meta);
+    if (!id) {
+      return false;
+    }
+    return this.insertIdSource === 'returning'
+      ? rows === 1 || this.features.orderedUpsertReturning
+      : rows === 1 && isAutoIncrement(id.field, true);
   }
 
   /** Whether the upsert's assignments bind straight into the statement, as numbered `$n` placeholders can. */
@@ -2288,17 +2326,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     payload: E | E[],
     update?: UpdatePayload<E>,
   ): string {
-    const sample = Array.isArray(payload) ? payload[0] : payload;
-    const [filled] = fillOnFields(meta, { ...sample }, 'onUpdate');
-    const entries: [string, unknown][] = update
+    const entries = update
       ? hasKeys(update)
         ? this.updateEntries(meta, update)
         : []
-      : filterFieldKeys(meta, filled, 'onUpdate')
-          .filter((key) => !conflictPaths[key])
-          .map((key) => [key, Object.hasOwn(sample as object, key) ? this.incoming(meta, key) : filled[key]]);
+      : this.conflictEntries(meta, conflictPaths, Array.isArray(payload) ? payload[0] : payload);
     const qualifier = `${this.escapedTableName(meta)}.`;
     return this.buildFragment(ctx, (fragmentCtx) => this.appendAssignments(fragmentCtx, meta, entries, qualifier));
+  }
+
+  /** What a found row takes by default: each payload column as the incoming row has it, and the `onUpdate` fills. */
+  private conflictEntries<E>(
+    meta: EntityMeta<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    row: EntityData<E>,
+  ): [string, unknown][] {
+    const always = upsertAssigned(meta, row, conflictPaths);
+    return getKeys(always).map((key) => [key, Object.hasOwn(row, key) ? this.incoming(meta, key) : always[key]]);
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
@@ -2310,20 +2354,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryRenderOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.escapedTableName(meta);
-
-    // Soft-delete (stamp only live rows) unless `hardDelete` is requested or the entity has no
-    // soft-delete field (e.g. a cascade onto a non-soft-deletable child).
-    if (!opts.hardDelete && meta.softDelete) {
+    const { stamp, opts: read } = deletionOf(meta, opts);
+    if (stamp) {
       ctx.append(`UPDATE ${tableName} SET `);
-      this.appendAssignment(ctx, meta, meta.softDelete, getSoftDeleteValue(fieldOf(meta, meta.softDelete)));
-      this.search(ctx, entity, q, opts);
-      return;
+      this.appendAssignment(ctx, meta, stamp.key, stamp.value());
+    } else {
+      ctx.append(`DELETE FROM ${tableName}`);
     }
-
-    // Hard delete removes matching rows regardless of soft-delete state (keeps other filters, e.g. tenant).
-    // Only rewrite the filters when there is a soft-delete filter to disable.
-    ctx.append(`DELETE FROM ${tableName}`);
-    this.search(ctx, entity, q, meta.softDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts);
+    this.search(ctx, entity, q, read);
   }
 
   escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string {
@@ -2404,13 +2442,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     );
   }
 
-  /** What one column decodes as, the inverse of {@link persistKind}. `BigInt` first, since it shares the numeric family. */
-  private hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
-    const type = field?.type;
+  /**
+   * What one column decodes as, the inverse of {@link persistKind}: a foreign key typed by its reference as its
+   * key does. `BigInt` first, since it shares the numeric family.
+   */
+  private hydrateKind(field: FieldMeta | undefined): HydrateKind | undefined {
+    const valued = field && valueFieldOf(field);
+    const type = valued?.type;
     if (type === BigInt) {
       return 'bigint';
     }
-    if (field && isExactDecimal(field)) {
+    if (valued && isExactDecimal(valued)) {
       return 'decimal';
     }
     switch (columnFamily(type)) {
@@ -2687,12 +2729,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (!field) {
       return this.escapeId(this.resolveColumnName(key, field));
     }
-    let escaped = this.escapedColumns.get(field);
-    if (escaped === undefined) {
-      escaped = this.escapeId(this.resolveColumnName(key, field));
-      this.escapedColumns.set(field, escaped);
-    }
-    return escaped;
+    return cachedIn(this.escapedColumns, field, () => this.escapeId(this.resolveColumnName(key, field)));
   }
 
   escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
@@ -3099,33 +3136,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /**
    * `<expr> <op> <value>` for each bound, `AND`-joined. `expr` is spelled once per bound because it is an
-   * expression, not a column: a `WHERE` has no output alias to refer back to. Shared by `$size`, which
-   * counts, and `$near`, which measures a distance.
+   * expression, not a column: a `WHERE` has no output alias to refer back to. A count for `$size`, a
+   * distance for `$near`.
    */
   private boundConditions(
     ctx: QueryContext,
     expr: QueryBuildFn,
-    bounds: Record<string, unknown>,
-    condition: (operand: string, op: string, val: unknown) => string | undefined,
-    refusal: string,
+    bounds: readonly (readonly [keyof QuerySizeComparisonOps, unknown])[],
   ): string {
-    const parts = Object.entries(bounds)
-      .filter(([, val]) => val !== undefined)
-      .map(([op, val]) => orRefuse(condition(this.buildFragment(ctx, expr), op, val), `${refusal}: ${op}`));
-    return conjunction(parts);
+    const bind = (value: unknown) => this.addValue(ctx, value);
+    return conjunction(
+      bounds.map(([op, val]) => this.comparisonCondition(this.buildFragment(ctx, expr), op, val, bind)),
+    );
   }
 
   /** A count compared with `size`, a number or its bounds. */
   private sizeCondition(ctx: QueryContext, count: QueryBuildFn, size: number | QuerySizeComparisonOps): string {
-    const bounds = typeof size === 'number' ? { $eq: size } : size;
-    return this.boundConditions(
-      ctx,
-      count,
-      bounds,
-      (operand, op, val) =>
-        op === '$eq' || op === '$ne' || isOrderedOp(op) ? this.operatorCondition(ctx, operand, op, val) : undefined,
-      'unsupported $size comparison operator',
-    );
+    return this.boundConditions(ctx, count, sizeComparisons(size));
   }
 
   /** `<distance> <op> ?`, the `$where` half of a vector search, its bounds checked here since `/http` input is untyped. */
@@ -3139,10 +3166,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (!isOperatorMap(near)) {
       throw new UqlUsageError(`$near on '${key}' expects an object of its $vector and bounds, got ${kindOf(near)}`);
     }
-    const bounds = Object.fromEntries(
-      Object.entries(near).filter(([op, val]) => !VECTOR_QUERY_KEY_SET.has(op) && val !== undefined),
-    );
-    if (!hasKeys(bounds)) {
+    const bounds = Object.entries(near).filter(([op, val]) => !VECTOR_QUERY_KEY_SET.has(op) && val !== undefined);
+    if (!bounds.length) {
       const boundOps = [...ORDERED_OPS].join(', ');
       throw new UqlUsageError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
     }
@@ -3153,13 +3178,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       throw new UqlUsageError(`$near on '${key}' needs its own $vector`);
     }
     const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, near, prefix);
-    return this.boundConditions(
-      ctx,
-      distance,
-      bounds,
-      (operand, op, val) => (isOrderedOp(op) ? this.operatorCondition(ctx, operand, op, val) : undefined),
-      'unsupported $near bound',
-    );
+    const comparisons = bounds.map(([op, val]): [QueryOrderedOp, unknown] => {
+      if (!isOrderedOp(op)) {
+        throw new UqlUsageError(`unsupported $near bound: ${op}`);
+      }
+      return [op, val];
+    });
+    return this.boundConditions(ctx, distance, comparisons);
   }
 
   /** ANSI-style single-quote escaping. */

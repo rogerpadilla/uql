@@ -1,4 +1,5 @@
-import type { DialectName, EntityWhereMeta } from '../type/index.js';
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import type { DialectName, EngineName, EntityWhereMeta } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
 import { isOperatorObject } from '../util/object.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -31,19 +32,21 @@ const PREDICATE_GRAMMARS: Partial<Record<DialectName, PredicateGrammar>> = {
  * Refuses a partial index's predicate reaching past what the engine takes, before it compiles to what
  * only the server would reject, naming the operator as its author wrote it. A `sql` one is left to the server.
  */
-export function assertIndexPredicate<E>(where: EntityWhereMeta<E>, dialectName: DialectName, indexName: string): void {
-  const grammar = PREDICATE_GRAMMARS[dialectName];
+export function assertIndexPredicate<E>(
+  where: EntityWhereMeta<E>,
+  dialect: Pick<AbstractDialect, 'dialectName' | 'engineName'>,
+  indexName: string,
+): void {
+  const grammar = PREDICATE_GRAMMARS[dialect.dialectName];
   const refused = grammar && !(where instanceof QuerySql) ? refusedOperator(where, grammar) : undefined;
   if (refused) {
-    throw refusedIndexPredicate(dialectName, refused, indexName);
+    throw refusedIndexPredicate(dialect.engineName, refused, indexName);
   }
 }
 
 /** What refusing any part of a partial index's predicate reports. */
-export function refusedIndexPredicate(dialectName: string, part: string, indexName: string): TypeError {
-  return new UqlUsageError(
-    `${dialectName} does not support ${part} in a partial index predicate (index "${indexName}")`,
-  );
+export function refusedIndexPredicate(engine: EngineName, part: string, indexName: string): TypeError {
+  return new UqlUsageError(`${engine} does not support ${part} in a partial index predicate (index "${indexName}")`);
 }
 
 /** The first part of `where` outside `grammar`, depth-first; a `sql` clause is left alone. */

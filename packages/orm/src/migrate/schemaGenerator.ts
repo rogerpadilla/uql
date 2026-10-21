@@ -100,7 +100,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       resolveColumnName: (key, field) => dialect.resolveColumnName(key, field),
       compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
       compileIndexPredicate: (where, entity, indexName) => {
-        assertIndexPredicate(where, dialect.dialectName, indexName);
+        assertIndexPredicate(where, dialect, indexName);
         return dialect.compileDdl(where, entity);
       },
       defaultForeignKeyAction: this.defaultForeignKeyAction,

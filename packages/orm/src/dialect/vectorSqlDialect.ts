@@ -115,13 +115,13 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   ): void {
     if (this.vectorMetrics.size === 0) {
       throw new UqlUsageError(
-        `${this.dialectName} does not support vector similarity search. Use sql() for vector queries.`,
+        `${this.engineName} does not support vector similarity search. Use sql() for vector queries.`,
       );
     }
     const { colName, distance, field } = this.resolveVectorDistance(meta, key, search);
     const metric = this.vectorMetrics.get(distance);
     if (!metric) {
-      throw unsupportedVectorMetric(this.dialectName, distance);
+      throw unsupportedVectorMetric(this.engineName, distance);
     }
     const column = this.escapeId(prefix, true, true) + this.escapeId(colName);
     if ('fn' in metric) {

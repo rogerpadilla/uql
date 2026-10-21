@@ -79,7 +79,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
           isUnique: false,
         },
       }),
-    ).toThrow('sqlite: Altering the column "age" of "users" rebuilds the table');
+    ).toThrow('SQLite: Altering the column "age" of "users" rebuilds the table');
   });
 
   /**

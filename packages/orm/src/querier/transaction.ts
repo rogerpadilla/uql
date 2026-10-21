@@ -1,5 +1,6 @@
 import { asyncScope } from '../context/context.js';
 import type { Querier } from '../type/index.js';
+import { cachedIn } from '../util/object.util.js';
 
 /**
  * A transaction as the flow running its callback holds it: the querier it runs on, the slot of that querier's
@@ -26,12 +27,7 @@ const slots = new WeakMap<object, TransactionSlot>();
 
 /** The slot of `connection`, whichever querier on it asks. */
 export function slotOf(connection: object): TransactionSlot {
-  let slot = slots.get(connection);
-  if (!slot) {
-    slot = {};
-    slots.set(connection, slot);
-  }
-  return slot;
+  return cachedIn(slots, connection, () => ({}));
 }
 
 /**

@@ -371,6 +371,13 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
   return meta.ids[0];
 }
 
+/** The one key column and its field, or nothing on a composite key. */
+export function soleId<E>(meta: EntityMeta<E>): { readonly key: IdKey<E>; readonly field: FieldMeta } | undefined {
+  const [key] = meta.ids;
+  const field = meta.ids.length === 1 ? meta.fields[key] : undefined;
+  return field && { key, field };
+}
+
 /** The field `key` names, for a caller that took `key` from the metadata itself. */
 export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
   const field = meta.fields[key];
@@ -378,6 +385,19 @@ export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
     throw new UqlUsageError(`'${meta.entity.name}' has no field '${key}'`);
   }
   return field;
+}
+
+/**
+ * The field whose type `field`'s values take: the key it references where it gave `references` and neither a
+ * `type` nor a `columnType`, followed down a chain of them; `field` itself otherwise.
+ */
+export function valueFieldOf(field: FieldMeta, seen?: Set<EntityGetter>): FieldMeta {
+  if (field.columnType || !field.typeFromReference || !field.references || seen?.has(field.references)) {
+    return field;
+  }
+  seen = (seen ?? new Set()).add(field.references);
+  const target = getMeta(field.references());
+  return valueFieldOf(fieldOf(target, soleIdOf(target, 'a foreign key')), seen);
 }
 
 /** The relation `key` names, for a caller that took `key` from the metadata itself. */

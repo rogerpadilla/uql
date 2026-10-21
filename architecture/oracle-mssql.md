@@ -96,4 +96,4 @@ The shared integration suite runs against SQL Server 2025 in `bun run test`, bes
 
 ## Out of scope
 
-Stored procedures, materialized-view refresh, Oracle Text, SQL Server full-text, temporal tables, and `SET SESSION_CONTEXT` for RLS. Worth remembering for the roadmap's batching item: node-oracledb 7 pipelines statements in thin mode, a one-round-trip batch of the kind only D1, libSQL and Neon HTTP offer today.
+Stored procedures, materialized-view refresh, Oracle Text, SQL Server full-text, temporal tables, and `SET SESSION_CONTEXT` for RLS. Worth remembering for `runStatements` ([the design](split-writes.md)): node-oracledb 7 pipelines statements in thin mode, a one-round-trip list of the kind D1, libSQL and Neon HTTP offer.

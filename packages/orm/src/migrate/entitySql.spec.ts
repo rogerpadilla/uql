@@ -155,7 +155,7 @@ describe('a SQL Server filtered index', () => {
 
   it.each(refused)('should refuse %s, which its filter grammar has no room for', (operator, where) => {
     expect(() => ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toThrow(
-      `mssql does not support ${operator} in a partial index predicate (index "ticket_idx")`,
+      `SQL Server does not support ${operator} in a partial index predicate (index "ticket_idx")`,
     );
   });
 

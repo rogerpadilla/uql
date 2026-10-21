@@ -10,6 +10,7 @@ import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { TursoDialect } from '../../turso/tursoDialect.js';
 import { TursoLocalDialect } from '../../turso/tursoLocalDialect.js';
 import type { Except, IndexSchema } from '../../type/index.js';
+import { ENGINE_NAMES } from '../../type/querier.js';
 import {
   CockroachIndexDdl,
   indexDdlFor,
@@ -79,7 +80,7 @@ describe('index features', () => {
 
   it.each(typePairs(false))('should refuse a %s %s index rather than emit one the server rejects', (dialect, type) => {
     expect(() => render(dialect, { entries: [{ column: 'c' }], type })).toThrow(
-      `${dialect} has no ${type} index (index "i")`,
+      `${ENGINE_NAMES[dialect]} has no ${type} index (index "i")`,
     );
   });
 
@@ -122,7 +123,7 @@ describe('index features', () => {
     ['expression', { column: 'lower("email")', expression: true }],
     ['jsonPath', { column: 'kind', jsonPath: { path: 'theme.color', type: String } }],
   ] as const)('should reject a %s index on SQL Server', (_feature, entry) => {
-    expect(() => render('mssql', { entries: [entry] })).toThrow('mssql does not support');
+    expect(() => render('mssql', { entries: [entry] })).toThrow('SQL Server does not support');
   });
 
   // T-SQL has no `IF NOT EXISTS` on an index, so the guard is a lookup, as it is for a table.
@@ -165,7 +166,7 @@ describe('index features', () => {
 
   it('should reject an expression index on MariaDB, which has no functional indexes', () => {
     expect(() => render('mariadb', { entries: [{ column: 'lower(`email`)', expression: true }] })).toThrow(
-      'mariadb does not support expression indexes (index "i")',
+      'MariaDB does not support expression indexes (index "i")',
     );
   });
 
@@ -213,7 +214,7 @@ describe('index features', () => {
         ? { column: 'email', nulls: 'first' as const }
         : { column: 'data', opsClass: 'jsonb_path_ops' },
     ];
-    expect(() => render('cockroachdb', { entries })).toThrow('cockroachdb does not support');
+    expect(() => render('cockroachdb', { entries })).toThrow('CockroachDB does not support');
   });
 
   it.each(['mysql', 'mariadb', 'sqlite'] as const)('should reject a covering index on %s', (dialect) => {
@@ -254,7 +255,7 @@ describe('index features', () => {
   it('should reject a JSON path index on MariaDB', () => {
     expect(() =>
       render('mariadb', { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] }),
-    ).toThrow('mariadb does not support indexes over a path inside a JSON column (index "i")');
+    ).toThrow('MariaDB does not support indexes over a path inside a JSON column (index "i")');
   });
 
   /**
@@ -279,7 +280,7 @@ describe('index features', () => {
     ).toThrow("a MySQL index over the string JSON path 'theme.color' needs a length");
     expect(() =>
       render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'isArchived', type: Boolean } }] }),
-    ).toThrow("mysql cannot index the boolean JSON path 'isArchived', which compares as JSON");
+    ).toThrow("MySQL cannot index the boolean JSON path 'isArchived', which compares as JSON");
   });
 
   /**
@@ -301,10 +302,10 @@ describe('index features', () => {
       'a multi-valued index over string elements needs a length',
     );
     expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'float' } }] })).toThrow(
-      'mysql has no array cast for float elements',
+      'MySQL has no array cast for float elements',
     );
     expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: Boolean } }] })).toThrow(
-      'mysql has no array cast for Boolean elements',
+      'MySQL has no array cast for Boolean elements',
     );
     expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'blob' } }] })).toThrow(
       'a multi-valued index over binary elements needs a length',
@@ -435,7 +436,7 @@ describe('CREATE INDEX', () => {
         type,
         distance: 'cosine',
       }),
-    ).toThrow(`mysql has no ${type} index (index "embedding_idx"). Vector search on MySQL needs HeatWave`);
+    ).toThrow(`MySQL has no ${type} index (index "embedding_idx"). Vector search on MySQL needs HeatWave`);
   });
 
   // SQLite's CREATE INDEX grammar has no `USING` clause at all, so emitting one made every typed
@@ -562,7 +563,7 @@ describe('CREATE INDEX', () => {
         unique: true,
         where: '`deletedAt` IS NULL',
       }),
-    ).toThrow('mysql does not support partial indexes (index "live_email_idx"');
+    ).toThrow('MySQL does not support partial indexes (index "live_email_idx"');
   });
 
   it('should not add an operator class to a CockroachDB index with a non-vector type', () => {
@@ -586,7 +587,7 @@ describe('CREATE INDEX', () => {
         type: 'vector',
         distance: 'l1',
       }),
-    ).toThrow('cockroachdb does not support vector distance metric: l1');
+    ).toThrow('CockroachDB does not support vector distance metric: l1');
   });
 
   it('should not resolve an operator class via the prototype chain for an unvalidated distance value', () => {
@@ -600,7 +601,7 @@ describe('CREATE INDEX', () => {
         // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
         distance: 'toString',
       }),
-    ).toThrow('cockroachdb does not support vector distance metric: toString');
+    ).toThrow('CockroachDB does not support vector distance metric: toString');
   });
 
   /**

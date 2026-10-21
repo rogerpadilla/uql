@@ -690,6 +690,23 @@ describe('SchemaASTBuilder', () => {
       expect(ast.getTable('Outlet')?.indexes.map((index) => index.name)).toEqual(['Outlet__region_idx']);
     });
 
+    it('should drop a foreign key whose columns do not resolve to the tables it joins', () => {
+      @Entity()
+      class UnresolvedParent {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class UnresolvedChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => UnresolvedParent }) parentId?: number | null;
+      }
+
+      let callCount = 0;
+      const ast = buildSchemaAST([UnresolvedParent, UnresolvedChild], { resolveColumnName: () => `c${++callCount}` });
+
+      expect(ast.relationships).toEqual([]);
+    });
+
     it('should use default callback when resolveTableName/resolveColumnName are not provided', () => {
       const ast = buildSchemaAST([User]);
       const table = ast.getTable('User');

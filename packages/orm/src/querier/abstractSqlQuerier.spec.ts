@@ -3,8 +3,9 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { ExtraOptions, Json, QueryUpdateResult, QueryWhere, RawRow } from '../type/index.js';
+import type { ExtraOptions, Json, QueryWhere, RawRow } from '../type/index.js';
 import { sql } from '../util/sql.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
@@ -33,7 +34,7 @@ class HydratedParent {
   children?: HydratedChild[];
 }
 
-/** Querier over canned driver rows: no database, so `internalAll` returns exactly what a test hands it. */
+/** Querier over canned driver rows: no database, so a read answers exactly what a test hands it. */
 class StubSqlQuerier extends AbstractSqlQuerier {
   rows: RawRow[] = [];
   failOn?: string;
@@ -46,21 +47,21 @@ class StubSqlQuerier extends AbstractSqlQuerier {
     super(new SqliteDialect({}), extra);
   }
 
-  protected override async internalAll<T>(): Promise<T[]> {
-    return this.rows as T[];
+  /** A read answers {@link rows}; any other statement is recorded, and the one {@link failOn} names fails. */
+  protected override async execute(query: string): Promise<SqlExecution> {
+    if (query.startsWith('SELECT')) {
+      return { rows: this.rows };
+    }
+    this.statements.push(query);
+    if (query === this.failOn) {
+      throw this.failure;
+    }
+    return { rows: [], changes: 0 };
   }
 
   protected override async *internalStream(): AsyncIterable<RawRow> {
     yield* this.rows;
     throw new TypeError('driver stream failed');
-  }
-
-  protected override async internalRun(query: string): Promise<QueryUpdateResult> {
-    this.statements.push(query);
-    if (query === this.failOn) {
-      throw this.failure;
-    }
-    return { changes: 0 };
   }
 
   /** Records the transaction state at hand-back, which is what `release` is responsible for. */
@@ -164,17 +165,10 @@ describe('AbstractSqlQuerier row locks', () => {
   class RecordingSqlQuerier extends AbstractSqlQuerier {
     readonly statements: string[] = [];
 
-    protected override async internalAll<T>(query: string): Promise<T[]> {
+    protected override async execute(query: string): Promise<SqlExecution> {
       this.statements.push(query);
-      return (query.startsWith('SELECT') ? [{ id: 1, name: 'a' }] : []) as T[];
+      return { rows: query.startsWith('SELECT') ? [{ id: 1, name: 'a' }] : [], changes: 1 };
     }
-
-    protected override async internalRun(query: string): Promise<QueryUpdateResult> {
-      this.statements.push(query);
-      return { changes: 1 };
-    }
-
-    protected override async internalRelease(): Promise<void> {}
   }
 
   /** The ids of rows already written only name them, and a lock outside a transaction would hold nothing. */
@@ -347,15 +341,9 @@ describe('AbstractSqlQuerier error context', () => {
 it('should take a statement written as a tag, binding each value', async () => {
   const seen: [query?: string, values?: unknown[]][] = [];
   class RecordingSqlQuerier extends StubSqlQuerier {
-    protected override async internalAll<T>(...statement: [query?: string, values?: unknown[]]): Promise<T[]> {
+    protected override async execute(...statement: [query: string, values?: unknown[]]): Promise<SqlExecution> {
       seen.push(statement);
-      return [];
-    }
-    protected override async internalRun(
-      ...statement: [query?: string, values?: unknown[]]
-    ): Promise<QueryUpdateResult> {
-      seen.push(statement);
-      return { changes: 0 };
+      return { rows: [] };
     }
   }
   const querier = new RecordingSqlQuerier();
@@ -385,13 +373,9 @@ describe('AbstractSqlQuerier stream', () => {
     readonly reads: string[] = [];
     discarded?: boolean;
 
-    protected override async internalAll<T>(query: string): Promise<T[]> {
+    protected override async execute(query: string): Promise<SqlExecution> {
       this.reads.push(query.split(' ')[0]);
-      return [{ id: 1 }] as T[];
-    }
-
-    protected override async internalRun(): Promise<QueryUpdateResult> {
-      return { changes: 0 };
+      return { rows: [{ id: 1 }] };
     }
 
     protected override async internalRelease(discard: boolean): Promise<void> {
@@ -401,11 +385,11 @@ describe('AbstractSqlQuerier stream', () => {
 
   /** One whose connection drops as a cursor closes. */
   class ClosingSqlQuerier extends ReadingSqlQuerier {
-    protected override async internalAll<T>(query: string): Promise<T[]> {
+    protected override async execute(query: string): Promise<SqlExecution> {
       if (query.startsWith('CLOSE')) {
         throw new Error('connection lost');
       }
-      return super.internalAll<T>(query);
+      return super.execute(query);
     }
   }
 

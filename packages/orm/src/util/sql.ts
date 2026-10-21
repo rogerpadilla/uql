@@ -94,7 +94,7 @@ function sqlValue(name: SqlValueName): QuerySql {
   return sql(({ dialect }) => {
     const statement = dialect.sqlValues[name];
     if (statement === undefined) {
-      throw new UqlUsageError(`${dialect.dialectName} has no ${name}; write it as raw SQL this engine accepts`);
+      throw new UqlUsageError(`${dialect.engineName} has no ${name}; write it as raw SQL this engine accepts`);
     }
     return statement;
   });

@@ -9,7 +9,7 @@ import type {
 } from 'mongodb';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import type { UpsertedId } from '../querier/abstractQuerier.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type {
@@ -35,14 +35,14 @@ import type {
 import {
   clone,
   getKeys,
-  getSoftDeleteValue,
+  deletionOf,
   hasKeys,
   hasTriggers,
   populatesRelations,
   textSortOf,
   vectorCandidates,
-  withoutSoftDeleteFilter,
   whereEach,
+  upsertKeepsOwnKey,
 } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -88,20 +88,19 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     super(extra);
   }
 
-  private async execute<T>(task: (session: ClientSession) => Promise<T>): Promise<T> {
-    return this.serialize(async () => {
-      return task(this.#session!);
-    });
+  /** Runs `task` on the open transaction's session, if any, after everything queued before it, timed as `label`. */
+  private execute<T>(label: string, task: (session: ClientSession | undefined) => Promise<T>): Promise<T> {
+    return this.serialize(() => this.timed(label, undefined, () => task(this.#session)));
   }
 
   protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     if (asksForNoRows(q)) {
       return [];
     }
-    return this.timed('internalFindMany', undefined, async () => {
-      const cursor = this.readCursor(entity, q, opts);
-      return this.dialect.normalizeIds(getMeta(entity), await this.execute(() => cursor.toArray()));
-    });
+    const docs = await this.execute('internalFindMany', (session) =>
+      this.readCursor(entity, q, opts, session).toArray(),
+    );
+    return this.dialect.normalizeIds(getMeta(entity), docs);
   }
 
   protected override async *internalFindManyStream<E extends Document>(
@@ -113,7 +112,8 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       return;
     }
     const meta = getMeta(entity);
-    for await (const doc of this.timedStream('internalFindManyStream', undefined, this.readCursor(entity, q, opts))) {
+    const cursor = this.readCursor(entity, q, opts, this.#session);
+    for await (const doc of this.timedStream('internalFindManyStream', undefined, cursor)) {
       yield this.dialect.normalizeId(meta, doc);
     }
   }
@@ -126,15 +126,16 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   private readCursor<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts: QueryOptions | undefined,
+    session: ClientSession | undefined,
   ): AggregationCursor<E> | FindCursor<E> {
     const vectorSort = this.dialect.extractVectorSort(q.$sort);
     const pipeline = vectorSort
       ? this.buildVectorPipeline(entity, q, vectorSort, opts)
       : this.readsThroughPipeline(entity, q) && this.dialect.aggregationPipeline(entity, q, opts);
     return pipeline
-      ? this.collection(entity).aggregate<E>(pipeline, { session: this.#session })
-      : this.buildFindCursor(entity, q, opts);
+      ? this.collection(entity).aggregate<E>(pipeline, { session })
+      : this.buildFindCursor(entity, q, opts, session);
   }
 
   /**
@@ -160,8 +161,13 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
-  private buildFindCursor<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    const cursor = this.collection(entity).find<E>({}, { session: this.#session });
+  private buildFindCursor<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts: QueryOptions | undefined,
+    session: ClientSession | undefined,
+  ) {
+    const cursor = this.collection(entity).find<E>({}, { session });
 
     const filter = this.dialect.where(entity, q.$where, opts);
     if (hasKeys(filter)) {
@@ -220,13 +226,11 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]> {
-    return this.timed('internalAggregate', undefined, async () => {
-      const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
-      const rows = await this.execute((session) =>
-        this.collection(entity).aggregate<QueryAggregateResult<E, G, A>>(pipeline, { session }).toArray(),
-      );
-      return this.dialect.normalizeAggregateRows(entity, q, rows);
-    });
+    const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
+    const rows = await this.execute('internalAggregate', (session) =>
+      this.collection(entity).aggregate<QueryAggregateResult<E, G, A>>(pipeline, { session }).toArray(),
+    );
+    return this.dialect.normalizeAggregateRows(entity, q, rows);
   }
 
   /**
@@ -245,7 +249,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     const { $sort: _sort, $skip: _skip, $limit: _limit, ...unpaged } = q;
     const [founds, counted] = await Promise.all([
       this.internalFindMany(entity, q, opts),
-      this.execute((session) =>
+      this.execute('internalFindManyAndCount', (session) =>
         this.collection(entity)
           .aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(
             [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: AGGREGATE_VALUE_ALIAS }],
@@ -262,19 +266,15 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     if (asksForNoRows(q)) {
       return 0;
     }
-    return this.timed('internalCount', undefined, async () => {
-      const pipeline = [
-        ...this.dialect.matchStages(entity, q.$where, opts),
-        ...this.dialect.pagerStages(q),
-        { $count: AGGREGATE_VALUE_ALIAS },
-      ];
-      const [counted] = await this.execute((session) =>
-        this.collection(entity)
-          .aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(pipeline, { session })
-          .toArray(),
-      );
-      return counted?.[AGGREGATE_VALUE_ALIAS] ?? 0;
-    });
+    const pipeline = [
+      ...this.dialect.matchStages(entity, q.$where, opts),
+      ...this.dialect.pagerStages(q),
+      { $count: AGGREGATE_VALUE_ALIAS },
+    ];
+    const [counted] = await this.execute('internalCount', (session) =>
+      this.collection(entity).aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(pipeline, { session }).toArray(),
+    );
+    return counted?.[AGGREGATE_VALUE_ALIAS] ?? 0;
   }
 
   /**
@@ -282,28 +282,21 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
    * filter - the reason {@link UniversalQuerier.estimatedCount} takes none either.
    */
   override async estimatedCount<E extends Document>(entity: Type<E>) {
-    return this.timed('estimatedCount', undefined, async () =>
-      this.execute((session) => this.collection(entity).estimatedDocumentCount({ session })),
-    );
+    return this.execute('estimatedCount', (session) => this.collection(entity).estimatedDocumentCount({ session }));
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
     refuseTriggers(entity);
-    return this.timed('internalInsertMany', undefined, async () => {
-      const meta = getMeta(entity);
-      const persistables = this.dialect.getPersistables(meta, rows, 'onInsert') as OptionalUnlessRequiredId<E>[];
-
-      const { insertedIds } = await this.execute((session) =>
-        this.collection(entity).insertMany(persistables, { session }),
-      );
-
-      const ids = Object.values(insertedIds).map((id) => this.dialect.fromWireId(id)) as IdValue<E>[];
-
-      const idKey = soleIdOf(meta, 'insert');
-      for (let index = 0; index < rows.length; index++) {
-        rows[index][idKey] = ids[index];
-      }
-    });
+    const meta = getMeta(entity);
+    const persistables = this.dialect.getPersistables(meta, rows, 'onInsert') as OptionalUnlessRequiredId<E>[];
+    const { insertedIds } = await this.execute('internalInsertMany', (session) =>
+      this.collection(entity).insertMany(persistables, { session }),
+    );
+    const ids = Object.values(insertedIds).map((id) => this.dialect.fromWireId(id)) as IdValue<E>[];
+    const idKey = soleIdOf(meta, 'insert');
+    for (let index = 0; index < rows.length; index++) {
+      rows[index][idKey] = ids[index];
+    }
   }
 
   override async internalUpdateMany<E extends Document>(
@@ -313,15 +306,13 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     opts?: QueryOptions,
   ) {
     refuseTriggers(entity);
-    return this.timed('internalUpdateMany', undefined, async () => {
-      const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
-      const filter = this.dialect.where(entity, qm.$where, opts);
-      const update = this.dialect.getUpdateFilter<E>(persistable);
-      const { matchedCount } = await this.execute((session) =>
-        this.collection(entity).updateMany(filter, update, { session }),
-      );
-      return matchedCount;
-    });
+    const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
+    const filter = this.dialect.where(entity, qm.$where, opts);
+    const update = this.dialect.getUpdateFilter<E>(persistable);
+    const { matchedCount } = await this.execute('internalUpdateMany', (session) =>
+      this.collection(entity).updateMany(filter, update, { session }),
+    );
+    return matchedCount;
   }
 
   /**
@@ -354,20 +345,21 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   /**
-   * An upsert whose conflicting document takes `update`, which no single call pairs with inserting the payload:
-   * `$setOnInsert` and `$inc` on one field conflict. So the row inserts if absent, and a document it found,
-   * a concurrent one included, then takes `update`.
+   * An upsert of `row` whose found document takes `update`, which no single call pairs with inserting the payload:
+   * `$setOnInsert` and `$inc` on one field conflict. So the row inserts if absent, and a document it found, a
+   * concurrent one included, then takes `update`.
    */
   private async upsertWithUpdate<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     row: E,
     update: UpdatePayload<E>,
-  ) {
+  ): Promise<PrimaryKey | undefined> {
     const persistable = this.dialect.getPersistable(getMeta(entity), clone(row), 'onInsert');
-    const res = await this.execute((session) =>
+    const filter = this.buildConflictFilter(entity, conflictPaths, row);
+    const res = await this.execute('upsertMany', (session) =>
       this.collection(entity).findOneAndUpdate(
-        this.buildConflictFilter(entity, conflictPaths, row),
+        filter,
         { $setOnInsert: persistable },
         { upsert: true, returnDocument: 'after', includeResultMetadata: true, session },
       ),
@@ -385,7 +377,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ) {
+  ): Promise<(UpsertedId<E> | undefined)[]> {
     refuseTriggers(entity);
     if (update) {
       const ids: (UpsertedId<E> | undefined)[] = [];
@@ -394,31 +386,28 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       }
       return ids;
     }
-    return this.timed('upsertMany', undefined, async () => {
-      if (!payload.length) {
-        return [];
-      }
-      const meta = getMeta(entity);
-      // Asked before `getPersistable` fills an `onInsert` key into rows it may only update.
-      const unnamed = payload.map((row) => !namesKey(meta, row));
-      const operations = payload.map((item) => ({
-        updateOne: {
-          filter: this.buildConflictFilter(entity, conflictPaths, item),
-          update: this.upsertUpdate(meta, item),
-          upsert: true,
-        },
-      }));
-      const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
-      // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
-      // its own row; an updated document's `_id` is read back by the conflict fields instead.
-      const reported = payload.map((_, index) => {
-        const id = res.upsertedIds[index];
-        return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
-      });
-      const unplaced = reported.some((id, index) => id === undefined && unnamed[index]);
-      const found = unplaced ? await this.idsByConflict(entity, conflictPaths, payload) : [];
-      return reported.map((id, index) => id ?? found[index]);
+    if (!payload.length) {
+      return [];
+    }
+    const meta = getMeta(entity);
+    const kept = payload.map((row) => upsertKeepsOwnKey(meta, conflictPaths, row));
+    const operations = payload.map((item) => ({
+      updateOne: {
+        filter: this.buildConflictFilter(entity, conflictPaths, item),
+        update: this.upsertUpdate(meta, item),
+        upsert: true,
+      },
+    }));
+    const res = await this.execute('upsertMany', (session) =>
+      this.collection(entity).bulkWrite(operations, { session }),
+    );
+    // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
+    // its own row; an updated document's `_id` is read back by the conflict fields instead.
+    const reported = payload.map((_, index) => {
+      const id = res.upsertedIds[index];
+      return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
     });
+    return this.withUnreportedIds(entity, conflictPaths, payload, reported, kept);
   }
 
   protected override async internalDeleteMany<E extends Document>(
@@ -427,30 +416,21 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     opts: QueryOptions = {},
   ) {
     refuseTriggers(entity);
-    return this.timed('internalDeleteMany', undefined, async () => {
-      const meta = getMeta(entity);
-      // Soft-delete (stamp) unless `hardDelete` is requested or the entity has no soft-delete field.
-      const softDelete = opts.hardDelete ? undefined : meta.softDelete;
-      if (!softDelete) {
-        const filter = this.dialect.where(entity, qm.$where, {
-          ...opts,
-          filters: withoutSoftDeleteFilter(opts.filters),
-        });
-        const { deletedCount } = await this.execute((session) =>
-          this.collection(entity).deleteMany(filter, { session }),
-        );
-        return deletedCount;
-      }
-      const field = fieldOf(meta, softDelete);
-      // The mapped column, which reads filter on: a `@Field({ name })` mismatch would leave the row visible.
-      const column = this.dialect.resolveColumnName(softDelete, field);
-      const update = { $set: { [column]: getSoftDeleteValue(field) } } as UpdateFilter<E>;
-      const filter = this.dialect.where(entity, qm.$where, opts);
-      const { matchedCount } = await this.execute((session) =>
-        this.collection(entity).updateMany(filter, update, { session }),
+    const { stamp, opts: read } = deletionOf(getMeta(entity), opts);
+    const filter = this.dialect.where(entity, qm.$where, read);
+    if (!stamp) {
+      const { deletedCount } = await this.execute('internalDeleteMany', (session) =>
+        this.collection(entity).deleteMany(filter, { session }),
       );
-      return matchedCount;
-    });
+      return deletedCount;
+    }
+    // The mapped column, which reads filter on: a `@Field({ name })` mismatch would leave the row visible.
+    const column = this.dialect.resolveColumnName(stamp.key, stamp.field);
+    const update = { $set: { [column]: stamp.value() } } as UpdateFilter<E>;
+    const { matchedCount } = await this.execute('internalDeleteMany', (session) =>
+      this.collection(entity).updateMany(filter, update, { session }),
+    );
+    return matchedCount;
   }
 
   override get hasOpenTransaction(): boolean {
@@ -459,9 +439,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
   /** Every read and write goes through here, which makes it where a released querier is caught. */
   collection<E extends Document>(entity: Type<E>) {
-    if (this.released) {
-      throw new UqlUsageError('querier already released');
-    }
+    this.assertActive();
     const { name } = getMeta(entity);
     return this.db.collection<E>(name!);
   }

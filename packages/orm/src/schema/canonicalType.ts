@@ -2,8 +2,8 @@
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
-import { fieldOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
-import type { ColumnType, EntityGetter, FieldMeta, FieldOptions } from '../type/entity.js';
+import { valueFieldOf } from '../entity/metadata/definition.js';
+import type { ColumnType, FieldMeta, FieldOptions } from '../type/entity.js';
 import { type DialectFeatures, type DialectName, QuerySql } from '../type/index.js';
 import { DATE_PRECISION } from '../util/date.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
@@ -528,14 +528,8 @@ export function canonicalToColumnType(type: CanonicalType): ColumnType {
 
 /**
  * A field's canonical type, taken from the referenced key where the field gave `references` and no
- * `type` (`typeFromReference`), so a foreign key matches the key it points at; `columnType` always wins.
+ * `type` (`valueFieldOf`), so a foreign key matches the key it points at; `columnType` always wins.
  */
-export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
-  const hasExplicitType = !!field.columnType || !field.typeFromReference;
-  if (!hasExplicitType && field.references && !seen.has(field.references)) {
-    seen.add(field.references);
-    const referencedMeta = getMeta(field.references());
-    return resolveColumnCanonicalType(fieldOf(referencedMeta, soleIdOf(referencedMeta, 'a foreign key')), seen);
-  }
-  return fieldOptionsToCanonical(field);
+export function resolveColumnCanonicalType(field: FieldMeta): CanonicalType {
+  return fieldOptionsToCanonical(valueFieldOf(field));
 }

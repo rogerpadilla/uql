@@ -601,7 +601,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /** What an engine keeping no statistics answers; one that keeps them gathers them, then reads them back. */
   protected async expectEstimatedCount(entity: Type<object>, _rows: number): Promise<void> {
     await expect(this.querier.estimatedCount(entity)).rejects.toThrow(
-      `${this.querier.dialect.dialectName} does not support estimatedCount`,
+      `${this.querier.dialect.engineName} does not support estimatedCount`,
     );
   }
 
@@ -718,6 +718,35 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     expect(new Set(ids.map(String)).size).toBe(count);
     expect([updated, deleted]).toEqual([count, count]);
+  }
+
+  /**
+   * A write split past the engine's limits lands whole or not at all: in a transaction, or as one request where
+   * the engine takes a list as one. Its last statement failing leaves nothing written.
+   */
+  async shouldWriteNothingOfASplitInsertWhoseLastStatementFails() {
+    const count = this.splitInsertSize();
+    const rows = Array.from({ length: count }, (_, index) => ({ code: `c${index % (count - 1)}`, label: 'x' }));
+
+    const err = await this.querier.insertMany(Coupon, rows).catch((error: unknown) => error);
+
+    expect(queryErrorKind(err)).toBe('uniqueViolation');
+    expect(await this.querier.count(Coupon, {})).toBe(0);
+  }
+
+  /** The split joins the transaction it runs in, whether the engine sends it in turn or as one request. */
+  async shouldSplitAnInsertInsideAnOpenTransaction() {
+    const count = this.splitInsertSize();
+    const rows = Array.from({ length: count }, (_, index) => ({ code: `c${index}`, label: 'x' }));
+
+    await this.querier.transaction(() => this.querier.insertMany(Coupon, rows));
+
+    expect(await this.querier.count(Coupon, {})).toBe(count);
+  }
+
+  /** How many rows an insert of two columns takes to run as more than one statement on any engine. */
+  private splitInsertSize(): number {
+    return Math.max(1001, Math.floor(this.querier.dialect.maxBindValues / 2) + 1);
   }
 
   /** A read binding `count` values. */

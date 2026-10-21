@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { QueryUpdateResult, RawRow } from '../type/index.js';
-
+import type { RawRow } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { AbstractPoolQuerier } from './abstractPoolQuerier.js';
 
 /** Stands in for a pooled driver connection: `release` hands it back, and can be made to fail. */
@@ -9,7 +9,7 @@ type Conn = { readonly id: number; release: () => Promise<void> };
 
 /**
  * Pool querier over counted fake connections, so a spec can assert how many were taken from the pool
- * and how many came back. No database: `internalAll`/`internalRun` only prove a statement was reached.
+ * and how many came back. No database: `execute` only proves a statement was reached.
  */
 class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
   readonly handedBack: number[] = [];
@@ -30,19 +30,20 @@ class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
     this.handedBack.push(conn.id);
   }
 
-  protected override async internalAll<T>(): Promise<T[]> {
-    return [] as T[];
+  protected override async execute(): Promise<SqlExecution> {
+    return { rows: [] };
   }
 
   protected override async *internalStream(): AsyncIterable<RawRow> {}
 
-  protected override async internalRun(): Promise<QueryUpdateResult> {
-    return { changes: 0 };
-  }
-
   /** Exposed so a spec can drive the connect path without a real statement. */
   async connectNow() {
     return this.lazyConnect();
+  }
+
+  /** The connection as a driver's statement reads it, past the entry points that connect first. */
+  connNow() {
+    return this.getConn();
   }
 }
 
@@ -76,6 +77,10 @@ describe('AbstractPoolQuerier connection lifecycle', () => {
     querier.releaseFails = false;
     await expect(querier.release()).resolves.toBeUndefined();
     expect(querier.handedBack).toEqual([]);
+  });
+
+  it('should refuse a statement on a querier that took no connection', () => {
+    expect(() => new StubPoolQuerier().connNow()).toThrow('pool querier not connected');
   });
 
   /** A querier that never connected has nothing to hand back, and a second release nothing to repeat. */

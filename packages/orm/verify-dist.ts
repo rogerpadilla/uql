@@ -203,8 +203,8 @@ function checkPeerReach(): void {
 const BUDGETS: Record<string, number> = {
   // The root is decorators, types and helpers: no querier or dialect is reachable from it.
   '.': 8_600,
-  './postgres': 42_100,
-  './migrate': 61_000,
+  './postgres': 43_500,
+  './migrate': 62_300,
   './browser': 2_100,
 };
 

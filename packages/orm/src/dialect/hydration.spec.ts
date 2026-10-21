@@ -50,6 +50,18 @@ class LogicalRow {
   @Field({ type: BigInt }) huge?: bigint | null;
 }
 
+@Entity()
+class WideOwner {
+  @Id({ type: BigInt }) id?: bigint;
+}
+
+/** A foreign key typed by the key it references, a `BigInt` one here. */
+@Entity()
+class WideOwned {
+  @Id({ type: String }) id?: string;
+  @Field({ references: () => WideOwner }) ownerId?: bigint | null;
+}
+
 /** Each field `dialect` decodes and as what: for a row on the wire, or with `json`, one crossing JSON in its parent's. */
 function decoded(dialect: AbstractSqlDialect, entity: Type<object>, json = false) {
   return dialect
@@ -116,6 +128,10 @@ describe('decoded fields', () => {
     // its own, which `hydrateKind` answers before the numeric family `BigInt` belongs to.
     expect(decoded(postgres, LogicalRow)).toContainEqual(['huge', 'bigint']);
     expect(columnFamily(BigInt)).toBe('numeric');
+  });
+
+  it('should decode a foreign key as the key it references, a `BigInt` one as a bigint', () => {
+    expect(decoded(postgres, WideOwned)).toEqual([['ownerId', 'bigint']]);
   });
 
   it('should keep the narrow vector casts on Postgres, the only engine that has them', () => {

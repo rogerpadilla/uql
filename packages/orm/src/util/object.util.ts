@@ -60,6 +60,29 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** A shallow copy of `value` without `keys`. */
+export function omitKeys<T extends object>(value: T, keys: Iterable<string>): T {
+  const copy = { ...value };
+  for (const key of keys) {
+    Reflect.deleteProperty(copy, key);
+  }
+  return copy;
+}
+
+/** The value `cache` holds for `key`, computed and held the first time it is asked for. */
+export function cachedIn<K, V>(
+  cache: { get(key: K): V | undefined; set(key: K, value: V): unknown },
+  key: K,
+  compute: () => V,
+): V {
+  let value = cache.get(key);
+  if (value === undefined) {
+    value = compute();
+    cache.set(key, value);
+  }
+  return value;
+}
+
 export function getKeys<T extends object>(obj: T | null | undefined): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }

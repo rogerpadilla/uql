@@ -57,6 +57,8 @@ import {
   filterFieldKeys,
   forEachRequestedRelation,
   getKeys,
+  omitKeys,
+  deletionOf,
   hasKeys,
   getRelationRequestSummary,
   guardWrite,
@@ -81,7 +83,7 @@ import {
   whereIds,
   whereKeysIn,
   whereWith,
-  withoutSoftDeleteFilter,
+  withDeleted,
   cascadingRelations,
   holdsForeignKey,
 } from '../util/index.js';
@@ -212,38 +214,29 @@ function upsertsByReading<E extends object>(
   return securityConditions(meta).length > 0 || writesRelations(meta, update ? [...rows, update] : rows);
 }
 
-/** What `ON CONFLICT` assigns a row it finds by default: the payload, less the columns it matched on. */
-function conflictAssignments<E>(row: EntityData<E>, conflictPaths: QueryConflictPaths<E>): EntityData<E> {
-  const assigned = { ...row };
-  for (const key of getKeys(conflictPaths)) {
-    delete assigned[key];
-  }
-  return assigned;
-}
-
-/**
- * Writes the key an upsert reported onto each row that named none - only the key, since an `onInsert`
- * value was never written to a row the upsert updated. A report aligns with the rows only when it
- * speaks for every one: a `firstId` dialect reports nothing for a batch.
- */
 /** What an upsert reports of a row: the value a driver answers for a lone key, or the key the read back names. */
 export type UpsertedId<E> = PrimaryKey | WrittenId<E>;
 
+/**
+ * Writes the key an upsert reported onto each row, over the one it named: a found row keeps its own, and a row
+ * reported none keeps what it has. Only the key, since an `onInsert` value was never written to a row the upsert
+ * updated.
+ */
 function adoptReportedIds<E>(
   meta: EntityMeta<E>,
   rows: EntityData<E>[],
-  reported: readonly (UpsertedId<E> | undefined)[] | undefined,
+  reported: readonly (UpsertedId<E> | undefined)[],
 ): void {
-  if (reported?.length !== rows.length) {
-    return;
-  }
   const [idKey] = meta.ids;
   rows.forEach((row, index) => {
     const id = reported[index];
+    if (id === undefined) {
+      return;
+    }
     if (meta.ids.length > 1) {
       Object.assign(row, id);
     } else {
-      row[idKey] ??= id as E[typeof idKey];
+      row[idKey] = id as E[typeof idKey];
     }
   });
 }
@@ -278,11 +271,6 @@ function returnedKeys<E>(
   returning: WriteOptions<E, FieldKey<E>, BooleanLike>['returning'],
 ): FieldKey<E>[] | undefined {
   return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
-}
-
-/** How a delete reads the rows it removes: a hard one takes already-soft-deleted rows too, so it has to see them. */
-function deletableRows(opts: QueryOptions | undefined): QueryOptions | undefined {
-  return opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
 }
 
 /** An `UPDATE` and a `DELETE` of one statement each, reporting the rows they wrote with the fields `keys` names. */
@@ -353,11 +341,9 @@ export abstract class AbstractQuerier implements Querier {
   /** The stream reading on the connection, from its first row asked for until its loop ends. */
   #stream?: AsyncGenerator<unknown>;
 
-  /**
-   * A querier is one unit of work, so releasing ends it. Checked where each backend reaches for its
-   * connection, on every driver and not just the pooled ones.
-   */
-  protected released = false;
+  /** A querier is one unit of work, so releasing ends it. */
+  #released = false;
+
   protected readonly logger: LoggerWrapper;
   abstract readonly dialect: AbstractDialect;
 
@@ -369,6 +355,13 @@ export abstract class AbstractQuerier implements Querier {
 
   constructor(readonly extra?: ExtraOptions) {
     this.logger = queryLoggerFor(extra);
+  }
+
+  /** Refuses a call on a released querier: each backend calls it where it reaches for its connection. */
+  protected assertActive(): void {
+    if (this.#released) {
+      throw new UqlUsageError('querier already released');
+    }
   }
 
   /**
@@ -793,11 +786,14 @@ export abstract class AbstractQuerier implements Querier {
     opts: WriteOptions<E, FieldKey<E>, BooleanLike> | undefined,
   ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
     const keys = returnedKeys(getMeta(entity), opts?.returning);
-    return keys ? this.atomically(async () => this.readWritten(entity, await write(), keys)) : write();
+    return keys ? this.atomically(async () => this.readBack(entity, await write(), keys)) : write();
   }
 
-  /** The rows `ids` names, in their order, each with only the fields `keys` names. */
-  private async readWritten<E extends object>(
+  /**
+   * The rows `ids` names, in their order, each with only the fields `keys` names: as written, whatever a filter
+   * says of them, since a soft-deleted row inserted is still written.
+   */
+  private async readBack<E extends object>(
     entity: Type<E>,
     ids: readonly (EntityId<E> | undefined)[],
     keys: readonly FieldKey<E>[],
@@ -807,22 +803,24 @@ export abstract class AbstractQuerier implements Querier {
     const known = ids.filter((id) => id !== undefined);
     if (known.length < ids.length) {
       throw new UqlUsageError(
-        `'returning' reads each written '${entity.name}' back by its key, which ${this.dialect.dialectName} did not report for every row: give the rows their own keys`,
+        `'returning' reads each written '${entity.name}' back by its key, which ${this.dialect.engineName} did not report for every row: give the rows their own keys`,
       );
     }
     if (!known.length) {
       return [];
     }
-    // The rows this write wrote, whatever a filter says of them: a soft-deleted one inserted is still written.
-    const read = { ...opts, filters: withoutSoftDeleteFilter(opts?.filters) };
-    const $select = keySet<E>([...keys, ...meta.ids]);
+    const named = known.map((id) => whereIds(meta, id));
+    const read = withDeleted(opts);
     const rows: E[] = [];
-    for (const batch of chunk(known, this.dialect.keyListCapacity(meta.ids.length))) {
-      rows.push(...(await this.internalFindMany(entity, { $select, $where: whereIds(meta, batch) }, read)));
+    for (const q of this.keyedReads(meta.ids, named, [...keys, ...meta.ids])) {
+      rows.push(...(await this.internalFindMany(entity, q, read)));
     }
     const byKey = new Map(rows.map((row) => [rowKey(row, meta.ids), row]));
-    const ordered = known.flatMap((id) => byKey.get(rowKey(whereIds(meta, id), meta.ids)) ?? []);
-    return this.returned(entity, ordered, keys);
+    return this.returned(
+      entity,
+      named.flatMap((id) => byKey.get(rowKey(id, meta.ids)) ?? []),
+      keys,
+    );
   }
 
   /** What `returning` reports of `rows`: each through `afterLoad`, as a read's are, then only the fields `keys` names. */
@@ -908,7 +906,7 @@ export abstract class AbstractQuerier implements Querier {
     return this.atomically(async () => {
       const ids = await this.settleIds(entity, q, rest);
       await this.updateMatching(entity, q, payload, rest, ids);
-      return this.readWritten(entity, ids, keys, rest);
+      return this.readBack(entity, ids, keys, rest);
     });
   }
 
@@ -1120,12 +1118,7 @@ export abstract class AbstractQuerier implements Querier {
     const $where = whereWith(meta.softDelete, { $ne: null }, q.$where);
     // No version: a restore only undoes the stamp a delete left, which takes none either, and two of
     // them racing agree on the result anyway. A lock is for content, and a restore writes none.
-    return this.unversionedUpdate(
-      entity,
-      { ...q, $where },
-      { [meta.softDelete]: null },
-      { filters: { softDelete: false } },
-    );
+    return this.unversionedUpdate(entity, { ...q, $where }, { [meta.softDelete]: null }, withDeleted());
   }
 
   /**
@@ -1212,9 +1205,10 @@ export abstract class AbstractQuerier implements Querier {
         // An empty `update` leaves a found row as it is, as `DO NOTHING` does.
         if (ids[index] !== undefined && (update === undefined || hasKeys(update))) {
           const q = { $where: whereEach(keys, (key) => row[key]) };
-          // A copy each: the update fills its `onUpdate` fields into what it is handed.
-          const assigned = update ? { ...update } : conflictAssignments(row, conflictPaths);
-          await this.updateRows(entity, q, assigned, { filters: withoutSoftDeleteFilter(undefined) }, undefined);
+          // A copy each, as the update fills its `onUpdate` fields into it; by default, the payload less the found
+          // row's key and the columns it matched on.
+          const assigned = update ? { ...update } : omitKeys(row, [...meta.ids, ...keys]);
+          await this.updateRows(entity, q, assigned, withDeleted(), undefined);
         }
       }
       const inserts = rows.filter((_, index) => ids[index] === undefined);
@@ -1226,13 +1220,13 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  /** Upserts `payload`, answering each row's key in payload order where the engine reports every one. */
+  /** Upserts `payload`, answering each row's key in payload order, `undefined` for one the engine did not report. */
   protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(UpsertedId<E> | undefined)[] | undefined>;
+  ): Promise<(UpsertedId<E> | undefined)[]>;
 
   deleteOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
@@ -1277,13 +1271,14 @@ export abstract class AbstractQuerier implements Querier {
     const read = [...keys, ...meta.ids];
     // A soft delete stamps the rows, which a `RETURNING` would report stamped rather than as they were.
     const { writesReturning } = this;
-    if (writesReturning && (rest.hardDelete || !meta.softDelete) && this.deletesByFilter(entity, q)) {
+    const deletion = deletionOf(meta, rest);
+    if (writesReturning && !deletion.stamp && this.deletesByFilter(entity, q)) {
       return this.returned(entity, await writesReturning.delete(entity, q, rest, read), keys);
     }
     // A delete hook receives whole rows; without one, only the keys `returning` names and the ids are read.
     const $select = this.watchesDelete(entity) ? undefined : keySet<E>(read);
     return this.atomically(async () => {
-      const rows = await this.readForWrite(entity, { ...q, $select }, deletableRows(rest));
+      const rows = await this.readForWrite(entity, { ...q, $select }, deletion.opts);
       // `afterLoad` sees copies, as a read's rows, so a delete hook still gets each row as it was read.
       const reported = await this.returned(entity, clone(rows), keys);
       await this.deleteRows(entity, q, rest, rows);
@@ -1321,9 +1316,11 @@ export abstract class AbstractQuerier implements Querier {
     }
     const cascades = cascadingRelations(meta, 'delete').length > 0;
     const watched = this.watchesDelete(entity);
+    const deleting = opts ?? {};
     return this.atomically(async () => {
       // A hook receives the rows themselves; the ids read off them name the same rows a second read might not.
-      const doomed = read ?? (await this.readForWrite(entity, watched ? q : idOnlyQuery(meta, q), deletableRows(opts)));
+      const doomed =
+        read ?? (await this.readForWrite(entity, watched ? q : idOnlyQuery(meta, q), deletionOf(meta, deleting).opts));
       if (!doomed.length) {
         return 0;
       }
@@ -1332,7 +1329,7 @@ export abstract class AbstractQuerier implements Querier {
       const changes = await this.writeBatches(ids, meta.ids.length, async (batch) => {
         // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
         if (cascades) {
-          await this.deleteChildren(entity, batch, opts);
+          await this.deleteChildren(entity, batch, deleting);
         }
         return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
       });
@@ -1624,9 +1621,9 @@ export abstract class AbstractQuerier implements Querier {
    * delete stamps those that can be stamped and keeps the rest, junction links included, for a restore.
    * `EntityId` because a settled composite row is an object, which {@link childrenOf} reads each foreign key column out of.
    */
-  private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
+  private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts: QueryOptions) {
     const meta = getMeta(entity);
-    const soft = !!meta.softDelete && !opts?.hardDelete;
+    const soft = deletionOf(meta, opts).stamp !== undefined;
     for (const relKey of cascadingRelations(meta, 'delete')) {
       const relOpts = relationOf(meta, relKey);
       const target = relOpts.through ? relOpts.through() : relOpts.entity();
@@ -1714,7 +1711,7 @@ export abstract class AbstractQuerier implements Querier {
   protected savepoint(_kind: SavepointCommand, _name: string): Promise<void> {
     return Promise.reject(
       new UqlUsageError(
-        `${this.dialect.dialectName} has no savepoint to nest a transaction in another: run it on its own`,
+        `${this.dialect.engineName} has no savepoint to nest a transaction in another: run it on its own`,
       ),
     );
   }
@@ -1825,10 +1822,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * The ids of `rows`, read through the filters by the columns an upsert matches them on, and held as
-   * {@link readForWrite} holds them: after a statement that could not report them in payload order, or before a
-   * guarded upsert. A row that no read row matches, or that two do, keeps `undefined`: a missing id is honest
-   * where a guessed one is not.
+   * The ids of `rows`, read by the columns an upsert matches them on, soft-deleted rows included since a unique key
+   * holds across both, each read held as {@link readForWrite} holds its rows. A row no found row matches, or two do,
+   * reads none, since a missing id is honest where a guessed one is not; a null key never conflicts, so is not read.
    */
   protected async idsByConflict<E extends object>(
     entity: Type<E>,
@@ -1837,20 +1833,53 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
     const keys = getKeys(conflictPaths);
-    // A null key never conflicts, so no row is read back for it, whether one key names the row or several.
     const named = rows.filter((row) => keys.every((key) => row[key] != null));
     const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
-    const found: E[][] = [];
-    for (const batch of chunk(distinct, this.dialect.keyListCapacity(keys.length))) {
-      const q: Query<E> = { $select: keySet([...meta.ids, ...keys]), $where: whereKeysIn(keys, batch) };
-      found.push(await this.readForWrite(entity, q, { filters: withoutSoftDeleteFilter(undefined) }));
-    }
     const byConflict = new Map<string, WrittenId<E> | undefined>();
-    for (const row of found.flat()) {
-      const key = rowKey(row, keys);
-      byConflict.set(key, byConflict.has(key) ? undefined : idOf(meta, row));
+    for (const q of this.keyedReads(keys, distinct, [...meta.ids, ...keys])) {
+      for (const row of await this.readForWrite(entity, q, withDeleted())) {
+        const key = rowKey(row, keys);
+        byConflict.set(key, byConflict.has(key) ? undefined : idOf(meta, row));
+      }
     }
     return rows.map((row) => byConflict.get(rowKey(row, keys)));
+  }
+
+  /**
+   * `ids` completed where an upsert reported no id for a row whose key it does not keep (`kept`, asked before the
+   * write fills one in): read back by the conflict columns.
+   */
+  protected async withUnreportedIds<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>[],
+    ids: (UpsertedId<E> | undefined)[],
+    kept: readonly boolean[],
+  ): Promise<(UpsertedId<E> | undefined)[]> {
+    const unplaced = payload.flatMap((_, index) => (ids[index] === undefined && !kept[index] ? [index] : []));
+    if (unplaced.length) {
+      const found = await this.idsByConflict(
+        entity,
+        conflictPaths,
+        unplaced.map((index) => payload[index]),
+      );
+      unplaced.forEach((index, position) => {
+        ids[index] = found[position];
+      });
+    }
+    return ids;
+  }
+
+  /** Reads of the rows matching one of `rows` on `keys`, as many per statement as a key list takes, selecting `select`. */
+  private keyedReads<E extends object>(
+    keys: readonly FieldKey<E>[],
+    rows: readonly KeyedRow<E>[],
+    select: readonly FieldKey<E>[],
+  ): Query<E>[] {
+    return chunk(rows, this.dialect.keyListCapacity(keys.length)).map((batch) => ({
+      $select: keySet<E>(select),
+      $where: whereKeysIn(keys, batch),
+    }));
   }
 
   /**
@@ -1997,7 +2026,7 @@ export abstract class AbstractQuerier implements Querier {
     }).catch((err: unknown) => {
       this.logger.logError('rollback failed; discarding the connection', err);
     });
-    this.released = true;
+    this.#released = true;
     return this.enqueue(() => this.internalRelease(this.#unusable));
   }
 
@@ -2005,6 +2034,9 @@ export abstract class AbstractQuerier implements Querier {
     return this.release();
   }
 
-  /** `discard` means the connection must not be reused; backends with a pool evict it instead. */
-  protected abstract internalRelease(discard: boolean): Promise<void>;
+  /**
+   * Hands back what the querier holds, nothing where it holds no connection of its own. `discard` means the
+   * connection must not be reused; backends with a pool evict it instead.
+   */
+  protected async internalRelease(_discard: boolean): Promise<void> {}
 }

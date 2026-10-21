@@ -95,18 +95,15 @@ describe('cascade delegation', () => {
       { id: 1, parentId: 1 },
       { id: 2, parentId: 1 },
     ]);
-    const run = vi.spyOn(querier, 'internalRun');
-    const all = vi.spyOn(querier, 'internalAll');
+    const execute = vi.spyOn(querier, 'execute');
 
     const changes = await querier.deleteMany(DelegatedParent, { $where: { id: 1 } });
 
     expect(changes).toBe(1);
     // No statement mentions the children at all: with no `cascade: 'delete'` there is nothing to walk, so
-    // the constraint is what removes them.
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `DelegatedParent` WHERE `id` = ?', [1]);
-    // Nothing needs the ids, so they are never looked up: one statement, the one the caller asked for.
-    expect(all).toHaveBeenCalledTimes(0);
+    // the constraint is what removes them. Nothing needs the ids, so they are never looked up either: one
+    // statement, the one the caller asked for.
+    expect(execute.mock.calls).toEqual([['DELETE FROM `DelegatedParent` WHERE `id` = ?', [1]]]);
     // The rows are gone regardless of who removed them, which is the part that matters.
     expect(await querier.findMany(DelegatedChild, { $select: { id: true } })).toEqual([]);
   });
@@ -117,8 +114,7 @@ describe('cascade delegation', () => {
       { id: 1, parentId: 1 },
       { id: 2, parentId: 1 },
     ]);
-    const run = vi.spyOn(querier, 'internalRun');
-    const all = vi.spyOn(querier, 'internalAll');
+    const execute = vi.spyOn(querier, 'execute');
 
     const changes = await querier.deleteMany(WalkedParent, { $where: { id: 1 } });
 
@@ -126,10 +122,9 @@ describe('cascade delegation', () => {
     // The parent's ids are materialized because the children have to be reached while it still names
     // them, and the children go first: the reverse order is what a real constraint rejects. The
     // children themselves cascade onto nothing, so removing them takes the one statement.
-    expect(all).toHaveBeenCalledTimes(1);
-    expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `WalkedParent` WHERE `id` = ?', [1]);
-    expect(run.mock.calls).toEqual([
+    expect(execute.mock.calls).toEqual([
       ['BEGIN TRANSACTION'],
+      ['SELECT `id` FROM `WalkedParent` WHERE `id` = ?', [1]],
       ['DELETE FROM `WalkedChild` WHERE `parentId` IN (?)', [1]],
       ['DELETE FROM `WalkedParent` WHERE `id` IN (?)', [1]],
       ['COMMIT'],
@@ -147,15 +142,17 @@ describe('cascade delegation', () => {
       { id: 1, name: 'p' },
       { id: 2, name: 'p' },
     ]);
-    const run = vi.spyOn(querier, 'internalRun');
-    const all = vi.spyOn(querier, 'internalAll');
+    const execute = vi.spyOn(querier, 'execute');
 
     const changes = await querier.deleteMany(DelegatedParent, { $where: { name: 'p' }, $limit: 1 });
 
     expect(changes).toBe(1);
-    expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']);
-    expect(run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(run).toHaveBeenNthCalledWith(2, 'DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]);
+    expect(execute.mock.calls).toEqual([
+      ['BEGIN TRANSACTION'],
+      ['SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']],
+      ['DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]],
+      ['COMMIT'],
+    ]);
   });
 
   /** `ORDER BY`/`LIMIT` on an UPDATE is MySQL's alone too, so a paged update settles the same way. */
@@ -164,27 +161,33 @@ describe('cascade delegation', () => {
       { id: 1, name: 'p' },
       { id: 2, name: 'p' },
     ]);
-    const run = vi.spyOn(querier, 'internalRun');
-    const all = vi.spyOn(querier, 'internalAll');
+    const execute = vi.spyOn(querier, 'execute');
 
     const changes = await querier.updateMany(DelegatedParent, { $where: { name: 'p' }, $limit: 1 }, { name: 'q' });
 
     expect(changes).toBe(1);
-    expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']);
-    expect(run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(run).toHaveBeenNthCalledWith(2, 'UPDATE `DelegatedParent` SET `name` = ? WHERE `id` IN (?)', ['q', 1]);
+    expect(execute.mock.calls).toEqual([
+      ['BEGIN TRANSACTION'],
+      ['SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']],
+      ['UPDATE `DelegatedParent` SET `name` = ? WHERE `id` IN (?)', ['q', 1]],
+      ['COMMIT'],
+    ]);
     // the other row is untouched, which is the whole point of settling first
     await expect(querier.count(DelegatedParent, { $where: { name: 'p' } })).resolves.toBe(1);
   });
 
   /** Nothing matched, so there is no statement to issue - and no unfiltered one to issue by mistake. */
   it('should issue no update when a paged update settles on no rows', async () => {
-    const run = vi.spyOn(querier, 'internalRun');
+    const execute = vi.spyOn(querier, 'execute');
 
     await expect(
       querier.updateMany(DelegatedParent, { $where: { name: 'absent' }, $limit: 1 }, { name: 'q' }),
     ).resolves.toBe(0);
-    expect(run.mock.calls).toEqual([['BEGIN TRANSACTION'], ['COMMIT']]);
+    expect(execute.mock.calls).toEqual([
+      ['BEGIN TRANSACTION'],
+      ['SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['absent']],
+      ['COMMIT'],
+    ]);
   });
 
   /**

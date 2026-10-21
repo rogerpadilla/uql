@@ -247,14 +247,14 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it.each(['hnsw', 'ivfflat'] as const)('should reject a %s index on MariaDB', (type) => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     expect(() => mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ type }]))).toThrow(
-      `mariadb has no ${type} index (index "vec_idx"); declare type: 'vector' instead`,
+      `MariaDB has no ${type} index (index "vec_idx"); declare type: 'vector' instead`,
     );
   });
 
   it('should throw for a MariaDB vector index with an unsupported distance metric, not silently default to euclidean', () => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     expect(() => mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'inner' }]))).toThrow(
-      'mariadb does not support vector distance metric: inner',
+      'MariaDB does not support vector distance metric: inner',
     );
   });
 
@@ -263,7 +263,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
       mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' }])),
-    ).toThrow('mariadb does not support vector distance metric: toString');
+    ).toThrow('MariaDB does not support vector distance metric: toString');
   });
 
   it('should prepend CREATE EXTENSION for Postgres tables with vector columns', () => {
@@ -905,7 +905,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         tableName: 'memberships',
         columns: [{ from: column, to: { ...column, nullable: false } }],
       }),
-    ).toThrow('sqlite: Altering the column "label" rebuilds the table');
+    ).toThrow('SQLite: Altering the column "label" rebuilds the table');
   });
 
   it('should rename a table with ALTER TABLE, which MySQL takes too', () => {
@@ -1021,7 +1021,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should refuse to drop a key whose constraint introspection did not name', () => {
     const diff: SchemaDiff = { tableName: 'users', type: 'alter', primaryKey: { from: { columns: ['id'] } } };
     expect(() => generator.generateAlterTable(diff)).toThrow(
-      'Cannot drop the primary key of "users": postgres names the constraint',
+      'Cannot drop the primary key of "users": PostgreSQL names the constraint',
     );
   });
 

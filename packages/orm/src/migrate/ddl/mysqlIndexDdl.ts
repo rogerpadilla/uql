@@ -29,7 +29,7 @@ export class MySqlIndexDdl extends MysqlLikeIndexDdl {
   protected override jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
     const mode = jsonTypeMode(json.type);
     if (mode === 'json') {
-      throw new UqlUsageError(`mysql cannot index the boolean JSON path '${json.path}', which compares as JSON`);
+      throw new UqlUsageError(`MySQL cannot index the boolean JSON path '${json.path}', which compares as JSON`);
     }
     const expr = super.jsonPathIndexExpr(escapedColumn, json);
     if (mode === 'numeric') {
@@ -102,7 +102,7 @@ function arrayCastType(json: IndexJsonArray): string {
   const type = json.type;
   const cast = ARRAY_CASTS.get(typeof type === 'string' ? type.toLowerCase() : type);
   if (!cast) {
-    throw new UqlUsageError(`mysql has no array cast for ${typeof type === 'string' ? type : type.name} elements`);
+    throw new UqlUsageError(`MySQL has no array cast for ${typeof type === 'string' ? type : type.name} elements`);
   }
   if (cast !== 'CHAR' && cast !== 'BINARY') {
     return cast;

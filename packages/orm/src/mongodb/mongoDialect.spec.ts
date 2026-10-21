@@ -19,6 +19,7 @@ import {
   JsonRecord,
   MeasureUnit,
   MeasureUnitCategory,
+  Profile,
   Reply,
   type Spec,
   Tax,
@@ -750,6 +751,12 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Company, { 'nope.city': 'NY' })).toThrow('path nope.city does not exist in');
     // a declared JSON field may carry any embedded path
     expect(this.dialect.where(Company, { 'kind.country': 'NY' })).toEqual({ 'kind.country': 'NY' });
+  }
+
+  /** A dotted path reads into any embedded document, under a field not typed JSON too, by the root's column. */
+  shouldReadAnEmbeddedPathUnderAFieldThatIsNotJson() {
+    // @ts-expect-error: the type names paths into JSON fields alone
+    expect(this.dialect.where(Profile, { 'picture.url': 'x' })).toEqual({ 'image.url': 'x' });
   }
 
   shouldThrowOnJsonPathKeysThatAreNoIdentifier() {
@@ -1551,7 +1558,7 @@ class MongoDialectSpec implements Spec {
   /** The same refusal the SQLite family answers with: one rule, worded once. */
   shouldRejectARowLock() {
     expect(() => this.dialect.assertLockSupported(Item, { $lock: true })).toThrow(
-      'mongodb does not support row-level locking ($lock)',
+      'MongoDB does not support row-level locking ($lock)',
     );
   }
 

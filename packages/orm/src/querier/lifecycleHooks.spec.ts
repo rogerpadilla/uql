@@ -230,6 +230,18 @@ class Unique {
   }
 }
 
+/** Mails once its row is committed, the documented use for `HookContext.onCommit`. */
+@Entity()
+class Mailed {
+  @Id({ type: Number })
+  id?: number;
+
+  @AfterInsert()
+  async mail(this: Mailed, ctx: HookContext) {
+    await ctx.onCommit(() => log.push(`mailed:${this.id}`));
+  }
+}
+
 /** Queries through its own querier on load, which a stream holding that querier refuses. */
 @Entity()
 class Looked {
@@ -330,6 +342,7 @@ const TABLES = {
   Stamped: '`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `createdAt` BIGINT',
   Unique: '`id` INTEGER PRIMARY KEY, `email` TEXT',
   Looked: '`id` INTEGER PRIMARY KEY, `title` TEXT',
+  Mailed: '`id` INTEGER PRIMARY KEY',
   Shelf: '`id` INTEGER PRIMARY KEY',
   ShelvedBook: '`id` INTEGER PRIMARY KEY, `shelfId` INTEGER, `title` TEXT',
   Author: '`id` INTEGER PRIMARY KEY, `name` TEXT',
@@ -591,12 +604,12 @@ describe('lifecycle hooks', () => {
 
     it('should not read the rows back when nothing handles the event', async () => {
       await querier.insertOne(Plain, { title: 'p' });
-      const all = vi.spyOn(querier, 'internalAll');
+      const execute = vi.spyOn(querier, 'execute');
 
       await querier.deleteMany(Plain, { $where: { id: 1 } });
 
       // The snapshot exists for the hooks; without one it would be a round trip bought for nobody.
-      expect(all).toHaveBeenCalledTimes(0);
+      expect(execute.mock.calls).toEqual([['DELETE FROM `Plain` WHERE `id` = ?', [1]]]);
     });
 
     it('should fire for a soft delete, which is still a delete to its caller', async () => {
@@ -680,6 +693,20 @@ describe('lifecycle hooks', () => {
       await querier.insertOne(Unique, { email: 'a@b.c' });
 
       expect(log).toEqual(['taken:0']);
+    });
+
+    it('should run what a hook defers to the commit once it commits, and never on a rollback', async () => {
+      await querier.transaction(async () => {
+        await querier.insertOne(Mailed, { id: 1 });
+        expect(log).toEqual([]);
+      });
+      const rolledBack = querier.transaction(async () => {
+        await querier.insertOne(Mailed, { id: 2 });
+        throw new Error('undone');
+      });
+
+      await expect(rolledBack).rejects.toThrow('undone');
+      expect(log).toEqual(['mailed:1']);
     });
   });
 

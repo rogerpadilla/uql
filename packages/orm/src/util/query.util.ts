@@ -1,6 +1,5 @@
-import { soleIdOf } from '../entity/metadata/definition.js';
+import { type KeyedRow, soleIdOf } from '../entity/metadata/definition.js';
 import type {
-  EntityData,
   EntityId,
   EntityMeta,
   FieldKey,
@@ -38,7 +37,7 @@ export function whereAnyOf<E>(clauses: QueryWhereArray<E>): QueryWhere<E> {
 }
 
 /** The rows matching one of `rows` on `keys`: one list where a single key names them, an alternative each where several do. */
-export function whereKeysIn<E>(keys: readonly FieldKey<E>[], rows: readonly EntityData<E>[]): QueryWhere<E> {
+export function whereKeysIn<E>(keys: readonly FieldKey<E>[], rows: readonly KeyedRow<E>[]): QueryWhere<E> {
   const [soleKey] = keys;
   return keys.length === 1
     ? whereWith(

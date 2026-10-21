@@ -1,6 +1,6 @@
 import mssql from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { IsolationLevel, QueryUpdateResult, RawRow, TransactionOptions } from '../type/index.js';
+import type { IsolationLevel, RawRow, TransactionOptions } from '../type/index.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
 
 /** What `tedious` hands back for one statement, whichever shape it took. */
@@ -60,19 +60,16 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
     return request;
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.#request(values).query(query);
-    return decodeWireTypes(res.recordset as T[] | undefined, res.recordset?.columns);
-  }
-
-  override async internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
-    const res = await this.#request(values).query(query);
-    return this.buildUpdateResult({
-      // `rowsAffected` carries one entry per statement, and a write runs in a batch of several - the table
-      // variable its ids go through, the read handing them back uncounted - so the counts are summed.
-      changes: res.rowsAffected.reduce((total, count) => total + count, 0),
+  /**
+   * `rowsAffected` carries one entry per statement, and a write runs in a batch of several - the table variable
+   * its ids go through, the read handing them back uncounted - so the counts are summed.
+   */
+  protected override async execute(sql: string, values?: unknown[]) {
+    const res = await this.#request(values).query(sql);
+    return {
       rows: decodeWireTypes(res.recordset, res.recordset?.columns),
-    });
+      changes: res.rowsAffected.reduce((total, count) => total + count, 0),
+    };
   }
 
   /**

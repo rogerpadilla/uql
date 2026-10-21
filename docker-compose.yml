@@ -93,6 +93,20 @@ services:
       postgres:
         condition: service_healthy
 
+  # Local stand-in for Neon's HTTP endpoint, which `neon()` and its `transaction()` post to: it runs each request on
+  # the `test_neon` database, the one the neon test uses, whatever database the client names.
+  neon-http-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    restart: always
+    container_name: uql-neon-http-proxy
+    environment:
+      PG_CONNECTION_STRING: 'postgres://test:test@postgres:5432/test_neon'
+    ports:
+      - 4444:4444
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # libSQL's server, what a Turso Cloud database runs unless created as `tursodb`. One per suite reaching
   # it over HTTP, `@libsql/client` and `@tursodatabase/serverless`, since both create the same tables. The
   # image has no HTTP client, so the check opens the port.

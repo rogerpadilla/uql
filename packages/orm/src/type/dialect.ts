@@ -1,4 +1,5 @@
 import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
+import type { EngineName } from './querier.js';
 import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { QuerySqlRenderOptions } from './querySql.js';
@@ -323,6 +324,8 @@ export interface SqlQueryDialect {
    * declared once for a family rather than copied per member.
    */
   readonly dialectFamily: SqlDialectName;
+  /** The engine as a message names it. */
+  readonly engineName: EngineName;
 
   /**
    * the escape character for identifiers.

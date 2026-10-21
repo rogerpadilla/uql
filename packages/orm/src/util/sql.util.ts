@@ -144,38 +144,39 @@ export function escapeSqlId(
 }
 
 /**
- * Payload for building a QueryUpdateResult.
+ * What a statement came back with: the rows it read (a `RETURNING`'s included), how many rows it changed where
+ * the driver tells it, and the first id a header reports (MySQL's `insertId`).
  */
-export interface BuildUpdateResultPayload {
-  /** The count of rows affected by the statement. */
-  changes?: number;
-  /** The raw rows returned by the query (for RETURNING clauses). */
-  rows?: RawRow[];
-  /** The first auto-generated ID from the driver header (MySQL `insertId`; no `RETURNING`). */
-  id?: PrimaryKey;
-  /** How the dialect surfaces inserted IDs (see {@link InsertIdSource}). */
-  insertIdSource?: InsertIdSource;
+export type SqlExecution = {
+  readonly rows: RawRow[];
+  readonly changes?: number | null;
+  readonly id?: PrimaryKey;
+};
+
+/** A statement's result, and how its dialect reports inserted ids, to build a {@link QueryUpdateResult} from. */
+export type BuildUpdateResultPayload = SqlExecution & {
+  readonly insertIdSource?: InsertIdSource;
   /**
    * Auto-increment stride for header-derived id inference. Defaults to 1; a clustered MySQL
    * server (e.g. Galera, group replication) may set `auto_increment_increment` higher.
    */
-  insertIdIncrement?: number;
-}
+  readonly insertIdIncrement?: number;
+};
 
 /**
- * A driver's result as a {@link QueryUpdateResult}: `RETURNING` rows name their id `id`; a MySQL header's
- * first id is extended by the increment, which holds only where auto-increment allocation is contiguous
- * (`innodb_autoinc_lock_mode` 0 or 1).
+ * A driver's result as a {@link QueryUpdateResult}: a statement returning rows counts them, which a driver's own
+ * count is not always (Hrana answers 0); `RETURNING` rows name their id `id`; a MySQL header's first id is extended
+ * by the increment, which holds only where auto-increment allocation is contiguous (`innodb_autoinc_lock_mode` 0, 1).
  */
 export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
   const { rows, id, insertIdSource } = payload;
-  const changes = payload.changes ?? rows?.length ?? 0;
+  const changes = rows.length || payload.changes || 0;
   const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
 
   // Ids from `RETURNING` are exact; otherwise from the header's first id onward, which assumes `changes`
   // counts the rows (false for a MySQL upsert batch, whose querier reads ids back instead). `0` means none.
   let ids: PrimaryKey[] = [];
-  if (rows?.length) {
+  if (rows.length) {
     ids = rows.map((r) => r['id'] as PrimaryKey);
   } else if (insertIdSource !== 'returning' && isPrimaryKey(id) && id) {
     if (typeof id === 'string') {

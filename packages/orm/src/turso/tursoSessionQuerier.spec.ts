@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Coupon, fiveCoupons } from '../test/index.js';
 import { sql } from '../util/sql.js';
 import { TursoDialect } from './tursoDialect.js';
 import { type TursoCursorEntry, type TursoSession, TursoSessionQuerier } from './tursoSessionQuerier.js';
@@ -8,9 +9,21 @@ function buildSession(result: { columns: string[]; rows: unknown[][]; rowsAffect
   return {
     execute: vi.fn().mockResolvedValue(result),
     executeRaw: vi.fn(),
+    batch: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
   } satisfies TursoSession;
 }
+
+/** Three coupons a statement, so five split in two. */
+class ThreeCouponDialect extends TursoDialect {
+  override readonly maxBindValues = 6;
+}
+
+/** What a split insert of {@link fiveCoupons} answers: three ids, then two, each row an array of its values. */
+const insertedIds = [
+  { columns: ['id'], rows: [[1n], [2n], [3n]], rowsAffected: 0 },
+  { columns: ['id'], rows: [[4n], [5n]], rowsAffected: 0 },
+];
 
 /** A statement's cursor, entry by entry, as the server streams it. */
 async function* cursor(entries: TursoCursorEntry[]) {
@@ -118,6 +131,42 @@ describe('TursoSessionQuerier', () => {
       'UPDATE `t` SET `a` = 1',
       'COMMIT',
     ]);
+  });
+
+  /** One request carrying its own `BEGIN IMMEDIATE`, `COMMIT` and `ROLLBACK`, so it lands whole or not at all. */
+  it('should send a split insert as one atomic batch of its session', async () => {
+    const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });
+    session.batch.mockResolvedValue(insertedIds);
+    const querier = new TursoSessionQuerier(session, new ThreeCouponDialect());
+
+    const ids = await querier.insertMany(Coupon, fiveCoupons);
+
+    expect(ids).toEqual([1, 2, 3, 4, 5]);
+    expect(session.batch).toHaveBeenCalledTimes(1);
+    expect(session.batch.mock.calls[0]?.slice(1)).toEqual(['immediate', undefined, true, true]);
+    expect(session.execute).not.toHaveBeenCalled();
+  });
+
+  it('should send a split insert inside a transaction as a batch with no mode, which joins it', async () => {
+    const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });
+    session.batch.mockResolvedValue(insertedIds);
+    const querier = new TursoSessionQuerier(session, new ThreeCouponDialect());
+
+    await querier.transaction(() => querier.insertMany(Coupon, fiveCoupons));
+
+    expect(session.batch.mock.calls[0]?.[1]).toBeUndefined();
+    expect(session.execute.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN IMMEDIATE', 'COMMIT']);
+  });
+
+  it('should tag a failed split insert with the statement its session names', async () => {
+    const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });
+    session.batch.mockRejectedValue(Object.assign(new Error('UNIQUE constraint failed'), { batchIndex: 1 }));
+    const querier = new TursoSessionQuerier(session, new ThreeCouponDialect());
+
+    await expect(querier.insertMany(Coupon, fiveCoupons)).rejects.toMatchObject({
+      query: expect.stringMatching(/^INSERT/),
+    });
+    expect(session.execute).not.toHaveBeenCalled();
   });
 
   it('should close its session on release', async () => {

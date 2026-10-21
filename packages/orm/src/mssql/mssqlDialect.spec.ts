@@ -186,8 +186,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); MERGE INTO "User" WITH (HOLDLOCK) USING (VALUES (@p2, @p3, @p4, @p5)) AS "_uql_src"' +
         ' ("name", "email", "id", "createdAt") ON "User"."email" = "_uql_src"."email"' +
-        ' WHEN MATCHED THEN UPDATE SET "name" = "_uql_src"."name", "id" = "_uql_src"."id",' +
-        ' "updatedAt" = @p1' +
+        ' WHEN MATCHED THEN UPDATE SET "name" = "_uql_src"."name", "updatedAt" = @p1' +
         ' WHEN NOT MATCHED THEN INSERT ("name", "email", "id", "createdAt")' +
         ' VALUES ("_uql_src"."name", "_uql_src"."email", "_uql_src"."id", "_uql_src"."createdAt")' +
         ' OUTPUT INSERTED."id" "id" INTO @_uql_output; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',

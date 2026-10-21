@@ -249,7 +249,7 @@ describe('MongoSchemaGenerator', () => {
           dimensions: 3,
           distance: 'l1',
         }),
-      ).toThrow('mongodb does not support vector distance metric: l1 (index "embedding_index")');
+      ).toThrow('MongoDB does not support vector distance metric: l1 (index "embedding_index")');
     });
   });
 
@@ -260,7 +260,7 @@ describe('MongoSchemaGenerator', () => {
         entries: [{ column: 'lower(username)', expression: true }],
         unique: false,
       }),
-    ).toThrow('mongodb does not support expression indexes (index "expr_idx")');
+    ).toThrow('MongoDB does not support expression indexes (index "expr_idx")');
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
@@ -268,7 +268,7 @@ describe('MongoSchemaGenerator', () => {
         entries: [{ column: 'profile', jsonPath: { path: 'theme', type: 'text' } }],
         unique: false,
       }),
-    ).toThrow('mongodb does not support indexes over a path inside a JSON column (index "path_idx")');
+    ).toThrow('MongoDB does not support indexes over a path inside a JSON column (index "path_idx")');
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
@@ -277,7 +277,7 @@ describe('MongoSchemaGenerator', () => {
         unique: false,
         include: ['email'],
       }),
-    ).toThrow('mongodb does not support covering indexes (INCLUDE) (index "covering_idx")');
+    ).toThrow('MongoDB does not support covering indexes (INCLUDE) (index "covering_idx")');
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
@@ -286,7 +286,7 @@ describe('MongoSchemaGenerator', () => {
         unique: false,
         type: 'hash',
       }),
-    ).toThrow('mongodb has no hash index (index "hash_idx")');
+    ).toThrow('MongoDB has no hash index (index "hash_idx")');
   });
 
   it('should create the indexes @Index declares, a partial one with its filter', () => {
@@ -332,14 +332,14 @@ describe('MongoSchemaGenerator', () => {
 
   it.each(refused)('should refuse %s in a partial index, which MongoDB has no room for', (part, where) => {
     expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
-      `mongodb does not support ${part} in a partial index predicate (index "ticket_idx")`,
+      `MongoDB does not support ${part} in a partial index predicate (index "ticket_idx")`,
     );
   });
 
   it('should refuse SQL as a partial index predicate', () => {
     const where: EntityWhere<TicketShape> = (ticket) => sql`${ticket.status} = 'open'`;
     expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
-      'mongodb does not support partial indexes from a SQL predicate (index "ticket_idx")',
+      'MongoDB does not support partial indexes from a SQL predicate (index "ticket_idx")',
     );
   });
 
@@ -481,13 +481,13 @@ describe('MongoSchemaGenerator validator', () => {
 
   it('should refuse a check given as SQL', () => {
     expect(() => generator.generateCreateSchema([taskChecking((task) => sql`${task.status} <> 'x'`)])).toThrow(
-      'mongodb does not support checks from a SQL predicate (collection "Task")',
+      'MongoDB does not support checks from a SQL predicate (collection "Task")',
     );
   });
 
   it('should refuse a value a migration cannot carry as JSON', () => {
     expect(() => generator.generateCreateSchema([taskChecking({ dueAt: { $gt: new Date(0) } })])).toThrow(
-      'mongodb does not support a Date in a check (collection "Task")',
+      'MongoDB does not support a Date in a check (collection "Task")',
     );
   });
 

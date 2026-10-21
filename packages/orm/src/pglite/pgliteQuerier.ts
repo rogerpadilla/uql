@@ -28,18 +28,12 @@ export class PgliteQuerier extends AbstractSqlQuerier {
     return this.db;
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.db.query<T>(query, values);
-    return res.rows;
+  /**
+   * `affectedRows`, not `rowCount`: PGlite derives the former from the command tag of a write only, where the
+   * latter also counts a `SELECT`'s rows and is absent altogether from a DDL tag.
+   */
+  protected override async execute(sql: string, values?: unknown[]) {
+    const { rows, affectedRows } = await this.db.query<RawRow>(sql, values);
+    return { rows, changes: affectedRows };
   }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const res = await this.db.query<RawRow>(query, values);
-    // `affectedRows`, not `rowCount`: PGlite derives the former from the command tag of a write only,
-    // where the latter also counts a `SELECT`'s rows and is absent altogether from a DDL tag.
-    return this.buildUpdateResult({ rows: res.rows, changes: res.affectedRows });
-  }
-
-  /** The handle belongs to the pool, which hands out one querier per unit of work over it. */
-  override async internalRelease() {}
 }

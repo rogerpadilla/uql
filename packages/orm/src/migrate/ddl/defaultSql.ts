@@ -129,7 +129,7 @@ function expressionSql({ kind, sql }: SqlExpression, dialect: AbstractSqlDialect
   }
   const spelled = kind === 'sql' ? undefined : dialect.sqlValues[kind];
   if (spelled === undefined) {
-    throw new UqlUsageError(`${dialect.dialectName} has no ${kind}; write it as raw SQL this engine accepts`);
+    throw new UqlUsageError(`${dialect.engineName} has no ${kind}; write it as raw SQL this engine accepts`);
   }
   return spelled;
 }

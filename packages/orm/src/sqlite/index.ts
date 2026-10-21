@@ -1,4 +1,4 @@
-export * from './abstractSqliteQuerier.js';
+export type { SqliteBindValue } from './bindValues.js';
 export * from './hranaQuerier.js';
 export * from './nodeSqliteQuerierPool.js';
 export { SqliteDialect } from './sqliteDialect.js';

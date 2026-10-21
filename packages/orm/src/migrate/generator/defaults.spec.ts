@@ -41,16 +41,16 @@ describe('Default value expressions', () => {
   });
 
   it('should throw rather than emit a uuid default SQLite has no function for', () => {
-    expect(() => fmt(sqlite, uuid)).toThrow(/sqlite has no uuid/);
+    expect(() => fmt(sqlite, uuid)).toThrow(/SQLite has no uuid/);
   });
 
   /** Version floor, not dialect: `uuidv7()` is Postgres 18+, `UUID_v7()` MariaDB 11.7+. */
   it('should render uuidv7 only where the engine has one', () => {
     expect(fmt(postgres, uuidv7)).toBe('uuidv7()');
     expect(fmt(mariadb, uuidv7)).toBe('UUID_v7()');
-    expect(() => fmt(mysql, uuidv7)).toThrow(/mysql has no uuidv7/);
-    expect(() => fmt(sqlite, uuidv7)).toThrow(/sqlite has no uuidv7/);
-    expect(() => fmt(cockroach, uuidv7)).toThrow(/cockroachdb has no uuidv7/);
+    expect(() => fmt(mysql, uuidv7)).toThrow(/MySQL has no uuidv7/);
+    expect(() => fmt(sqlite, uuidv7)).toThrow(/SQLite has no uuidv7/);
+    expect(() => fmt(cockroach, uuidv7)).toThrow(/CockroachDB has no uuidv7/);
   });
 
   /** MySQL's rule is about the column, not the value: every default on a large type needs wrapping. */

@@ -1,8 +1,9 @@
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { RawRow } from '../type/index.js';
+import { type PgResult, pgExecution } from './pgExecution.js';
 
 export interface PgAnyClient {
-  query(text: string, values?: unknown[]): Promise<{ rows: RawRow[]; rowCount: number | null }>;
+  query(text: string, values?: unknown[]): Promise<PgResult>;
   query(stream: object): AsyncIterable<RawRow>;
   on(event: 'error', listener: (err: Error) => void): unknown;
   removeListener(event: 'error', listener: (err: Error) => void): unknown;
@@ -26,14 +27,8 @@ export class PgQuerier<C extends PgAnyClient = PgAnyClient> extends AbstractPool
     return conn;
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.getConn().query(query, values);
-    return res.rows as T[];
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const res = await this.getConn().query(query, values);
-    return this.buildUpdateResult({ rows: res.rows, changes: res.rowCount ?? 0 });
+  protected override async execute(sql: string, values?: unknown[]) {
+    return pgExecution(await this.getConn().query(sql, values));
   }
 
   override async *internalStream(query: string, values?: unknown[]) {

@@ -127,7 +127,7 @@ export class TableDdl {
   protected dropPrimaryKey(table: string, key: PrimaryKeySchema): string {
     if (!key.name) {
       throw new UqlUsageError(
-        `Cannot drop the primary key of "${table}": ${this.dialect.dialectName} names the constraint, and ` +
+        `Cannot drop the primary key of "${table}": ${this.dialect.engineName} names the constraint, and ` +
           'introspection did not report a name for it.',
       );
     }
@@ -158,7 +158,7 @@ export function dropIndexOnTable(dialect: AbstractSqlDialect, table: string, ind
 /** What an engine that changes a table only by rebuilding it says to `what`, done in place. */
 export function rebuildRefusal(dialect: AbstractSqlDialect, what: string): UqlUsageError {
   return new UqlUsageError(
-    `${dialect.dialectName}: ${what} rebuilds the table, which a migration generated from the entities does ` +
+    `${dialect.engineName}: ${what} rebuilds the table, which a migration generated from the entities does ` +
       '(`uql-migrate generate:entities`) and a hand-written one cannot.',
   );
 }

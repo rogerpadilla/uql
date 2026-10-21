@@ -610,8 +610,11 @@ describe('the rows it reads', () => {
     removeEntity(Note);
   });
 
-  it('should refuse a body the engine in use has none of', () => {
-    expect(() => render(new SqliteDialect(), stamp)).toThrow(/sqlite/);
+  it('should refuse a body the engine in use has none of, naming the key that would hold one', () => {
+    expect(() => render(new SqliteDialect(), stamp)).toThrow(
+      /no body for SQLite, the engine in use\. Add one under 'sqlite',/,
+    );
+    expect(() => render(new MariaDialect(), stamp)).toThrow(/Add one under 'mariadb' or 'mysql',/);
   });
 });
 
@@ -872,9 +875,9 @@ describe('a deferred trigger, which fires at commit', () => {
   it('should refuse it where the engine cannot defer a trigger', () => {
     const portable = { ...balance, run: () => sql`SELECT 1;` };
     expect(() => render(new MySqlDialect(), portable)).toThrow(
-      'mysql cannot defer a trigger to commit, which Post asks for; only Postgres can',
+      'MySQL cannot defer a trigger to commit, which Post asks for; only PostgreSQL can',
     );
-    expect(() => render(new CockroachDialect(), portable)).toThrow('cockroachdb cannot defer a trigger to commit');
+    expect(() => render(new CockroachDialect(), portable)).toThrow('CockroachDB cannot defer a trigger to commit');
   });
 });
 

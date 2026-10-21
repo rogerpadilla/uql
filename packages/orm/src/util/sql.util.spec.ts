@@ -15,8 +15,8 @@ it('should name a constraint over no parts after its table alone', () => {
 
 /** A string key has no successor to infer, so only a single-row write can be named by it. */
 it('should name by a string key the one row it is reported for, never several', () => {
-  expect(buildUpdateResult({ id: 'abc', changes: 1, insertIdSource: 'firstId' }).ids).toEqual(['abc']);
-  expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
+  expect(buildUpdateResult({ rows: [], id: 'abc', changes: 1, insertIdSource: 'firstId' }).ids).toEqual(['abc']);
+  expect(buildUpdateResult({ rows: [], id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
 });
 
 it('should escape an identifier with the quote character given', () => {
@@ -143,6 +143,7 @@ describe('escapeSqlId - identifier injection hardening', () => {
 describe('buildUpdateResult', () => {
   it('should handle MySQL "firstId" source', () => {
     const res = buildUpdateResult({
+      rows: [],
       changes: 3,
       id: 10,
       insertIdSource: 'firstId',
@@ -155,15 +156,16 @@ describe('buildUpdateResult', () => {
   });
 
   it('should apply an auto-increment stride > 1 (clustered MySQL)', () => {
-    const res = buildUpdateResult({ changes: 3, id: 10, insertIdSource: 'firstId', insertIdIncrement: 2 });
+    const res = buildUpdateResult({ rows: [], changes: 3, id: 10, insertIdSource: 'firstId', insertIdIncrement: 2 });
     expect(res.ids).toEqual([10, 12, 14]);
     expect(res.ids?.[0]).toBe(10);
-    const big = buildUpdateResult({ changes: 3, id: 10n, insertIdSource: 'firstId', insertIdIncrement: 3 });
+    const big = buildUpdateResult({ rows: [], changes: 3, id: 10n, insertIdSource: 'firstId', insertIdIncrement: 3 });
     expect(big.ids).toEqual([10n, 13n, 16n]);
   });
 
   it('should ignore a zero header id (no auto-generated key, e.g. mysql2 insertId=0)', () => {
     const res = buildUpdateResult({
+      rows: [],
       changes: 3,
       id: '0',
       insertIdSource: 'firstId',
@@ -173,11 +175,12 @@ describe('buildUpdateResult', () => {
       ids: [],
       created: undefined,
     });
-    expect(buildUpdateResult({ changes: 2, id: 0n, insertIdSource: 'firstId' }).ids).toEqual([]);
+    expect(buildUpdateResult({ rows: [], changes: 2, id: 0n, insertIdSource: 'firstId' }).ids).toEqual([]);
   });
 
   it('should ignore the header id on "returning" dialects (rows are the source of truth)', () => {
     const res = buildUpdateResult({
+      rows: [],
       changes: 2,
       id: '7',
       insertIdSource: 'returning',
@@ -195,8 +198,16 @@ describe('buildUpdateResult', () => {
     expect(withRows.ids?.[0]).toBe(5);
   });
 
+  it("should count a statement returning rows by its rows, whatever the driver's own count says", () => {
+    expect(buildUpdateResult({ rows: [{ id: 1 }, { id: 2 }], changes: 0, insertIdSource: 'returning' }).changes).toBe(
+      2,
+    );
+    expect(buildUpdateResult({ rows: [], changes: 3 }).changes).toBe(3);
+    expect(buildUpdateResult({ rows: [] }).changes).toBe(0);
+  });
+
   it('should return empty ids when no id or rows provided', () => {
-    const res = buildUpdateResult({ changes: 5 });
+    const res = buildUpdateResult({ rows: [], changes: 5 });
     expect(res.ids).toEqual([]);
     expect(res.ids?.[0]).toBeUndefined();
   });

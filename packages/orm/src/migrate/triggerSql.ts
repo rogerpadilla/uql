@@ -81,7 +81,7 @@ function triggerStatements<E>(
   const before = timing === 'BEFORE';
   if (trigger.deferred && !features.deferrable) {
     throw new UqlUsageError(
-      `${dialect.dialectName} cannot defer a trigger to commit, which ${meta.entity.name} asks for; only Postgres can`,
+      `${dialect.engineName} cannot defer a trigger to commit, which ${meta.entity.name} asks for; only PostgreSQL can`,
     );
   }
   const { fires } = features;
@@ -92,7 +92,7 @@ function triggerStatements<E>(
   const body = triggerBody(dialect, meta, trigger, before)(...rows);
   if (perStatement && filter && !(body instanceof TriggerWriteSql)) {
     throw new UqlUsageError(
-      `${dialect.dialectName} fires a trigger once per statement, so 'of' and 'where' narrow only what ` +
+      `${dialect.engineName} fires a trigger once per statement, so 'of' and 'where' narrow only what ` +
         `insertInto, updateTable or deleteFrom reads, and '${meta.entity.name}' has one running its own SQL. ` +
         'Keep the body to those writes, or filter inserted and deleted in that SQL.',
     );
@@ -159,16 +159,18 @@ function triggerBody<E>(
 ): TriggerMetaBody<E> {
   if (before && !dialect.features.triggers.before) {
     throw new UqlUsageError(
-      `${dialect.dialectName} has no BEFORE trigger, only AFTER and INSTEAD OF, so '${trigger.on}' cannot be ` +
+      `${dialect.engineName} has no BEFORE trigger, only AFTER and INSTEAD OF, so '${trigger.on}' cannot be ` +
         'rendered there. Use the matching after event, which sees the row already written.',
     );
   }
   const { run } = trigger;
   const body = typeof run === 'function' ? run : (run[dialect.dialectName] ?? run[dialect.dialectFamily]);
   if (!body) {
+    const { dialectName, dialectFamily } = dialect;
+    const keys = dialectFamily === dialectName ? `'${dialectName}'` : `'${dialectName}' or '${dialectFamily}'`;
     throw new UqlUsageError(
-      `'${meta.entity.name}' has a trigger with no body for ${dialect.dialectName}, the engine in use. ` +
-        'Write one for it, or one body for every engine.',
+      `'${meta.entity.name}' has a trigger with no body for ${dialect.engineName}, the engine in use. ` +
+        `Add one under ${keys}, or write one body for every engine.`,
     );
   }
   return body;

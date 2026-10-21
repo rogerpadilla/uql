@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defineField } from '../entity/index.js';
-import { chunk, clone, entityName, getKeys, hasKeys, isScalarId } from './object.util.js';
+import { cachedIn, chunk, clone, entityName, getKeys, hasKeys, isScalarId, omitKeys } from './object.util.js';
 
 describe('clone of what has nothing to copy', () => {
   it('should hand back a primitive and null as they are', () => {
@@ -93,5 +93,25 @@ describe('chunk', () => {
 
   it('should answer no lists for none', () => {
     expect(chunk([], 2)).toEqual([]);
+  });
+});
+
+describe('omitKeys', () => {
+  it('should copy a row without the keys named, leaving the row itself as it was', () => {
+    const row = { id: 1, name: 'a', authorId: 7 };
+
+    expect(omitKeys(row, ['authorId', 'missing'])).toEqual({ id: 1, name: 'a' });
+    expect(row).toEqual({ id: 1, name: 'a', authorId: 7 });
+  });
+});
+
+describe('cachedIn', () => {
+  it('should compute a value once per key, and answer it again after', () => {
+    const cache = new WeakMap<object, number>();
+    const key = {};
+    let computed = 0;
+    const read = () => cachedIn(cache, key, () => ++computed);
+
+    expect([read(), read()]).toEqual([1, 1]);
   });
 });

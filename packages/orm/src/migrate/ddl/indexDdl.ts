@@ -2,6 +2,7 @@ import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
 import type { IndexType } from '../../schema/types.js';
 import {
+  type EngineName,
   INDEX_FEATURE_LABELS,
   type IndexColumnSchema,
   type IndexFeature,
@@ -33,27 +34,21 @@ const INDEX_FEATURE_PROBES: Record<IndexFeature, (index: IndexSchema) => boolean
 export function assertIndexType(
   index: IndexSchema,
   types: ReadonlySet<IndexType>,
-  dialectName: string,
+  engine: EngineName,
   hints: ReadonlyMap<IndexType, string> = new Map(),
 ): void {
   if (index.type && !types.has(index.type)) {
     throw new UqlUsageError(
-      `${dialectName} has no ${index.type} index (index "${index.name}")` + (hints.get(index.type) ?? ''),
+      `${engine} has no ${index.type} index (index "${index.name}")` + (hints.get(index.type) ?? ''),
     );
   }
 }
 
 /** Refuses an index asking for a feature `features` lacks. */
-export function assertIndexFeatures(
-  index: IndexSchema,
-  features: ReadonlySet<IndexFeature>,
-  dialectName: string,
-): void {
+export function assertIndexFeatures(index: IndexSchema, features: ReadonlySet<IndexFeature>, engine: EngineName): void {
   for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
     if (INDEX_FEATURE_PROBES[feature](index) && !features.has(feature)) {
-      throw new UqlUsageError(
-        `${dialectName} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`,
-      );
+      throw new UqlUsageError(`${engine} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`);
     }
   }
 }
@@ -94,8 +89,8 @@ export class IndexDdl {
 
   private assertExpressible(index: IndexSchema): void {
     const { types, features, hints } = this.capabilities;
-    assertIndexType(index, types, this.dialect.dialectName, hints);
-    assertIndexFeatures(index, features, this.dialect.dialectName);
+    assertIndexType(index, types, this.dialect.engineName, hints);
+    assertIndexFeatures(index, features, this.dialect.engineName);
   }
 
   /** What follows the name and access method, in either form: the columns, then what qualifies them. */
@@ -175,7 +170,7 @@ export class IndexDdl {
     const distance = indexDistance(index);
     const metric = this.dialect.vectorMetrics.get(distance)?.index;
     if (!metric) {
-      throw unsupportedVectorMetric(this.dialect.dialectName, distance, index.name);
+      throw unsupportedVectorMetric(this.dialect.engineName, distance, index.name);
     }
     return metric;
   }

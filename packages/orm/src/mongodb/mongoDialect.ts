@@ -19,6 +19,7 @@ import {
   LIKE_OPS,
   likeRegex,
   whereOperators,
+  sizeComparisons,
 } from '../dialect/operators.js';
 import {
   aggregateColumnField,
@@ -106,8 +107,9 @@ import {
   targetJoins,
   textSortOf,
   vectorDistanceOf,
+  cachedIn,
 } from '../util/index.js';
-import { kindOf, UqlUsageError } from '../util/uqlError.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { decodeBigIntsExcept } from '../util/wideNumber.js';
 import { textLanguage } from './textLanguage.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
@@ -319,22 +321,13 @@ function arraySize(ref: string, size: unknown): Record<string, unknown> {
 
 /** `count` compared with `size`, a number or its bounds, as an aggregation expression. */
 function compareCount(count: unknown, size: unknown): Record<string, unknown> {
-  if (typeof size === 'number') {
-    return { $eq: [count, size] };
-  }
-  if (!isRecord(size)) {
-    throw new UqlUsageError(`$size expects a number or bounds, got ${kindOf(size)}`);
-  }
-  const comparisons = Object.entries(size).flatMap(([op, bound]): Record<string, unknown>[] => {
+  const comparisons = sizeComparisons(size).flatMap(([op, bound]): Record<string, unknown>[] => {
     if (op !== '$between') {
       return [{ [op]: [count, literal(bound)] }];
     }
     const [min, max] = betweenBounds(bound);
     return [{ $gte: [count, literal(min)] }, { $lte: [count, literal(max)] }];
   });
-  if (!comparisons.length) {
-    throw new UqlUsageError('$size needs at least one comparison');
-  }
   return allOf(comparisons);
 }
 
@@ -1314,37 +1307,28 @@ export class MongoDialect extends AbstractDialect {
 
   /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */
   private renamedColumns<E>(meta: EntityMeta<E>): readonly [string, string][] {
-    let renamed = this.#renamedColumns.get(meta);
-    if (!renamed) {
-      renamed = getKeys(meta.fields)
+    return cachedIn(this.#renamedColumns, meta, () =>
+      getKeys(meta.fields)
         .map((key): [string, string] => [this.columnOf(meta, key), key])
-        .filter(([column, key]) => column !== key);
-      this.#renamedColumns.set(meta, renamed);
-    }
-    return renamed;
+        .filter(([column, key]) => column !== key),
+    );
   }
 
   /** Each relation's key, the field its rows are read from, and its entity, memoized per entity for `normalizeId`. */
   private relationReads<E>(meta: EntityMeta<E>): readonly RelationRead[] {
-    let reads = this.#relationReads.get(meta);
-    if (!reads) {
-      reads = definedEntries(meta.relations).map(([key, relation]) => ({
+    return cachedIn(this.#relationReads, meta, () =>
+      definedEntries(meta.relations).map(([key, relation]) => ({
         key,
         field: relationField(key),
         meta: getMeta(relation.entity()),
-      }));
-      this.#relationReads.set(meta, reads);
-    }
-    return reads;
+      })),
+    );
   }
 
   private referenceKeys<E>(meta: EntityMeta<E>): readonly string[] {
-    let keys = this.#referenceKeys.get(meta);
-    if (!keys) {
-      keys = getKeys(meta.fields).filter((key) => meta.fields[key]?.references);
-      this.#referenceKeys.set(meta, keys);
-    }
-    return keys;
+    return cachedIn(this.#referenceKeys, meta, () =>
+      getKeys(meta.fields).filter((key) => meta.fields[key]?.references),
+    );
   }
 
   // Keyed by the meta object itself; entity metadata is immutable once defined.
@@ -1521,22 +1505,22 @@ export class MongoDialect extends AbstractDialect {
     // Keys are resolved per document so heterogeneous payloads keep every provided field.
     const inserting = callbackKey === 'onInsert';
     return payloads.map((it) => {
-      // The key is `_id` on an insert and immutable on an update, so it is left out of one. It used
-      // to land under its own name beside the `_id` the driver minted: a supplied id, or one an
-      // `onInsert` generated, was written and unreachable by the value the caller held.
+      // The key is `_id` on an insert and immutable on an update, so it is left out of one: written under its
+      // own name beside the `_id` the driver minted, it would be unreachable by the value the caller held.
       const named = inserting && it[idKey] != null;
       if (inserting && !named) {
         // Nothing named the key, so the database is being asked to mint one.
         this.assertMintableKey(meta, fieldOf(meta, idKey));
       }
-      const doc: Record<string, unknown> = named ? { [ID_KEY]: this.toWireId(it[idKey]) } : {};
+      const doc: Document = named ? { [ID_KEY]: this.toWireId(it[idKey]) } : {};
       for (const key of filterFieldKeys(meta, it, callbackKey)) {
         if (key === idKey) continue;
-        const field = meta.fields[key]!;
+        const field = fieldOf(meta, key);
         const value = it[key];
         assertNoRaw(value, 'a write');
         doc[this.resolveColumnName(key, field)] = field.references ? this.toWireId(value) : value;
       }
+      // Keyed by column, which the driver's types read as `E`'s keys: they name the same fields.
       return doc as Partial<E>;
     });
   }

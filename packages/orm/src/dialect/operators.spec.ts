@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { QueryWhere } from '../type/index.js';
 import { sql } from '../util/sql.js';
-import { likePattern, likeLiteral, likeRegex, namesRows } from './operators.js';
+import { likePattern, likeLiteral, likeRegex, namesRows, sizeComparisons } from './operators.js';
 
 class Row {
   id?: number;
@@ -64,4 +64,15 @@ it.each(['a', String.raw`a\\`, String.raw`a\%`])('should pass the $like pattern 
 
 it("should escape a $like pattern's own [, keeping an escaped one", () => {
   expect(likePattern(String.raw`a[b]\[%`)).toBe(String.raw`a\[b]\[%`);
+});
+
+it('should read a $size as the comparisons of a length, the same on every engine', () => {
+  expect(sizeComparisons(2)).toEqual([['$eq', 2]]);
+  expect(sizeComparisons({ $gte: 1, $lt: undefined, $between: [1, 3] })).toEqual([
+    ['$gte', 1],
+    ['$between', [1, 3]],
+  ]);
+  expect(() => sizeComparisons('2')).toThrow('$size expects a number or bounds, got string');
+  expect(() => sizeComparisons({})).toThrow('$size needs at least one comparison');
+  expect(() => sizeComparisons({ $like: 1 })).toThrow('unsupported $size comparison operator: $like');
 });

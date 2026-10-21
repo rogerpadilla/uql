@@ -40,7 +40,7 @@ describe('SQL values', () => {
   });
 
   it('should refuse a value the engine has no function for, naming it', () => {
-    expect(() => sqlite.compileDdl(uuid)).toThrow('sqlite has no uuid; write it as raw SQL this engine accepts');
+    expect(() => sqlite.compileDdl(uuid)).toThrow('SQLite has no uuid; write it as raw SQL this engine accepts');
   });
 
   it('should read each one as its kind in the schema, under its own name', () => {

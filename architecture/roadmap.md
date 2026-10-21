@@ -10,13 +10,7 @@ What is next, in build order: groundwork first, so the features on top stay smal
 await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 ```
 
-**R5: an operation as a plan.** Its statements and how their results read, built without running, and one `runStatements` per querier: a request on D1, Turso Cloud and libSQL, a transaction elsewhere. Makes a split write on D1 atomic. _Unlocks batching._ [The design](batching.md).
-
 **R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). Internal (`SchemaDiffResult` is not exported), so it can land after 1.0. _Unlocks views._
-
-## Features
-
-**Batching** (R5). `pool.batch((q) => [q.findMany(...), q.count(...)])`, a typed tuple back, one request where the engine allows it and a transaction elsewhere. [The design](batching.md).
 
 ## After 1.0
 
@@ -65,3 +59,5 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **No computed vector distance on D1 or MySQL.** Both store vectors as JSON, and a distance over it measured 10 ms to 230 ms a row. D1 points at Vectorize, MySQL at HeatWave.
 - **A JSON update is folded to one write per path.** MySQL, MariaDB and SQLite bind by position, so no write may read what an earlier one left: `foldJson` works out every operator reaching a value another wrote before any SQL is written, and each write reads the column as stored. SQL Server, whose `JSON_QUERY` refuses a scalar, writes a key's value only where it is not NULL: a NULL one goes to a key that is not there, which `JSON_MODIFY` leaves alone.
 - **No fuzzy-match or `$max`/`$min` update operator.** Neither has a portable form or a caller `sql` does not already serve.
+- **A split write runs all or none, through one `runStatements` per querier.** One request on D1, Turso Cloud, libSQL and Neon over HTTP, a transaction elsewhere. [The design](split-writes.md).
+- **No DynamoDB driver yet.** Table per entity misfits its single-table design; revisit on demand.

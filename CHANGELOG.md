@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.102.7] - 2026-10-20
+
+- **Feat:** a write uql splits into several statements (an `insertMany` past the bind cap, an `upsertMany` of mixed shapes) runs all or none: one request on Cloudflare D1, libSQL, Turso Cloud and Neon, a transaction elsewhere. On D1 it was not atomic before.
+- **Feat:** `NeonQuerierPool` sends statements over HTTP, so it runs on edge runtimes, and takes a WebSocket session only for a transaction or a stream. A statement binds at most 32,767 values there.
+- **Feat:** `withDeleted(opts)` adds soft-deleted rows to the options it's given.
+- **Fixed:** an upsert without `update` no longer overwrites a found row's key with the payload's, and resolves to the found row's id.
+- **Fixed:** a foreign key typed by the key it references (`references` and no `type`) reads as that key does, so a `BigInt` key's reference comes back a `bigint`.
+- Error messages name the engine as its users do: PostgreSQL, SQL Server, Cloudflare D1, Neon.
+
 ## [0.102.6] - 2026-10-15
 
 - **Feat:** `keyOf` names a member from a selector and `sortOf` builds a `$sort` from `[key, direction]` pairs, for code generic over its entity.

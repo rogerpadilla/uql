@@ -22,6 +22,9 @@ export function assertDefined<T>(value: T | undefined, message?: string): assert
  */
 export const provisioningTimeout = 60_000;
 
+/** Five coupons, which a dialect binding at most six values inserts as two statements: three, then two. */
+export const fiveCoupons = Array.from({ length: 5 }, (_, index) => ({ code: `c${index}`, label: 'x' }));
+
 type SpecHook = () => unknown;
 
 /** Per-test hooks keep the runner's default, so a genuinely hung connection still fails fast. */

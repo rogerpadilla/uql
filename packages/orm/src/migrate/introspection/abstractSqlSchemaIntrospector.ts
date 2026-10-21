@@ -19,6 +19,7 @@ import type {
   StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
+import { cachedIn } from '../../util/object.util.js';
 import { sql } from '../../util/sql.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
@@ -259,11 +260,6 @@ function createTableRowReader(querier: SqlQuerier): TableRowReader {
 
   return <T extends RawRow>(sql: QuerySql): Promise<T[]> => {
     const key = JSON.stringify(querier.dialect.compile(sql));
-    let rows = sent.get(key);
-    if (!rows) {
-      rows = querier.all<RawRow>(sql);
-      sent.set(key, rows);
-    }
-    return rows as Promise<T[]>;
+    return cachedIn(sent, key, () => querier.all<RawRow>(sql)) as Promise<T[]>;
   };
 }

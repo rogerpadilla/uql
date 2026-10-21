@@ -4,6 +4,7 @@ import {
   type QueryJoinOp,
   type QueryLikeOp,
   type QueryOrderedOp,
+  type QuerySizeComparisonOps,
   type QueryVectorNear,
   type QueryVectorQuery,
   QuerySql,
@@ -13,7 +14,7 @@ import {
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
-import { hasKeys, isWhereMap, someKey } from '../util/object.util.js';
+import { getKeys, hasKeys, isWhereMap, someKey } from '../util/object.util.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -135,22 +136,46 @@ export function isVectorQuery(near: Record<string, unknown>): near is Record<str
 /** One entry of {@link LIKE_OPS}: how the pattern is built, and whether it ignores case. */
 export type LikeOp = { readonly pattern: (value: string) => string; readonly insensitive: boolean };
 
-export const COMPARE_OPS: ReadonlyMap<QueryWhereFieldOp, string> = new Map<QueryCompareOp, string>([
-  ['$gt', ' > '],
-  ['$gte', ' >= '],
-  ['$lt', ' < '],
-  ['$lte', ' <= '],
-]);
+/** Each ordered comparison as SQL spells it, the one source of its spelling. */
+export const ORDERED_SYMBOLS: Readonly<Record<QueryCompareOp, string>> = {
+  $gt: '>',
+  $gte: '>=',
+  $lt: '<',
+  $lte: '<=',
+};
 
 /**
- * The ordered comparisons, `QueryOrderedOp` at runtime, derived from {@link COMPARE_OPS} rather than spelled
+ * The ordered comparisons, `QueryOrderedOp` at runtime, derived from {@link ORDERED_SYMBOLS} rather than spelled
  * again: {@link QueryVectorNear}'s bounds, so `$near` never accepts one the renderer has no operator
  * for, and the operators that read a JSON path as a number.
  */
-export const ORDERED_OPS: ReadonlySet<string> = new Set<string>([...COMPARE_OPS.keys(), '$between']);
+export const ORDERED_OPS: ReadonlySet<string> = new Set<string>([...getKeys(ORDERED_SYMBOLS), '$between']);
 
 export function isOrderedOp(op: string): op is QueryOrderedOp {
   return ORDERED_OPS.has(op);
+}
+
+/**
+ * A `$size` operand as the comparisons of a length it makes, the same on every engine: a number is `$eq`, a
+ * map each of `$eq`, `$ne`, an ordered comparison or `$between`, at least one. Anything else is refused.
+ */
+export function sizeComparisons(size: unknown): [keyof QuerySizeComparisonOps, unknown][] {
+  if (typeof size === 'number') {
+    return [['$eq', size]];
+  }
+  if (!isOperatorMap(size)) {
+    throw new UqlUsageError(`$size expects a number or bounds, got ${kindOf(size)}`);
+  }
+  const comparisons = Object.entries(size).filter(([, bound]) => bound !== undefined);
+  if (!comparisons.length) {
+    throw new UqlUsageError('$size needs at least one comparison');
+  }
+  return comparisons.map(([op, bound]) => {
+    if (op !== '$eq' && op !== '$ne' && !isOrderedOp(op)) {
+      throw new UqlUsageError(`unsupported $size comparison operator: ${op}`);
+    }
+    return [op, bound];
+  });
 }
 
 /** The operators an equality compares by value, which a JSON path reads the way that value compares. */

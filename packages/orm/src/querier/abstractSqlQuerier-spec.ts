@@ -14,14 +14,15 @@ import {
   User,
   VersionedNote,
 } from '../test/index.js';
-import type { QuerierPool, QuerySearch, QueryUpdateResult } from '../type/index.js';
+import type { QuerierPool, QuerySearch } from '../type/index.js';
 import { sql } from '../util/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier!: AbstractSqlQuerier;
-  all!: Mock<(sql: string, values?: unknown[]) => Promise<unknown[]>>;
-  run!: Mock<(sql: string, values?: unknown[]) => Promise<QueryUpdateResult>>;
+  /** Every statement the querier sends, in order, reads and writes alike, as the driver runs it. */
+  execute!: Mock<(sql: string, values?: unknown[]) => Promise<SqlExecution>>;
 
   constructor(readonly pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>) {}
 
@@ -32,8 +33,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
     await clearTables(this.querier);
-    this.all = vi.spyOn(this.querier, 'internalAll');
-    this.run = vi.spyOn(this.querier, 'internalRun');
+    this.execute = vi.spyOn(this.querier, 'execute');
   }
 
   async afterEach() {
@@ -48,22 +48,20 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFindOneById() {
     await this.querier.findOneById(User, '1');
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email` FROM `User` WHERE `id` = ? LIMIT 1',
       ['1'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldFindOne() {
     await this.querier.findOne(User, { $select: { id: true, name: true }, $where: { companyId: '123' } });
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = ? LIMIT 1', [
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = ? LIMIT 1', [
       '123',
     ]);
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldRefuseASelectAndExcludeConflictOnFindOne() {
@@ -119,7 +117,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldHydrateJsonFieldFromDriverString() {
-    this.all.mockResolvedValueOnce([{ kind: '{"label":"x","isArchived":true}' }]);
+    this.execute.mockResolvedValueOnce({ rows: [{ kind: '{"label":"x","isArchived":true}' }] });
 
     const found = await this.querier.findOne(Company, { $select: { kind: true } });
 
@@ -128,7 +126,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldKeepJsonFieldAsObjectWhenDriverAlreadyParsesIt() {
-    this.all.mockResolvedValueOnce([{ kind: { label: 'x', isArchived: false } }]);
+    this.execute.mockResolvedValueOnce({ rows: [{ kind: { label: 'x', isArchived: false } }] });
 
     const found = await this.querier.findOne(Company, { $select: { kind: true } });
 
@@ -138,7 +136,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldKeepInvalidJsonStringUntouched() {
     const invalidJson = '{label:"x"';
-    this.all.mockResolvedValueOnce([{ kind: invalidJson }]);
+    this.execute.mockResolvedValueOnce({ rows: [{ kind: invalidJson }] });
 
     const found = await this.querier.findOne(Company, { $select: { kind: true } });
 
@@ -152,7 +150,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       createdAt: 1,
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['1', 'something a', 1],
@@ -165,8 +163,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     // One statement: the children are a correlated subquery of the parent's own, aggregated as JSON.
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description`' +
         ", (SELECT json_group_array(json_object('id', `itemAdjustments`.`id`, 'companyId', `itemAdjustments`.`companyId`, 'creatorId', `itemAdjustments`.`creatorId`, 'createdAt', `itemAdjustments`.`createdAt`, 'updatedAt', `itemAdjustments`.`updatedAt`, 'itemId', `itemAdjustments`.`itemId`, 'number', `itemAdjustments`.`number`, 'buyPrice', `itemAdjustments`.`buyPrice`, 'storehouseId', `itemAdjustments`.`storehouseId`, 'inventoryAdjustmentId', `itemAdjustments`.`inventoryAdjustmentId`))" +
         ' FROM (SELECT `itemAdjustments`.`id`, `itemAdjustments`.`companyId`, `itemAdjustments`.`creatorId`, CAST(`itemAdjustments`.`createdAt` AS TEXT) `createdAt`, CAST(`itemAdjustments`.`updatedAt` AS TEXT) `updatedAt`, `itemAdjustments`.`itemId`, CAST(`itemAdjustments`.`number` AS TEXT) `number`, CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`storehouseId`, `itemAdjustments`.`inventoryAdjustmentId` FROM `ItemAdjustment` `itemAdjustments`' +
@@ -174,8 +172,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ? LIMIT 1',
       ['5', '6', '7', '1'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   async shouldComputedField() {
@@ -186,13 +183,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.all).toHaveBeenCalledWith(
+    expect(this.execute).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) >= ?',
       [10],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
     vi.clearAllMocks();
 
     await this.querier.findMany(Item, {
@@ -211,7 +207,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $limit: 100,
     });
 
-    expect(this.all).toHaveBeenCalledWith(
+    expect(this.execute).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
@@ -222,9 +218,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       [],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
-
+    expect(this.execute).toHaveBeenCalledTimes(1);
     vi.clearAllMocks();
 
     await this.querier.findMany(Tag, {
@@ -234,13 +228,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.all).toHaveBeenCalledWith(
+    expect(this.execute).toHaveBeenCalledWith(
       'SELECT `id`, (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`tagId` = `Tag`.`id`) `itemsCount` FROM `Tag`',
       [],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldFind$exists() {
@@ -264,13 +257,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.all).toHaveBeenCalledWith(
+    expect(this.execute).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `id` FROM `User` WHERE `companyId` = `Item`.`companyId`)',
       [],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldFind$nexists() {
@@ -292,13 +284,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.all).toHaveBeenCalledWith(
+    expect(this.execute).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `id` FROM `User` WHERE `companyId` = `Item`.`companyId`)',
       [],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldFindOneAndSelectOneToManyOnly() {
@@ -310,7 +301,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { id: '456', createdAt: 1 },
     ]);
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       ['123', 1, '456', 1],
@@ -325,8 +316,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: { createdAt: 1 },
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`companyId`, `InventoryAdjustment`.`creatorId`' +
         ', `InventoryAdjustment`.`createdAt`, `InventoryAdjustment`.`updatedAt`' +
         ', `InventoryAdjustment`.`date`, `InventoryAdjustment`.`description`' +
@@ -339,8 +330,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       [1],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   async shouldFindOneAndSelectOneToManyWithSpecifiedFields() {
@@ -363,20 +353,20 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     ]);
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       ['something a', 1, anyUuid, 'something b', 1, anyUuid],
     );
     // Every parent's new children in one statement, not one per parent.
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?) RETURNING `id` `id`',
       [1, 1, anyUuid, anyUuid, 1, 1, anyUuid, anyUuid, 1, 1, anyUuid, anyUuid],
     );
     // The child names its key, so `save` upserts on it rather than issuing a bare `UPDATE` that reports
     // success on a missing row. `createdAt` rides the insert arm only, so an existing row keeps its own.
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       4,
       'INSERT INTO `ItemAdjustment` (`id`, `buyPrice`, `updatedAt`, `inventoryAdjustmentId`, `createdAt`) VALUES (?, ?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `buyPrice` = EXCLUDED.`buyPrice`, `updatedAt` = EXCLUDED.`updatedAt`, `inventoryAdjustmentId` = EXCLUDED.`inventoryAdjustmentId` RETURNING `id` `id`',
       ['1', 1, 1, anyUuid, expect.any(Number)],
@@ -390,8 +380,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     // Per parent, not one page across all of them: each parent's rows are paged inside its own
     // correlated subquery, which is what `$limit` inside a to-many means.
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('buyPrice', `itemAdjustments`.`buyPrice`))" +
         ' FROM (SELECT CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice` FROM `ItemAdjustment` `itemAdjustments`' +
         ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id` LIMIT 2 OFFSET 1) `itemAdjustments`) `itemAdjustments`' +
@@ -399,10 +389,9 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       [1],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenNthCalledWith(5, 'COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(6);
   }
 
   async shouldFindManyAndSelectOneToMany() {
@@ -411,7 +400,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { id: '456', description: 'something b', createdAt: 1 },
     ]);
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       ['123', 'something a', 1, '456', 'something b', 1],
@@ -423,8 +412,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: { createdAt: 1 },
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('id', `itemAdjustments`.`id`, 'companyId', `itemAdjustments`.`companyId`, 'creatorId', `itemAdjustments`.`creatorId`, 'createdAt', `itemAdjustments`.`createdAt`, 'updatedAt', `itemAdjustments`.`updatedAt`, 'itemId', `itemAdjustments`.`itemId`, 'number', `itemAdjustments`.`number`, 'buyPrice', `itemAdjustments`.`buyPrice`, 'storehouseId', `itemAdjustments`.`storehouseId`, 'inventoryAdjustmentId', `itemAdjustments`.`inventoryAdjustmentId`))" +
         ' FROM (SELECT `itemAdjustments`.`id`, `itemAdjustments`.`companyId`, `itemAdjustments`.`creatorId`, CAST(`itemAdjustments`.`createdAt` AS TEXT) `createdAt`, CAST(`itemAdjustments`.`updatedAt` AS TEXT) `updatedAt`, `itemAdjustments`.`itemId`, CAST(`itemAdjustments`.`number` AS TEXT) `number`, CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`storehouseId`, `itemAdjustments`.`inventoryAdjustmentId` FROM `ItemAdjustment` `itemAdjustments`' +
         ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
@@ -432,14 +421,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       [1],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   async shouldFindOneAndSelectManyToMany() {
     await this.querier.insertOne(Item, { id: '123', createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       ['123', 1],
@@ -451,8 +439,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     // Each target once, through the junction rows pairing it to the parent.
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       'SELECT `Item`.`id`, `Item`.`createdAt`' +
         ", (SELECT json_group_array(json_object('id', `tags`.`id`)) FROM (SELECT `tags`.`id` FROM `Tag` `tags`" +
         ' WHERE `tags`.`id` IN (SELECT `ItemTag`.`tagId` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)) `tags`) `tags`' +
@@ -460,14 +448,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       [],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   async shouldFindOneByIdAndSelectManyToMany() {
     await this.querier.insertOne(Item, { id: '123', createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       ['123', 1],
@@ -478,8 +465,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $populate: { tags: { $select: { id: true } } },
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       'SELECT `Item`.`id`, `Item`.`createdAt`' +
         ", (SELECT json_group_array(json_object('id', `tags`.`id`)) FROM (SELECT `tags`.`id` FROM `Tag` `tags`" +
         ' WHERE `tags`.`id` IN (SELECT `ItemTag`.`tagId` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)) `tags`) `tags`' +
@@ -487,13 +474,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['123'],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   /** One statement, not two: the page carries its own unpaged total in an extra column. */
   async shouldFindManyAndCount() {
-    this.all.mockResolvedValueOnce([{ id: 1, name: 'a', _uql_total: 7 }]);
+    this.execute.mockResolvedValueOnce({ rows: [{ id: 1, name: 'a', _uql_total: 7 }] });
 
     const [founds, count] = await this.querier.findManyAndCount(User, {
       $select: { id: true, name: true },
@@ -502,14 +488,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $skip: 50,
       $limit: 100,
     });
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT `id`, `name`, COUNT(*) OVER () `_uql_total` FROM `User` WHERE `companyId` = ?' +
         ' ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50',
       ['123'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
     expect(count).toBe(7);
     expect(founds).toEqual([{ id: 1, name: 'a' }]);
   }
@@ -520,8 +505,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
    * the projection and the filter but never the page - the total is what lies beyond it.
    */
   async shouldFindManyAndCountDistinctThroughADerivedTable() {
-    this.all.mockResolvedValueOnce([{ name: 'a' }]);
-    this.all.mockResolvedValueOnce([{ _uql_value: 2 }]);
+    this.execute.mockResolvedValueOnce({ rows: [{ name: 'a' }] });
+    this.execute.mockResolvedValueOnce({ rows: [{ _uql_value: 2 }] });
 
     const [, total] = await this.querier.findManyAndCount(User, {
       $select: { name: true },
@@ -530,49 +515,50 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $limit: 1,
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ? LIMIT 1', [
-      '123',
-    ]);
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
+      1,
+      'SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ? LIMIT 1',
+      ['123'],
+    );
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'SELECT COUNT(*) `_uql_value` FROM (SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ?) `_uql_rows`',
       ['123'],
     );
-    expect(this.all).toHaveBeenCalledTimes(2);
+    expect(this.execute).toHaveBeenCalledTimes(2);
     expect(total).toBe(2);
   }
 
   /** An empty page carries no row to read the total off, so that one case falls back to a count. */
   async shouldFindManyAndCountFallingBackOnAnEmptyPage() {
-    this.all.mockResolvedValueOnce([]);
-    this.all.mockResolvedValueOnce([{ _uql_value: 7 }]);
+    this.execute.mockResolvedValueOnce({ rows: [] });
+    this.execute.mockResolvedValueOnce({ rows: [{ _uql_value: 7 }] });
 
     const [founds, count] = await this.querier.findManyAndCount(User, { $where: { companyId: '123' }, $skip: 50 });
-    expect(this.all).toHaveBeenNthCalledWith(2, 'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?', [
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?', [
       '123',
     ]);
-    expect(this.all).toHaveBeenCalledTimes(2);
+    expect(this.execute).toHaveBeenCalledTimes(2);
     expect(founds).toEqual([]);
     expect(count).toBe(7);
   }
 
   async shouldInsertManyEmpty() {
     const res1 = await this.querier.insertMany(User, []);
-    expect(this.run).not.toHaveBeenCalled();
-    expect(this.all).not.toHaveBeenCalled();
+    expect(this.execute).not.toHaveBeenCalled();
+    expect(this.execute).not.toHaveBeenCalled();
     expect(res1).toEqual([]);
   }
 
   async shouldInsertOne() {
     await this.pool.insertOne(Company, { id: '123' });
     await this.querier.insertOne(User, { companyId: '123', createdAt: 1 });
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `User` (`companyId`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['123', 1, anyUuid],
     );
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldInsertOneAndCascadeOneToOne() {
@@ -581,20 +567,19 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       createdAt: 1,
       profile: { picture: 'abc', createdAt: 1 },
     });
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `User` (`name`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['some name', 1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`, `pk`) VALUES (?, ?, ?, ?) RETURNING `pk` `id`',
       ['abc', 1, anyUuid, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(4);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(4);
   }
 
   async shouldInsertOneAndCascadeManyToOne() {
@@ -605,20 +590,19 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     // The target first, so the row inserts already holding its key: a NOT NULL one is never left empty.
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['Metric', 123, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `MeasureUnit` (`name`, `createdAt`, `categoryId`, `id`) VALUES (?, ?, ?, ?) RETURNING `id` `id`',
       ['Centimeter', 123, anyUuid, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(4);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(4);
   }
 
   async shouldInsertOneAndCascadeOneToMany() {
@@ -630,56 +614,54 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         { buyPrice: 300, createdAt: 1 },
       ],
     });
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['some description', 1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?) RETURNING `id` `id`',
       [50, 1, anyUuid, anyUuid, 300, 1, anyUuid, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(4);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(4);
   }
 
   async shouldUpdateMany() {
     await this.querier.updateMany(User, { $where: { companyId: '4' } }, { name: 'Hola', updatedAt: 1 });
-    expect(this.run).toHaveBeenNthCalledWith(1, 'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `companyId` = ?', [
-      'Hola',
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
-      '4',
-    ]);
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(1);
+      'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `companyId` = ?',
+      ['Hola', 1, '4'],
+    );
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** One statement: the next version in the SET, the one the payload carried flat in the WHERE. */
   async shouldUpdateAVersionedRowInOneStatement() {
     const id = await this.querier.insertOne(VersionedNote, { title: 'first' });
-    this.run.mockClear();
+    this.execute.mockClear();
 
     await this.querier.updateOneById(VersionedNote, id, { title: 'second', version: 0 });
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'UPDATE `VersionedNote` SET `title` = ?, `version` = ? WHERE `id` = ? AND `version` = ? AND `deletedAt` IS NULL',
       ['second', 1, id, 0],
     );
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** A restore undoes the delete's stamp, so it matches no version and bumps none. */
   async shouldRestoreAVersionedRowWithoutItsVersion() {
     await this.querier.restoreOneById(VersionedNote, 'abc');
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'UPDATE `VersionedNote` SET `deletedAt` = ? WHERE `id` = ? AND `deletedAt` IS NOT NULL',
       [null, 'abc'],
     );
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** The run-time half of the compile-time rule, for a payload that reached the querier as client JSON. */
@@ -698,19 +680,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldUpdateOneById() {
     await this.querier.updateOneById(User, '5', { companyId: '123', updatedAt: 1 });
-    expect(this.run).toHaveBeenNthCalledWith(1, 'UPDATE `User` SET `companyId` = ?, `updatedAt` = ? WHERE `id` = ?', [
-      '123',
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
-      '5',
-    ]);
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(1);
+      'UPDATE `User` SET `companyId` = ?, `updatedAt` = ? WHERE `id` = ?',
+      ['123', 1, '5'],
+    );
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToOne() {
     const id = await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `User` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, id],
@@ -722,32 +703,31 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       profile: { picture: 'xyz', createdAt: 1 },
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(3, 'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
+    expect(this.execute).toHaveBeenNthCalledWith(4, 'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
       'something',
       1,
       id,
     ]);
     // The parent owns its one-to-one child, so an update replaces it: without the delete the previous
     // row stayed behind and a `$populate` had two to choose from.
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [id]);
-    expect(this.run).toHaveBeenNthCalledWith(
-      5,
+    expect(this.execute).toHaveBeenNthCalledWith(5, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`, `pk`) VALUES (?, ?, ?, ?) RETURNING `pk` `id`',
       ['xyz', 1, id, anyUuid],
     );
 
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `User` WHERE `id` = ?', [id]);
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(6);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(7);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToOneNull() {
     const id = await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `User` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, id],
@@ -759,24 +739,23 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       profile: null,
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(3, 'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
+    expect(this.execute).toHaveBeenNthCalledWith(4, 'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
       'something',
       1,
       id,
     ]);
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [id]);
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `User` WHERE `id` = ?', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(5, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [id]);
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(6);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToMany() {
     const id = await this.querier.insertOne(InventoryAdjustment, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, id],
@@ -791,25 +770,26 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ],
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(
-      3,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      4,
       'UPDATE `InventoryAdjustment` SET `description` = ?, `updatedAt` = ? WHERE `id` IN (?)',
       ['some description', 1, id],
     );
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [id]);
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)', [
-      id,
-    ]);
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(
       5,
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
+      [id],
+    );
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?) RETURNING `id` `id`',
       [50, 1, anyUuid, anyUuid, 300, 1, anyUuid, anyUuid],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(6);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(7);
   }
 
   /**
@@ -829,27 +809,26 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { description: 'some description', updatedAt: 1, itemAdjustments: [{ buyPrice: 50, createdAt: 1 }] },
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(
-      4,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      5,
       'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?, ?)',
       [anyUuid, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
-      5,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?) RETURNING `id` `id`',
       [50, 1, anyUuid, anyUuid, 50, 1, anyUuid, anyUuid],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(6);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(7);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToManyNull() {
     const id = await this.querier.insertOne(InventoryAdjustment, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, id],
@@ -861,27 +840,28 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       itemAdjustments: null,
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(
-      3,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      4,
       'UPDATE `InventoryAdjustment` SET `description` = ?, `updatedAt` = ? WHERE `id` IN (?)',
       ['some description', 1, id],
     );
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [id]);
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)', [
-      id,
-    ]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [id]);
+    expect(this.execute).toHaveBeenNthCalledWith(
+      5,
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
+      [id],
+    );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(6);
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
     await this.pool.insertOne(Company, { id: '1' });
     const id = await this.querier.insertOne(InventoryAdjustment, { companyId: '1', createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`companyId`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['1', 1, anyUuid],
@@ -897,20 +877,23 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(
-      3,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      4,
       'UPDATE `InventoryAdjustment` SET `description` = ?, `updatedAt` = ? WHERE `id` IN (?)',
       ['some description', 1, id],
     );
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `companyId` = ?', ['1']);
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)', [
-      id,
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `InventoryAdjustment` WHERE `companyId` = ?', [
+      '1',
     ]);
+    expect(this.execute).toHaveBeenNthCalledWith(
+      5,
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
+      [id],
+    );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(6);
   }
 
   async shouldInsertOneAndCascadeManyToManyInserts() {
@@ -928,32 +911,31 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         },
       ],
     });
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `Item` (`name`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['item one', 1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `Tag` (`name`, `createdAt`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       ['tag one', 1, anyUuid, 'tag two', 1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       4,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [anyUuid, anyUuid, anyUuid, anyUuid, anyUuid, anyUuid],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(5);
   }
 
   async shouldUpdateAndCascadeManyToManyInserts() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `Item` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, anyUuid],
@@ -974,45 +956,44 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ],
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(3, 'UPDATE `Item` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
+    expect(this.execute).toHaveBeenNthCalledWith(4, 'UPDATE `Item` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
       'item one',
       1,
       anyUuid,
     ]);
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `Item` WHERE `id` = ?', [anyUuid]);
     // The tags first, for the ids the links point at; then only the links that differ are written.
-    expect(this.run).toHaveBeenNthCalledWith(
-      4,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      5,
       'INSERT INTO `Tag` (`name`, `createdAt`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       ['tag one', 1, anyUuid, 'tag two', 1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
-      5,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       'DELETE FROM `ItemTag` WHERE `itemId` IN (?) AND `tagId` NOT IN (?, ?)',
       [anyUuid, anyUuid, anyUuid],
     );
-    expect(this.all).toHaveBeenNthCalledWith(
-      2,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      7,
       'SELECT `id`, `itemId`, `tagId` FROM `ItemTag` WHERE `itemId` IN (?) AND `tagId` IN (?, ?)',
       [anyUuid, anyUuid, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
-      6,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      8,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [anyUuid, anyUuid, anyUuid, anyUuid, anyUuid, anyUuid],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(2);
-    expect(this.run).toHaveBeenCalledTimes(7);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(9);
   }
 
   async shouldUpdateAndCascadeManyToManyLinks() {
     await this.pool.insertMany(Tag, [{ id: '22' }, { id: '33' }]);
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `Item` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, anyUuid],
@@ -1024,33 +1005,32 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       updatedAt: 1,
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(3, 'UPDATE `Item` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
+    expect(this.execute).toHaveBeenNthCalledWith(4, 'UPDATE `Item` SET `name` = ?, `updatedAt` = ? WHERE `id` IN (?)', [
       'item one',
       1,
       anyUuid,
     ]);
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `Item` WHERE `id` = ?', [anyUuid]);
     // A tag naming only its key is a link, so nothing is written to `Tag`.
-    expect(this.run).toHaveBeenNthCalledWith(
-      4,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      5,
       'DELETE FROM `ItemTag` WHERE `itemId` IN (?) AND `tagId` NOT IN (?, ?)',
       [anyUuid, '22', '33'],
     );
-    expect(this.all).toHaveBeenNthCalledWith(
-      2,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      6,
       'SELECT `id`, `itemId`, `tagId` FROM `ItemTag` WHERE `itemId` IN (?) AND `tagId` IN (?, ?)',
       [anyUuid, '22', '33'],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
-      5,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      7,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`, `id`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [anyUuid, '22', anyUuid, anyUuid, '33', anyUuid],
     );
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(2);
-    expect(this.run).toHaveBeenCalledTimes(6);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(8);
   }
 
   async shouldDeleteOneAndCascadeManyToManyDeletes() {
@@ -1061,16 +1041,16 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     const [itemId] = await this.querier.findMany(Item, { $select: { id: true } });
     await this.querier.deleteOneById(Item, itemId.id);
 
-    expect(this.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `Item` WHERE `id` = ?', [itemId.id]);
     // Children before the parent: they hold the foreign key, so the reverse order is rejected by any
     // schema that declares the constraint. Asserted by position on purpose.
-    expect(this.run.mock.calls).toEqual([
+    expect(this.execute.mock.calls).toEqual([
+      ['SELECT `id` FROM `Item`', []],
       ['BEGIN TRANSACTION'],
+      ['SELECT `id` FROM `Item` WHERE `id` = ?', [itemId.id]],
       ['DELETE FROM `ItemTag` WHERE `itemId` IN (?)', [itemId.id]],
       ['DELETE FROM `Item` WHERE `id` IN (?)', [itemId.id]],
       ['COMMIT'],
     ]);
-    expect(this.all).toHaveBeenCalledTimes(2);
   }
 
   async shouldDeleteOneAndNoCascadeManyToManyDeletes() {
@@ -1080,21 +1060,20 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.deleteOneById(Tag, '1');
 
-    expect(this.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` = ?', ['1']);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` = ?', ['1']);
 
-    expect(this.all).toHaveBeenCalledTimes(0);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldDeleteOneById() {
     const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       2,
       'INSERT INTO `User` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [1, anyUuid],
     );
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO `user_profile` (`createdAt`, `creatorId`, `pk`) VALUES (?, ?, ?) RETURNING `pk` `id`',
       [1, anyUuid, anyUuid],
@@ -1103,18 +1082,17 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteOneById(User, id);
 
     // Children before the parent; see shouldDeleteOneAndCascadeManyToManyDeletes.
-    expect(this.run).toHaveBeenNthCalledWith(6, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [anyUuid]);
-    expect(this.run).toHaveBeenNthCalledWith(7, 'DELETE FROM `User` WHERE `id` IN (?)', [anyUuid]);
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(7, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(8, 'DELETE FROM `User` WHERE `id` IN (?)', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(6, 'SELECT `id` FROM `User` WHERE `id` = ?', [anyUuid]);
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(8);
+    expect(this.execute).toHaveBeenCalledTimes(9);
   }
 
   /** An update `returning` its rows is one statement, which reports them: no transaction, no read before or after. */
   async shouldUpdateManyReturningInOneStatement() {
     await this.querier.insertOne(Tag, { name: 'a' });
-    this.run.mockClear();
+    this.execute.mockClear();
 
     const changed = await this.querier.updateMany(
       Tag,
@@ -1124,29 +1102,28 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     expect(changed).toEqual([{ name: 'b' }]);
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.all.mock.calls[0]?.[0]).toMatch(/^UPDATE `Tag` SET .* RETURNING /);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
+    expect(this.execute.mock.calls[0]?.[0]).toMatch(/^UPDATE `Tag` SET .* RETURNING /);
   }
 
   /** A payload writing no column sends no `UPDATE`: `returning` reports the rows it names, read as they are. */
   async shouldReturnTheRowsAnUpdateWritingNothingNames() {
     await this.querier.insertOne(Coupon, { code: 'a', label: 'kept' });
-    this.run.mockClear();
+    this.execute.mockClear();
 
     const named = await this.querier.updateMany(Coupon, { $where: { code: 'a' } }, {}, { returning: { label: true } });
 
     expect(named).toEqual([{ label: 'kept' }]);
-    expect(this.all.mock.calls.map(([query]) => query)).toEqual([
+    expect(this.execute.mock.calls.map(([query]) => query)).toEqual([
       'SELECT `label`, `id` FROM `Coupon` WHERE `code` = ?',
     ]);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** A hard delete `returning` its rows is one statement reporting them as they were. */
   async shouldDeleteManyReturningInOneStatement() {
     await this.querier.insertOne(Tag, { name: 'a' });
-    this.run.mockClear();
+    this.execute.mockClear();
 
     const deleted = await this.querier.deleteMany(
       Tag,
@@ -1155,9 +1132,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     expect(deleted).toEqual([{ name: 'a' }]);
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.all.mock.calls[0]?.[0]).toMatch(/^DELETE FROM `Tag` WHERE .* RETURNING /);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
+    expect(this.execute.mock.calls[0]?.[0]).toMatch(/^DELETE FROM `Tag` WHERE .* RETURNING /);
   }
 
   /** A delete reads only what `returning` names and its ids, unless a delete hook needs whole rows. */
@@ -1166,13 +1142,17 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.deleteMany(User, { $where: { createdAt: 123 } }, { returning: { createdAt: true } });
 
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `createdAt`, `id` FROM `User` WHERE `createdAt` = ?', [123]);
+    expect(this.execute).toHaveBeenNthCalledWith(
+      3,
+      'SELECT `createdAt`, `id` FROM `User` WHERE `createdAt` = ?',
+      [123],
+    );
   }
 
   async shouldDeleteMany() {
     await this.querier.insertOne(User, { createdAt: 123 });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `User` (`createdAt`, `id`) VALUES (?, ?) RETURNING `id` `id`',
       [123, anyUuid],
@@ -1180,14 +1160,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.deleteMany(User, { $where: { createdAt: 123 } });
 
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = ?', [123]);
-    expect(this.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [anyUuid]);
-    expect(this.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `User` WHERE `id` IN (?)', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(3, 'SELECT `id` FROM `User` WHERE `createdAt` = ?', [123]);
+    expect(this.execute).toHaveBeenNthCalledWith(4, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [anyUuid]);
+    expect(this.execute).toHaveBeenNthCalledWith(5, 'DELETE FROM `User` WHERE `id` IN (?)', [anyUuid]);
 
-    expect(this.run).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
-    expect(this.run).toHaveBeenLastCalledWith('COMMIT');
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(5);
+    expect(this.execute).toHaveBeenNthCalledWith(2, 'BEGIN TRANSACTION');
+    expect(this.execute).toHaveBeenLastCalledWith('COMMIT');
+    expect(this.execute).toHaveBeenCalledTimes(6);
   }
 
   /**
@@ -1198,57 +1177,54 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldDeleteManyByARelationCondition() {
     await this.querier.deleteMany(Tag, { $where: { company: { name: 'acme' } } });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'DELETE FROM `Tag` WHERE EXISTS (SELECT 1 FROM `Company` `company` WHERE `company`.`id` = `Tag`.`companyId` AND `company`.`name` = ?)',
       ['acme'],
     );
-    expect(this.all).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldCount() {
     await this.querier.count(User, { $where: { companyId: '123' } });
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?', [
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?', [
       '123',
     ]);
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** A paged count settles ids instead of counting: an `OFFSET` would push a `COUNT(*)` row away. */
   async shouldCountAPage() {
     await this.querier.count(User, { $where: { companyId: '123' }, $skip: 2, $limit: 5 });
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5 OFFSET 2) `_uql_rows`',
       ['123'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** `count` takes no `$sort`, but `/http` passes one on unchecked: it never reaches the SELECT as an `ORDER BY`. */
   async shouldCountDroppingASmuggledSort() {
     const sorted: QuerySearch<User> = { $where: { companyId: '123' }, $sort: { name: 1 }, $limit: 5 };
     await this.querier.count(User, sorted);
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5) `_uql_rows`',
       ['123'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /** The cheap shape is the point: a count of one capped id scan, never of every match. */
   async shouldExistsAsACappedIdScan() {
     await this.querier.exists(User, { $where: { companyId: '123' } });
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 1) `_uql_rows`',
       ['123'],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   /**
@@ -1256,16 +1232,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
    * statement, as a page of three hundred does - never one per row.
    */
   async shouldCountARelationInsideItsParentStatement() {
-    this.all.mockResolvedValueOnce([
-      { id: 1, '_count.users': 5 },
-      { id: 2, '_count.users': 0 },
-      { id: 3, '_count.users': 2 },
-    ]);
+    this.execute.mockResolvedValueOnce({
+      rows: [
+        { id: 1, '_count.users': 5 },
+        { id: 2, '_count.users': 0 },
+        { id: 3, '_count.users': 2 },
+      ],
+    });
 
     const found = await this.querier.findMany(User, { $select: { id: true }, $count: { users: true } });
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT `id`, (SELECT COUNT(*) FROM `User` `users` WHERE `users`.`creatorId` = `User`.`id`) `_count.users` FROM `User`',
       [],
@@ -1278,24 +1256,24 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.updateOneById(User, '5', { name: 'Hola', updatedAt: 1 });
     await this.querier.commitTransaction();
     expect(this.querier.hasOpenTransaction).toBe(false);
-    expect(this.run.mock.calls).toEqual([
+    expect(this.execute.mock.calls).toEqual([
       ['BEGIN TRANSACTION'],
       ['UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?', ['Hola', 1, '5']],
       ['COMMIT'],
     ]);
-    expect(this.all).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(3);
   }
 
   async shouldUseTransactionCallback() {
     await this.querier.transaction(async () => {
       await this.querier.updateOneById(User, '5', { name: 'Hola', updatedAt: 1 });
     });
-    expect(this.run.mock.calls).toEqual([
+    expect(this.execute.mock.calls).toEqual([
       ['BEGIN TRANSACTION'],
       ['UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?', ['Hola', 1, '5']],
       ['COMMIT'],
     ]);
-    expect(this.all).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(3);
   }
 
   async shouldUseTransactionCallbackWithIsolationLevel() {
@@ -1307,7 +1285,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     const begin = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'read committed' });
-    expect(this.run.mock.calls).toEqual([
+    expect(this.execute.mock.calls).toEqual([
       ...begin.map((sql) => [sql]),
       ['UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?', ['Hola', 1, '5']],
       ['COMMIT'],
@@ -1316,7 +1294,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldBeginTransactionWithoutIsolationLevel() {
     await this.querier.transaction(async () => {});
-    expect(this.run.mock.calls).toEqual([
+    expect(this.execute.mock.calls).toEqual([
       [this.querier.dialect.beginTransactionCommand],
       [this.querier.dialect.commitTransactionCommand],
     ]);
@@ -1327,8 +1305,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       throw new TypeError('some error');
     });
     await expect(prom).rejects.toThrow('some error');
-    expect(this.run.mock.calls).toEqual([['BEGIN TRANSACTION'], ['ROLLBACK']]);
-    expect(this.all).toHaveBeenCalledTimes(0);
+    expect(this.execute.mock.calls).toEqual([['BEGIN TRANSACTION'], ['ROLLBACK']]);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
 
   async shouldReuseTransactionWhenNested() {
@@ -1341,7 +1319,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       expect(innerResult).toBe(42);
     });
 
-    expect(this.run.mock.calls.map(([sql]) => sql)).toEqual([
+    expect(this.execute.mock.calls.map(([sql]) => sql)).toEqual([
       'BEGIN TRANSACTION',
       'SAVEPOINT _uql_sp1',
       'UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?',
@@ -1377,13 +1355,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     // Only the outer isolation level SQL should have been emitted
     const outerStatements = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'serializable' });
     for (let i = 0; i < outerStatements.length; i++) {
-      expect(this.run).toHaveBeenNthCalledWith(i + 1, outerStatements[i]);
+      expect(this.execute).toHaveBeenNthCalledWith(i + 1, outerStatements[i]);
     }
 
     // No 'read uncommitted' statements should appear
     const innerStatements = this.querier.dialect.getBeginTransactionStatements({ isolationLevel: 'read uncommitted' });
     for (const stmt of innerStatements.filter((inner) => !outerStatements.includes(inner))) {
-      expect(this.run).not.toHaveBeenCalledWith(stmt);
+      expect(this.execute).not.toHaveBeenCalledWith(stmt);
     }
   }
 
@@ -1398,7 +1376,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     expect(result).toBe('deep-value');
-    expect(this.run.mock.calls.map(([sql]) => sql)).toEqual([
+    expect(this.execute.mock.calls.map(([sql]) => sql)).toEqual([
       'BEGIN TRANSACTION',
       'SAVEPOINT _uql_sp1',
       'SAVEPOINT _uql_sp2',
@@ -1421,7 +1399,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       createdAt: 1,
     });
 
-    expect(this.run).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`',
       ['999', 'test adjustment', 1],
@@ -1438,8 +1416,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: { id: '999' },
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(
-      1,
+    expect(this.execute).toHaveBeenNthCalledWith(
+      2,
       "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('buyPrice', `itemAdjustments`.`buyPrice`, 'itemId', `itemAdjustments`.`itemId`))" +
         ' FROM (SELECT CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`itemId` FROM `ItemAdjustment` `itemAdjustments`' +
         ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
@@ -1447,16 +1425,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['999'],
     );
 
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(1);
+    expect(this.execute).toHaveBeenCalledTimes(2);
   }
   async shouldAggregate() {
     await this.querier.aggregate(User, {
       $select: { total: { $count: '*' } },
     });
-    expect(this.all).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `total` FROM `User`', []);
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `total` FROM `User`', []);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldAggregateWithGroupAndHaving() {
@@ -1476,13 +1452,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $sort: { cnt: -1 },
     });
 
-    expect(this.all).toHaveBeenNthCalledWith(
+    expect(this.execute).toHaveBeenNthCalledWith(
       1,
       'SELECT `companyId`, COUNT(*) `cnt` FROM `User` GROUP BY `companyId` HAVING COUNT(*) > ? ORDER BY COUNT(*) DESC',
       [1],
     );
-    expect(this.all).toHaveBeenCalledTimes(1);
-    expect(this.run).toHaveBeenCalledTimes(0);
+    expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
   async shouldDistinct() {
@@ -1499,7 +1474,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $distinct: true,
     });
 
-    expect(this.all).toHaveBeenCalledWith('SELECT DISTINCT `name` FROM `User`', []);
+    expect(this.execute).toHaveBeenCalledWith('SELECT DISTINCT `name` FROM `User`', []);
     expect(distinctRows).toHaveLength(2);
     expect(distinctRows.map((u) => u.name).sort()).toEqual(['Alice', 'Bob']);
   }

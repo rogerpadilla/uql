@@ -93,7 +93,7 @@ export function describeVectorTuning(name: string, createPool: () => SqlQuerierP
           $limit: 3,
           $candidates: 100,
         }),
-      ).rejects.toThrow(`$candidates requires an open transaction on ${pool.dialect.dialectName}`);
+      ).rejects.toThrow(`$candidates requires an open transaction on ${pool.dialect.engineName}`);
     });
 
     /** No ANN index on the column means no knob to turn, so the query runs untuned rather than failing. */

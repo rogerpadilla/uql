@@ -17,6 +17,8 @@ type DriverErrorFields = {
   readonly number?: unknown;
   readonly errorLabels?: unknown;
   readonly message?: unknown;
+  readonly statementIndex?: unknown;
+  readonly batchIndex?: unknown;
 };
 
 /** Postgres, CockroachDB, PGlite and Neon in `code`; Bun SQL in `errno`. */
@@ -92,6 +94,16 @@ export function queryErrorKind(err: unknown): QueryErrorKind | undefined {
     (Array.isArray(errorLabels) && errorLabels.includes('TransientTransactionError') ? 'retryable' : undefined) ??
     SQLITE_MESSAGE_KINDS.find(([fragment]) => text.includes(fragment))?.[1]
   );
+}
+
+/** The statement a failed list's driver says failed: libSQL's `statementIndex`, Turso's `batchIndex`. */
+export function failedIndexOf(err: unknown): number | undefined {
+  if (!(err instanceof Error)) {
+    return undefined;
+  }
+  const { statementIndex, batchIndex }: DriverErrorFields = err;
+  const at = statementIndex ?? batchIndex;
+  return typeof at === 'number' ? at : undefined;
 }
 
 /**

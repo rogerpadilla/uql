@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
@@ -13,15 +13,16 @@ import {
   writesKeys,
   fulltextWeights,
   getFieldCallbackValue,
-  getSoftDeleteValue,
   guardWrite,
   insertShapeOf,
   isCascadable,
   normalizeScalarFieldSelection,
   parseGroupMap,
   textSearchFields,
-  withoutSoftDeleteFilter,
+  deletionOf,
+  upsertAssigned,
 } from './dialect.util.js';
+import { withDeleted } from './filters.util.js';
 import { sql } from './sql.js';
 import { UqlSecurityError } from './uqlError.js';
 
@@ -68,10 +69,13 @@ it('should skip a convenience filter whose condition does not resolve', () => {
   expect(applyFilters(getMeta(Owned), {})).toEqual({});
 });
 
-it('should disable the soft-delete filter alone, keeping filters: false as it is', () => {
-  expect(withoutSoftDeleteFilter({ active: true })).toEqual({ active: true, softDelete: false });
-  expect(withoutSoftDeleteFilter(undefined)).toEqual({ softDelete: false });
-  expect(withoutSoftDeleteFilter(false)).toBe(false);
+it('should disable the soft-delete filter alone, keeping the other options and filters: false as they are', () => {
+  expect(withDeleted({ filters: { active: true }, hardDelete: true })).toEqual({
+    filters: { active: true, softDelete: false },
+    hardDelete: true,
+  });
+  expect(withDeleted()).toEqual({ filters: { softDelete: false } });
+  expect(withDeleted({ filters: false })).toEqual({ filters: false });
 });
 
 it('should not overwrite a key already in $where', () => {
@@ -201,13 +205,26 @@ it("should read a field callback's value, or the value itself", () => {
   expect(getFieldCallbackValue('val')).toBe('val');
 });
 
-it('should stamp a soft delete from its option', () => {
-  // `true` stamps the current timestamp
-  expect(getSoftDeleteValue({ softDelete: true })).toBeInstanceOf(Date);
-  // a callback stamps its result
-  expect(getSoftDeleteValue({ softDelete: () => 42 })).toBe(42);
-  // a scalar stamps as-is
-  expect(getSoftDeleteValue({ softDelete: 'DELETED' })).toBe('DELETED');
+it("should stamp a soft delete from its option: the current time, a callback's result, or the value itself", () => {
+  @Entity()
+  class Dated {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  }
+  @Entity()
+  class Counted {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, softDelete: () => 42 }) deletedAt?: number | null;
+  }
+  @Entity()
+  class Marked {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String, softDelete: 'DELETED' }) status?: string | null;
+  }
+
+  expect(stampOf(deletionOf(getMeta(Dated), {})).value()).toBeInstanceOf(Date);
+  expect(stampOf(deletionOf(getMeta(Counted), {})).value()).toBe(42);
+  expect(stampOf(deletionOf(getMeta(Marked), {})).value()).toBe('DELETED');
 });
 
 it('should keep the keys a write may set', () => {
@@ -497,6 +514,58 @@ describe('fillOnFields', () => {
   });
 });
 
+describe('upsertAssigned', () => {
+  @Entity()
+  class Stamped {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String }) code?: string | null;
+    @Field({ type: String }) name?: string | null;
+    @Field({ type: Number, onInsert: () => calls.push('onInsert') }) createdAt?: number | null;
+    @Field({ type: Number, onUpdate: () => 7 }) updatedAt?: number | null;
+  }
+  const calls: string[] = [];
+  const meta = getMeta(Stamped);
+
+  it('should assign a found row the payload and the onUpdate fills, less its key and what it matched on', () => {
+    calls.length = 0;
+
+    expect(upsertAssigned(meta, { id: 1, code: 'a', name: 'n' }, { code: true })).toEqual({ name: 'n', updatedAt: 7 });
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('a delete of a soft-deletable entity', () => {
+  @Entity()
+  class Trashed {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, softDelete: () => 9 }) deletedAt?: number | null;
+  }
+  const meta = getMeta(Trashed);
+
+  it('should stamp its soft-delete field, reading the rows as asked, its value left to the writer', () => {
+    const softDelete = vi.fn(() => 9);
+    @Entity()
+    class Stamped {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number, softDelete }) deletedAt?: number | null;
+    }
+    const stamped = getMeta(Stamped);
+
+    const deletion = deletionOf(stamped, {});
+
+    expect(deletion).toMatchObject({ stamp: { key: 'deletedAt' }, opts: {} });
+    expect(softDelete).not.toHaveBeenCalled();
+    expect(stampOf(deletion).value()).toBe(9);
+    expect(softDelete).toHaveBeenCalledOnce();
+  });
+
+  it('should remove the rows on a hard delete, soft-deleted ones included', () => {
+    expect(deletionOf(meta, { hardDelete: true })).toEqual({
+      opts: { hardDelete: true, filters: { softDelete: false } },
+    });
+  });
+});
+
 describe('foldJson', () => {
   it('pulls each element, then pushes each, then adds each once, unguarded where a pull removed it', () => {
     expect(foldJson({ $pull: ['a', null], $push: ['b', 'b'], $addToSet: ['a', 'c', 'c', 'b'] })).toEqual({
@@ -622,3 +691,11 @@ describe('foldJson of an object update', () => {
     );
   });
 });
+
+/** The stamp a soft delete of `deletion` writes, failing plainly where it is a hard one. */
+function stampOf({ stamp }: ReturnType<typeof deletionOf>): { value(): unknown } {
+  if (!stamp) {
+    throw new Error('a hard delete stamps nothing');
+  }
+  return stamp;
+}

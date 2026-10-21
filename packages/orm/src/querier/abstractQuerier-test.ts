@@ -2629,6 +2629,17 @@ export abstract class AbstractQuerierIt<
     expect(found?.kind).toEqual({ description: 'x', isArchived: false });
   }
 
+  /** An upsert matching on another field writes the payload's key only on a row it inserts: a found row keeps its own. */
+  async shouldKeepTheKeyOfARowAnUpsertFindsByAnotherField() {
+    const id = await this.querier.insertOne(Carrier, { code: 'kept', name: 'first' });
+
+    await this.querier.upsertOne(Carrier, { code: true }, { id: 'another', code: 'kept', name: 'second' });
+
+    expect(
+      await this.querier.findMany(Carrier, { $select: { id: true, name: true }, $where: { code: 'kept' } }),
+    ).toEqual([{ id, name: 'second' }]);
+  }
+
   /** The first upsert inserts the row and the second updates it, each resolving to the row's id. */
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';

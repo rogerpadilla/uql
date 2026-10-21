@@ -24,7 +24,7 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
       this.querier.run`PRAGMA synchronous = normal`,
       this.querier.run`PRAGMA temp_store = memory`,
     ]);
-    this.run.mockClear();
+    this.execute.mockClear();
   }
 }
 
@@ -55,12 +55,12 @@ describe('insertMany id semantics', () => {
   it('should split oversized batches by maxBindValues and return every id', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
     await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
-    const runSpy = vi.spyOn(querier, 'internalRun');
+    const executeSpy = vi.spyOn(querier, 'execute');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({ code: `c${index}`, label: `chunk ${index}` }));
     const ids = await querier.insertMany(Coupon, payload);
     expect(ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
     // 2 bind params per record (code, label) -> 3 records per statement -> 3 INSERTs for 7 records.
-    const insertCalls = runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
+    const insertCalls = executeSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
     expect(insertCalls).toHaveLength(3);
     const founds = await querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });
     expect(founds.map(({ id }) => id)).toEqual(ids);
@@ -131,7 +131,7 @@ describe('insertMany id semantics', () => {
   it('should split oversized batches by maxInsertRows', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
     await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
-    const runSpy = vi.spyOn(querier, 'internalRun');
+    const executeSpy = vi.spyOn(querier, 'execute');
 
     const ids = await querier.insertMany(
       Coupon,
@@ -139,7 +139,7 @@ describe('insertMany id semantics', () => {
     );
 
     expect(ids).toEqual([1, 2, 3, 4, 5]);
-    expect(runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'))).toHaveLength(3);
+    expect(executeSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'))).toHaveLength(3);
     await querier.release();
   });
 
@@ -169,7 +169,7 @@ describe('insertMany id semantics', () => {
   it('should split an oversized upsert by maxBindValues', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
     await querier.run(sql.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
-    const runSpy = vi.spyOn(querier, 'internalRun');
+    const executeSpy = vi.spyOn(querier, 'execute');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({
       id: index + 1,
       code: `c${index}`,
@@ -179,7 +179,7 @@ describe('insertMany id semantics', () => {
     await querier.upsertMany(Coupon, { id: true }, payload);
 
     // 3 bind params per record (id, code, label) -> 2 records per statement -> 4 statements.
-    const upsertCalls = runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
+    const upsertCalls = executeSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
     expect(upsertCalls).toHaveLength(4);
     const founds = await querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });
     expect(founds.map(({ label }) => label)).toEqual(payload.map(({ label }) => label));

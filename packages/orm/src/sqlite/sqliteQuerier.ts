@@ -1,5 +1,7 @@
+import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
-import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
+import { decodeBigInts } from '../util/wideNumber.js';
+import { type SqliteBindValue, toBindValues } from './bindValues.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
 /**
@@ -33,7 +35,7 @@ export type SqliteDatabase = {
  * and the embedded Turso engine. They differ only in whether preparing and stepping answer at once or
  * with a promise, which `await` and `for await` absorb.
  */
-export class SqliteQuerier extends AbstractSqliteQuerier {
+export class SqliteQuerier extends AbstractSqlQuerier {
   constructor(
     readonly db: SqliteDatabase,
     dialect: SqliteDialect,
@@ -48,15 +50,19 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
   }
 
   /** `reader` picks the call: `run()` would discard the rows of a statement that reads, RETURNING included. */
-  protected override async execute(query: string, values: SqliteBindValue[]) {
-    const stmt = await this.db.prepare(query);
+  protected override async execute(sql: string, values?: unknown[]) {
+    const stmt = await this.db.prepare(sql);
     if (stmt.reader) {
-      return { rows: (await stmt.all(...values)) as RawRow[], changes: 0 };
+      return { rows: ((await stmt.all(...toBindValues(values))) as RawRow[]).map(decodeBigInts) };
     }
-    return { rows: [], changes: Number((await stmt.run(...values)).changes) };
+    return { rows: [], changes: Number((await stmt.run(...toBindValues(values))).changes) };
   }
 
-  protected override async iterate(query: string, values: SqliteBindValue[]) {
-    return (await this.db.prepare(query)).iterate(...values) as Iterable<RawRow> | AsyncIterable<RawRow>;
+  /** Row by row, as the driver steps the statement. */
+  override async *internalStream(sql: string, values?: unknown[]) {
+    const stmt = await this.db.prepare(sql);
+    for await (const row of stmt.iterate(...toBindValues(values)) as Iterable<RawRow> | AsyncIterable<RawRow>) {
+      yield decodeBigInts(row);
+    }
   }
 }

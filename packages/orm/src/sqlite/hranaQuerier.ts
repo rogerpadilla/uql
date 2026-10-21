@@ -1,5 +1,8 @@
+import { AbstractSqlQuerier, type BoundStatement } from '../querier/index.js';
 import type { ExtraOptions, RawRow, TransactionOptions } from '../type/index.js';
-import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
+import type { SqlExecution } from '../util/sql.util.js';
+import { decodeBigInts } from '../util/wideNumber.js';
+import { type SqliteBindValue, sqliteStatements, toBindValues } from './bindValues.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
 export type HranaInValue = SqliteBindValue | ArrayBuffer | Date;
@@ -9,11 +12,15 @@ export type HranaResultSet = {
   rowsAffected: number;
 };
 
+export type HranaStatement = { sql: string; args?: HranaInValue[] };
+
 export type HranaExecutor = {
-  execute(stmt: { sql: string; args?: HranaInValue[] }): Promise<HranaResultSet>;
+  execute(stmt: HranaStatement): Promise<HranaResultSet>;
 };
 
+/** An open transaction's handle: its own `batch` runs a list inside it, stopping at the first failure. */
 export type HranaTransaction = HranaExecutor & {
+  batch(stmts: HranaStatement[]): Promise<HranaResultSet[]>;
   commit(): Promise<void>;
   rollback(): Promise<void>;
 };
@@ -24,6 +31,8 @@ export type HranaTransaction = HranaExecutor & {
  * without the vendor's types.
  */
 export type HranaClient = HranaExecutor & {
+  /** Runs `stmts` as one request, all or none, in a transaction of `mode`. */
+  batch(stmts: HranaStatement[], mode: 'write'): Promise<HranaResultSet[]>;
   transaction(mode?: 'write' | 'read' | 'deferred'): Promise<HranaTransaction>;
   close(): void;
 };
@@ -40,7 +49,7 @@ export type HranaQuerierConnectionOptions = {
  * @remarks Transactions use the client's own session handle rather than `BEGIN`/`COMMIT` statements,
  * because over plain HTTP consecutive requests need not share a connection.
  */
-export class HranaQuerier extends AbstractSqliteQuerier {
+export class HranaQuerier extends AbstractSqlQuerier {
   private tx?: HranaTransaction;
   private readonly closeClientOnRelease: boolean;
 
@@ -55,9 +64,15 @@ export class HranaQuerier extends AbstractSqliteQuerier {
   }
 
   /** Runs on the open transaction's handle when there is one. */
-  protected override async execute(query: string, values: SqliteBindValue[]) {
-    const res = await (this.tx ?? this.client).execute({ sql: query, args: values });
-    return { rows: res.rows as RawRow[], changes: res.rowsAffected };
+  protected override async execute(sql: string, values?: unknown[]) {
+    return executionOf(await (this.tx ?? this.client).execute({ sql, args: toBindValues(values) }));
+  }
+
+  /** A list as one request: the client's `batch`, all or none; inside an open transaction, its own, which joins it. */
+  protected override async executeBatch(statements: readonly BoundStatement[]) {
+    const stmts = sqliteStatements(statements);
+    const results = await (this.tx ? this.tx.batch(stmts) : this.client.batch(stmts, 'write'));
+    return results.map(executionOf);
   }
 
   protected override async internalBegin(opts?: TransactionOptions) {
@@ -85,4 +100,9 @@ export class HranaQuerier extends AbstractSqliteQuerier {
       this.client.close();
     }
   }
+}
+
+/** A result set as the querier reads it: Hrana's rows, read by column name, their wide integers decoded. */
+function executionOf({ rows, rowsAffected }: HranaResultSet): SqlExecution {
+  return { rows: (rows as RawRow[]).map(decodeBigInts), changes: rowsAffected };
 }

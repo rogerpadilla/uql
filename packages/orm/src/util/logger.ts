@@ -1,4 +1,5 @@
 import type { Logger, LoggerFunction, LoggingOptions, LogLevel } from '../type/logger.js';
+import { cachedIn } from './object.util.js';
 
 const DEFAULT_LOG_LEVELS = [
   'query',
@@ -188,12 +189,11 @@ export function queryLoggerFor(extra?: {
     unconfigured ??= new LoggerWrapper();
     return unconfigured;
   }
-  let wrapper = wrappersByOptions.get(extra);
-  if (!wrapper) {
-    wrapper = new LoggerWrapper(extra.logger, { logValues: extra.logValues, slowQuery: extra.slowQuery });
-    wrappersByOptions.set(extra, wrapper);
-  }
-  return wrapper;
+  return cachedIn(
+    wrappersByOptions,
+    extra,
+    () => new LoggerWrapper(extra.logger, { logValues: extra.logValues, slowQuery: extra.slowQuery }),
+  );
 }
 
 /**

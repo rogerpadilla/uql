@@ -97,9 +97,9 @@ describe('toErrorResponse', () => {
     ['a payload with no version', new UqlUsageError('carries no version'), 400, 'carries no version'],
     [
       'a $lock the engine lacks',
-      new UqlUsageError('sqlite does not support row-level locking'),
+      new UqlUsageError('SQLite does not support row-level locking'),
       400,
-      'sqlite does not support row-level locking',
+      'SQLite does not support row-level locking',
     ],
     [
       'a not-null violation',

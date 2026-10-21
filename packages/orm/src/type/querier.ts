@@ -42,6 +42,20 @@ export type TransactionOptions = {
 
 export type DialectName = SqlDialectName | 'mongodb';
 
+/** Each engine as a message names it. Total, so a new engine says. */
+export const ENGINE_NAMES = {
+  postgres: 'PostgreSQL',
+  cockroachdb: 'CockroachDB',
+  mysql: 'MySQL',
+  mariadb: 'MariaDB',
+  mssql: 'SQL Server',
+  sqlite: 'SQLite',
+  mongodb: 'MongoDB',
+} as const satisfies Readonly<Record<DialectName, string>>;
+
+/** An engine as a message names it: a dialect's, or a platform running one, as Cloudflare D1 runs SQLite and Neon Postgres. */
+export type EngineName = (typeof ENGINE_NAMES)[DialectName] | 'Cloudflare D1' | 'Neon';
+
 /**
  * A projected read that takes the entity first or as the query's `$entity`. The `$entity` form comes
  * **first** on purpose: when no signature matches, TypeScript reports the error of the *last* one, so a

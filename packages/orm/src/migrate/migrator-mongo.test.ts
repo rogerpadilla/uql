@@ -20,7 +20,7 @@ describe('Migrator on MongoDB (integration)', () => {
 
   afterAll(() => pool.end());
 
-  const noSql = 'mongodb has no SQL to render a check, a computed column or an index expression into';
+  const noSql = 'MongoDB has no SQL to render a check, a computed column or an index expression into';
 
   /** A collection's index names, in the order MongoDB lists them. */
   const indexNames = (collection: string) =>
@@ -157,10 +157,10 @@ describe('Migrator on MongoDB (integration)', () => {
     await pool.withQuerier(async (querier) => {
       const builder = await migrationBuilderFor(querier);
       await expect(builder.addColumn('article', (c) => c.string('nickname'))).rejects.toThrow(
-        'mongodb does not support addColumn in a migration',
+        'MongoDB does not support addColumn in a migration',
       );
       await expect(builder.createTable('profile', (table) => table.string('nickname'))).rejects.toThrow(
-        'mongodb does not support columns in a migration (collection "profile")',
+        'MongoDB does not support columns in a migration (collection "profile")',
       );
       await expect(builder.createIndex('article', [sql`lower(title)`])).rejects.toThrow(noSql);
       await expect(builder.createIndex('article', ['title'], { where: sql`title IS NOT NULL` })).rejects.toThrow(noSql);

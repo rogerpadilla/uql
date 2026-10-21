@@ -21,14 +21,13 @@ import {
 } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
+import { soleId } from '../entity/metadata/definition.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { QuerySql } from '../type/index.js';
 import type {
   EntityMeta,
-  FieldMeta,
   SavepointCommand,
   FieldOptions,
-  IdKey,
   Query,
   QueryConflictPaths,
   QueryContext,
@@ -106,13 +105,6 @@ function openJsonType(value: unknown): number {
     return OPENJSON_TYPE.number;
   }
   return typeof value === 'boolean' ? OPENJSON_TYPE.boolean : OPENJSON_TYPE.string;
-}
-
-/** The one key column and its field, or nothing on a composite key. */
-function soleId<E>(meta: EntityMeta<E>): { readonly key: IdKey<E>; readonly field: FieldMeta } | undefined {
-  const [key] = meta.ids;
-  const field = meta.ids.length === 1 ? meta.fields[key] : undefined;
-  return field && { key, field };
 }
 
 /** Microsoft SQL Server 2017 and up. Identifiers are `"`-quoted, the ANSI spelling `tedious` enables. */
@@ -507,7 +499,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     for (const [key, value] of Object.entries(set)) {
       if (value === null) {
         throw new UqlUsageError(
-          `mssql cannot $set '${key}' to null: JSON_MODIFY deletes the key instead. Use $unset, or store a JSON null through a whole-column write.`,
+          `SQL Server cannot $set '${key}' to null: JSON_MODIFY deletes the key instead. Use $unset, or store a JSON null through a whole-column write.`,
         );
       }
     }

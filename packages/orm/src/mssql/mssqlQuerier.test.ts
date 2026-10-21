@@ -21,7 +21,7 @@ class MsSqlQuerierIt extends VectorQuerierIt {
     });
 
     await expect(this.querier.updateOneById(Company, id, { kind: { $set: { 'theme.color': null } } })).rejects.toThrow(
-      "mssql cannot $set 'theme.color' to null",
+      "SQL Server cannot $set 'theme.color' to null",
     );
   }
 

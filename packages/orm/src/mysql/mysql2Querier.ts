@@ -1,5 +1,5 @@
 import type { PoolConnection } from 'mysql2';
-import type { ResultSetHeader } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 
 /**
@@ -7,14 +7,10 @@ import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
  * inside it a promise one too: streaming is the own connection's alone.
  */
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const [res] = await this.getConn().promise().query(query, values);
-    return res as T[];
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const [res] = await this.getConn().promise().query<ResultSetHeader>(query, values);
-    return this.buildUpdateResult({ changes: res.affectedRows, id: res.insertId });
+  /** A read answers its rows; a write, the header naming how many rows it changed and the first id it generated. */
+  protected override async execute(sql: string, values?: unknown[]) {
+    const [res] = await this.getConn().promise().query<RowDataPacket[] | ResultSetHeader>(sql, values);
+    return Array.isArray(res) ? { rows: res } : { rows: [], changes: res.affectedRows, id: res.insertId };
   }
 
   override async *internalStream(query: string, values?: unknown[]) {

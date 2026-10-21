@@ -188,7 +188,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldRefuseALockTheEngineLacks() {
     expect(() => this.lockedSql({ $select: { id: true }, $lock: true })).toThrow(
-      `${this.dialect.dialectName} does not support row-level locking`,
+      `${this.dialect.engineName} does not support row-level locking`,
     );
   }
 
@@ -218,7 +218,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   shouldEstimatedCount() {
     expect(() => this.exec((ctx) => this.dialect.estimatedCount(ctx, User))).toThrow(
-      `${this.dialect.dialectName} does not support estimatedCount`,
+      `${this.dialect.engineName} does not support estimatedCount`,
     );
   }
   shouldNotEmitLockOnUpdate() {

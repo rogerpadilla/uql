@@ -13,17 +13,11 @@ function toBindValues(values: unknown[] | undefined): unknown[] | undefined {
 }
 
 export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const rows: RawRow[] = await this.getConn().query(query, toBindValues(values));
-    return Array.from(rows, decodeBigInts) as T[];
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const res = await this.getConn().query(query, toBindValues(values));
-    // An OK packet reports `affectedRows`; a `RETURNING` statement answers rows instead, and counts by them.
-    const changes = res.affectedRows ?? res.length;
-    const rows = res.length ? Array.from<RawRow, RawRow>(res, decodeBigInts) : [];
-    return this.buildUpdateResult({ rows, changes });
+  /** A read, or a `RETURNING` write, answers rows, counted by them; any other write an OK packet reporting `affectedRows`. */
+  protected override async execute(sql: string, values?: unknown[]) {
+    const res = await this.getConn().query(sql, toBindValues(values));
+    const rows = Array.isArray(res) ? Array.from<RawRow, RawRow>(res, decodeBigInts) : [];
+    return { rows, changes: res.affectedRows };
   }
 
   /**

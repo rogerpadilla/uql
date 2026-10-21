@@ -1,6 +1,7 @@
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { IndexType } from '../schema/types.js';
 import { UqlUsageError } from '../util/uqlError.js';
+import type { EngineName } from './querier.js';
 
 /**
  * A vector search's metric: `cosine` (the default), `l2`, `inner` product or `l1`. No hamming: every
@@ -40,12 +41,12 @@ export type VectorMetric =
 
 /** The error every dialect throws for a metric it lacks. */
 export function unsupportedVectorMetric(
-  dialectName: string,
+  engine: EngineName,
   distance: VectorDistance,
   indexName?: string,
 ): UqlUsageError {
   const where = indexName === undefined ? '' : ` (index "${indexName}")`;
-  return new UqlUsageError(`${dialectName} does not support vector distance metric: ${distance}${where}`);
+  return new UqlUsageError(`${engine} does not support vector distance metric: ${distance}${where}`);
 }
 
 /**

@@ -456,7 +456,7 @@ describe('dialects without vector search', () => {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     expect(() => dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3] } } })).toThrow(
-      'mysql does not support vector similarity search',
+      'MySQL does not support vector similarity search',
     );
   });
 
@@ -474,7 +474,7 @@ describe('dialects without vector search', () => {
     const near = { $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 1 } } } };
 
     expect(() => mysql.find(mysql.createContext(), VectorItem, near)).toThrow(
-      'mysql does not support vector similarity search',
+      'MySQL does not support vector similarity search',
     );
     expect(() => d1.find(d1.createContext(), VectorItem, near)).toThrow('Cloudflare D1 has no vector functions');
   });

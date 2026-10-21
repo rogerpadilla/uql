@@ -1,13 +1,15 @@
 import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta, namesKey } from '../entity/index.js';
+import { getMeta } from '../entity/index.js';
+import { soleId } from '../entity/metadata/definition.js';
 import type {
   QueryContext,
   EntityData,
   EntityMeta,
   ExtraOptions,
   IdKey,
+  PrimaryKey,
   Query,
   QueryAggMap,
   QueryAggregate,
@@ -29,14 +31,28 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, isAutoIncrement } from '../util/index.js';
+import {
+  buildUpdateResult,
+  chunk,
+  clone,
+  getInsertFieldKeys,
+  insertShapeOf,
+  isAutoIncrement,
+  upsertKeepsOwnKey,
+} from '../util/index.js';
 import { statementOf } from '../util/sql.js';
-import type { BuildUpdateResultPayload } from '../util/sql.util.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier, type UpsertedId, type WritesReturning } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
-import { enrichError } from './queryError.js';
+import { enrichError, failedIndexOf } from './queryError.js';
 import { rowReader } from './rowReader.js';
+
+/** A statement as it is sent: its SQL and the values it binds. */
+export type BoundStatement = {
+  readonly sql: string;
+  readonly values: unknown[];
+};
 
 /**
  * Row indexes split by whether the row names its key, the one thing that changes what an insert can
@@ -109,24 +125,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     super(extra);
   }
 
-  /**
-   * internal read query.
-   */
-  protected abstract internalAll<T>(query: string, values?: unknown[]): Promise<T[]>;
+  /** Runs one statement on the driver: what it read, how many rows it changed, and any id its header reports. */
+  protected abstract execute(sql: string, values?: unknown[]): Promise<SqlExecution>;
 
-  /**
-   * internal insert/update/delete/ddl query.
-   */
-  protected abstract internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
-
-  /**
-   * Build a QueryUpdateResult with affected changes and calculated IDs.
-   */
-  protected buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
+  /** What a write reports: the rows it changed, and their ids, inferred from a header's first id where the dialect reads them so. */
+  private updateResultOf(result: SqlExecution): QueryUpdateResult {
     return buildUpdateResult({
+      ...result,
       insertIdSource: this.dialect.insertIdSource,
       insertIdIncrement: this.#insertIdIncrement,
-      ...payload,
     });
   }
 
@@ -147,72 +154,107 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * caught for every SQL backend.
    */
   protected async lazyConnect(): Promise<void> {
-    if (this.released) {
-      throw new UqlUsageError('querier already released');
-    }
+    this.assertActive();
   }
 
   all<T extends object = RawRow>(...statement: SqlStatement): Promise<T[]> {
-    return this.query<T>(statementOf(statement));
+    return this.rowsOf<T>(statementOf(statement));
   }
 
   run(...statement: SqlStatement): Promise<QueryUpdateResult> {
-    return this.exec(statementOf(statement));
+    return this.changesOf(statementOf(statement));
+  }
+
+  /**
+   * Runs `statements` as one request, all or none, joining an open transaction: what a driver taking a list as one
+   * declares. Called for two or more.
+   */
+  protected executeBatch?(statements: readonly BoundStatement[]): Promise<SqlExecution[]>;
+
+  /**
+   * The one path every statement takes, alone or as a list answering a result each, all or none: one request where
+   * the driver has {@link executeBatch}, a failure tagged with the statement it names; else in turn, in a transaction
+   * where `atomic` (a split write) asks for one, opened before the queue is taken, which its `BEGIN` waits on.
+   */
+  protected runStatements(statements: readonly BoundStatement[], atomic = false): Promise<readonly SqlExecution[]> {
+    const executeBatch = statements.length > 1 ? this.executeBatch?.bind(this) : undefined;
+    if (!executeBatch) {
+      const inTurn = () => this.inTurn(statements);
+      return atomic ? this.atomically(inTurn) : inTurn();
+    }
+    const sql = statements.map((statement) => statement.sql).join('; ');
+    const values = statements.flatMap((statement) => statement.values);
+    return this.onConnection(() =>
+      this.timed(sql, values, () =>
+        executeBatch(statements).catch((error: unknown) => {
+          const statement = statements[failedIndexOf(error) ?? -1];
+          throw statement ? enrichError(error, this.logger, statement.sql, statement.values) : error;
+        }),
+      ),
+    );
+  }
+
+  /** Runs `statements` one after another on the connection, each timed. */
+  private inTurn(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
+    return this.onConnection(async () => {
+      const results: SqlExecution[] = [];
+      for (const { sql, values } of statements) {
+        results.push(await this.timed(sql, values, () => this.execute(sql, values)));
+      }
+      return results;
+    });
+  }
+
+  /** Runs `task` on the connection, connected, after everything queued before it. */
+  private onConnection<T>(task: () => Promise<T>): Promise<T> {
+    return this.serialize(() => this.lazyConnect().then(task));
+  }
+
+  /** The statement `build` writes, refused past the bind budget before the driver fails it. */
+  private bound(build: QueryBuildFn | QuerySql): BoundStatement {
+    const { sql, values } = this.dialect.compile(build);
+    this.assertBindBudget(values);
+    return { sql, values };
   }
 
   /** Refused before the driver fails it, or PGlite answers it and every read after it wrong. */
   private assertBindBudget(values: readonly unknown[] | undefined): void {
-    const { maxBindValues, dialectName } = this.dialect;
+    const { maxBindValues, engineName } = this.dialect;
     if (values && values.length > maxBindValues) {
       throw new UqlUsageError(
-        `a statement binding ${values.length} values is past the ${maxBindValues} ${dialectName} takes; split the list it binds`,
+        `a statement binding ${values.length} values is past the ${maxBindValues} ${engineName} takes; split the list it binds`,
       );
     }
   }
 
-  /** The rows of a statement the dialect builds. */
-  private query<T>(build: QueryBuildFn | QuerySql): Promise<T[]> {
-    return this.send(build, (sql, values) => this.internalAll<T>(sql, values));
+  /** The rows of the statement `build` writes, as the caller types them. */
+  private async rowsOf<T>(build: QueryBuildFn | QuerySql): Promise<T[]> {
+    const [{ rows }] = await this.runStatements([this.bound(build)]);
+    return rows as T[];
   }
 
-  /** Runs a statement the dialect builds. */
-  private exec(build: QueryBuildFn | QuerySql): Promise<QueryUpdateResult> {
-    return this.send(build, (sql, values) => this.internalRun(sql, values));
-  }
-
-  /** Builds a statement and sends it on the connection, in turn, timed and its failure tagged with it. */
-  private async send<T>(
-    build: QueryBuildFn | QuerySql,
-    task: (sql: string, values: unknown[] | undefined) => Promise<T>,
-  ): Promise<T> {
-    const { sql, values } = this.dialect.compile(build);
-    this.assertBindBudget(values);
-    return this.serialize(async () => {
-      await this.lazyConnect();
-      return this.timed(sql, values, () => task(sql, values));
-    });
+  /** What the write `build` writes reports. */
+  private async changesOf(build: QueryBuildFn | QuerySql): Promise<QueryUpdateResult> {
+    const [result] = await this.runStatements([this.bound(build)]);
+    return this.updateResultOf(result);
   }
 
   /**
-   * Runs the `SET`s tuning an ANN index for the query on its connection, refusing where they would apply to
-   * nothing: a `SET LOCAL` outside a transaction.
+   * The `SET`s tuning an ANN index for the query, leading its read, refused where they would apply to nothing: a
+   * `SET LOCAL` outside a transaction. None for a query with no vector search, or on a field with no ANN index,
+   * which then demands no transaction either.
    */
-  private async applyVectorTuning<E>(entity: Type<E>, q: Query<E>): Promise<void> {
-    // Resolved before the transaction check, so the refusal fires only where the tuning would have
-    // meant something: a query with no vector search, or on a field carrying no ANN index, has
-    // nothing to set and no reason to demand a transaction for it.
-    const statements = this.dialect.vectorTuningStatements(getMeta(entity), q);
-    if (!statements.length) {
-      return;
+  private vectorTuning<E>(entity: Type<E>, q: Query<E>): readonly BoundStatement[] {
+    if (q.$candidates === undefined) {
+      return [];
     }
-    if (this.dialect.features.vectorTuningNeedsTransaction && !this.scopeHere()) {
+    const statements = this.dialect.vectorTuningStatements(getMeta(entity), q);
+    if (statements.length && this.dialect.features.vectorTuningNeedsTransaction && !this.scopeHere()) {
       throw new UqlUsageError(
-        `$candidates requires an open transaction on ${this.dialect.dialectName}; run the query inside pool.transaction(...)`,
+        `$candidates requires an open transaction on ${this.dialect.engineName}; run the query inside pool.transaction(...)`,
       );
     }
-    for (const statement of statements) {
-      await this.internalRun(statement);
-    }
+    return statements.map((sql) => ({ sql, values: [] }));
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
@@ -248,34 +290,33 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return [rows, total];
   }
 
-  /** The rows a read of `entity` matches, each as its statement reads it. */
-  private async selectRows<E extends object, T = E>(
+  /** The rows a read of `entity` matches, each as its statement reads it, the vector search's tuning leading it. */
+  private selectRows<E extends object, T = E>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
     totalAlias?: string,
   ): Promise<T[]> {
-    // Guarded rather than awaited unconditionally, here and in the stream below: an `await` on this
-    // path defers a microtask on every read, which reorders the two statements `findManyAndCount`
-    // issues concurrently. Keep the guard at any new call site.
-    if (q.$candidates !== undefined) {
-      await this.applyVectorTuning(entity, q);
-    }
-    return this.readRows<T>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias));
+    const tuning = this.vectorTuning(entity, q);
+    return this.readRows<T>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias), tuning);
   }
 
-  /** The rows of a read the dialect builds, each as the terms it returns say. */
-  private async readRows<T>(build: (ctx: QueryContext) => readonly SelectTerm[]): Promise<T[]> {
+  /** The rows of a statement the dialect builds, each as the terms it returns say, after the `leading` ones. */
+  private async readRows<T>(
+    build: (ctx: QueryContext) => readonly SelectTerm[],
+    leading: readonly BoundStatement[] = [],
+  ): Promise<T[]> {
     let terms: readonly SelectTerm[] = [];
-    const rows = await this.query<RawRow>((ctx) => {
+    const statement = this.bound((ctx) => {
       terms = build(ctx);
     });
-    return rows.map(rowReader<T>(terms));
+    const results = await this.runStatements([...leading, statement]);
+    return results[leading.length].rows.map(rowReader<T>(terms));
   }
 
   /**
-   * The one read not going through `all`, so it checks its budget and connects on its own; its values go as
-   * the context holds them, each normalized as it was bound. The tuning is guarded as `selectRows` says.
+   * The one read not going through `runStatements`: it holds the connection for its loop, so it checks its budget
+   * and connects on its own, its values going as the context holds them, each normalized as it was bound.
    */
   protected override async *internalFindManyStream<E extends object>(
     entity: Type<E>,
@@ -285,10 +326,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     const read = rowReader<E>(this.dialect.find(ctx, entity, q, opts));
     this.assertBindBudget(ctx.values);
-    if (q.$candidates !== undefined) {
-      await this.applyVectorTuning(entity, q);
-    }
+    const tuning = this.vectorTuning(entity, q);
     await this.lazyConnect();
+    for (const { sql } of tuning) {
+      await this.timed(sql, undefined, () => this.execute(sql));
+    }
     for await (const row of this.timedStream(ctx.sql, ctx.values, this.internalStream(ctx.sql, ctx.values))) {
       yield read(row);
     }
@@ -301,11 +343,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    */
   protected async *internalStream(query: string, values?: unknown[]): AsyncIterable<RawRow> {
     if (!this.dialect.features.serverSideCursors) {
-      yield* await this.internalAll<RawRow>(query, values);
+      yield* (await this.execute(query, values)).rows;
       return;
     }
     yield* streamViaCursor<RawRow>(
-      (sql, params) => this.internalAll<RawRow>(sql, params),
+      async (sql, params) => (await this.execute(sql, params)).rows,
       query,
       values,
       !!this.scopeHere(),
@@ -318,7 +360,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * as 0; no row is 0 too, since a catalog that does not know the table answers with none.
    */
   private async runCount(build: QueryBuildFn): Promise<number> {
-    const [row] = await this.query<Record<typeof AGGREGATE_VALUE_ALIAS, number | null>>(build);
+    const [row] = await this.rowsOf<Record<typeof AGGREGATE_VALUE_ALIAS, number | null>>(build);
     return row ? Number(row[AGGREGATE_VALUE_ALIAS]) : 0;
   }
 
@@ -343,16 +385,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // What comes back is one column's value, so nothing is read back for a composite: its rows
     // already carry every column of it. `sole` is what keeps every id path off such a key.
     const [idKey] = meta.ids;
-    const sole = meta.ids.length === 1;
-    const idField = sole ? meta.fields[idKey] : undefined;
-    const generatedKey = !!idField && isAutoIncrement(idField, true);
+    const sole = soleId(meta);
+    const generatedKey = !!sole && isAutoIncrement(sole.field, true);
 
     // Per group, not per batch: the two carry different columns - one names the key, one does not - so a budget
     // taken over their union would under-fill the statement that is missing one. Header ids are only sound where
     // every row of a statement left its key to the database, so a supplied id cannot void the others.
     const statements = partitionBySuppliedId(rows, idKey).flatMap((group) => {
       const idsReliable =
-        sole &&
+        !!sole &&
         (this.dialect.insertIdSource === 'returning' ||
           (generatedKey && group.every((index) => rows[index][idKey] === undefined)));
       const { maxBindValues, maxInsertRows } = this.dialect;
@@ -369,18 +410,22 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     ) {
       this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
     }
-    const insert = async () => {
-      for (const { indexes, idsReliable } of statements) {
+    const results = await this.runStatements(
+      statements.map(({ indexes }) => {
         const statementRows = indexes.map((index) => rows[index]);
-        const { ids = [] } = await this.exec((ctx) => this.dialect.insert(ctx, entity, statementRows));
-        if (idsReliable) {
-          for (let position = 0; position < indexes.length; position++) {
-            rows[indexes[position]][idKey] ??= ids[position] as E[typeof idKey];
-          }
-        }
+        return this.bound((ctx) => this.dialect.insert(ctx, entity, statementRows));
+      }),
+      statements.length > 1,
+    );
+    results.forEach((result, at) => {
+      const { indexes, idsReliable } = statements[at];
+      if (idsReliable) {
+        const { ids = [] } = this.updateResultOf(result);
+        indexes.forEach((index, position) => {
+          rows[index][idKey] ??= ids[position] as E[typeof idKey];
+        });
       }
-    };
-    await (statements.length > 1 ? this.atomically(insert) : insert());
+    });
   }
 
   override async internalUpdateMany<E extends object>(
@@ -389,7 +434,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ) {
-    const { changes = 0 } = await this.exec((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
+    const { changes = 0 } = await this.changesOf((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
     return changes;
   }
 
@@ -422,7 +467,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<(UpsertedId<E> | undefined)[] | undefined> {
+  ): Promise<(UpsertedId<E> | undefined)[]> {
     if (!payload.length) {
       return [];
     }
@@ -431,55 +476,51 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // One statement per shape, each split again to fit the bind budget, less what its assignments bind once.
     // Grouping first is what makes that one figure: every row of a group carries the same columns. No row cap:
     // the one engine with one, SQL Server, upserts through a MERGE, whose source takes any number.
-    const statements = groupByInsertShape(meta, payload).flatMap((group) => {
-      const assigned = this.dialect.upsertAssignmentBinds(entity, conflictPaths, payload[group[0]], update);
-      return chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - assigned);
+    const groups = groupByInsertShape(meta, payload).flatMap((group) => {
+      const { binds, assigns } = this.dialect.upsertAssignments(entity, conflictPaths, payload[group[0]], update);
+      const chunks = chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - binds);
+      // `reports`: the statement answers each row's id in order, which spares the read back.
+      return chunks.map((indexes) => ({
+        indexes,
+        reports: assigns && this.dialect.upsertReportsIds(meta, indexes.length),
+      }));
     });
-    if (statements.length === 1) {
-      return this.runUpsert(entity, conflictPaths, payload, update);
-    }
-    // An upsert's assignment list is the statement's, so rows of different shapes go in statements of their own.
-    return this.atomically(async () => {
-      // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
-      // than it wrote places none.
-      const ids: (UpsertedId<E> | undefined)[] = new Array(payload.length);
-      for (const indexes of statements) {
-        const reported = await this.runUpsert(
+    // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
+    const kept = payload.map((row) => upsertKeepsOwnKey(meta, conflictPaths, row));
+    const statements = groups.map(({ indexes }) =>
+      this.bound((ctx) =>
+        this.dialect.upsert(
+          ctx,
           entity,
           conflictPaths,
           indexes.map((index) => payload[index]),
           update,
-        );
-        if (reported?.length === indexes.length) {
-          for (let position = 0; position < indexes.length; position++) {
-            ids[indexes[position]] = reported[position];
-          }
-        }
+        ),
+      ),
+    );
+    const results = await this.runStatements(statements, groups.length > 1);
+    // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids than it
+    // wrote places none.
+    const ids: (UpsertedId<E> | undefined)[] = new Array(payload.length);
+    groups.forEach(({ indexes, reports }, group) => {
+      const reported = reports ? this.reportedIds(results[group]) : [];
+      if (reported.length === indexes.length) {
+        indexes.forEach((index, position) => {
+          ids[index] = reported[position];
+        });
       }
-      return ids;
     });
+    // Where the statement cannot report every row's id in order (see `upsertReportsIds`), or assigns a found row
+    // nothing, `DO NOTHING`, which skips it, the ids are read back by the conflict columns.
+    return this.withUnreportedIds(entity, conflictPaths, payload, ids, kept);
   }
 
-  private async runUpsert<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
-    update?: UpdatePayload<E>,
-  ): Promise<(UpsertedId<E> | undefined)[] | undefined> {
-    const meta = getMeta(entity);
-    // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
-    const unnamed = payload.some((row) => !namesKey(meta, row));
-    const { ids } = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload, update));
-    const ordered =
-      payload.length === 1 ||
-      (this.dialect.insertIdSource === 'returning' && this.dialect.features.orderedUpsertReturning);
-    if (meta.ids.length === 1 && ordered && ids?.length === payload.length) {
-      return ids;
+  /** The ids an upsert reports of its rows: its `RETURNING` rows' in order, or its one row's in the header. */
+  private reportedIds(result: SqlExecution): (PrimaryKey | undefined)[] {
+    if (result.rows.length) {
+      return this.updateResultOf(result).ids ?? [];
     }
-    // The statement's ids name its rows only in order and for every one. A MySQL batch reports a
-    // weighted count (1=insert, 2=update) instead, CockroachDB and SQL Server answer out of order, and
-    // `DO NOTHING` skips rows, so there the ids are read back by the conflict columns.
-    return unnamed ? this.idsByConflict(entity, conflictPaths, payload) : undefined;
+    return result.id ? [result.id] : [];
   }
 
   protected override async internalDeleteMany<E extends object>(
@@ -487,7 +528,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: QuerySearch<E>,
     opts?: QueryOptions,
   ) {
-    const { changes = 0 } = await this.exec((ctx) => this.dialect.delete(ctx, entity, q, opts));
+    const { changes = 0 } = await this.changesOf((ctx) => this.dialect.delete(ctx, entity, q, opts));
     return changes;
   }
 
@@ -544,7 +585,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   /** Transaction statements skip `timed()`, so they attach their own query context to a failure. */
   private async runTransactionCommand(sql: string) {
     try {
-      await this.internalRun(sql);
+      await this.execute(sql);
     } catch (err) {
       throw enrichError(err, this.logger, sql);
     }

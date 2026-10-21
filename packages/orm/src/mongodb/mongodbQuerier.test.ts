@@ -52,7 +52,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   }
 
   protected override nestedTransactionError(): string {
-    return 'mongodb has no savepoint to nest a transaction in another';
+    return 'MongoDB has no savepoint to nest a transaction in another';
   }
 
   /** The open transaction's session reaches a raw call through `db`, which then runs inside it. */

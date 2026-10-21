@@ -10,6 +10,22 @@ import { VectorQuerierIt } from './vectorQuerier-test.js';
  * `group_concat_max_len` a read lifts, a stream drained when left, and a session in UTC.
  */
 export class MySqlLikeQuerierIt extends VectorQuerierIt {
+  /** A found row's key comes back with the upsert itself (`LAST_INSERT_ID` on MySQL, `RETURNING` on MariaDB). */
+  async shouldUpsertOneRowReadingNoKeyBack() {
+    const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
+    const before = await this.selectsSent();
+
+    const id = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
+
+    expect([id, (await this.selectsSent()) - before]).toEqual([existingId, 0]);
+  }
+
+  /** How many `SELECT`s the session has sent, which `SHOW STATUS` is not one of. */
+  private async selectsSent(): Promise<number> {
+    const [row] = await this.querier.all<{ Value: string }>`SHOW SESSION STATUS LIKE 'Com_select'`;
+    return Number(row.Value);
+  }
+
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
     await this.querier.run(sql.text(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
