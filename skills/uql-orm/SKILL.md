@@ -125,18 +125,19 @@ const users = await pool.findMany(User, {
 Compute in SQL, not in code. Loading rows to dedupe, count or sum them in JavaScript costs a round trip and every row.
 
 ```ts
+import { Post } from './entities.js';
+import { pool } from './uql.config.js';
+
 // Distinct values: a $group with no $select returns each once.
-const names = await pool.aggregate(Person, {
-  $where: { workspaceId },
-  $group: { name: true },
-  $sort: { name: 1 },
+const titles = await pool.aggregate(Post, {
+  $group: { title: true },
+  $sort: { title: 1 },
 });
 
 // Tallies per group, in one statement.
-const counts = await pool.aggregate(Speaker, {
-  $where: { workspaceId },
-  $group: { personId: true },
-  $select: { resourceCount: { $countDistinct: { resourceId: true } } },
+const counts = await pool.aggregate(Post, {
+  $group: { authorId: true },
+  $select: { distinctTitles: { $countDistinct: { title: true } } },
 });
 ```
 
