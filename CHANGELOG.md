@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.103.2] - 2026-10-22
+
+- **Fixed:** a populated to-many is typed as a list on a find with no `$select` or a mixed one too, so it maps without a guard.
+
 ## [0.103.1] - 2026-10-22
 
 - **Feat:** the `uql-orm` agent skill covers aggregates, which compute distinct values and counts in SQL instead of loading rows.

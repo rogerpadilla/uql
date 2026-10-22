@@ -495,7 +495,8 @@ type IsUniform<V> = [V] extends [true | 1] ? true : [V] extends [false | 0] ? tr
 
 /**
  * A find's row: the entity narrowed to what the query projected and populated, so reading anything
- * else does not compile. The entity itself where the projection is raw, absent or not uniform.
+ * else does not compile. The entity itself where the projection is raw, absent or not uniform. Either
+ * way, each populated to-many is a list.
  * @example `QueryFindResult<User, 'id' | 'name'>`
  */
 export type QueryFindResult<
@@ -506,7 +507,7 @@ export type QueryFindResult<
   X extends FieldKey<E> = never,
   P extends RelationKey<E> = never,
   C extends RelationKey<E> = never,
-> = QueryProjectedRow<E, S, V, X, P, C> & CountedRelations<C>;
+> = QueryProjectedRow<E, S, V, X, P> & PopulatedLists<E, P> & CountedRelations<C>;
 
 /**
  * The `_count` a query asked for, or an inert intersection member when it asked for none - so a read
@@ -517,32 +518,22 @@ type CountedRelations<C extends PropertyKey> = [C] extends [never]
   : { [K in typeof COUNT_RESULT_KEY]: { [R in C]: number } };
 
 /** @internal */
-type QueryProjectedRow<
-  E,
-  S extends FieldKey<E>,
-  V,
-  X extends FieldKey<E>,
-  P extends RelationKey<E>,
-  C extends RelationKey<E>,
-> = [S | X] extends [never]
+type QueryProjectedRow<E, S, V, X, P> = [S | X] extends [never]
   ? E
   : IsUniform<V> extends true
-    ? [PopulatedToMany<E, P>] extends [never]
-      ? // `Pick`, not a key remap: an entity keyed by an index signature - a content type defined at
-        // runtime - has `string` for its keys, and a remap keeps no literal one, so every projection
-        // over one came back as `{}`.
-        Pick<E, ProjectedKeys<E, S, V, X, P> & keyof E>
-      : // A populated to-many is always a list, empty where the parent has no children, so it maps
-        // and counts without a guard. Only that promotion needs a second member, and only a query
-        // that populates one pays for it; every other key keeps the modifier the entity declared,
-        // a to-one relation included, since a join that finds no row leaves it absent.
-        Pick<E, Exclude<ProjectedKeys<E, S, V, X, P>, PopulatedToMany<E, P>> & keyof E> & {
-          [K in PopulatedToMany<E, P>]-?: NonNullable<E[K]>;
-        }
+    ? // `Pick`, not a key remap: an entity keyed by an index signature - a content type defined at
+      // runtime - has `string` for its keys, and a remap keeps no literal one, so every projection
+      // over one came back as `{}`.
+      Pick<E, ProjectedKeys<E, S, V, X, P> & keyof E>
     : E;
 
-/** The to-many relations a query populated, which come back as lists rather than as optional ones. */
-type PopulatedToMany<E, P> = Extract<P, ToManyRelationKey<E>>;
+/**
+ * Each populated to-many as a list, empty where the parent has no children, so it maps without a guard.
+ * Inert where the query populated nothing. A to-one keeps its modifier: a join finding no row leaves it absent.
+ */
+type PopulatedLists<E, P> = [P] extends [never]
+  ? unknown
+  : { [K in Extract<P, ToManyRelationKey<E>>]-?: NonNullable<E[K]> };
 
 /**
  * A write's options: `returning` projects each row it writes as `$select` projects a read, `{ id: true, createdAt: true }`,

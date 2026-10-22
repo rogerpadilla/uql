@@ -105,7 +105,7 @@ const users = await pool.findMany(User, {
 - Query keys: `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first, or the query's `$entity`. Signatures: https://uql-orm.dev/querying/methods.md
 - Results are narrowed to what the query selected and populated. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`.
-- `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent.
+- `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent. A populated to-many is always a list, empty when there are no children.
 - `$sort` takes `'asc'`/`1` or `'desc'`/`-1`, plus `'ascNullsLast'`, `'ascNullsFirst'`, `'descNullsFirst'`, `'descNullsLast'`, which behave the same on every engine. Unqualified, each engine keeps its own null order.
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`, `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`, `$isNotNull`. Combine with `$and`, `$or`, `$not`, `$nor`. `$regex` is case-sensitive unless the pattern opens with `(?i)`.
 - An `undefined` anywhere in `$where` throws. Leave the key out to skip the filter (`...(email && { email })`), or name `null`.

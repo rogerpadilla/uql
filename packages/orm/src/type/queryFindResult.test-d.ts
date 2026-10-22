@@ -90,6 +90,16 @@ export async function unprojectedRows() {
   const story: Story = whole;
   story.writer;
 
+  // With no projection a populated to-many is still a list, and the row is still the entity.
+  const [listed] = await querier.findMany(Story, { $populate: { writers: true } });
+  listed.writers.map((it) => it.name);
+  const listedStory: Story = listed;
+  listedStory.points;
+
+  // A projection that does not narrow keeps the same promise.
+  const [mixed] = await querier.findMany(Story, { $select: { id: 1, points: 0 }, $populate: { writers: true } });
+  mixed.writers.map((it) => it.name);
+
   // Raw projections name columns rather than fields, so the row keeps the entity's shape.
   const [rawRow] = await querier.findMany(Story, { $select: [sql`*`, sql`LOG10(points)`.as('score')] });
   rawRow.points;
