@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.103.1] - 2026-10-22
+
+- **Feat:** the `uql-orm` agent skill covers aggregates, which compute distinct values and counts in SQL instead of loading rows.
+
 ## [0.103.0] - 2026-10-21
 
 - **Feat:** `$candidates` works outside a transaction on Postgres, CockroachDB and Neon: the tuned read opens its own (one HTTP request on Neon). A tuned `findManyStream` still needs one.
