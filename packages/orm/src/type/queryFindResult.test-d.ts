@@ -3,7 +3,7 @@
  * errors is pinned in `queryInput.test-d.ts` and `queryPopulate.test-d.ts`. Type-checked by `bun run ts`
  * only.
  */
-import type { Querier, Query, QueryFindResult } from '../index.js';
+import type { Querier, Query, QueryFindResult, WireQuery } from '../index.js';
 import { sql } from '../util/index.js';
 
 class Agent {
@@ -159,6 +159,11 @@ export async function unprojectedRows() {
 }
 
 export function passThrough<E extends object>(entity: new () => E, q: Query<E>) {
+  return querier.findMany(entity, q);
+}
+
+/** A query an RPC router received, typed for the wire, reaches the querier as it is. */
+export function wirePassThrough<E extends object>(entity: new () => E, q: WireQuery<E>) {
   return querier.findMany(entity, q);
 }
 

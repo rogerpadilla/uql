@@ -404,7 +404,7 @@ export type QueryUnique<E, Sql = QuerySql> = Pick<QueryOne<E, Sql>, '$select' | 
  * depth, while the parameter is `Concrete` itself, so a typo'd key fails its excess-property check at any
  * depth too. A query assembled elsewhere, typed `Concrete`, captures nothing and reads the whole entity.
  */
-export type Captured<Concrete, Q> = Concrete extends Q ? Q : Concrete;
+export type Captured<Concrete, Q> = [Concrete] extends [Q] ? Q : Concrete;
 
 /**
  * The query `findManyPage` takes: a {@link Query} paged by cursor instead of offset, so it has no `$skip` and

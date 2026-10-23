@@ -2,7 +2,7 @@
  * The aggregate API: `$group` is typed against the entity, `$select` holds computed columns, and
  * `$having`/`$sort` take the grouped columns and computed aliases only. Type-checked by `bun run ts` only.
  */
-import type { Querier, QueryAggregate } from '../index.js';
+import type { Querier, QueryAggregate, Type } from '../index.js';
 
 class User {
   id!: number;
@@ -353,4 +353,9 @@ export async function aPathEndsInAField() {
 export async function anOpenAggregateReadsOpenRows(q: QueryAggregate<User>) {
   const rows = await querier.aggregate(User, q);
   return rows[0]['anyColumn'];
+}
+
+/** An open aggregate a generic helper received reaches the querier as it is. */
+export function anOpenAggregatePassesThrough<E extends object>(entity: Type<E>, q: QueryAggregate<E>) {
+  return querier.aggregate(entity, q);
 }

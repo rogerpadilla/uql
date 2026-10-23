@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.104.1] - 2026-10-22
+
+- **Fixed:** a generic function passing a `WireQuery<E>` it received to a read compiles again, as an oRPC or tRPC router does.
+
 ## [0.104.0] - 2026-10-22
 
 - **Feat:** a find's row is narrowed at every depth of `$populate`: each relation's own `$select`, `$exclude` and `$populate` shape its rows, a nested to-many is a list, and a to-one populated with `$required: true` is present.
