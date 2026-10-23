@@ -1,10 +1,11 @@
 /**
  * A field declared present (`!`) is present on every read that selects it, and an insert names it, but
- * for what uql fills: a single-column key and the version. Type-checked by `bun run ts` only.
+ * for what is filled: a single-column key, the version, and what the `filledKey` brand lists. Type-checked
+ * by `bun run ts` only.
  */
 import { v7 as uuidv7 } from 'uuid';
 import { defineEntity, Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
-import { idKey, type Querier, type Type, versionKey } from '../index.js';
+import { filledKey, idKey, type Querier, type Type, versionKey } from '../index.js';
 
 @Entity()
 class Author {
@@ -39,6 +40,23 @@ class Draft {
   @Field({ type: Number, version: true }) version!: number;
 }
 
+@Entity()
+class Stock {
+  [filledKey]?: 'units' | 'createdAt';
+  @Id({ type: Number }) id!: number;
+  @Field({ type: String, nullable: false }) sku!: string;
+  @Field({ type: Number, nullable: false, defaultValue: 0 }) units!: number;
+  @Field({ type: Date, nullable: false, onInsert: () => new Date() }) createdAt!: Date;
+}
+
+// @ts-expect-error a brand naming no field is a typo
+@Entity()
+export class Misbranded {
+  [filledKey]?: 'unitz';
+  @Id({ type: Number }) id!: number;
+  @Field({ type: Number, nullable: false, defaultValue: 0 }) units!: number;
+}
+
 class Tally {
   id!: number;
   label!: string;
@@ -47,6 +65,15 @@ class Tally {
 defineEntity(Tally, {
   fields: { id: { type: Number, isId: true }, label: { type: String, nullable: false } },
 });
+
+class MisbrandedTally {
+  [filledKey]?: 'lable';
+  id!: number;
+  label!: string;
+}
+
+// @ts-expect-error a brand naming no field is a typo here too
+defineEntity(MisbrandedTally, { fields: { id: { type: Number, isId: true }, label: { type: String } } });
 
 declare const querier: Querier;
 
@@ -99,4 +126,17 @@ export async function anUpdateStillSaysWhichVersionItRead() {
 /** A generic row still writes as itself, which a wrapper around the whole write would refuse. */
 export function aGenericRowIsAWrite<E extends object>(entity: Type<E>, row: E) {
   return querier.insertOne(entity, row);
+}
+
+export async function aFilledFieldIsPresentOnReadAndLeftOutOnInsert() {
+  await querier.insertOne(Stock, { sku: 'a' });
+  await querier.insertMany(Stock, [{ sku: 'a', units: 3 }]);
+  const [row] = await querier.findMany(Stock, {});
+  const read: { units: number; createdAt: Date } = row;
+  return read;
+}
+
+export async function anInsertStillNamesWhatTheBrandLeavesOut() {
+  // @ts-expect-error `sku` is not listed
+  await querier.insertOne(Stock, { units: 3 });
 }

@@ -7,6 +7,7 @@ import type { Querier } from '../index.js';
 class Writer {
   id!: number;
   name!: string;
+  stories?: Story[];
 }
 
 class Comment {
@@ -74,4 +75,19 @@ export async function populatedRelationFieldsAreChecked() {
   await querier.findMany(Story, { $populate: { writer: { $exclude: { nmae: true } } } });
   // @ts-expect-error 'bdoy' is not a field of Comment
   await querier.findMany(Story, { $populate: { drafts: { $select: { bdoy: true } } } });
+}
+
+/** A typo'd key errors at any depth of `$populate`, its own projection included. */
+export async function nestedTyposAreChecked() {
+  await querier.findMany(Story, { $populate: { writer: { $populate: { stories: { $select: { title: true } } } } } });
+  // @ts-expect-error 'storis' is not a relation of Writer
+  await querier.findMany(Story, { $populate: { writer: { $populate: { storis: true } } } });
+  // @ts-expect-error 'titel' is not a field of Story
+  await querier.findMany(Story, { $populate: { writer: { $populate: { stories: { $select: { titel: true } } } } } });
+  await querier.findMany(Story, {
+    // @ts-expect-error 'bdoy' is not a field of Comment, two levels down
+    $populate: { writer: { $populate: { stories: { $populate: { comments: { $where: { bdoy: 'x' } } } } } } },
+  });
+  // @ts-expect-error '$requird' is not an option of a to-one
+  await querier.findMany(Story, { $populate: { writer: { $requird: true } } });
 }

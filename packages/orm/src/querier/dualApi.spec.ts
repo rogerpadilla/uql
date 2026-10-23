@@ -1,16 +1,7 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
-import type {
-  Query,
-  QueryAggMap,
-  QueryAggregate,
-  QueryAggregateResult,
-  QueryGroupMap,
-  QueryOptions,
-  QuerySearch,
-  Type,
-} from '../type/index.js';
+import type { Query, QueryAggregate, QueryOptions, QuerySearch, RawRow, Type } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 /**
@@ -55,10 +46,10 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  protected override async internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+  protected override async internalAggregate<E extends object>(
     _entity: Type<E>,
-    _q: QueryAggregate<E, G, A>,
-  ): Promise<QueryAggregateResult<E, G, A>[]> {
+    _q: QueryAggregate<E>,
+  ): Promise<RawRow[]> {
     return [];
   }
 

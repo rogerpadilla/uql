@@ -18,7 +18,7 @@ export {
 export * from './namingStrategy/index.js';
 export { type QueryError, queryErrorKind } from './querier/queryError.js';
 export type * from './type/index.js';
-export { idKey, isSqlQuerier, versionKey } from './type/index.js';
+export { filledKey, idKey, isSqlQuerier, versionKey } from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
 export { sortOf } from './util/query.util.js';
 export type { HookContext } from './util/hook.util.js';

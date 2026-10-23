@@ -1303,6 +1303,7 @@ class MongoDialectSpec implements Spec {
     ).toThrow("cannot $group by 'category.unitCount' on MongoDB: a joined row's relation aggregate is not read");
     expect(() =>
       this.dialect.buildAggregateStages(Company, {
+        // @ts-expect-error a field and an operator in one `$elemMatch`
         $select: { n: { $count: '*', $where: { 'kind.items': { $elemMatch: { name: 'a', $gt: 1 } } } } },
       }),
     ).toThrow('unknown operator: name');
@@ -1496,7 +1497,6 @@ class MongoDialectSpec implements Spec {
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
         $select: { count: { $count: '*' } },
-        // @ts-expect-error: no such operator
         $having: { count: { $bogus: 3 } },
       }),
     ).toThrow('unsupported HAVING operator: $bogus');
@@ -1666,14 +1666,12 @@ class MongoDialectSpec implements Spec {
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
         $select: { count: { $count: '*' } },
-        // @ts-expect-error: a misspelt alias
         $having: { conut: 1 },
       }),
     ).toThrow(`cannot $having by 'conut': ${cause}`);
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
         $select: { count: { $count: '*' } },
-        // @ts-expect-error: a misspelt alias
         $sort: { conut: 1 },
       }),
     ).toThrow(`cannot $sort by 'conut': ${cause}`);

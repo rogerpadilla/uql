@@ -41,10 +41,8 @@ import type {
   FieldOptions,
   FieldUpdateOp,
   Query,
-  QueryAggMap,
   QueryAggregate,
   QueryExclude,
-  QueryGroupMap,
   QueryGroupOp,
   QueryOptions,
   QueryPager,
@@ -1392,12 +1390,11 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** An aggregate's rows with each 64-bit integer decoded as a document's is: a `bigint` only where the column reads a `BigInt` field. */
-  public normalizeAggregateRows<
-    E extends Document,
-    const G extends QueryGroupMap<E>,
-    const A extends QueryAggMap<E>,
-    R extends Document,
-  >(entity: Type<E>, q: QueryAggregate<E, G, A>, rows: R[]): R[] {
+  public normalizeAggregateRows<E extends Document, R extends Document>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+    rows: R[],
+  ): R[] {
     const meta = getMeta(entity);
     const { joins } = resolveGroupJoins(meta, q);
     const exact = new Set(
@@ -1528,9 +1525,9 @@ export class MongoDialect extends AbstractDialect {
   /**
    * Build MongoDB aggregation pipeline stages from a QueryAggregate.
    */
-  public buildAggregateStages<E extends Document, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
+  public buildAggregateStages<E extends Document>(
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: QueryAggregate<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);

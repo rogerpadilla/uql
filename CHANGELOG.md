@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.104.0] - 2026-10-22
+
+- **Feat:** a find's row is narrowed at every depth of `$populate`: each relation's own `$select`, `$exclude` and `$populate` shape its rows, a nested to-many is a list, and a to-one populated with `$required: true` is present.
+- **Feat:** a `$select` mixing positive and falsy entries narrows to its positive keys, as the runtime selects them, and an entry typed `boolean` to a field that may be absent.
+- **Feat:** the `filledKey` brand lists the fields an insert may leave out because a default fills them, `[filledKey]?: 'stock'`, so they are declared `!` and present on every read.
+- **Feat:** an aggregate checks every key it is given at any depth, an aggregate's own `$where` included.
+- **Breaking:** a read captures its whole query: `QueryFindResult<E, Q>` takes the query (`typeof query`) or a key union, and `QueryProjected`, `QueryOneProjected`, `QueryKeysetProjected` and `ProjectedQuery` are gone. A wrapper forwarding a query types it `Captured<Query<E>, Q>`, an aggregate one `Captured<QueryAggregate<E, Q>, Q>`.
+- `ReturningResult` is `WriteResults<E, S, V>`, keyed by the kind of write (`WriteResults<User, 'id', true>['inserted']`), and `ProjectedResult` and `ProjectedRead` are `ReadResults` and `EntityRead`.
+
 ## [0.103.2] - 2026-10-22
 
 - **Fixed:** a populated to-many is typed as a list on a find with no `$select` or a mixed one too, so it maps without a guard.

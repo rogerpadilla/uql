@@ -7,6 +7,7 @@ import { namesRows } from '../dialect/operators.js';
 import type {
   BooleanLike,
   CursorPage,
+  Captured,
   EntityData,
   EntityId,
   EntityWrite,
@@ -17,21 +18,16 @@ import type {
   HookEvent,
   Querier,
   Query,
-  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
   QueryFilter,
   QueryFindResult,
-  QueryGroupMap,
   QueryKeyset,
-  QueryKeysetProjected,
   QueryOne,
-  QueryOneProjected,
   QueryOptions,
   QueryPage,
   QueryPopulate,
-  QueryProjected,
   QuerySearch,
   RelationKey,
   RelationMeta,
@@ -41,10 +37,11 @@ import type {
   Type,
   UpdatePayload,
   UpdateWrite,
-  ReturningResult,
+  WriteResults,
   WriteOptions,
   PrimaryKey,
   WrittenId,
+  RawRow,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import {
@@ -266,10 +263,7 @@ function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, 
 }
 
 /** The fields `returning` projects, read as `$select` is, or `undefined` where it names none: the write reads nothing back. */
-function returnedKeys<E>(
-  meta: EntityMeta<E>,
-  returning: WriteOptions<E, FieldKey<E>, BooleanLike>['returning'],
-): FieldKey<E>[] | undefined {
+function returnedKeys<E>(meta: EntityMeta<E>, returning: WriteOptions<E>['returning']): FieldKey<E>[] | undefined {
   return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
 }
 
@@ -429,19 +423,12 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  findOneById<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  findOneById<E extends object, const Q extends QueryOne<E> = {}>(
     entity: Type<E>,
     id: EntityId<E>,
-    q?: QueryOneProjected<E, S, V, X, P, C>,
+    q?: Captured<QueryOne<E>, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
+  ): Promise<QueryFindResult<E, Q> | undefined>;
   async findOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
@@ -453,29 +440,15 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Find one record, the entity passed first or as the query's `$entity`. */
-  async findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryOneProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+  async findOne<E extends object, const Q extends QueryOne<E> & { $entity: Type<E> }>(
+    q: Captured<QueryOne<E> & { $entity: Type<E> }, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
-  async findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  ): Promise<QueryFindResult<E, Q> | undefined>;
+  async findOne<E extends object, const Q extends QueryOne<E>>(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C>,
+    q: Captured<QueryOne<E>, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
+  ): Promise<QueryFindResult<E, Q> | undefined>;
   async findOne<E extends object>(...args: EntityArgs<E, QueryOne<E>>): Promise<E | undefined> {
     const [entity, q, opts] = entityArgs(args);
     const rows = await this.findMany(entity, { ...q, $limit: 1 }, opts);
@@ -483,29 +456,15 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Find many records, the entity passed first or as the query's `$entity`. */
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+  findMany<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Captured<Query<E> & { $entity: Type<E> }, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  ): Promise<QueryFindResult<E, Q>[]>;
+  findMany<E extends object, const Q extends Query<E>>(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: Captured<Query<E>, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
+  ): Promise<QueryFindResult<E, Q>[]>;
   async findMany<E extends object>(...args: EntityArgs<E, Query<E>>): Promise<E[]> {
     const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
@@ -532,29 +491,15 @@ export abstract class AbstractQuerier implements Querier {
    * Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`.
    * `afterLoad` runs on each row as it arrives, and the querier runs nothing else until the loop ends.
    */
-  findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+  findManyStream<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Captured<Query<E> & { $entity: Type<E> }, Q>,
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
-  findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  ): AsyncIterable<QueryFindResult<E, Q>>;
+  findManyStream<E extends object, const Q extends Query<E>>(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: Captured<Query<E>, Q>,
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
+  ): AsyncIterable<QueryFindResult<E, Q>>;
   findManyStream<E extends object>(...args: EntityArgs<E, Query<E>>): AsyncIterable<E> {
     const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
@@ -599,29 +544,15 @@ export abstract class AbstractQuerier implements Querier {
   ): AsyncIterable<E>;
 
   /** Find many records and count every match, the entity passed first or as the query's `$entity`. */
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+  findManyAndCount<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Captured<Query<E> & { $entity: Type<E> }, Q>,
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  ): Promise<[QueryFindResult<E, Q>[], number]>;
+  findManyAndCount<E extends object, const Q extends Query<E>>(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: Captured<Query<E>, Q>,
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
+  ): Promise<[QueryFindResult<E, Q>[], number]>;
   async findManyAndCount<E extends object>(...args: EntityArgs<E, Query<E>>): Promise<[E[], number]> {
     const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
@@ -648,29 +579,15 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Read a page of records from a cursor, the entity passed first or as the query's `$entity`. */
-  findManyPage<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryKeysetProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+  findManyPage<E extends object, const Q extends QueryKeyset<E> & { $entity: Type<E> }>(
+    q: Captured<QueryKeyset<E> & { $entity: Type<E> }, Q>,
     opts?: QueryOptions,
-  ): Promise<CursorPage<QueryFindResult<E, S, V, X, P, C>>>;
-  findManyPage<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
+  ): Promise<CursorPage<QueryFindResult<E, Q>>>;
+  findManyPage<E extends object, const Q extends QueryKeyset<E>>(
     entity: Type<E>,
-    q: QueryKeysetProjected<E, S, V, X, P, C>,
+    q: Captured<QueryKeyset<E>, Q>,
     opts?: QueryOptions,
-  ): Promise<CursorPage<QueryFindResult<E, S, V, X, P, C>>>;
+  ): Promise<CursorPage<QueryFindResult<E, Q>>>;
   /**
    * Shared by every backend: the keyset condition is an ordinary `$where`, so each engine renders it with the
    * operators it already has, and the page holds the rows `findMany` would return.
@@ -712,19 +629,20 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * Run an aggregate query.
    */
-  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
+  aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: Captured<QueryAggregate<E, Q>, Q>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]> {
+  ): Promise<QueryAggregateResult<E, Q>[]>;
+  aggregate<E extends object>(entity: Type<E>, q: QueryAggregate<E>, opts?: QueryOptions): Promise<RawRow[]> {
     return this.internalAggregate(entity, q, opts);
   }
 
-  protected abstract internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+  protected abstract internalAggregate<E extends object>(
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: QueryAggregate<E>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]>;
+  ): Promise<RawRow[]>;
 
   /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
   abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
@@ -733,12 +651,8 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
-  async insertOne<E extends object>(
-    entity: Type<E>,
-    payload: EntityWrite<E>,
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
-  ) {
+  ): Promise<WriteResults<E, S, V>['inserted']>;
+  async insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.writeReturning(entity, () => this.insertIds(entity, [payload]), opts);
     return written;
   }
@@ -747,12 +661,8 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
-  async insertMany<E extends object>(
-    entity: Type<E>,
-    payload: readonly EntityWrite<E>[],
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
-  ) {
+  ): Promise<WriteResults<E, S, V>['inserted'][]>;
+  async insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.writeReturning(entity, () => this.insertIds(entity, payload), opts);
   }
 
@@ -783,7 +693,7 @@ export abstract class AbstractQuerier implements Querier {
   private writeReturning<E extends object>(
     entity: Type<E>,
     write: () => Promise<(WrittenId<E> | undefined)[]>,
-    opts: WriteOptions<E, FieldKey<E>, BooleanLike> | undefined,
+    opts: WriteOptions<E> | undefined,
   ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
     const keys = returnedKeys(getMeta(entity), opts?.returning);
     return keys ? this.atomically(async () => this.readBack(entity, await write(), keys)) : write();
@@ -855,12 +765,12 @@ export abstract class AbstractQuerier implements Querier {
     id: EntityId<E>,
     payload: UpdateWrite<E>,
     opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
+  ): Promise<WriteResults<E, S, V>['affected']>;
   async updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: QueryOptions & WriteOptions<E>,
   ): Promise<unknown> {
     assertIdValue(entity, id);
     const updated = await this.updateWhere(entity, { $where: whereIds(getMeta(entity), id) }, payload, opts);
@@ -872,12 +782,12 @@ export abstract class AbstractQuerier implements Querier {
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
     opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
+  ): Promise<WriteResults<E, S, V>['affectedMany']>;
   async updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: QueryOptions & WriteOptions<E>,
   ) {
     return this.updateWhere(entity, q, payload, opts);
   }
@@ -890,7 +800,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: QueryOptions & WriteOptions<E>,
   ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'updateMany', q, opts);
     const meta = getMeta(entity);
@@ -1007,11 +917,8 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<never> {
     const meta = getMeta(entity);
-    const row = await this.findOne(
-      entity,
-      { $select: keySet([key]), $where: whereIds(meta, idOf(meta, { ...q.$where })) },
-      opts,
-    );
+    const read: QueryOne<E> = { $select: keySet([key]), $where: whereIds(meta, idOf(meta, { ...q.$where })) };
+    const row = await this.findOne(entity, read, opts);
     const actual = row?.[key];
     const message =
       actual === undefined
@@ -1140,13 +1047,13 @@ export abstract class AbstractQuerier implements Querier {
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
+  ): Promise<WriteResults<E, S, V>['inserted']>;
   async upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: WriteOptions<E>,
   ): Promise<unknown> {
     const [written] = await this.upsertMany(entity, conflictPaths, [payload], update, opts);
     return written;
@@ -1158,13 +1065,13 @@ export abstract class AbstractQuerier implements Querier {
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
+  ): Promise<WriteResults<E, S, V>['inserted'][]>;
   async upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: WriteOptions<E>,
   ) {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsert'");
@@ -1232,11 +1139,11 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     id: EntityId<E>,
     opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
+  ): Promise<WriteResults<E, S, V>['affected']>;
   async deleteOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
-    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: QueryOptions & WriteOptions<E>,
   ): Promise<unknown> {
     assertIdValue(entity, id);
     const deleted = await this.deleteWhere(entity, { $where: whereIds(getMeta(entity), id) }, opts);
@@ -1249,7 +1156,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
+  ): Promise<WriteResults<E, S, V>['affectedMany']>;
   async deleteMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<unknown> {
     const [entity, q, opts] = entityArgs(args);
     return this.deleteWhere(entity, q, opts);
@@ -1259,7 +1166,7 @@ export abstract class AbstractQuerier implements Querier {
   private async deleteWhere<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+    opts?: QueryOptions & WriteOptions<E>,
   ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'deleteMany', q, opts);
     const meta = getMeta(entity);
@@ -1349,12 +1256,8 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
-  async saveOne<E extends object>(
-    entity: Type<E>,
-    payload: EntityWrite<E>,
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
-  ) {
+  ): Promise<WriteResults<E, S, V>['inserted']>;
+  async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.writeReturning(entity, () => this.saveIds(entity, [payload]), opts);
     return written;
   }
@@ -1363,12 +1266,8 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
-  async saveMany<E extends object>(
-    entity: Type<E>,
-    payload: readonly EntityWrite<E>[],
-    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
-  ) {
+  ): Promise<WriteResults<E, S, V>['inserted'][]>;
+  async saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.writeReturning(entity, () => this.saveIds(entity, payload), opts);
   }
 

@@ -1,6 +1,6 @@
 /**
  * `$count`: the relations it takes, their values, the `_count` a read returns, and the `$sort` ranking by
- * a tally. Its names are captured as a key set, so a typo'd name still fails. Type-checked by
+ * a tally. A typo'd name fails its excess-property check. Type-checked by
  * `bun run ts` only.
  */
 import type { Querier } from '../index.js';

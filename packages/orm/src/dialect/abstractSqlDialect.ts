@@ -20,7 +20,6 @@ import {
   type JsonUpdateOp,
   parseQueryLock,
   type Query,
-  type QueryAggMap,
   type QueryAggregate,
   type QueryAggregateOp,
   type QueryBuildFn,
@@ -30,7 +29,6 @@ import {
   type QueryContextOptions,
   type QueryCount,
   type QueryExclude,
-  type QueryGroupMap,
   type QueryGroupOp,
   type QueryHavingMap,
   type QueryRenderOptions,
@@ -1683,10 +1681,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
     throw new UqlUsageError(`${this.engineName} does not support estimatedCount`);
   }
-  aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+  aggregate<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: QueryAggregate<E>,
     opts: QueryRenderOptions = {},
   ): readonly SelectTerm[] {
     const meta = getMeta(entity);

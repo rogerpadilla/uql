@@ -1,7 +1,7 @@
 import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
 import type { EngineName } from './querier.js';
 import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
-import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
+import type { QueryAggregate, QueryAggregateOp } from './queryAggregate.js';
 import type { QuerySqlRenderOptions } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
@@ -414,12 +414,7 @@ export interface SqlQueryDialect {
   /**
    * Build an aggregate query.
    */
-  aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
-    opts?: QueryRenderOptions,
-  ): void;
+  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts?: QueryRenderOptions): void;
 
   /**
    * Get the placeholder for a parameter at the given index (1-based).

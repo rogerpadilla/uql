@@ -11,15 +11,12 @@ import type {
   IdKey,
   PrimaryKey,
   Query,
-  QueryAggMap,
   QueryAggregate,
-  QueryAggregateResult,
   QueryBuildFn,
   FieldKey,
   QuerySql,
   QueryConflictPaths,
   QueryPage,
-  QueryGroupMap,
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
@@ -378,12 +375,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.runCount((ctx) => this.dialect.estimatedCount(ctx, entity));
   }
 
-  protected override async internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+  protected override async internalAggregate<E extends object>(
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: QueryAggregate<E>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]> {
-    return this.readRows((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
+  ): Promise<RawRow[]> {
+    return this.readRows<RawRow>((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {

@@ -794,7 +794,6 @@ describe('AbstractSqlDialect', () => {
       expect(() =>
         dialect.aggregate(ctx, User, {
           $select: { total: { $sum: { createdAt: true } } },
-          // @ts-expect-error: no such operator
           $having: { total: { toString: 5 } },
         }),
       ).toThrow('unsupported HAVING operator: toString');

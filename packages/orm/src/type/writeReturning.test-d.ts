@@ -22,6 +22,14 @@ export async function writesWithoutReturning() {
   return [id, ids, changed, deleted, upserted];
 }
 
+export async function aMixedReturningReadsItsPositiveKeysAtMost() {
+  const row = await querier.insertOne(Account, { email: 'a' }, { returning: { id: true, email: false } });
+  // @ts-expect-error each key a mixed map names may be absent, since a key set cannot tell positive from negative
+  row.email.trim();
+  // @ts-expect-error ...nor a field it never named
+  row.createdAt;
+}
+
 export async function writesReturningRows() {
   const inserted = await querier.insertOne(Account, { email: 'a' }, { returning: { id: true, createdAt: true } });
   inserted.id.toFixed();

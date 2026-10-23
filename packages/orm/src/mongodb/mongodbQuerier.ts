@@ -19,15 +19,13 @@ import type {
   IdValue,
   PrimaryKey,
   Query,
-  QueryAggMap,
   QueryAggregate,
-  QueryAggregateResult,
   QueryConflictPaths,
   QueryPage,
-  QueryGroupMap,
   QueryOptions,
   QueryPager,
   QuerySearch,
+  RawRow,
   TransactionOptions,
   Type,
   UpdatePayload,
@@ -221,14 +219,14 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     ];
   }
 
-  protected override async internalAggregate<E extends Document, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+  protected override async internalAggregate<E extends Document>(
     entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
+    q: QueryAggregate<E>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]> {
+  ): Promise<RawRow[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     const rows = await this.execute('internalAggregate', (session) =>
-      this.collection(entity).aggregate<QueryAggregateResult<E, G, A>>(pipeline, { session }).toArray(),
+      this.collection(entity).aggregate(pipeline, { session }).toArray(),
     );
     return this.dialect.normalizeAggregateRows(entity, q, rows);
   }

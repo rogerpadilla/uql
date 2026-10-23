@@ -2923,7 +2923,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRejectAggregateClausesNamingAColumnItDoesNotEmit() {
     expect(() =>
       this.exec((ctx) =>
-        // @ts-expect-error: `$having` names an aggregate
         this.dialect.aggregate(ctx, User, { $select: { total: { $count: '*' } }, $having: { name: 'x' } }),
       ),
     ).toThrow("cannot $having by 'name': it is neither a $group column nor a $select alias");
@@ -2933,7 +2932,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         this.dialect.aggregate(ctx, User, {
           $group: { name: true },
           $select: { total: { $count: '*' } },
-          // @ts-expect-error: an aggregate sorts by its own columns
           $sort: { createdAt: -1 },
         }),
       ),
@@ -3284,7 +3282,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         this.dialect.aggregate(ctx, User, {
           $group: { name: true },
           $select: { count: { $count: '*' } },
-          // @ts-expect-error: no such operator
           $having: { count: { $bogus: 5 } },
         }),
       ),

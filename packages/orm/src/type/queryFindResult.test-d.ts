@@ -3,13 +3,20 @@
  * errors is pinned in `queryInput.test-d.ts` and `queryPopulate.test-d.ts`. Type-checked by `bun run ts`
  * only.
  */
-import type { Querier, Query } from '../index.js';
+import type { Querier, Query, QueryFindResult } from '../index.js';
 import { sql } from '../util/index.js';
+
+class Agent {
+  id!: number;
+  email!: string;
+}
 
 class Writer {
   id!: number;
   name!: string;
   age?: number;
+  agent?: Agent;
+  stories?: Story[];
 }
 
 class Story {
@@ -18,6 +25,11 @@ class Story {
   points?: number;
   writer?: Writer;
   writers?: Writer[];
+}
+
+class Pitch {
+  id!: number;
+  writer!: Writer;
 }
 
 declare const querier: Querier;
@@ -77,11 +89,46 @@ export async function projectedRows() {
 }
 
 export async function mixedProjection() {
-  // A positive entry wins outright at runtime, and which keys were positive cannot be recovered from
-  // the capture - inference collects one union from every entry - so the row keeps its declared shape.
+  // A positive entry wins outright at runtime, so a mixed map selects its positive keys alone.
   const [row] = await querier.findMany(Story, { $select: { id: 1, points: 0 } });
-  const whole: Story = row;
-  return whole;
+  row.id.toFixed();
+  // @ts-expect-error a positive entry selects, so the others are left out
+  row.title;
+}
+
+export async function nestedRows() {
+  // A relation's own projection and populate shape its rows, at every depth.
+  const [story] = await querier.findMany(Story, {
+    $select: { title: true },
+    $populate: { writers: { $select: { name: true }, $populate: { stories: { $select: { points: true } } } } },
+  });
+  story.writers.map((writer) => writer.stories.map((it) => it.points));
+  story.writers[0].name.trim();
+  // @ts-expect-error left out by the writer's own projection
+  story.writers[0].age;
+  // @ts-expect-error left out by the nested story's projection
+  story.writers[0].stories[0].title;
+  // @ts-expect-error the writer's agent was not populated
+  story.writers[0].agent;
+
+  // A to-one comes back present where `$required` keeps only the rows that have it, at any depth.
+  const [required] = await querier.findMany(Story, {
+    $populate: { writer: { $required: true, $populate: { agent: { $required: true } } } },
+  });
+  required.writer.agent.email.trim();
+  const [optional] = await querier.findMany(Story, { $populate: { writer: { $populate: { agent: true } } } });
+  // @ts-expect-error without `$required` a join can find no row
+  optional.writer.name;
+  optional.writer?.agent?.email;
+  const [pitch] = await querier.findMany(Pitch, { $populate: { writer: true } });
+  // @ts-expect-error a join can find no row, however the entity declares the relation
+  pitch.writer.name;
+
+  // The whole entity still comes back where nothing narrows, with each populated list in it.
+  const [whole] = await querier.findMany(Story, { $populate: { writers: { $populate: { stories: true } } } });
+  const asStory: Story = whole;
+  whole.writers[0].stories.map((it) => it.title);
+  return asStory;
 }
 
 export async function unprojectedRows() {
@@ -114,3 +161,53 @@ export async function unprojectedRows() {
 export function passThrough<E extends object>(entity: new () => E, q: Query<E>) {
   return querier.findMany(entity, q);
 }
+
+export async function namedRows() {
+  // A query declared apart names its row, and a find with it returns that row.
+  const card = {
+    $select: { title: true },
+    $populate: { writers: { $select: { name: true } } },
+  } as const satisfies Query<Story>;
+  type Card = QueryFindResult<Story, typeof card>;
+  const [row] = await querier.findMany(Story, card);
+  const named: Card = row;
+  named.writers.map((it) => it.name.trim());
+  // @ts-expect-error left out by the query's projection
+  named.points;
+
+  // A key union names a plain selection.
+  const picked: QueryFindResult<Story, 'id' | 'title'> = { id: 1, title: row.title };
+  picked.title.trim();
+  return picked.id;
+}
+
+declare const flag: boolean;
+
+export async function undecidedEntries() {
+  // A `boolean` entry may be either, so what it names may be absent.
+  const [selected] = await querier.findMany(Story, { $select: { id: true, title: flag } });
+  selected.id.toFixed();
+  // @ts-expect-error `title` is selected only when `flag` is
+  const title: string = selected.title;
+  const [excluded] = await querier.findMany(Story, { $exclude: { title: flag } });
+  // @ts-expect-error `title` is left out when `flag` is
+  const kept: string = excluded.title;
+  const [counted] = await querier.findMany(Story, { $count: { writers: flag } });
+  // @ts-expect-error counted only when `flag` is
+  const tally: number = counted._count.writers;
+  return [title, kept, tally];
+}
+
+export async function anUnpopulatedRelationKeepsItsDeclaration() {
+  const [row] = await querier.findMany(Story, { $populate: { writers: false } });
+  // @ts-expect-error `false` populates nothing
+  row.writers.map((it) => it.name);
+}
+
+export async function anEmptyProjectionReadsEveryField() {
+  const [row] = await querier.findMany(Story, { $select: {} });
+  return row.title.trim();
+}
+
+// @ts-expect-error the key-union form takes the keys alone
+export type KeyUnionTakesKeysAlone = QueryFindResult<Story, 'title', false>;

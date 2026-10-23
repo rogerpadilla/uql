@@ -1,4 +1,5 @@
 import type {
+  BrandsNameFields,
   EntityIndexColumnInput,
   EntityIndexOptions,
   EntityOptions,
@@ -19,7 +20,7 @@ import { drainRegistrations } from './bag.js';
  * `Symbol.metadata` only after its decorators return.
  */
 export function Entity<E>(opts?: NoInfer<EntityOptions<E>>) {
-  return (entity: Type<E>, context?: ClassDecoratorContext): void => {
+  return (entity: Type<E> & BrandsNameFields<E>, context?: ClassDecoratorContext): void => {
     applyMembers(entity, drainRegistrations(context?.metadata));
     defineEntity(entity, opts);
   };

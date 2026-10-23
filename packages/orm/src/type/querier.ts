@@ -1,22 +1,22 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlDialectName } from './dialect.js';
-import type { FieldKey, HookEvent, RelationKey } from './entity.js';
+import type { FieldKey, HookEvent } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
+  Captured,
   QueryFilter,
   QueryFindResult,
   QueryOptions,
   QueryPage,
   QuerySearch,
   QueryUpdateResult,
-  ReturningResult,
+  WriteResults,
   WriteOptions,
 } from './query.js';
-import type { SqlStatement } from './querySql.js';
-import type { ProjectedQuery, ProjectedRead, ProjectedResult, UniversalQuerier } from './universalQuerier.js';
+import type { QuerySql, SqlStatement } from './querySql.js';
+import type { EntityRead, ReadResults, ReadQueries, UniversalQuerier } from './universalQuerier.js';
 import type { BooleanLike, RawRow, Type } from './utility.js';
-import type { QuerierSql } from './wire.js';
 
 /**
  * Isolation levels for transactions.
@@ -57,25 +57,18 @@ export const ENGINE_NAMES = {
 export type EngineName = (typeof ENGINE_NAMES)[DialectName] | 'Cloudflare D1' | 'Neon';
 
 /**
- * A projected read that takes the entity first or as the query's `$entity`. The `$entity` form comes
+ * A read that takes the entity first or as the query's `$entity`. The `$entity` form comes
  * **first** on purpose: when no signature matches, TypeScript reports the error of the *last* one, so a
  * typo'd query key is reported as itself rather than as a missing `$entity`.
  */
-type DualRead<
-  Q extends keyof ProjectedQuery<object, never, never, never, never, never, never>,
-  R extends keyof ProjectedResult<'server', unknown>,
-> = (<
+type DualRead<K extends keyof ReadQueries<object, never>, R extends keyof ReadResults<'server', unknown>> = (<
   E extends object,
-  const S extends FieldKey<E> = never,
-  const V = true,
-  const X extends FieldKey<E> = never,
-  const P extends RelationKey<E> = never,
-  const C extends RelationKey<E> = never,
+  const Q extends ReadQueries<E, QuerySql>[K] & { $entity: Type<E> },
 >(
-  q: ProjectedQuery<E, S, V, X, P, C, QuerierSql<'server'>>[Q] & { $entity: Type<E> },
+  q: Captured<ReadQueries<E, QuerySql>[K] & { $entity: Type<E> }, Q>,
   opts?: QueryOptions,
-) => ProjectedResult<'server', QueryFindResult<E, S, V, X, P, C>>[R]) &
-  ProjectedRead<Q, R, 'server', QueryOptions>;
+) => ReadResults<'server', QueryFindResult<E, Q>>[R]) &
+  EntityRead<K, R, 'server', QueryOptions>;
 
 /** The reads, counts and deletes below take the entity first or as the query's `$entity`, as {@link DualRead} does. */
 export interface Querier extends UniversalQuerier {
@@ -106,7 +99,7 @@ export interface Querier extends UniversalQuerier {
     entity: Type<E>,
     q: QuerySearch<E>,
     opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
+  ): Promise<WriteResults<E, S, V>['affectedMany']>;
 
   /**
    * whether this querier is in a transaction or not.

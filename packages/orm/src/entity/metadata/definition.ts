@@ -1,4 +1,5 @@
 import type {
+  BrandsNameFields,
   EntityGetter,
   EntityIndexInput,
   EntityMembers,
@@ -252,7 +253,7 @@ export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefine
  * Registers a class as an entity from `opts` alone, the decorator-free counterpart of `@Entity()` with
  * `@Field`/`@ManyToOne`/...
  */
-export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
+export function defineEntity<E>(entity: Type<E> & BrandsNameFields<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
   // Ahead of any registration, so a rejected definition leaves nothing half-written in the registry.
   // A dotted name reads like a schema and is not one: it escapes as a single identifier, so the
   // statement builds and then fails at the database. `schema` is the way to say it.

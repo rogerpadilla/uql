@@ -79,7 +79,15 @@ export async function find() {
   });
   const excluded = await querier.findMany(Movie, { $exclude: { rating: true } });
   await querier.findMany(Movie, { $sort: sortOf<Movie>([[keyOf((movie: KeyMap<Movie>) => movie.title), 'asc']]) });
-  return [found[0].title, found[0].rating, found[0].studioId, found[0].studio, studios[0].movies, excluded[0].title];
+  return [
+    found[0].title,
+    found[0].rating,
+    found[0].studioId,
+    found[0].studio,
+    studios[0].movies,
+    studios[0]._count.movies,
+    excluded[0].title,
+  ];
 }
 
 export async function write() {

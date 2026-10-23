@@ -1,4 +1,12 @@
-import type { FieldKey, FieldKeyOf, JsonFieldPaths, RelationKey, RelationTarget, ToManyRelationKey } from './entity.js';
+import type {
+  FieldKey,
+  FieldKeyOf,
+  JsonFieldPaths,
+  RelationKey,
+  RelationTarget,
+  ToManyRelationKey,
+  WrittenId,
+} from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QuerySql } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -46,7 +54,7 @@ export type QueryRenderOptions = QueryOptions & {
 /**
  * Field selection - `{ name: true }` whitelists fields; relations go in `$populate`. Declared over
  * `F extends keyof E`, like every map keyed by an entity's members, so each key stays linked to its
- * property and an editor rename reaches it. `F` is also how a projection passes its captured key set.
+ * property and an editor rename reaches it.
  */
 export type QuerySelect<E, F extends keyof E = FieldKey<E>, V = BooleanLike> = {
   [K in F]?: V;
@@ -355,7 +363,7 @@ export const QUERY_CLAUSES = {
   $skip: { value: 'number', scope: 'relation' },
   $limit: { value: 'number', scope: 'relation' },
   $distinct: { value: 'boolean', scope: 'relation' },
-  // A populated relation's rows keep their declared type, so they have no `_count` for a `$count` to fill.
+  // Statement only: tallies are read for the statement's rows, never for a populated relation's.
   $count: { value: 'object', scope: 'statement' },
   // A vector search ranks only the statement's rows, so a relation's own query has nothing for it to tune.
   $candidates: { value: 'number', scope: 'statement' },
@@ -392,52 +400,11 @@ export type QueryOne<E, Sql = QuerySql> = Except<Query<E, Sql>, '$limit'>;
 export type QueryUnique<E, Sql = QuerySql> = Pick<QueryOne<E, Sql>, '$select' | '$exclude' | '$populate' | '$where'>;
 
 /**
- * The clauses that shape a row, captured as key sets rather than maps: a naked type parameter skips
- * excess-property checks, while a key set fails its own constraint on a typo.
- * @internal
+ * A query as a read captures it: `Q` is inferred from the literal, so the row sees every clause at every
+ * depth, while the parameter is `Concrete` itself, so a typo'd key fails its excess-property check at any
+ * depth too. A query assembled elsewhere, typed `Concrete`, captures nothing and reads the whole entity.
  */
-type QueryProjection<
-  E,
-  S extends FieldKey<E>,
-  V,
-  X extends FieldKey<E>,
-  P extends RelationKey<E>,
-  C extends RelationKey<E>,
-  Sql = QuerySql,
-> = {
-  $select?: QuerySelect<E, S, V> | readonly Sql[];
-  $exclude?: QuerySelect<E, X, V>;
-  $populate?: QueryPopulate<E, Sql, P>;
-  // Narrowing the captured names to the to-many ones leaves a to-one relation no key here at all,
-  // so counting one is an excess property rather than a value to check.
-  $count?: QueryCount<E, Sql, C & ToManyRelationKey<E>>;
-};
-
-/**
- * A {@link Query} whose projection is captured, so {@link QueryFindResult} can shape the row.
- */
-export type QueryProjected<
-  E,
-  S extends FieldKey<E>,
-  V,
-  X extends FieldKey<E>,
-  P extends RelationKey<E>,
-  C extends RelationKey<E> = never,
-  Sql = QuerySql,
-> = Query<E, Sql> & QueryProjection<E, S, V, X, P, C, Sql>;
-
-/**
- * A {@link QueryOne} whose projection is captured, so {@link QueryFindResult} can shape the row.
- */
-export type QueryOneProjected<
-  E,
-  S extends FieldKey<E>,
-  V,
-  X extends FieldKey<E>,
-  P extends RelationKey<E>,
-  C extends RelationKey<E> = never,
-  Sql = QuerySql,
-> = QueryOne<E, Sql> & QueryProjection<E, S, V, X, P, C, Sql>;
+export type Captured<Concrete, Q> = Concrete extends Q ? Q : Concrete;
 
 /**
  * The query `findManyPage` takes: a {@link Query} paged by cursor instead of offset, so it has no `$skip` and
@@ -451,17 +418,6 @@ export type QueryKeyset<E, Sql = QuerySql> = Except<Query<E, Sql>, '$skip'> & {
   /** A page's `startCursor`, to read the rows before it. */
   $before?: string;
 };
-
-/** A {@link QueryKeyset} with its projection captured, so {@link QueryFindResult} can narrow the row. */
-export type QueryKeysetProjected<
-  E,
-  S extends FieldKey<E>,
-  V,
-  X extends FieldKey<E>,
-  P extends RelationKey<E>,
-  C extends RelationKey<E> = never,
-  Sql = QuerySql,
-> = QueryKeyset<E, Sql> & QueryProjection<E, S, V, X, P, C, Sql>;
 
 /**
  * One page of `findManyPage`. Each cursor is opaque, and absent on an empty page. The flag in the reading
@@ -479,70 +435,151 @@ export type CursorPage<T> = {
 };
 
 /**
- * The keys a query comes back with, as the runtime projects them: a positive `$select`'s, or every
- * field minus what `$select` or `$exclude` subtracts, plus the populated relations.
- * @internal
+ * A find's row: the entity narrowed to what the query `Q` projected and populated, at every depth, so
+ * reading anything else does not compile. The entity itself where nothing narrows it. A key union names
+ * a projection by hand. `K` is internal: `Q` whole, for a key union the test on `Q` distributes over.
+ * @example `QueryFindResult<User, 'id' | 'name'>`, `QueryFindResult<User, typeof query>`
  */
-type ProjectedKeys<E, S, V, X, P> =
-  | ([V] extends [false | 0] ? Exclude<FieldKey<E>, S> : [S] extends [never] ? Exclude<FieldKey<E>, X> : S)
-  | P;
-
-/**
- * Whether every entry of the captured map says the same thing: all selected, or all subtracted.
- * @internal
- */
-type IsUniform<V> = [V] extends [true | 1] ? true : [V] extends [false | 0] ? true : false;
-
-/**
- * A find's row: the entity narrowed to what the query projected and populated, so reading anything
- * else does not compile. The entity itself where the projection is raw, absent or not uniform. Either
- * way, each populated to-many is a list.
- * @example `QueryFindResult<User, 'id' | 'name'>`
- */
-export type QueryFindResult<
-  E,
-  S extends FieldKey<E> = never,
-  // A whitelist by default, so the hand-written form reads `QueryFindResult<User, 'id' | 'name'>`.
-  V = true,
-  X extends FieldKey<E> = never,
-  P extends RelationKey<E> = never,
-  C extends RelationKey<E> = never,
-> = QueryProjectedRow<E, S, V, X, P> & PopulatedLists<E, P> & CountedRelations<C>;
-
-/**
- * The `_count` a query asked for, or an inert intersection member when it asked for none - so a read
- * without `$count` keeps exactly the row type it had.
- */
-type CountedRelations<C extends PropertyKey> = [C] extends [never]
-  ? unknown
-  : { [K in typeof COUNT_RESULT_KEY]: { [R in C]: number } };
-
-/** @internal */
-type QueryProjectedRow<E, S, V, X, P> = [S | X] extends [never]
-  ? E
-  : IsUniform<V> extends true
-    ? // `Pick`, not a key remap: an entity keyed by an index signature - a content type defined at
-      // runtime - has `string` for its keys, and a remap keeps no literal one, so every projection
-      // over one came back as `{}`.
-      Pick<E, ProjectedKeys<E, S, V, X, P> & keyof E>
+export type QueryFindResult<E, Q = {}, K extends Q = Q> = Q extends ShapingQuery
+  ? ShapedRow<E, Q>
+  : [K] extends [PropertyKey]
+    ? Pick<E, K & keyof E>
     : E;
 
+/** The clauses that shape a row; a query naming none of them reads the entity as it is. */
+type ShapingQuery =
+  | { readonly $select: object }
+  | { readonly $exclude: object }
+  | { readonly $populate: object }
+  | { readonly $count: object };
+
 /**
- * Each populated to-many as a list, empty where the parent has no children, so it maps without a guard.
- * Inert where the query populated nothing. A to-one keeps its modifier: a join finding no row leaves it absent.
+ * A nested relation's row, as {@link QueryFindResult} without the key-union form. Every alias layer and
+ * conditional from here down is paid on each read, measured with `bun run ts.perf`.
  */
-type PopulatedLists<E, P> = [P] extends [never]
-  ? unknown
-  : { [K in Extract<P, ToManyRelationKey<E>>]-?: NonNullable<E[K]> };
+type FindRow<E, Q> = Q extends ShapingQuery ? ShapedRow<E, Q> : E;
+
+/**
+ * The row's own fields, and its relations beside them. A positive `$select` entry wins outright at runtime, so a
+ * map with one selects its positive keys alone; one with none subtracts, as a truthy `$exclude` entry does. `Pick`,
+ * not a key remap: an entity keyed by an index signature, a content type defined at runtime, has `string` for its
+ * keys, which a remap drops.
+ */
+type ShapedRow<E, Q> = Q extends { readonly $select: infer M }
+  ? (M extends readonly unknown[]
+      ? WholeRow<E, Q>
+      : M[keyof M] extends true | 1
+        ? Pick<E, ([keyof M] extends [never] ? FieldKey<E> : keyof M) & keyof E>
+        : M[keyof M] extends Off
+          ? Pick<E, Exclude<FieldKey<E>, keyof M> & keyof E>
+          : Pick<E, OnKeys<M> & keyof E> & MaybeFields<E, M>) &
+      RelatedRows<E, Q>
+  : Q extends { readonly $exclude: infer M }
+    ? (M[keyof M] extends true | 1
+        ? Pick<E, Exclude<FieldKey<E>, keyof M> & keyof E>
+        : Pick<E, Exclude<FieldKey<E>, OnKeys<M> | MaybeKeys<M>> & keyof E> & MaybeFields<E, M>) &
+        RelatedRows<E, Q>
+    : WholeRow<E, Q> & RelatedRows<E, Q>;
+
+type Off = false | 0 | undefined;
+
+/** The keys of a clause's map whose entry asks for something. */
+type OnKeys<M> = { [K in keyof M]-?: [Extract<M[K], Off>] extends [never] ? K : never }[keyof M];
+
+/** The keys whose entry may or may not ask, a `boolean`: what they name may be absent. */
+type MaybeKeys<M> = {
+  [K in keyof M]-?: [Extract<M[K], Off>] extends [never] ? never : M[K] extends Off ? never : K;
+}[keyof M];
+
+/** The fields a `boolean` entry names, each possibly absent; inert where every entry is literal. */
+type MaybeFields<E, M> = [MaybeKeys<M>] extends [never] ? unknown : Partial<Pick<E, MaybeKeys<M> & keyof E>>;
+
+/** The entity, less the relations {@link RelatedRows} fills in, so none comes back as declared. */
+type WholeRow<E, Q> = Q extends { readonly $populate: infer M } ? Omit<E, keyof M & keyof E> : E;
+
+/** The populated relations, and the `_count` a query asked for. */
+type RelatedRows<E, Q> = Q extends { readonly $populate: infer M }
+  ? PopulatedRelations<E, M, keyof M & keyof E> & CountedRelations<E, Q>
+  : CountedRelations<E, Q>;
+
+/**
+ * Each populated relation as its own query shapes it, mapped over parameters constrained to `keyof E` so each
+ * member stays linked to its declaration for a rename. A list is always there, empty where the parent has no
+ * children, and so is a `$required` to-one; any other to-one may be absent, since a join can find no row.
+ */
+type PopulatedRelations<
+  E,
+  M,
+  K extends keyof E,
+  Present extends keyof E = PresentKeys<E, M, K>,
+  Absent extends keyof E = Exclude<K, Present>,
+> = { [P in Present]-?: PopulatedRow<E[P], M[P & keyof M]> } & {
+  [P in Absent]: PopulatedRow<E[P], M[P & keyof M]> | undefined;
+};
+
+type PresentKeys<E, M, K extends keyof E> = {
+  [P in K]: M[P & keyof M] extends true | 1 | object
+    ? IsMany<E[P]> extends true
+      ? P
+      : M[P & keyof M] extends { readonly $required: true }
+        ? P
+        : never
+    : never;
+}[K];
+
+type PopulatedRow<V, O> =
+  NonNullable<V> extends readonly (infer T)[]
+    ? NonNullable<V> extends unknown[]
+      ? FindRow<T, O>[]
+      : readonly FindRow<T, O>[]
+    : FindRow<NonNullable<V>, O>;
+
+/** The `_count` a query asked for, an inert intersection member where it asked for none. */
+type CountedRelations<E, Q> = Q extends { readonly $count: infer M }
+  ? { [K in typeof COUNT_RESULT_KEY]: Tallies<E, OnKeys<M> & keyof E, MaybeKeys<M> & keyof E> }
+  : unknown;
+
+/**
+ * Each tally a count, over parameters constrained to `keyof E` and naming `E[R]`, which is what keeps each key
+ * linked to its relation for a rename: a template that never names `E[R]` loses it.
+ */
+type Tallies<E, On extends keyof E, Maybe extends keyof E> = { [R in On]-?: Tally<E[R]> } & {
+  [R in Maybe]?: Tally<E[R]>;
+};
+
+type Tally<_Relation> = number;
 
 /**
  * A write's options: `returning` projects each row it writes as `$select` projects a read, `{ id: true, createdAt: true }`,
  * read in the same transaction after the write (before it, for a delete), so they hold what the database filled.
  */
-export type WriteOptions<E, S extends FieldKey<E>, V = true> = { readonly returning?: QuerySelect<E, S, V> };
+export type WriteOptions<E, S extends FieldKey<E> = FieldKey<E>, V = BooleanLike> = {
+  readonly returning?: QuerySelect<E, S, V>;
+};
 
-/** What a write resolves to: `Plain`, its ids or its count, where it names no `returning` field; else `Read`. */
-export type ReturningResult<S, Plain, Read> = [S] extends [never] ? Plain : Read;
+/** What each kind of write resolves to: its ids or its count where it names no `returning` field, else the rows it reads back. */
+export type WriteResults<E, S, V> = [S] extends [never]
+  ? {
+      readonly inserted: WrittenId<E> | undefined;
+      readonly affected: number;
+      readonly affectedMany: number;
+    }
+  : {
+      readonly inserted: ReturnedRow<E, S, V>;
+      readonly affected: ReturnedRow<E, S, V> | undefined;
+      readonly affectedMany: ReturnedRow<E, S, V>[];
+    };
+
+/**
+ * The row `returning` reads back: its keys, every field but them where it subtracts, and where it mixes both, its
+ * positive keys, which a key set cannot tell apart, so each may be absent. `NoInfer`: a write naming no `returning`
+ * would otherwise infer `S` from the type its result is assigned to.
+ */
+type ReturnedRow<E, S, V> = [V] extends [true | 1]
+  ? Pick<E, NoInfer<S> & keyof E>
+  : [V] extends [false | 0]
+    ? Pick<E, Exclude<FieldKey<E>, NoInfer<S>> & keyof E>
+    : Partial<Pick<E, NoInfer<S> & keyof E>>;
 
 /**
  * result of an update operation, as the driver reports it - which is what `run` hands back, where

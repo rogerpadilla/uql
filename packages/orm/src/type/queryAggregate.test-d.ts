@@ -2,7 +2,7 @@
  * The aggregate API: `$group` is typed against the entity, `$select` holds computed columns, and
  * `$having`/`$sort` take the grouped columns and computed aliases only. Type-checked by `bun run ts` only.
  */
-import type { Querier } from '../index.js';
+import type { Querier, QueryAggregate } from '../index.js';
 
 class User {
   id!: number;
@@ -79,6 +79,14 @@ export async function aggregateTyping() {
     $select: { count: { $count: '*' } },
     // @ts-expect-error 'conut' is neither a grouped column nor a computed alias
     $having: { conut: { $gt: 5 } },
+  });
+
+  // Negative: an unknown $having operator is rejected.
+  await querier.aggregate(User, {
+    $group: { status: true },
+    $select: { count: { $count: '*' } },
+    // @ts-expect-error '$bogus' is not a comparison operator
+    $having: { count: { $bogus: 5 } },
   });
 
   // Negative: a $sort alias that is neither a grouped column, computed alias, nor entity field.
@@ -339,4 +347,10 @@ export async function anAggregateFiltersItsOwnRows() {
 export async function aPathEndsInAField() {
   // @ts-expect-error a relation names no field on its own
   await querier.aggregate(Entry, { $group: { none: { transaction: {} } } });
+}
+
+/** An aggregate assembled elsewhere names no columns statically, so its rows are open. */
+export async function anOpenAggregateReadsOpenRows(q: QueryAggregate<User>) {
+  const rows = await querier.aggregate(User, q);
+  return rows[0]['anyColumn'];
 }

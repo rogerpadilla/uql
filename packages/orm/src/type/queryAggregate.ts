@@ -2,9 +2,9 @@ import { UqlUsageError } from '../util/uqlError.js';
 import type { FieldKey, FieldKeyOf, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
-import type { ExactlyOne, IsMany, RejectKeys } from './utility.js';
+import type { ExactlyOne, IsMany } from './utility.js';
 
-/** The columns `$group` names by a literal `true`, so an uninferred `$group`, its own constraint, names none. */
+/** The columns `$group` names by a literal `true`, so an open `$group` names none. */
 type GroupedKeys<G> = { [K in keyof G]: G[K] extends true ? K : never }[keyof G];
 
 /**
@@ -96,11 +96,6 @@ export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>> & {
   readonly $where?: QueryWhere<E>;
 };
 
-/** An aggregate's `$where` naming a key it does not have, refused: a captured `$select` skips the excess-property check. */
-type AggregateWhereKeys<E, Fn> = Fn extends { readonly $where: infer W }
-  ? { readonly $where: RejectKeys<Exclude<keyof W, keyof QueryWhere<E>>> }
-  : unknown;
-
 /** A single-key `{ [op]: Arg }` shape for each op in `Ops`, matched to infer that op's result or its argument. */
 type FnWithOp<Ops extends string, Arg = unknown> = { [K in Ops]: { readonly [P in K]: Arg } }[Ops];
 
@@ -126,14 +121,6 @@ export type QueryGroupRef<E, K extends keyof E = FieldKey<E> | RelationKey<E>> =
 
 /** The columns to group by: a field switched on, `{ status: true }`, or an alias for a field a path reads. */
 export type QueryGroupMap<E> = { readonly [key: string]: true | QueryGroupRef<E> };
-
-/**
- * A captured `$group` against its schema: a field key takes `true` and keeps its link, any other key is an
- * alias for a path. A key switched on that is no field is refused by name, which the intersection alone lets by.
- */
-type QueryGroupSchema<E, G> = Readonly<QuerySelect<E, FieldKey<E>, true>> & {
-  readonly [K in Exclude<NamedKeys<G>, FieldKey<E>>]: QueryGroupRef<E>;
-} & RejectKeys<Exclude<GroupedKeys<G>, FieldKey<E>>>;
 
 /**
  * The value a path reads: the field at its end as its column holds it, `null` only where that does, since
@@ -176,8 +163,10 @@ type QueryAggregateFnResult<E, Fn> =
  */
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-/** An aggregate's row: each grouped column with its entity type, each alias with its path's, each computed one with its aggregate's. */
-export type QueryAggregateResult<E, G, A> = Simplify<
+/** An aggregate's row for the query `Q`: each grouped column with its entity type, each alias with its path's, each computed one with its aggregate's. */
+export type QueryAggregateResult<E, Q> = AggregateRow<E, AggregateGroup<Q>, AggregateSelect<Q>>;
+
+type AggregateRow<E, G, A> = Simplify<
   Pick<E, GroupedKeys<G> & FieldKey<E>> & {
     -readonly [K in Exclude<NamedKeys<G>, FieldKey<E>>]: GroupRefValue<E, G[K]>;
   } & {
@@ -193,12 +182,29 @@ export type QueryHavingMap = {
 /**
  * An aggregate query, apart from `Query` so its row type stays honest:
  * `aggregate(User, { $group: { status: true }, $select: { n: { $count: '*' } }, $having: { n: { $gt: 5 } } })`.
+ * `Q` is the query a read captures: each key of its `$group` and `$select` takes the shape its own kind allows,
+ * so a typo'd one fails its excess-property check like any other key. Without it, the columns are open.
  */
-export type QueryAggregate<
-  E,
-  G extends QueryGroupMap<E> = QueryGroupMap<E>,
-  A extends QueryAggMap<E> = QueryAggMap<E>,
-> = {
+export type QueryAggregate<E, Q = never> = [Q] extends [never]
+  ? OpenAggregateQuery<E>
+  : AggregateQuery<E, AggregateGroup<Q>, AggregateSelect<Q>>;
+
+/**
+ * An aggregate query whose columns are open, as one assembled elsewhere is typed and the dialects read it.
+ * Written out rather than derived: TypeScript 5.7 compares two generic signatures taking a derived one too deeply.
+ */
+type OpenAggregateQuery<E> = {
+  readonly $where?: QueryWhere<E>;
+  readonly $group?: QueryGroupMap<E>;
+  readonly $select?: QueryAggMap<E>;
+  readonly $having?: QueryHavingMap;
+  readonly $sort?: { readonly [column: string]: QuerySortDirection };
+} & QueryPager;
+
+/** A captured aggregate's shape; open where its columns are, as on an entity keyed by an index signature. */
+type AggregateQuery<E, G, A> = string extends keyof G | keyof A ? OpenAggregateQuery<E> : ClosedAggregateQuery<E, G, A>;
+
+type ClosedAggregateQuery<E, G, A> = {
   // Fields are ordered to match how SQL and MongoDB process a query:
   // WHERE -> GROUP BY -> aggregates -> HAVING -> ORDER BY -> OFFSET/LIMIT.
 
@@ -208,30 +214,31 @@ export type QueryAggregate<
   readonly $where?: QueryWhere<E>;
 
   /**
-   * Columns to group by: `{ status: true }`, or an alias for a to-one relation's field by the path to
-   * it, `{ orderId: { transaction: { orderId: true } } }`. The captured map meets its schema, so a field
-   * key keeps its link to the entity property, and a typo matches neither form.
+   * Columns to group by: a field switched on, `{ status: true }`, keeping its link to the entity property, or
+   * an alias for a to-one relation's field by the path to it, `{ orderId: { transaction: { orderId: true } } }`.
    */
-  readonly $group?: G & QueryGroupSchema<E, G>;
+  readonly $group?: Readonly<QuerySelect<E, FieldKey<E>, true>> & {
+    readonly [K in Exclude<keyof G, FieldKey<E>>]: QueryGroupRef<E>;
+  };
 
   /**
-   * The computed columns by alias, the captured map meeting its schema so field keys stay linked. An alias
-   * repeating a `$group` column is refused, since both would come back under one name.
+   * The computed columns by alias. An alias repeating a `$group` column is refused, since both would come back
+   * under one name.
    */
-  readonly $select?: A & {
-    readonly [K in keyof A]: QueryAggregateFn<E> & AggregateWhereKeys<E, A[K]>;
-  } & RejectKeys<NamedKeys<A> & NamedKeys<G>>;
+  readonly $select?: { readonly [K in keyof A]: K extends keyof G ? never : QueryAggregateFn<E> };
 
   /** Filtering after grouping, by a result column, each value typed as that column is. */
   readonly $having?: {
-    readonly [K in keyof QueryAggregateResult<E, G, A>]?: QueryWhereFieldValue<QueryAggregateResult<E, G, A>[K]>;
+    readonly [K in keyof AggregateRow<E, G, A>]?: QueryWhereFieldValue<AggregateRow<E, G, A>[K]>;
   };
 
   /**
    * Sort the aggregated results by a grouped column or a computed alias - an aggregate's rows are
    * its groups, so any other entity field names a value the statement never produced.
    */
-  readonly $sort?: {
-    readonly [K in keyof QueryAggregateResult<E, G, A>]?: QuerySortDirection;
-  };
+  readonly $sort?: { readonly [K in keyof AggregateRow<E, G, A>]?: QuerySortDirection };
 } & QueryPager;
+
+/** The `$group` and `$select` maps of a captured aggregate query, or none where it names none. */
+type AggregateGroup<Q> = Q extends { readonly $group?: infer G } ? NonNullable<G> : {};
+type AggregateSelect<Q> = Q extends { readonly $select?: infer A } ? NonNullable<A> : {};

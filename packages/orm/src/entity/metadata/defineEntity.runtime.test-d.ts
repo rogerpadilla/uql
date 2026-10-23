@@ -23,8 +23,8 @@ export async function unknownShape() {
   const title: Scalar = row['title'];
   await querier.findMany(Dynamic, { $populate: { author: true } });
 
-  // A projection survives, carrying the columns it named: the row is picked by the key set the query
-  // captured, which an index signature answers like any other key.
+  // A projection survives, carrying the columns it named: the row picks its `$select` keys, which an
+  // index signature answers like any other key.
   const [projected] = await querier.findMany(Dynamic, { $select: { title: true } });
   const projectedTitle: Scalar = projected['title'];
 

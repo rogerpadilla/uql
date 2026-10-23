@@ -30,6 +30,26 @@ export const idKey = Symbol('idKey');
  */
 export const versionKey = Symbol('versionKey');
 
+/** Brands the fields an insert may leave out, which a default fills, `[filledKey]?: 'units' | 'createdAt'`; each stays present on every read. */
+export const filledKey = Symbol('filledKey');
+
+type EntityBrand = typeof idKey | typeof versionKey | typeof filledKey;
+
+/** The names an entity's brand `B` lists, `never` where it declares none. */
+type BrandNames<E, B extends EntityBrand> = E extends { readonly [K in B]?: infer N } ? N : never;
+
+/**
+ * A brand naming a key that is no field, which each reader would drop silently: refused where an entity
+ * registers, `@Entity()` or `defineEntity`, by a member the class lacks that names the typo. A class with no
+ * members matches every optional brand, so only one declaring a brand is read.
+ */
+export type BrandsNameFields<E> = {
+  readonly [
+    N in Exclude<[EntityBrand & keyof E] extends [never] ? never : BrandNames<E, EntityBrand>, FieldKey<E>> &
+      string as `brand names '${N}', which is no field`
+  ]: never;
+};
+
 /** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
 
@@ -63,10 +83,10 @@ export type WritableKey<E> = {
 
 /**
  * What an insert may leave out however the entity declares it: a single-column key, which something
- * usually generates, and the version, which uql starts at 0. A composite key is the references a row is
- * made of, so an insert names it.
+ * usually generates, the version, which uql starts at 0, and what {@link filledKey} lists. A composite
+ * key is the references a row is made of, so an insert names it.
  */
-type FilledKey<E> = SoleIdKey<E> | VersionKey<E>;
+type FilledKey<E> = SoleIdKey<E> | VersionKey<E> | (BrandNames<E, typeof filledKey> & FieldKey<E>);
 
 /**
  * A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write,

@@ -40,13 +40,14 @@ const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany
 }
 `;
 
-/** One block per call site, mixing the clauses a real query does: projection, filter, sort, relation, aggregate. */
+/** One block per call site, mixing the clauses a real query does: projection, filter, sort, relation, aggregate, returning. */
 const block = (i: number) => /*ts*/ `
 export async function q${i}(q: Querier) {
   const a = await q.findMany(User, { $select: { id: true, name: true }, $where: { age: { $gte: ${i} } }, $sort: { createdAt: -1 } });
   const b = await q.findOne(User, { $exclude: { email: true }, $where: { name: 'x' } });
   const c = await q.findMany(Company, { $populate: { users: { $select: { name: true } } }, $where: { size: ${i} } });
   await q.insertMany(User, [{ name: 'x', age: ${i} }]);
+  const e = await q.insertOne(User, { name: 'x', age: ${i} }, { returning: { id: true, name: true } });
   await q.updateMany(User, { $where: { age: ${i} } }, { name: 'y' });
   const d = await q.aggregate(User, {
     $group: { name: true, companyName: { company: { name: true } } },
@@ -54,7 +55,7 @@ export async function q${i}(q: Querier) {
     $having: { n: { $gt: ${i} } },
     $sort: { total: -1 },
   });
-  return [a[0]?.name, b?.name, c[0]?.users, d[0]?.companyName];
+  return [a[0]?.name, b?.name, c[0]?.users, d[0]?.companyName, e.name];
 }`;
 
 export function writeFixture(
