@@ -4,7 +4,7 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 ## Before 1.0
 
-- ready.
+- ready for RC.
 
 ## After 1.0
 
