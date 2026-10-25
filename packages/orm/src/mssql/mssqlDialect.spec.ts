@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Company, createSpec, Invoice, Item, MeasureUnitCategory, TaxCategory, TypedRow, User } from '../test/index.js';
 import { idKey, type QueryLockWait } from '../type/index.js';
 import { sql } from '../util/index.js';
@@ -10,9 +10,9 @@ import { MsSqlDialect } from './mssqlDialect.js';
 @Entity()
 class StockLevel {
   [idKey]?: 'warehouseId' | 'productId';
-  @Id({ type: Number }) warehouseId?: number;
-  @Id({ type: Number }) productId?: number;
-  @Field({ type: Number }) quantity?: number | null;
+  @Field(f.number().id()) warehouseId?: number;
+  @Field(f.number().id()) productId?: number;
+  @Field(f.number().nullable()) quantity?: number | null;
 }
 
 /**
@@ -92,7 +92,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   shouldEstimateTheCountOfATableInItsOwnSchema() {
     @Entity({ schema: 'sales' })
     class Order {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Order));
     expect(sql).toContain(` AND s.name = ${this.ph(2)}`);
@@ -493,9 +493,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
 @Entity()
 class Enrolment {
   [idKey]?: 'studentId' | 'courseId';
-  @Id({ type: Number }) studentId?: number;
-  @Id({ type: Number }) courseId?: number;
-  @Field({ type: String }) grade?: string | null;
+  @Field(f.number().id()) studentId?: number;
+  @Field(f.number().id()) courseId?: number;
+  @Field(f.string().nullable()) grade?: string | null;
 }
 
 createSpec(new MsSqlDialectSpec());

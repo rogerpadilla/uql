@@ -1,28 +1,15 @@
 import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
-import type {
-  EntityIndexColumn,
-  EntityIndexMeta,
-  EntityMeta,
-  EntityWhereMeta,
-  FieldOptions,
-  Type,
-} from '../type/index.js';
-import {
-  declaredIndexes,
-  declaredIndexName,
-  enumCheck,
-  ownedCheck,
-  renderIndexColumn,
-} from '../util/ddlExpression.util.js';
+import type { IndexEntry, EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldOptions, Type } from '../type/index.js';
+import { declaredIndexes, namedIndex, enumCheck, ownedCheck } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
-import { declaresNotNull, isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
+import { isInlinedExpression, isSoleIdField } from '../util/field.util.js';
+import { entryColumn, entryColumns, renamedEntry, renderIndexColumn } from '../util/indexEntry.util.js';
 import { definedEntries, entityName } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { resolveColumnCanonicalType } from './canonicalType.js';
+import { declaredColumn } from './declaredColumn.js';
 import { lookupColumns } from './indexColumns.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
-import { schemaDefault } from './sqlExpression.js';
 import {
   type ColumnNode,
   DEFAULT_FOREIGN_KEY_ACTION,
@@ -107,12 +94,10 @@ function refuseDdl(): string {
   );
 }
 
-/** The entries a vector index of `meta` covers: the members it names, and any expression. */
-function vectorIndexedEntries(meta: EntityMeta<object>): Set<EntityIndexColumn['column']> {
+/** The members a vector index of `meta` covers by name. */
+function vectorIndexedEntries(meta: EntityMeta<object>): Set<string> {
   return new Set(
-    (meta.indexes ?? [])
-      .filter((index) => index.type === 'vector')
-      .flatMap((index) => index.columns.map((entry) => entry.column)),
+    (meta.indexes ?? []).filter((index) => index.type === 'vector').flatMap((index) => entryColumns(index.entries)),
   );
 }
 
@@ -136,21 +121,13 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
     if (isInlinedExpression(field)) continue;
 
     const columnName = ctx.resolveColumnName(key, field);
-    const type = resolveColumnCanonicalType(field);
-
-    const isPrimaryKey = field.isId === true;
-    const isSoleKey = isSoleIdField(meta, field);
     const column: ColumnNode = {
-      name: columnName,
-      type,
-      nullable: !declaresNotNull(field) && !notNull.has(key),
-      defaultValue: schemaDefault(field.defaultValue, (sql) => ctx.compileDdl(sql, meta.entity)),
-      isPrimaryKey,
-      isAutoIncrement: isAutoIncrement(field, isSoleKey),
-      isUnique: field.unique ?? false,
-      // A stamp is filled by a trigger, so it is a column like any other; only `stored: true` generates.
-      generatedAs: field.stored === true && field.computed ? ctx.compileDdl(field.computed, meta.entity) : undefined,
-      comment: field.comment,
+      ...declaredColumn(field, {
+        name: columnName,
+        soleKey: isSoleIdField(meta, field),
+        compile: (sql) => ctx.compileDdl(sql, meta.entity),
+      }),
+      ...(notNull.has(key) && { nullable: false }),
       table,
     };
 
@@ -168,7 +145,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
 
 /**
  * Add a relationship for each foreign key the entity holds, whether a relation declares it or a bare
- * `@Field({ references })` does.
+ * `f.references()` does.
  */
 function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>, table: TableNode): void {
   for (const foreignKey of foreignKeysOf(meta)) {
@@ -203,8 +180,8 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>,
       type: foreignKey.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
       from: { table, columns: localColumns },
       to: { table: relatedTable, columns: foreignColumns },
-      // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
-      // references, onDelete })` work with no relation declared at all.
+      // Falls back to the FK column's own `onDelete`, which is what makes a bare
+      // `f.references(() => X).onDelete(...)` work with no relation declared at all.
       onDelete:
         foreignKey.onDelete ?? meta.fields[foreignKey.references[0].local]?.onDelete ?? ctx.defaultForeignKeyAction,
       onUpdate: foreignKey.onUpdate ?? ctx.defaultForeignKeyAction,
@@ -213,7 +190,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>,
 }
 
 /**
- * Add indexes from field options (`@Field({ index })`), from `@Index`, and for every foreign
+ * Add indexes from field options (`.index()`), from `indexes`, and for every foreign
  * key none of those already serves.
  */
 function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<object>, table: TableNode): void {
@@ -268,28 +245,32 @@ function addCompositeIndex(
   ctx: BuildContext,
   table: TableNode,
   meta: EntityMeta<object>,
-  { columns, include, where, ...options }: EntityIndexMeta,
+  { entries, include, where, ...options }: EntityIndexMeta,
 ): void {
   // An entry survives if it is an expression (nothing to resolve) or names a column that exists;
   // an index left with none is dropped, as one naming only unknown columns is.
-  const resolved = columns.flatMap((entry) => {
-    if (typeof entry.column !== 'string') return [entry];
-    const column = fieldColumn(ctx, meta, entry.column);
-    return column && table.columns.has(column) ? [{ ...entry, column }] : [];
+  const resolved = entries.flatMap((entry): IndexEntry[] => {
+    const key = entryColumn(entry);
+    if (key === undefined) return [entry];
+    const column = fieldColumn(ctx, meta, key);
+    return column && table.columns.has(column) ? [renamedEntry(entry, () => column)] : [];
   });
   if (!resolved.length) return;
 
-  const predicate =
-    where && ctx.compileIndexPredicate(where, meta.entity, declaredIndexName(options.name, table.name, resolved));
+  const named = namedIndex(
+    options.name,
+    table.name,
+    resolved,
+    (label) => where && ctx.compileIndexPredicate(where, meta.entity, label),
+  );
   ctx.ast.addIndex({
     ...options,
-    name: declaredIndexName(options.name, table.name, resolved, { where: predicate }),
+    ...named,
     table,
     entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
     // An `include` column is named like any other, so a custom naming has to reach it too.
     include: include?.map((column) => fieldColumn(ctx, meta, column) ?? column),
     unique: options.unique ?? false,
-    where: predicate,
   });
   if (ctx.textScoreIndexes) {
     addTextScoreIndexes(ctx, table, options.type, resolved);
@@ -301,17 +282,18 @@ function addTextScoreIndexes(
   ctx: BuildContext,
   table: TableNode,
   type: EntityIndexMeta['type'],
-  entries: readonly EntityIndexColumn[],
+  entries: readonly IndexEntry[],
 ): void {
   const weights = fulltextWeights({ type, entries });
   if (!weights) return;
   const { extra } = textWeightSteps(weights);
   entries.forEach((entry, at) => {
-    if (extra[at] && typeof entry.column === 'string') {
+    const { column } = entry;
+    if (extra[at] && column !== undefined) {
       ctx.ast.addIndex({
-        name: derivedIndexName(table.name, [entry.column, 'score']),
+        name: derivedIndexName(table.name, [column, 'score']),
         table,
-        entries: [{ column: entry.column }],
+        entries: [{ column }],
         unique: false,
         type: 'fulltext',
       });

@@ -57,11 +57,11 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     }
   }
 
-  /** A table with an id and a `name` text column, the starting point most tests alter from. */
+  /** A table with an id and a `name` string column, which an index takes, the starting point most tests alter from. */
   protected async givenMainTable(builder: MigrationBuilder) {
     await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
       t.id();
-      t.text('name').nullable();
+      t.string('name').nullable();
     });
   }
 
@@ -124,9 +124,9 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
         t.bigint('bigintCol').nullable();
         t.float('floatCol').nullable();
         t.double('doubleCol').nullable();
-        t.decimal('decimalCol', { precision: 10, scale: 2 }).nullable();
-        t.string('stringCol', { length: 50 }).nullable();
-        t.char('charCol', { length: 2 }).nullable();
+        t.decimal('decimalCol', 10, 2).nullable();
+        t.string('stringCol').length(50).nullable();
+        t.char('charCol').length(2).nullable();
         t.text('textCol').nullable();
         t.boolean('booleanCol').nullable();
         t.date('dateCol').nullable();
@@ -168,7 +168,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       await this.givenMainTable(builder);
 
       await builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
-        t.addColumn((c) => c.integer('score', { nullable: true }));
+        t.addColumn((c) => c.integer('score').nullable());
         t.dropColumn('name');
       });
     });
@@ -195,7 +195,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
 
       await builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
         t.renameColumn('name', 'label');
-        t.addColumn((c) => c.text('name', { nullable: true }));
+        t.addColumn((c) => c.text('name').nullable());
       });
     });
 
@@ -205,7 +205,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   async shouldAddAColumn() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
-      await builder.addColumn(BUILDER_TABLES.MAIN, (c) => c.timestamp('createdAt', { nullable: true }));
+      await builder.addColumn(BUILDER_TABLES.MAIN, (c) => c.timestamp('createdAt').nullable());
     });
 
     expect(await this.getColumnNames(BUILDER_TABLES.MAIN)).toEqual(['createdAt', 'id', 'name']);
@@ -278,8 +278,8 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     await this.withBuilder(async (builder) => {
       await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
-        t.string('email', { length: 100 }).nullable();
-        t.string('region', { length: 20 }).nullable();
+        t.string('email').length(100).nullable();
+        t.string('region').length(20).nullable();
         t.index(['region'], 'builder_region_idx');
         t.unique(['email'], 'builder_email_uk');
       });
@@ -314,9 +314,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   async shouldAddAColumnCarryingItsEnum() {
     await this.withBuilder(async (builder) => {
       await this.givenUnrelatedPair(builder);
-      await builder.addColumn(BUILDER_TABLES.CHILD, (c) =>
-        c.string('state', { length: 10 }).nullable().enum(['on', 'off']),
-      );
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('state').length(10).nullable().enum(['on', 'off']));
     });
 
     // Unquoted: these names need no quoting on any engine here, and `raw` is the suite's own seam.
@@ -329,7 +327,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   async shouldAddAColumnCarryingItsIndex() {
     await this.withBuilder(async (builder) => {
       await this.givenUnrelatedPair(builder);
-      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('slug', { length: 80 }).nullable().index());
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('slug').length(80).nullable().index());
     });
 
     expect(await this.getIndexNames(BUILDER_TABLES.CHILD)).toEqual(['test_builder_child__slug_idx']);
@@ -342,7 +340,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
         t.id();
         t.integer('qty').nullable();
         t.integer('price').nullable();
-        t.integer('total').nullable().computed('qty * price');
+        t.integer('total').nullable().as('qty * price');
       });
       await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (qty, price) VALUES (3, 7)`);
     });
@@ -379,7 +377,7 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
   async shouldAlterAColumnType() {
     await this.withBuilder(async (builder) => {
       await this.givenIntegerPayload(builder);
-      await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload', { nullable: true }));
+      await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload').nullable());
     });
 
     const { type } = await this.getColumn(BUILDER_TABLES.MAIN, 'payload');
@@ -390,7 +388,7 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
     await this.withBuilder(async (builder) => {
       await this.givenIntegerPayload(builder);
       await builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
-        t.alterColumn((c) => c.text('payload', { nullable: true }));
+        t.alterColumn((c) => c.text('payload').nullable());
       });
     });
 
@@ -471,7 +469,7 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
     await this.withBuilder(async (builder) => {
       await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
-        t.string('state', { length: 10 }).defaultValue('on').enum(['on', 'off']).unique();
+        t.string('state').length(10).default('on').enum(['on', 'off']).unique();
       });
       await builder.dropColumn(BUILDER_TABLES.MAIN, 'state');
     });
@@ -484,9 +482,9 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
     await this.withBuilder(async (builder) => {
       await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
-        t.integer('payload').defaultValue(1);
+        t.integer('payload').default(1);
       });
-      await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.bigint('payload').defaultValue(2));
+      await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.bigint('payload').default(2));
     });
 
     const { type, defaultValue } = await this.getColumn(BUILDER_TABLES.MAIN, 'payload');

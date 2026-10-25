@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.105.0] - 2026-10-25
+
+Breaking changes; `uql-codemod` rewrites the code it can and reports the rest.
+
+- **Breaking:** definitions are builders and folded options. Columns are `@Field(f.string().nullable())`, NOT NULL unless `.nullable()`, and keys are `.id()`, so `@Id` is gone. `@Index`, `@Filter` and `@Trigger` are gone too: a class lists `indexes`, `filters` and `triggers` in `@Entity({ ... })`, and `@Entity({ abstract: true })` declares a base that is never a table. `defineEntity(Class, options)` and the string-keyed definers are gone, as are `@Entity`'s `fields`, `relations`, `hooks` and `extends`. The migration builder uses the same methods.
+- **Breaking:** index and JSON path entries are written by the helper their section hands over, `indexes: (post, index) => [index([post.title], 'by_title')]`. A JSON path is read off the column's ref, as a `$where` key is: `index([user.settings.theme])`, or `{ column: user.settings.rating, type: Number }`.
+- **Breaking:** query API. `$exclude` is gone: `$select: { password: false }` leaves a field out. `QuerySql.render()` is `renderSql()`, and a column ref's key is `[REF_KEY]`. On MongoDB Atlas, a vector `$sort`'s `$project` answers the distance, lower nearer, as on the SQL engines, rather than Atlas's score.
+- **Feat:** `defineEntity({ name, fields })` declares an entity as data, its row type derived from the columns, with chained sections for relations, indexes, checks, triggers, filters and hooks. Relations join by inference: a relation may leave out `references` or `mappedBy` where one member alone fits, and a schema's `.relations()` takes a second callback for aggregates. A find's row carries each number its `$sort` projects (`$project: 'distance'` or a `$text` score), and MongoDB indexes a path inside a document and the elements of an array there.
+- **Fixed:** a foreign key holding its own type must hold the kind of key it references, in both forms and at run time, and a hook on a member that is no method throws where declared. `f.decimal(precision, scale)` takes its digits into its type, and a migration column refuses an option its type cannot take. `generate:entities` writes a JSON path index as its path and read type, with an unnamed one named after its path so two over one column do not collide. An empty `$project` throws on every SQL engine, and MongoDB refuses a `$text` search inside a populated relation by name.
+
 ## [0.104.1] - 2026-10-22
 
 - **Fixed:** a generic function passing a `WireQuery<E>` it received to a read compiles again, as an oRPC or tRPC router does.

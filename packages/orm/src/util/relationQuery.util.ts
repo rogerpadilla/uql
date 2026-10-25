@@ -249,16 +249,6 @@ export function parseRelationAtKey<E>(relKey: RelationKey<E>, populate?: QueryPo
   return parseRelationQueryValue(populate?.[relKey]);
 }
 
-export function forEachRequestedRelation<E extends object>(
-  meta: EntityMeta<E>,
-  populate: QueryPopulate<E> | undefined,
-  fn: (relKey: RelationKey<E>, rawValue: unknown) => void,
-): void {
-  for (const relKey of getRelationRequestSummary(meta, populate).requestedKeys) {
-    fn(relKey, populate?.[relKey]);
-  }
-}
-
 function isBooleanLikeValue(value: unknown): value is boolean | 0 | 1 {
   return value === true || value === false || value === 0 || value === 1;
 }

@@ -10,8 +10,8 @@ import {
   BeforeUpdate,
   BeforeUpsert,
   Entity,
+  f,
   Field,
-  Id,
   ManyToOne,
   OneToMany,
 } from '../entity/index.js';
@@ -32,13 +32,13 @@ let log: string[] = [];
 
 @Entity()
 class Book {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   slug?: string | null;
 
   @BeforeInsert()
@@ -94,20 +94,20 @@ class Book {
 /** No hooks: what a delete costs when nothing is watching. */
 @Entity()
 class Plain {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 }
 
 /** Masking on load, which is what `@AfterLoad` propagating its mutations is for. */
 @Entity()
 class Secret {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   code?: string | null;
 
   @AfterLoad()
@@ -123,13 +123,18 @@ class Secret {
 
 @Entity()
 class Archived {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ type: Number, softDelete: () => Date.now() })
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
   deletedAt?: number | null;
 
   @BeforeDelete()
@@ -139,7 +144,7 @@ class Archived {
 }
 
 class Timestamped {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
   @BeforeInsert()
@@ -150,7 +155,7 @@ class Timestamped {
 
 @Entity()
 class Note extends Timestamped {
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @BeforeInsert()
@@ -166,10 +171,10 @@ class Note extends Timestamped {
 
 @Entity()
 class Guarded {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @BeforeInsert()
@@ -180,10 +185,10 @@ class Guarded {
 
 @Entity()
 class Late {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @AfterInsert()
@@ -195,13 +200,18 @@ class Late {
 /** A key the database generates and a field the ORM fills, neither of which the caller passed. */
 @Entity()
 class Stamped {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String, unique: true })
+  @Field(f.string().nullable().unique())
   code?: string | null;
 
-  @Field({ type: Number, onInsert: () => 7 })
+  @Field(
+    f
+      .number()
+      .nullable()
+      .onInsert(() => 7),
+  )
   createdAt?: number | null;
 
   @AfterInsert()
@@ -218,10 +228,10 @@ class Stamped {
 /** The documented use for `HookContext`: query through the hook's own querier. */
 @Entity()
 class Unique {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   email?: string | null;
 
   @BeforeInsert()
@@ -233,7 +243,7 @@ class Unique {
 /** Mails once its row is committed, the documented use for `HookContext.onCommit`. */
 @Entity()
 class Mailed {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
   @AfterInsert()
@@ -245,10 +255,10 @@ class Mailed {
 /** Queries through its own querier on load, which a stream holding that querier refuses. */
 @Entity()
 class Looked {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @AfterLoad()
@@ -259,7 +269,7 @@ class Looked {
 
 @Entity()
 class Shelf {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
   @OneToMany({ entity: () => ShelvedBook, mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
@@ -273,13 +283,13 @@ class Shelf {
 
 @Entity()
 class ShelvedBook {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   shelfId?: number | null;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @ManyToOne({
@@ -296,10 +306,10 @@ class ShelvedBook {
 
 @Entity()
 class Author {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 
   @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author, cascade: 'persist' })
@@ -313,13 +323,13 @@ class Author {
 
 @Entity()
 class Tome {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ references: () => Author })
+  @Field(f.references(() => Author).nullable())
   authorId?: number | null;
 
   @ManyToOne({ entity: () => Author, references: (tome) => tome.authorId })

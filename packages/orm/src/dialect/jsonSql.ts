@@ -1,6 +1,6 @@
 import type { FieldOptions, FieldType } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
-import { columnFamily, jsonPathKeys } from '../util/field.util.js';
+import { columnFamily, declaresNotNull, jsonPathKeys } from '../util/field.util.js';
 import { isOperatorKey, someKey } from '../util/object.util.js';
 import { JSON_SKIP_KEY } from './aliases.js';
 
@@ -90,7 +90,7 @@ export function jsonSetCall(
  * `JSON_SET`'s input.
  */
 export function jsonSetTarget(expr: string, field: FieldOptions | undefined, empty: string): string {
-  return field?.nullable === false ? expr : `COALESCE(${expr}, ${empty})`;
+  return field && declaresNotNull(field) ? expr : `COALESCE(${expr}, ${empty})`;
 }
 
 /** `JSON_REMOVE(expr, path, ...)`, which MySQL and SQLite share, nested past `maxArgs`. */

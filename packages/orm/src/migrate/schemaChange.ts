@@ -1,4 +1,5 @@
-import type { Alteration, Change, ColumnChange, ColumnSchema, IndexColumnSchema, SchemaDiff } from '../type/index.js';
+import type { Alteration, Change, ColumnChange, ColumnSchema, IndexEntry, SchemaDiff } from '../type/index.js';
+import { renamedEntry } from '../util/indexEntry.util.js';
 
 /** Each change's end on `side`, where it has one: what a drop half removes (`from`), or an add half creates (`to`). */
 export function sides<T>(changes: readonly Change<T>[] | undefined, side: 'from' | 'to'): T[] {
@@ -118,10 +119,10 @@ function putBack<T>({ from, to }: Change<T>, restore: (it: T) => T): Change<T> {
   return { from: to, to: from && restore(from) };
 }
 
-/** Each column entry named by `nameOf`; an expression entry is SQL, left as written. */
+/** Each entry's column named by `nameOf`; an expression entry is SQL, left as written. */
 export function renameIndexEntries(
-  entries: readonly IndexColumnSchema[],
+  entries: readonly IndexEntry<string>[],
   nameOf: (column: string) => string,
-): IndexColumnSchema[] {
-  return entries.map((entry) => (entry.expression ? entry : { ...entry, column: nameOf(entry.column) }));
+): IndexEntry<string>[] {
+  return entries.map((entry) => renamedEntry(entry, nameOf));
 }

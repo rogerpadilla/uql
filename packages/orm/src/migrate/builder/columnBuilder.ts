@@ -1,155 +1,153 @@
+import { type ColumnOptionsBuilder, columns } from '../../entity/columnOptionsBuilder.js';
+import { declaredColumn } from '../../schema/declaredColumn.js';
+import type { EnumValues, ForeignKeyAction } from '../../schema/types.js';
+import { COLUMN_OPTIONS, type FieldOptions, type QuerySql } from '../../type/index.js';
+import { fieldOptionConflict } from '../../util/fieldOption.util.js';
+import { constantSql, sql } from '../../util/sql.js';
+import { UqlUsageError } from '../../util/uqlError.js';
+import type { ForeignKeyBuilder, ForeignKeyTarget, FullColumnDefinition, TableColumnFactory } from './types.js';
+
+/** A migration's SQL as written: it names no field, so it is the text of a `sql` interpolating nothing. */
+function migrationSql(statement: QuerySql): string {
+  const text = constantSql(statement);
+  if (text === undefined) {
+    throw new UqlUsageError("a migration's SQL binds nothing: write it as `sql` text interpolating no value");
+  }
+  return text;
+}
+
 /**
- * Column Builder
- *
- * Fluent API for defining columns in migrations.
+ * A table's column, named, over the `f` builder an entity column is: each method is that builder's, and `build` reads
+ * its options as the schema reads an entity's. Mutable, since the table collects it before its chain ends.
  */
+export class TableColumn implements ForeignKeyBuilder {
+  readonly #name: string;
+  #column: ColumnOptionsBuilder;
+  #unsigned = false;
+  #target?: ForeignKeyTarget;
+  #onDelete?: ForeignKeyAction;
+  #onUpdate?: ForeignKeyAction;
 
-import type { CanonicalType, EnumValues, ForeignKeyAction } from '../../schema/types.js';
-import type { BaseColumnOptions, FullColumnDefinition, ColumnBuilder, ForeignKeyBuilder } from './types.js';
-
-/**
- * Builder for column definitions with a fluent API. Each call replaces the definition it holds, and `build`
- * returns it. Columns are NOT NULL by default (safer).
- */
-export class ColumnDefinitionBuilder implements ColumnBuilder, ForeignKeyBuilder {
-  private column: FullColumnDefinition;
-
-  constructor(name: string, type: CanonicalType, options: BaseColumnOptions = {}) {
-    const { references } = options;
-    this.column = {
-      name,
-      type: options.unsigned === undefined ? type : { ...type, unsigned: options.unsigned },
-      nullable: options.nullable ?? false,
-      defaultValue: options.defaultValue,
-      isPrimaryKey: options.primaryKey ?? false,
-      isAutoIncrement: options.autoIncrement ?? false,
-      isUnique: options.unique ?? false,
-      enum: undefined,
-      generatedAs: undefined,
-      comment: options.comment,
-      index: options.index,
-      foreignKey: references && {
-        references: { table: references.table, columns: [references.column ?? 'id'] },
-        onDelete: references.onDelete,
-        onUpdate: references.onUpdate,
-      },
-    };
+  constructor(name: string, column: ColumnOptionsBuilder) {
+    this.#name = name;
+    this.#column = column;
   }
 
-  private set(change: Partial<FullColumnDefinition>): this {
-    this.column = { ...this.column, ...change };
+  private chain(column: ColumnOptionsBuilder): this {
+    this.#column = column;
     return this;
   }
 
-  /**
-   * Make the column nullable or not nullable.
-   */
-  nullable(value = true): this {
-    return this.set({ nullable: value });
+  nullable(): this {
+    return this.chain(this.#column.nullable());
   }
 
-  /**
-   * Make the column NOT NULL.
-   */
-  notNullable(): this {
-    return this.set({ nullable: false });
+  default(value: FieldOptions['defaultValue']): this {
+    return this.chain(this.#column.default(value));
   }
 
-  /**
-   * Set a default value for the column.
-   */
-  defaultValue(value: unknown): this {
-    return this.set({ defaultValue: value });
+  id(): this {
+    return this.chain(this.#column.id());
   }
 
-  /**
-   * Mark as primary key.
-   */
-  primaryKey(): this {
-    return this.set({ isPrimaryKey: true, nullable: false });
-  }
-
-  /**
-   * Enable auto-increment (for integer types).
-   */
   autoIncrement(): this {
-    return this.set({ isAutoIncrement: true });
+    return this.chain(this.#column.autoIncrement());
   }
 
-  /**
-   * Add a unique constraint.
-   */
   unique(): this {
-    return this.set({ isUnique: true });
+    return this.chain(this.#column.unique());
   }
 
-  /**
-   * Make the column one the database computes: `GENERATED ALWAYS AS (<sql>) STORED`.
-   *
-   * Takes the SQL as text, since a `CREATE TABLE` has nowhere to bind a value into - the same reason
-   * a check expression and a partial-index predicate do.
-   */
-  computed(sql: string): this {
-    return this.set({ generatedAs: sql });
+  as(expression: string): this {
+    return this.chain(this.#column.as(sql.text(expression)).stored());
   }
 
-  /**
-   * Constrain the column to these values, as a `CHECK (col IN (...))` - what `@Field({ enum })` emits.
-   */
+  length(length: number): this {
+    return this.chain(this.#column.length(length));
+  }
+
+  precision(digits: number): this {
+    return this.chain(this.#column.precision(digits));
+  }
+
+  scale(digits: number): this {
+    return this.chain(this.#column.scale(digits));
+  }
+
   enum(values: EnumValues): this {
-    return this.set({ enum: values });
+    return this.chain(this.#column.with({ enum: values }));
   }
 
-  /**
-   * Add a comment to the column.
-   */
   comment(text: string): this {
-    return this.set({ comment: text });
+    return this.chain(this.#column.comment(text));
   }
 
-  /**
-   * Add an index on this column.
-   * @param name - Optional index name. If true, auto-generates name.
-   */
   index(name?: string): this {
-    return this.set({ index: name ?? true });
+    return this.chain(this.#column.index(name));
   }
 
-  /**
-   * Set as unsigned (MySQL/MariaDB).
-   */
   unsigned(): this {
-    return this.set({ type: { ...this.column.type, unsigned: true } });
+    this.#unsigned = true;
+    return this;
   }
 
-  /**
-   * Add a foreign key reference.
-   * Returns a ForeignKeyBuilder for additional options.
-   */
   references(table: string, column = 'id'): ForeignKeyBuilder {
-    return this.set({ foreignKey: { references: { table, columns: [column] } } });
+    this.#target = { table, columns: [column] };
+    return this;
   }
 
-  /**
-   * Set ON DELETE action for foreign key.
-   */
   onDelete(action: ForeignKeyAction): this {
-    const { foreignKey } = this.column;
-    return foreignKey ? this.set({ foreignKey: { ...foreignKey, onDelete: action } }) : this;
+    this.#onDelete = action;
+    return this;
   }
 
-  /**
-   * Set ON UPDATE action for foreign key.
-   */
   onUpdate(action: ForeignKeyAction): this {
-    const { foreignKey } = this.column;
-    return foreignKey ? this.set({ foreignKey: { ...foreignKey, onUpdate: action } }) : this;
+    this.#onUpdate = action;
+    return this;
   }
 
-  /**
-   * Build and return the column definition.
-   */
+  /** A key here is never implied to auto-increment: a migration states what it creates. */
   build(): FullColumnDefinition {
-    return this.column;
+    const field = this.#column[COLUMN_OPTIONS];
+    const conflict = fieldOptionConflict(field);
+    if (conflict) {
+      throw new UqlUsageError(`'${this.#name}' ${conflict}`);
+    }
+    const column = declaredColumn(field, { name: this.#name, soleKey: false, compile: migrationSql });
+    return {
+      ...column,
+      type: this.#unsigned ? { ...column.type, unsigned: true } : column.type,
+      enum: field.enum,
+      index: field.index,
+      foreignKey: this.#target && { references: this.#target, onDelete: this.#onDelete, onUpdate: this.#onUpdate },
+    };
   }
+}
+
+/** Every column type, named and typed as `f` types it; `add` receives each column it makes. */
+export function tableColumns(add: (column: TableColumn) => TableColumn): TableColumnFactory {
+  const named = (name: string, column: ColumnOptionsBuilder) => add(new TableColumn(name, column));
+  return {
+    id: (name = 'id') => named(name, columns.bigint().id().autoIncrement()),
+    integer: (name) => named(name, columns.column('int')),
+    smallint: (name) => named(name, columns.column('smallint')),
+    bigint: (name) => named(name, columns.bigint()),
+    float: (name) => named(name, columns.column('float')),
+    double: (name) => named(name, columns.column('double')),
+    decimal: (name, precision, scale) => named(name, columns.decimal(precision, scale)),
+    string: (name) => named(name, columns.string().length(255)),
+    char: (name) => named(name, columns.column('char').length(1)),
+    text: (name) => named(name, columns.text()),
+    boolean: (name) => named(name, columns.boolean()),
+    date: (name) => named(name, columns.column('date')),
+    time: (name) => named(name, columns.column('time')),
+    timestamp: (name) => named(name, columns.column('timestamp')),
+    timestamptz: (name) => named(name, columns.column('timestamptz')),
+    json: (name) => named(name, columns.json()),
+    jsonb: (name) => named(name, columns.jsonb()),
+    uuid: (name) => named(name, columns.uuid()),
+    blob: (name) => named(name, columns.column('blob')),
+    vector: (name, dimensions) =>
+      named(name, dimensions === undefined ? columns.column('vector') : columns.vector(dimensions)),
+  };
 }

@@ -3,7 +3,7 @@
  * applies it.
  */
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { ForeignKeyAction, RelationshipNode, TableNode } from '../schema/types.js';
@@ -15,43 +15,55 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class FkCompany {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
 }
 
 @Entity()
 class FkEmployee {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
-  @Field({ references: () => FkCompany, onDelete: 'CASCADE' }) companyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
+  @Field(
+    f
+      .references(() => FkCompany)
+      .nullable()
+      .onDelete('CASCADE'),
+  )
+  companyId?: number | null;
   @ManyToOne({ entity: () => FkCompany, references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
 }
 
 /** The one referential action nothing else in these entities declares. */
 @Entity()
 class FkSetDefault {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => FkCompany, onDelete: 'SET DEFAULT' }) companyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .references(() => FkCompany)
+      .nullable()
+      .onDelete('SET DEFAULT'),
+  )
+  companyId?: number | null;
   @ManyToOne({ entity: () => FkCompany, references: (fkSetDefault) => fkSetDefault.companyId }) company?: FkCompany;
 }
 
 /** A key that is not the default big integer, which is what catches a serial spelled independently. */
 @Entity()
 class FkNarrowCompany {
-  @Id({ type: Number, columnType: 'int' }) id?: number;
+  @Field(f.number().id().columnType('int')) id?: number;
 }
 
 @Entity()
 class FkNarrowEmployee {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => FkNarrowCompany }) companyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => FkNarrowCompany).nullable()) companyId?: number | null;
 }
 
 /** No relation at all, so a foreign key found on its table is one the entity does not declare. */
 @Entity()
 class FkStandalone {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) companyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) companyId?: number | null;
 }
 
 const ENTITIES = [FkCompany, FkEmployee, FkSetDefault, FkStandalone];

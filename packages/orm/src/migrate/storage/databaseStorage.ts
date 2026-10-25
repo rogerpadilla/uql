@@ -1,6 +1,6 @@
 import type { Querier, QuerySql, SqlQuerier } from '../../type/index.js';
 import { currentTimestamp, sql } from '../../util/sql.js';
-import { TableDefinitionBuilder } from '../builder/tableBuilder.js';
+import { tableBuilder } from '../builder/tableBuilder.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 /** Where executed migrations are recorded when the config does not name a table. */
@@ -26,9 +26,9 @@ export interface MigrationStorage {
  * default. Run under the migration lock, so two runs never race to create it.
  */
 export async function createMigrationsTable(querier: SqlQuerier, tableName: string): Promise<void> {
-  const table = new TableDefinitionBuilder(tableName);
-  table.string('name', { length: 255, primaryKey: true });
-  table.timestamptz('executed_at', { defaultValue: currentTimestamp });
+  const table = tableBuilder(tableName);
+  table.string('name').id();
+  table.timestamptz('executed_at').default(currentTimestamp);
   const generator = new SqlSchemaGenerator(querier.dialect);
   for (const statement of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
     await querier.run(sql.text(statement));

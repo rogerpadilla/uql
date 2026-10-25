@@ -1,161 +1,202 @@
 /**
- * `@Index` options: a vector index declares its `distance`, since the engines default it differently
+ * Index options: a vector index declares its `distance`, since the engines default it differently
  * (MariaDB to euclidean, pgvector to none); MongoDB's `vectorSearch` emits no metric and is exempt.
  * Type-checked by `bun run ts` only.
  */
-import { Entity, Field, Id, Index, type Json, ManyToOne } from '../index.js';
+import { Entity, f, Field, type IndexSection, type Json, ManyToOne } from '../index.js';
 import { sql } from '../util/index.js';
 
-@Index((article) => [article.embedding], { type: 'hnsw', distance: 'cosine', m: 16 })
-@Index((article) => [article.embedding], { type: 'ivfflat', distance: 'l2', lists: 100 })
-@Index((article) => [article.embedding], { type: 'vector', distance: 'cosine', name: 'crdb_native' })
-@Index((article) => [article.title], { unique: true })
-@Index((article) => [article.title], { type: 'gin' })
-@Index((article) => [article.title], { where: { title: { $ne: '' } } })
-// Column entry sugar: an expression, and the object form's length/order/nulls/opsClass modifiers.
-@Index((article) => [sql`lower(${article.title})`], { unique: true })
-@Index((article) => [{ column: article.title, length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
-// A fulltext column's weight is a number on every engine, never a Postgres label.
-@Index((article) => [{ column: article.title, weight: 2 }], { type: 'fulltext' })
-// @ts-expect-error a weight is a number
-@Index((article) => [{ column: article.title, weight: 'A' }], { type: 'fulltext' })
-@Entity()
+/** One index, checked on its own: inside one `@Entity` call, an error in one entry hides another's. */
+declare function indexOf<E>(indexes: IndexSection<E>): void;
+
+@Entity({
+  indexes: (article, index) => [
+    // A fulltext column's weight is a number on every engine, never a Postgres label.
+    index([{ column: article.title, weight: 2 }], { type: 'fulltext' }),
+    // Column entry sugar: an expression, and the object form's prefixLength/order/nulls/opsClass modifiers.
+    index([{ column: article.title, prefixLength: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }]),
+    index([sql`lower(${article.title})`], { unique: true }),
+    index([article.title], { where: { title: { $ne: '' } } }),
+    index([article.title], { type: 'gin' }),
+    index([article.title], { unique: true }),
+    index([article.embedding], { type: 'vector', distance: 'cosine', name: 'crdb_native' }),
+    index([article.embedding], { type: 'ivfflat', distance: 'l2', lists: 100 }),
+    index([article.embedding], { type: 'hnsw', distance: 'cosine', m: 16 }),
+  ],
+})
 export class Article {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.vector(3).nullable()) embedding?: number[] | null;
 }
+
+// @ts-expect-error a weight is a number
+indexOf<Article>((article, index) => [index([{ column: article.title, weight: 'A' }], { type: 'fulltext' })]);
 
 /**
  * `IndexTypeOptions` pairs a vector index `type` with a mandatory `distance` and forbids `distance`
  * everywhere else (see its doc comment) - without that explicit `never`, `VectorIndexOptions`'
  * optional `distance` would survive the intersection and silently typecheck this.
  */
-// @ts-expect-error a non-vector index type cannot declare a distance metric
-@Index((nonVectorIndexWithDistance) => [nonVectorIndexWithDistance.title], { type: 'gin', distance: 'cosine' })
 @Entity()
 export class NonVectorIndexWithDistance {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
 }
 
-// @ts-expect-error hnsw needs a distance metric
-@Index((missingMetric) => [missingMetric.embedding], { type: 'hnsw' })
-// @ts-expect-error ivfflat needs a distance metric
-@Index((missingMetric) => [missingMetric.embedding], { type: 'ivfflat', lists: 10 })
-// @ts-expect-error CockroachDB's native vector index needs a distance metric
-@Index((missingMetric) => [missingMetric.embedding], { type: 'vector' })
+indexOf<NonVectorIndexWithDistance>((nonVectorIndexWithDistance, index) => [
+  index([nonVectorIndexWithDistance.title], {
+    type: 'gin',
+    // @ts-expect-error a non-vector index type cannot declare a distance metric
+    distance: 'cosine',
+  }),
+]);
+
 @Entity()
 export class MissingMetric {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.vector(3).nullable()) embedding?: number[] | null;
 }
+
+// @ts-expect-error CockroachDB's native vector index needs a distance metric
+indexOf<MissingMetric>((missingMetric, index) => [index([missingMetric.embedding], { type: 'vector' })]);
+// @ts-expect-error ivfflat needs a distance metric
+indexOf<MissingMetric>((missingMetric, index) => [index([missingMetric.embedding], { type: 'ivfflat', lists: 10 })]);
+// @ts-expect-error hnsw needs a distance metric
+indexOf<MissingMetric>((missingMetric, index) => [index([missingMetric.embedding], { type: 'hnsw' })]);
 
 /**
  * Column names are checked against the decorated class, which a legacy property decorator could not do:
  * the entity type is inferred from where the returned decorator lands.
  */
-@Index((post) => [{ column: post.title, order: 'desc' }, post.id])
-// @ts-expect-error no such column
-@Index((post) => [post.titel])
-// @ts-expect-error no such column in the object form either
-@Index((post) => [{ column: post.titel }])
-// @ts-expect-error a relation is not a column; index its foreign key instead
-@Index((post) => [post.author])
-// @ts-expect-error a column is read off the refs, never named by a string
-@Index(() => ['title'])
-@Entity()
+@Entity({
+  indexes: (post, index) => [index([{ column: post.title, order: 'desc' }, post.id])],
+})
 export class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ references: () => Article }) articleId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.references(() => Article).nullable()) articleId?: number | null;
   @ManyToOne({ entity: () => Article, references: (post) => post.articleId }) author?: Article;
 }
 
+// @ts-expect-error a column is read off the refs, never named by a string
+indexOf<Post>((post, index) => [index(['title'])]);
+// @ts-expect-error a relation is not a column; index its foreign key instead
+indexOf<Post>((post, index) => [index([post.author])]);
+// @ts-expect-error no such column in the object form either
+indexOf<Post>((post, index) => [index([{ column: post.titel }])]);
+// @ts-expect-error no such column
+indexOf<Post>((post, index) => [index([post.titel])]);
+
 /** `include`'s columns are the entity's too: a typo there builds nothing, the server refusing it. */
-@Index((covering) => [covering.title], { include: (covering) => [covering.id] })
-// @ts-expect-error no such column to include
-@Index((covering) => [covering.title], { include: (covering) => [covering.idd] })
-// @ts-expect-error `include` stores columns, never an expression
-@Index((covering) => [covering.title], { include: () => [sql`lower(title)`] })
-// @ts-expect-error `include` reads its columns off the refs, never names them by a string
-@Index((covering) => [covering.title], { include: () => ['id'] })
-@Entity()
+@Entity({
+  indexes: (covering, index) => [index([covering.title], { include: [covering.id] })],
+})
 export class Covering {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
 }
+
+// @ts-expect-error `include` reads its columns off the refs, never names them by a string
+indexOf<Covering>((covering, index) => [index([covering.title], { include: ['id'] })]);
+// @ts-expect-error `include` stores columns, never an expression
+indexOf<Covering>((covering, index) => [index([covering.title], { include: [sql`lower(title)`] })]);
+// @ts-expect-error no such column to include
+indexOf<Covering>((covering, index) => [index([covering.title], { include: [covering.idd] })]);
 
 /**
  * A partial index's predicate is a `QueryWhere` over the entity's own fields, or SQL reading them off
  * refs, as an expression entry does. A typo, a relation, or what DDL cannot carry fails.
  */
-@Index((softDeleted) => [softDeleted.title], { where: { deletedAt: null } })
-@Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => sql`${softDeleted.deletedAt} IS NULL` })
-@Index(() => [{ column: sql`lower(title)`, order: 'desc' }])
-// @ts-expect-error no such field in the predicate
-@Index((softDeleted) => [softDeleted.title], { where: { deletdAt: null } })
-// @ts-expect-error a relation has no column to test
-@Index((softDeleted) => [softDeleted.title], { where: { author: { id: 1 } } })
-// @ts-expect-error DDL has no full-text search
-@Index((softDeleted) => [softDeleted.title], { where: { $text: { $value: 'x' } } })
-// @ts-expect-error a predicate is a QueryWhere or raw, never a string
-@Index((softDeleted) => [softDeleted.title], { where: 'title IS NOT NULL' })
-// @ts-expect-error the refs are the entity's fields
-@Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => sql`${softDeleted.deletdAt} IS NULL` })
-// @ts-expect-error an expression is raw read off the list's refs, never a callback
-@Index(() => [() => sql`lower(title)`])
-// @ts-expect-error an expression's refs are the entity's fields
-@Index((softDeleted) => [sql`lower(${softDeleted.titel})`])
-@Entity()
+@Entity({
+  indexes: (softDeleted, index) => [
+    index([{ column: sql`lower(title)`, order: 'desc' }]),
+    index([softDeleted.title], { where: sql`${softDeleted.deletedAt} IS NULL` }),
+    index([softDeleted.title], { where: { deletedAt: null } }),
+  ],
+})
 export class SoftDeleted {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: Date }) deletedAt?: Date | null;
-  @Field({ references: () => Article }) articleId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.date().nullable()) deletedAt?: Date | null;
+  @Field(f.references(() => Article).nullable()) articleId?: number | null;
   @ManyToOne({ entity: () => Article, references: (softDeleted) => softDeleted.articleId }) author?: Article;
 }
 
+// @ts-expect-error an expression's refs are the entity's fields
+indexOf<SoftDeleted>((softDeleted, index) => [index([sql`lower(${softDeleted.titel})`])]);
+// @ts-expect-error an expression is raw read off the list's refs, never a callback
+indexOf<SoftDeleted>((softDeleted, index) => [index([() => sql`lower(title)`])]);
+indexOf<SoftDeleted>((softDeleted, index) => [
+  index([softDeleted.title], {
+    // @ts-expect-error the refs are the entity's fields
+    where: sql`${softDeleted.deletdAt} IS NULL`,
+  }),
+]);
+// @ts-expect-error a predicate is a QueryWhere or raw, never a string
+indexOf<SoftDeleted>((softDeleted, index) => [index([softDeleted.title], { where: 'title IS NOT NULL' })]);
+// @ts-expect-error DDL has no full-text search
+indexOf<SoftDeleted>((softDeleted, index) => [index([softDeleted.title], { where: { $text: { $value: 'x' } } })]);
+// @ts-expect-error a relation has no column to test
+indexOf<SoftDeleted>((softDeleted, index) => [index([softDeleted.title], { where: { author: { id: 1 } } })]);
+// @ts-expect-error no such field in the predicate
+indexOf<SoftDeleted>((softDeleted, index) => [index([softDeleted.title], { where: { deletdAt: null } })]);
+
 /**
- * A JSON entry's path is checked against the payload of the column the same entry names. It matters
- * more here than anywhere else in the index API: a misspelled path still builds a perfectly valid
- * index, one no query will ever match, and nothing at runtime can tell that from the index meant.
+ * A path inside a JSON column is read off its ref the way a `$where` key spells it, so it is checked against the
+ * column's payload and a rename reaches it. It matters more here than anywhere else in the index API: a misspelled
+ * path still builds a valid index, one no query matches. A path that is not text says how its queries compare it,
+ * since a number read as text sorts as text; an array type indexes each element.
  */
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'theme.color', type: String } }])
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'theme', type: String } }])
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'rating', type: Number } }])
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonArray: { path: 'ids', type: Number } }])
-// the column is the array itself, so there is no path to name
-@Index((jsonIndexed) => [{ column: jsonIndexed.tags, jsonArray: { type: String, length: 64 } }])
-// an untyped payload accepts any path, since there is nothing to check it against
-@Index((jsonIndexed) => [{ column: jsonIndexed.loose, jsonPath: { path: 'anything.at.all', type: String } }])
-// @ts-expect-error typo in the leaf segment
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'theme.colour', type: String } }])
-// @ts-expect-error typo in the root segment
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'thema.color', type: String } }])
-// @ts-expect-error the path belongs to another column
-@Index((jsonIndexed) => [{ column: jsonIndexed.tags, jsonPath: { path: 'theme.color', type: String } }])
-// @ts-expect-error `tags` is the array, so `jsonArray` there takes no path
-@Index((jsonIndexed) => [{ column: jsonIndexed.tags, jsonArray: { path: 'ids', type: String, length: 8 } }])
-// @ts-expect-error not a JSON column at all
-@Index((jsonIndexed) => [{ column: jsonIndexed.title, jsonPath: { path: 'x', type: String } }])
-// @ts-expect-error a JSON path entry needs the path it indexes
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { type: String } }])
-// @ts-expect-error a JSON path entry needs the type its path is read as
-@Index((jsonIndexed) => [{ column: jsonIndexed.kind, jsonPath: { path: 'rating' } }])
-@Index((jsonIndexed) => [
-  // @ts-expect-error an entry reads one thing: never both forms at once
-  { column: jsonIndexed.kind, jsonPath: { path: 'rating', type: Number }, jsonArray: { type: Number } },
-])
-// @ts-expect-error no such column
-@Index((jsonIndexed) => [{ column: jsonIndexed.knid, jsonPath: { path: 'rating', type: Number } }])
-// @ts-expect-error a JSON entry names its column, never an expression
-@Index(() => [{ column: sql`kind`, jsonPath: { path: 'rating', type: Number } }])
-@Entity()
+@Entity({
+  indexes: (jsonIndexed, index) => [
+    index([jsonIndexed.kind.then]),
+    index([jsonIndexed.loose['anything']['at']['all'], { column: jsonIndexed.loose['score'], type: Number }]),
+    index([jsonIndexed.kind], { type: 'gin' }),
+    index([{ column: jsonIndexed.tags, type: [String], charLength: 64 }]),
+    index([{ column: jsonIndexed.kind.ids, type: [Number] }]),
+    index([{ column: jsonIndexed.kind.theme.count, type: Number }]),
+    index([{ column: jsonIndexed.kind.rating, type: Number }]),
+    index([{ column: jsonIndexed.kind.theme.color, charLength: 32 }]),
+    index([jsonIndexed.kind.theme.color]),
+  ],
+})
 export class JsonIndexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: 'json' }) kind?: Json<{ theme: { color: string }; rating: number; ids: number[] }> | null;
-  @Field({ type: 'json' }) tags?: Json<string[]> | null;
-  @Field({ type: 'json' }) loose?: Json | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.json().nullable()) kind?: Json<{
+    theme: { color: string; count: number };
+    rating: number;
+    ids: number[];
+    as: string;
+    then: string;
+    toString: string;
+  }> | null;
+  @Field(f.json().nullable()) tags?: Json<string[]> | null;
+  @Field(f.json().nullable()) loose?: Json | null;
 }
+
+// @ts-expect-error `Object`'s own names are every ref's, so a payload key of one is out of reach
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.toString])]);
+// @ts-expect-error `as` is the ref's own, so a payload key of that name is out of reach
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.as])]);
+// @ts-expect-error a plain column is read as what it holds
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([{ column: jsonIndexed.title, type: String }])]);
+// @ts-expect-error an object is no value an index can key
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.theme])]);
+// @ts-expect-error an array's elements need their type
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([{ column: jsonIndexed.kind.ids }])]);
+// @ts-expect-error an array type indexes elements, and this path holds one string
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([{ column: jsonIndexed.kind.theme.color, type: [String] }])]);
+// @ts-expect-error the type is how the queries compare the path, which is a number
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([{ column: jsonIndexed.kind.rating, type: String }])]);
+// @ts-expect-error likewise in the object form
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([{ column: jsonIndexed.kind.rating }])]);
+// @ts-expect-error a number read as text sorts as text, so its type is stated
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.rating])]);
+// @ts-expect-error not a JSON column, so it has no path
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.title.x])]);
+// @ts-expect-error typo in the root segment
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.thema.color])]);
+// @ts-expect-error typo in the leaf segment
+indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.theme.colour])]);

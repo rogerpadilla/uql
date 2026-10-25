@@ -77,39 +77,39 @@ export abstract class AbstractIntrospectorIt implements Spec {
     await builder.createTable(INTROSPECT_TABLES.A, (t) => {
       t.id();
       t.text('name').nullable();
-      t.string('status', { length: 50 }).defaultValue('active');
-      t.boolean('is_enabled').defaultValue(true);
-      t.integer('score').defaultValue(0);
-      t.timestamp('created_at').defaultValue(currentTimestamp);
-      t.decimal('amount', { precision: 10, scale: 2 }).nullable();
+      t.string('status').length(50).default('active');
+      t.boolean('is_enabled').default(true);
+      t.integer('score').default(0);
+      t.timestamp('created_at').default(currentTimestamp);
+      t.decimal('amount', 10, 2).nullable();
     });
     await this.addDialectSpecificColumnsA(querier);
 
     await builder.createTable(INTROSPECT_TABLES.B, (t) => {
       t.id();
       t.bigint('a_id').nullable().references(INTROSPECT_TABLES.A).onDelete('CASCADE').onUpdate('NO ACTION');
-      t.string('col1', { length: 100 }).nullable();
-      t.string('col2', { length: 100 }).nullable();
-      t.string('unique_code', { length: 50 }).unique();
+      t.string('col1').length(100).nullable();
+      t.string('col2').length(100).nullable();
+      t.string('unique_code').length(50).unique();
     });
 
     await builder.createTable(INTROSPECT_TABLES.C, (t) => {
       t.id();
       t.bigint('b_id').nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
-      t.integer('priority').notNullable();
-      t.integer('doubled').nullable().computed('priority * 2');
+      t.integer('priority');
+      t.integer('doubled').nullable().as('priority * 2');
     });
 
     await builder.createTable(INTROSPECT_TABLES.COMPOSITE_PK, (t) => {
-      t.integer('tenant_id').notNullable().primaryKey();
-      t.integer('entity_id').notNullable().primaryKey();
+      t.integer('tenant_id').id();
+      t.integer('entity_id').id();
       t.text('data').nullable();
     });
 
     await builder.createTable(INTROSPECT_TABLES.SELF_REF, (t) => {
       t.id();
       t.bigint('parent_id').nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete(this.selfReferenceOnDelete());
-      t.string('name', { length: 255 }).notNullable();
+      t.string('name').length(255);
     });
 
     await builder.createTable(INTROSPECT_TABLES.MULTI_FK, (t) => {
@@ -120,8 +120,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     await builder.createTable(INTROSPECT_TABLES.COMPOSITE_UNIQUE, (t) => {
       t.id();
-      t.string('code', { length: 100 }).notNullable();
-      t.string('region', { length: 100 }).notNullable();
+      t.string('code').length(100);
+      t.string('region').length(100);
     });
     await builder.createIndex(INTROSPECT_TABLES.COMPOSITE_UNIQUE, ['code', 'region'], {
       name: 'code_region_uk',
@@ -335,7 +335,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectTimestampDefault() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-    expect(this.getColumn(schema, 'created_at').defaultValue).toEqual(new SqlExpression('currentTimestamp'));
+    expect(this.getColumn(schema, 'created_at').defaultValue).toEqual(SqlExpression.named('currentTimestamp'));
   }
 
   /** A precision is a decimal's or a timestamp's: every catalogue also counts an integer's digits or bits. */
@@ -364,12 +364,12 @@ export abstract class AbstractIntrospectorIt implements Spec {
       const builder = await migrationBuilderFor(querier);
       await builder.createTable(table, (t) => {
         t.id();
-        t.text('note').defaultValue('none');
-        t.text('escaped').defaultValue('a\\b');
-        t.timestamp('at').defaultValue(new Date('2024-01-15T10:30:00.000Z'));
-        t.string('label', { length: 20 }).defaultValue("it's");
-        t.integer('score').defaultValue(0);
-        t.boolean('enabled').defaultValue(true);
+        t.text('note').default('none');
+        t.text('escaped').default('a\\b');
+        t.timestamp('at').default(new Date('2024-01-15T10:30:00.000Z'));
+        t.string('label').length(20).default("it's");
+        t.integer('score').default(0);
+        t.boolean('enabled').default(true);
       });
     });
 
@@ -399,7 +399,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.probe(table, async (querier) => {
       const builder = await migrationBuilderFor(querier);
       await builder.createTable(table, (t) => {
-        t.string('code', { length: 36 }).primaryKey();
+        t.string('code').length(36).id();
       });
     });
 

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import { CrdbQuerierPool } from '../../cockroachdb/crdbQuerierPool.js';
-import { Entity, Field, Id, Index } from '../../entity/index.js';
+import { Entity, f, Field } from '../../entity/index.js';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
 import { MariadbQuerierPool } from '../../mariadb/mariadbQuerierPool.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
@@ -22,11 +22,15 @@ const DATABASE = 'test_vector';
 
 /** The table with its vector index built for `distance`, declared as the engine's own `type`, and tuned. */
 function vectorTable(type: VectorIndexType, distance: VectorDistance) {
-  @Index((row) => [row.vec], { type, distance, m: 8, efConstruction: 32, name: 'ix_drift_vec' })
-  @Entity({ name: TABLE })
+  @Entity({
+    name: TABLE,
+    indexes: (vectorRow, index) => [
+      index([vectorRow.vec], { type, distance, m: 8, efConstruction: 32, name: 'ix_drift_vec' }),
+    ],
+  })
   class VectorRow {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: 'vector', dimensions: 2 }) vec?: number[] | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.vector(2).nullable()) vec?: number[] | null;
   }
   return VectorRow;
 }
@@ -34,8 +38,8 @@ function vectorTable(type: VectorIndexType, distance: VectorDistance) {
 /** The table before its index is declared: NOT NULL, as MariaDB indexes no other column and an index alters none. */
 @Entity({ name: TABLE })
 class Unindexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 2, nullable: false }) vec?: number[];
+  @Field(f.number().id()) id?: number;
+  @Field(f.vector(2)) vec?: number[];
 }
 
 const at = (degrees: number) => [Math.cos((degrees * Math.PI) / 180), Math.sin((degrees * Math.PI) / 180)];

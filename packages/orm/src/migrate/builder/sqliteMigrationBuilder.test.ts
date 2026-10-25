@@ -25,7 +25,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
     await this.withBuilder((builder) =>
       builder.createTable(table, (t) => {
         t.id();
-        t.date('day', { defaultValue: currentDate });
+        t.date('day').default(currentDate);
       }),
     );
     await this.pool.run(sql.text(`INSERT INTO ${table} DEFAULT VALUES`));
@@ -40,9 +40,9 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
     await this.withBuilder(async (builder) => {
       await this.givenIntegerPayload(builder);
 
-      await expect(
-        builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload', { nullable: true })),
-      ).rejects.toThrow('rebuilds the table');
+      await expect(builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload').nullable())).rejects.toThrow(
+        'rebuilds the table',
+      );
     });
   }
 
@@ -52,7 +52,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
 
       await expect(
         builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
-          t.alterColumn((c) => c.text('payload', { nullable: true }));
+          t.alterColumn((c) => c.text('payload').nullable());
         }),
       ).rejects.toThrow('rebuilds the table');
     });

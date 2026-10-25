@@ -1,6 +1,7 @@
 import { getMeta } from '../entity/index.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../migrate/builder/types.js';
-import { assertIndexFeatures, assertIndexType } from '../migrate/ddl/indexDdl.js';
+import { INDEX_CAPABILITIES } from '../migrate/ddl/indexCapabilities.js';
+import { assertExpressible } from '../migrate/ddl/indexDdl.js';
 import { renderIndexDefinition } from '../migrate/generator/definitionToNode.js';
 import { indexNodeToSchema } from '../migrate/generator/indexNodeToSchema.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../migrate/indexPredicate.js';
@@ -11,7 +12,7 @@ import {
   type CreateSchemaOptions,
   type EntityMeta,
   type EntityWhereMeta,
-  type IndexFeature,
+  type IndexEntry,
   type IndexSchema,
   type NamingStrategy,
   QuerySql,
@@ -21,19 +22,15 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../type/vector.js';
-import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
-import { fulltextConfig, fulltextWeights } from '../util/dialect.util.js';
+import { declaredIndexes, namedIndex } from '../util/ddlExpression.util.js';
+import { findVectorIndex, fulltextConfig, fulltextWeights, indexedDistance } from '../util/dialect.util.js';
+import { entryKeys, entryModifiers, renamedEntry } from '../util/indexEntry.util.js';
 import { definedEntries, hasKeys } from '../util/object.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { type MongoIndexKey, type MongoValidator, serializeMongoCommand, validatorCheck } from './mongoCommand.js';
 import { MongoDialect } from './mongoDialect.js';
+import { documentEntry } from './mongoIntrospector.js';
 import { textLanguage } from './textLanguage.js';
-
-/** The index types a key spec can say, a plain key or `'text'`, and Atlas's vector search index. */
-const MONGO_INDEX_TYPES: ReadonlySet<IndexType> = new Set(['btree', 'fulltext', 'vectorSearch']);
-
-/** A key spec's one feature beyond its keys: a partial filter. */
-const MONGO_INDEX_FEATURES: ReadonlySet<IndexFeature> = new Set(['partial']);
 
 /** Atlas's name for each metric a vector search index scores by. */
 const ATLAS_SIMILARITY: Partial<Record<VectorDistance, string>> = {
@@ -82,24 +79,32 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    * `where` to a filter document, and every other option spread through, so a new one cannot be lost.
    */
   private indexesOf<E extends object>(meta: EntityMeta<E>, collectionName: string): IndexSchema[] {
-    return declaredIndexes(meta).map(({ columns, where, ...options }) => {
-      const entries = columns
-        .map((entry) => renderIndexColumn(entry, refuseSql))
-        .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
-      const [first] = columns;
-      const vector =
-        options.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
-      const predicate =
-        where && this.indexFilter(where, meta.entity, declaredIndexName(options.name, collectionName, entries));
+    return declaredIndexes(meta).map(({ entries: declared, where, ...options }) => {
+      // As the collection reports each back, its document path read the way the introspector reads one; a key
+      // spec takes no length.
+      const entries = declared.map((entry) => {
+        const renamed = renamedEntry(entry, (column) => this.columnOf(meta, column));
+        return { ...entryModifiers(renamed), ...documentEntry(documentPath(renamed)) };
+      });
+      const [first] = declared;
+      const vectorKey = options.type === 'vectorSearch' && typeof first?.column === 'string' ? first.column : undefined;
+      const vector = vectorKey === undefined ? undefined : meta.fields[vectorKey];
+      const named = namedIndex(
+        options.name,
+        collectionName,
+        entries,
+        (label) => where && this.indexFilter(where, meta.entity, label),
+      );
       return {
         ...options,
-        name: vector
-          ? this.vectorSearchIndexName(options.name, entries[0].column)
-          : declaredIndexName(options.name, collectionName, entries, { where: predicate }),
+        ...named,
+        name: vector ? this.vectorSearchIndexName(options.name, documentPath(entries[0])) : named.name,
         entries,
         unique: options.unique ?? false,
-        where: predicate,
-        distance: options.distance ?? vector?.distance,
+        distance:
+          vectorKey === undefined
+            ? options.distance
+            : indexedDistance(meta, vectorKey, findVectorIndex(meta, vectorKey)),
         dimensions: vector?.dimensions,
       };
     });
@@ -178,14 +183,13 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
-    assertIndexType(index, MONGO_INDEX_TYPES, this.engineName);
+    assertExpressible(index, INDEX_CAPABILITIES[this.dialectName], this.engineName);
     if (index.type === 'vectorSearch') {
       return this.generateCreateSearchIndex(tableName, index);
     }
-    assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.engineName);
     const key: MongoIndexKey = {};
     for (const entry of index.entries) {
-      key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
+      key[documentPath(entry)] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
     }
     const weights = fulltextWeights(index);
     return serializeMongoCommand({
@@ -197,7 +201,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
         unique: index.unique,
         name: index.name,
         partialFilterExpression: index.where && JSON.parse(index.where),
-        weights: weights && Object.fromEntries(index.entries.map((entry, at) => [entry.column, weights[at]])),
+        weights: weights && Object.fromEntries(index.entries.map((entry, at) => [documentPath(entry), weights[at]])),
         default_language: index.type === 'fulltext' ? textLanguage(fulltextConfig(index)) : undefined,
       },
     });
@@ -205,7 +209,6 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** An Atlas vector search index: its vector field first, then each field a `$vectorSearch` pre-filters on. */
   private generateCreateSearchIndex(tableName: string, index: IndexSchema): string {
-    assertIndexFeatures(index, new Set(), this.engineName);
     const [vector, ...filters] = index.entries;
     if (!vector || index.dimensions === undefined) {
       throw new UqlUsageError(`an Atlas vector search index states its field's dimensions (index "${index.name}")`);
@@ -223,8 +226,8 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
         type: 'vectorSearch',
         definition: {
           fields: [
-            { type: 'vector', path: vector.column, numDimensions: index.dimensions, similarity },
-            ...filters.map((entry) => ({ type: 'filter' as const, path: entry.column })),
+            { type: 'vector', path: documentPath(vector), numDimensions: index.dimensions, similarity },
+            ...filters.map((entry) => ({ type: 'filter' as const, path: documentPath(entry) })),
           ],
         },
       },
@@ -270,15 +273,18 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     const desired = declared && validatorCheck(collectionName, declared);
     const [current] = currentTable.checks;
     const checks = desired?.name === current?.name ? [] : [{ from: current, to: desired }];
-    const { changes } = indexChanges(
-      collectionName,
-      this.indexesOf(meta, collectionName),
-      currentTable.indexes,
-      currentTable.indexFacets,
-    );
+    const { changes } = indexChanges(this.indexesOf(meta, collectionName), currentTable);
     const indexes = changes.map(({ from, to }) => ({ from: from && indexNodeToSchema(from), to }));
     return indexes.length || checks.length ? { tableName: collectionName, type: 'alter', checks, indexes } : undefined;
   }
+}
+
+/**
+ * The document path an index entry keys: its field, then the path inside it, which is how a `$where` on
+ * `'settings.theme'` reads it too. An expression entry is refused before any key is built.
+ */
+function documentPath(entry: IndexEntry<unknown>): string {
+  return entryKeys(entry)?.join('.') ?? refuseSql();
 }
 
 /** A collection has no SQL to render a check, a computed column or an index expression into. */

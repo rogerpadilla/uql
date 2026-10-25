@@ -3,7 +3,7 @@
 // enforces it, and reports it back under that name.
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import { defineField, Entity, Field, getMeta, Id } from '../entity/index.js';
+import { defineEntity, Entity, f, Field, getMeta } from '../entity/index.js';
 import type { EnumValues } from '../schema/types.js';
 import { assertDefined, linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
@@ -11,23 +11,26 @@ import { sql } from '../util/sql.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
-@Entity({ name: 'CkBill', checks: [{ name: 'cap', where: (bill) => sql`${bill.spent} <= ${bill.balance}` }] })
-class CkBill {
-  @Id({ type: Number }) id?: number;
-  status?: string | null;
-  @Field({ type: Number }) spent?: number | null;
-  @Field({ type: Number }) balance?: number | null;
-  @Field({ type: String, columnType: 'varchar', length: 20 }) note?: string | null;
-}
+const STATUSES: readonly string[] = ['draft', 'paid'];
 
-// Its values declared as data, so the property admits any string: the tests widen them.
-defineField(CkBill, 'status', { type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] });
+const CkBill = defineEntity({
+  name: 'CkBill',
+  fields: {
+    id: f.number().id(),
+    // Its values declared as data, so the row admits any string: the tests widen them.
+    status: f.enum(STATUSES).nullable().length(20).columnType('varchar'),
+    spent: f.number().nullable(),
+    balance: f.number().nullable(),
+    note: f.string().nullable().length(20).columnType('varchar'),
+  },
+}).checks((ckBill, check) => [check(sql`${ckBill.spent} <= ${ckBill.balance}`, 'cap')]);
+type CkBill = InstanceType<typeof CkBill>;
 
-@Entity({ name: 'CkHand', checks: [{ where: { n: { $lte: 100 } } }] })
+@Entity({ name: 'CkHand', checks: (ckHand, check) => [check({ n: { $lte: 100 } })] })
 class CkHand {
   // Not generated, so it matches the table the test writes by hand, and the check is all that differs.
-  @Id({ type: Number, autoIncrement: false }) id?: number;
-  @Field({ type: Number }) n?: number | null;
+  @Field(f.number().id().autoIncrement(false)) id?: number;
+  @Field(f.number().nullable()) n?: number | null;
 }
 
 describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { features }) => {

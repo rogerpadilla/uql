@@ -104,3 +104,8 @@ export function fnv1a(value: string): number {
   }
   return hash;
 }
+
+/** `text` as a regex matching it literally. */
+export function escapeRegExp(text: string): string {
+  return text.replaceAll(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}

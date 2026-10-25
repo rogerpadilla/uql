@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { $ } from 'bun';
-import { writeFixture } from './typeFixture.js';
+import { writeConsumerProject } from './typeFixture.js';
 
 const MIN_TYPESCRIPT = '5.7';
 
@@ -21,7 +21,11 @@ if (!(await Bun.file(built).exists())) {
 
 const dir = mkdtempSync(resolve(tmpdir(), 'uql-type-floor-'));
 try {
-  writeFixture(dir, built, 1, { target: 'es2022', skipLibCheck: false });
+  writeConsumerProject(
+    dir,
+    { queries: 1, definitions: 1, schemas: 1 },
+    { target: 'es2022', module: 'NodeNext', lib: ['ESNext'], skipLibCheck: false, paths: { 'uql-orm': [built] } },
+  );
   const out = await $`bunx -p typescript@${MIN_TYPESCRIPT} tsc -p ${dir}`.nothrow().text();
   const errors = out.split('\n').filter((line) => line.includes('error TS'));
   if (errors.length) {

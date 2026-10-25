@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { queryPlanOf } from '../querier/jsonPathIndex-test.js';
 import { postgresConnection, provisioningTimeout } from '../test/index.js';
@@ -12,11 +12,15 @@ const TABLE = 'pg_text_search_index';
 /** Enough rows that a scan is the cheaper plan, so the planner's choice means something. */
 const ROWS = 2000;
 
-@Index((doc) => [doc.body], { name: 'ix_body_fts', type: 'fulltext', config: 'english' })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (searchableDoc, index) => [
+    index([searchableDoc.body], { name: 'ix_body_fts', type: 'fulltext', config: 'english' }),
+  ],
+})
 class SearchableDoc {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
 }
 
 /**

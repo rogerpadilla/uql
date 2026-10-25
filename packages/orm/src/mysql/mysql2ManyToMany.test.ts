@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, ManyToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToMany } from '../entity/index.js';
 import { mysqlConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
 import { sql } from '../util/sql.js';
@@ -8,20 +8,20 @@ import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 /** Keyed by its column's own default, for which a MySQL insert reports no id. */
 @Entity({ name: 'uql_linked_label' })
 class LinkedLabel {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) name?: string | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) name?: string | null;
 }
 
 @Entity({ name: 'uql_label_link' })
 class LabelLink {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => LabelPost }) labelPostId?: number | null;
-  @Field({ references: () => LinkedLabel }) linkedLabelId?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => LabelPost).nullable()) labelPostId?: number | null;
+  @Field(f.references(() => LinkedLabel).nullable()) linkedLabelId?: string | null;
 }
 
 @Entity({ name: 'uql_label_post' })
 class LabelPost {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   @ManyToMany({ entity: () => LinkedLabel, through: () => LabelLink, cascade: true }) labels?: LinkedLabel[];
 }
 

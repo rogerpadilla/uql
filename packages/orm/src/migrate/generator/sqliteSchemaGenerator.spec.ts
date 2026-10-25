@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../../entity/index.js';
+import { Entity, f, Field } from '../../entity/index.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { assertDefined, mockSqlTableNode, sqlTypeOf } from '../../test/index.js';
 import { reverseDiff } from '../schemaChange.js';
@@ -7,9 +7,9 @@ import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 @Entity()
 class RebuiltUser {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: Number, nullable: false, defaultValue: 0 }) age?: number;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.number().default(0)) age?: number;
 }
 
 /** `RebuiltUser` as the database holds it: `age` still `years`, text and nullable, with what only SQLite can say of it. */

@@ -3,46 +3,39 @@ import { Migrator } from '../../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import type { ColumnType, Json, Scalar, Type } from '../../type/index.js';
+import type { ColumnType, SchemaClass, SchemaFields, Type } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
-import { defineEntity, defineField, defineRelation, getEntities, getMeta, removeEntity } from './definition.js';
+import { f } from '../column.js';
+import { Field } from '../decorator/members.js';
+import { defineEntity, getEntities, getMeta, removeEntity } from './definition.js';
 
 /**
  * A content type an admin creates through a UI: its shape is a row in a table, not a class in the
- * source. Nothing in uql reads a TypeScript type at runtime, so the metadata a hand-written entity
- * registers can be assembled from data instead. What that costs at compile time - which is the only
- * thing it costs - is pinned in `defineEntity.runtime.test-d.ts`.
+ * source. Nothing in uql reads a TypeScript type at runtime, so a schema can be assembled from data.
+ * What that costs at compile time - which is the only thing it costs - is pinned in
+ * `defineEntity.runtime.test-d.ts`.
  */
 
 /** What the admin UI stored: a column per field, which is the shape a CMS keeps its own schema in. */
 type ContentType = { name: string; fields: { name: string; type: ColumnType }[] };
 
-/** A row of a content type nobody declared: every key is a column, so every value is a scalar. */
-type ContentRow = { [column: string]: Scalar | Json<Record<string, unknown>> };
+/** Its columns as a schema takes them, keyed by whatever the admin named each field. */
+function columnsOf({ fields }: ContentType): SchemaFields {
+  return {
+    id: f.column('bigint').id(),
+    ...Object.fromEntries(fields.map((field) => [field.name, f.column(field.type).nullable()])),
+  };
+}
 
 /** Named after the content type, so its DDL and its errors read like a hand-written entity's. */
-function register({ name, fields }: ContentType, base?: Type<object>): Type<ContentRow> {
-  const entity = {
-    [name]: class {
-      id!: number;
-      [column: string]: Scalar | Json<Record<string, unknown>>;
-    },
-  }[name];
-  defineEntity(entity, {
-    extends: base,
-    name,
-    fields: {
-      id: { type: 'bigint', isId: true },
-      ...Object.fromEntries(fields.map((field) => [field.name, { type: field.type }])),
-    },
-  });
-  return entity;
+function register(contentType: ContentType, base?: SchemaClass<object>) {
+  return defineEntity({ name: contentType.name, extends: base, fields: columnsOf(contentType) });
 }
 
 const pool = new SqliteQuerierPool(':memory:');
 
 /** Applies the entity schema to the database, the same additive diff the CLI's `sync` runs. */
-const sync = (entities: Type<ContentRow>[]) => new Migrator(pool, { entities }).sync();
+const sync = (entities: Type<object>[]) => new Migrator(pool, { entities }).sync();
 
 afterAll(() => pool.end());
 
@@ -55,14 +48,9 @@ it('should register the table a hand-written entity would, whichever way the typ
     ],
   });
 
-  class Written {
-    id?: number;
-    title?: string | null;
-    servings?: number | null;
-  }
-  defineEntity(Written, {
+  const Written = defineEntity({
     name: 'recipe',
-    fields: { id: { type: Number, isId: true }, title: { type: String }, servings: { type: Number } },
+    fields: { id: f.number().id(), title: f.string().nullable(), servings: f.number().nullable() },
   });
 
   // The runtime one names SQL types, the hand-written one JS constructors: the same table either way.
@@ -94,13 +82,16 @@ it('should create its table from the definition, and the rows read back', async 
 
 it('should relate two content types to each other', async () => {
   const Author = register({ name: 'author', fields: [{ name: 'name', type: 'text' }] });
-  const Article = register({ name: 'article', fields: [{ name: 'title', type: 'text' }] });
-  defineField(Article, 'authorId', { references: () => Author });
-  defineRelation(Article, 'author', {
-    cardinality: 'm1',
-    entity: () => Author,
-    references: (article) => article['authorId'],
-  });
+  const Article = defineEntity({
+    name: 'article',
+    fields: columnsOf({
+      name: 'article',
+      fields: [
+        { name: 'title', type: 'text' },
+        { name: 'authorId', type: 'bigint' },
+      ],
+    }),
+  }).relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (article) => article['authorId'] }) }));
   await sync([Author, Article]);
 
   const querier = await pool.getQuerier();
@@ -112,64 +103,49 @@ it('should relate two content types to each other', async () => {
   expect(article).toEqual({ id: 1, title: 'Notes', authorId: 1, author: { id: 1, name: 'Ada' } });
 });
 
-it('should decode a field added after the entity has already been used', async () => {
-  const Doc = register({ name: 'doc', fields: [{ name: 'title', type: 'text' }] });
+/** An edit is a new declaration of the content type, the old one removed, so nothing is read stale. */
+it('should decode a field the admin added to a content type already in use', async () => {
+  const doc = { name: 'doc', fields: [{ name: 'title', type: 'text' as const }] };
+  const Doc = register(doc);
   await sync([Doc]);
 
   const querier = await pool.getQuerier();
   await querier.insertOne(Doc, { id: 1, title: 'About' });
   await querier.findOneById(Doc, 1);
 
-  // A column that needs decoding, added to an entity the dialect has already classified. Its cached
-  // list is keyed by the metadata's revision, so this one is not read back as the text it is stored as.
-  defineField(Doc, 'settings', { type: 'jsonb' });
-  await sync([Doc]);
+  removeEntity(Doc);
+  const Edited = register({ ...doc, fields: [...doc.fields, { name: 'settings', type: 'jsonb' }] });
+  await sync([Edited]);
 
-  await querier.updateOneById(Doc, 1, { settings: { theme: 'dark' } });
-  const updated = await querier.findOneById(Doc, 1);
+  await querier.updateOneById(Edited, 1, { settings: { theme: 'dark' } });
+  const updated = await querier.findOneById(Edited, 1);
   await querier.release();
 
   expect(updated).toEqual({ id: 1, title: 'About', settings: { theme: 'dark' } });
 });
 
-it('should join a relation added after the entity has already been used', async () => {
+it('should join a relation the admin added to a content type already in use', async () => {
   const Owner = register({ name: 'owner', fields: [{ name: 'name', type: 'text' }] });
-  const Note = register({ name: 'note', fields: [{ name: 'title', type: 'text' }] });
+  const note = { name: 'note', fields: [{ name: 'title', type: 'text' as const }] };
+  const Note = register(note);
   await sync([Owner, Note]);
 
   const querier = await pool.getQuerier();
   await querier.insertOne(Owner, { id: 1, name: 'Ada' });
+  await querier.findMany(Note, {});
 
-  // `note` was settled before this relation existed. Registering one marks its metadata changed, so
-  // the next read settles it again rather than joining on columns nothing ever resolved.
-  defineField(Note, 'ownerId', { references: () => Owner });
-  defineRelation(Note, 'owner', { cardinality: 'm1', entity: () => Owner, references: (note) => note['ownerId'] });
-  await sync([Note]);
+  removeEntity(Note);
+  const Edited = defineEntity({
+    name: 'note',
+    fields: columnsOf({ ...note, fields: [...note.fields, { name: 'ownerId', type: 'bigint' }] }),
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (row) => row['ownerId'] }) }));
+  await sync([Edited]);
 
-  await querier.insertOne(Note, { id: 1, title: 'Notes', ownerId: 1 });
-  const [note] = await querier.findMany(Note, { $populate: { owner: true } });
+  await querier.insertOne(Edited, { id: 1, title: 'Notes', ownerId: 1 });
+  const [found] = await querier.findMany(Edited, { $populate: { owner: true } });
   await querier.release();
 
-  expect(note).toEqual({ id: 1, title: 'Notes', ownerId: 1, owner: { id: 1, name: 'Ada' } });
-});
-
-it('should take a field added after the entity has already been used', async () => {
-  const Page = register({ name: 'page', fields: [{ name: 'title', type: 'text' }] });
-  await sync([Page]);
-
-  const querier = await pool.getQuerier();
-  await querier.insertOne(Page, { id: 1, title: 'About' });
-
-  // The admin adds a field to the content type. The insert above already resolved and cached its
-  // metadata, and the column does not exist yet: the next sync adds it, no restart in between.
-  defineField(Page, 'subtitle', { type: String });
-  await sync([Page]);
-
-  await querier.updateOneById(Page, 1, { subtitle: 'the team' });
-  const updated = await querier.findOneById(Page, 1);
-  await querier.release();
-
-  expect(updated).toEqual({ id: 1, title: 'About', subtitle: 'the team' });
+  expect(found).toEqual({ id: 1, title: 'Notes', ownerId: 1, owner: { id: 1, name: 'Ada' } });
 });
 
 it('should create one content type, whatever the migrator was configured with', async () => {
@@ -198,27 +174,30 @@ it('should add a field the admin added, and leave one they retyped', async () =>
 
   // A column is additive and reaches the table; retyping one is not, on any engine, so it stays a
   // migration and the sync says nothing about it.
-  defineField(Tag, 'colour', { type: String });
-  defineField(Tag, 'weight', { type: String });
-  await migrator.sync({ entity: Tag });
+  removeEntity(Tag);
+  const Edited = register({
+    name: 'tag',
+    fields: [
+      { name: 'label', type: 'text' },
+      { name: 'weight', type: 'text' },
+      { name: 'colour', type: 'text' },
+    ],
+  });
+  await migrator.sync({ entity: Edited });
 
   const querier = await pool.getQuerier();
-  await querier.insertOne(Tag, { id: 1, label: 'news', colour: 'red', weight: 2 });
-  const found = await querier.findOneById(Tag, 1);
+  await querier.insertOne(Edited, { id: 1, label: 'news', colour: 'red', weight: 2 });
+  const found = await querier.findOneById(Edited, 1);
   await querier.release();
 
   expect(found).toEqual({ id: 1, label: 'news', colour: 'red', weight: 2 });
 });
 
-/**
- * The audit columns every content type carries. A minted class has no base to extend, so `extends`
- * names one: the same merge, and the base is a bag of columns rather than an entity of its own.
- */
+/** The audit columns every content type carries: a base it extends, a bag of columns rather than an entity of its own. */
 it('should give every content type a base its class cannot extend', async () => {
   class Audited {
-    createdBy?: string;
+    @Field(f.string().nullable()) createdBy?: string | null;
   }
-  defineField(Audited, 'createdBy', { type: String });
 
   const Faq = register({ name: 'faq', fields: [{ name: 'question', type: 'text' }] }, Audited);
   const Guide = register({ name: 'guide', fields: [{ name: 'body', type: 'text' }] }, Audited);

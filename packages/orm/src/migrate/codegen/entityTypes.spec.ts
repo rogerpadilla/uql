@@ -1,34 +1,22 @@
 import { expect, it } from 'vitest';
-import { defineEntity } from '../../entity/index.js';
+import { defineEntity, f } from '../../entity/index.js';
 import { sql } from '../../util/index.js';
 import { entityTypesSource } from './entityTypes.js';
 
 it('should write an interface per registered entity, relations included', () => {
-  class Author {
-    id?: number;
-    name?: string | null;
-    posts?: Post[];
-  }
-  class Post {
-    id?: number;
-    title?: string | null;
-    publishedAt?: Date | null;
-    authorId?: number | null;
-    author?: Author;
-  }
-  defineEntity(Author, {
-    fields: { id: { type: Number, isId: true }, name: { type: String } },
-    relations: { posts: { cardinality: '1m', entity: () => Post, mappedBy: (post) => post.author } },
-  });
-  defineEntity(Post, {
+  const Author = defineEntity({
+    name: 'Author',
+    fields: { id: f.number().id(), name: f.string().nullable() },
+  }).relations((rel) => ({ posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.author }) }));
+  const Post = defineEntity({
+    name: 'Post',
     fields: {
-      id: { type: Number, isId: true },
-      title: { type: String },
-      publishedAt: { type: Date },
-      authorId: { references: () => Author },
+      id: f.number().id(),
+      title: f.string().nullable(),
+      publishedAt: f.date().nullable(),
+      authorId: f.number().nullable(),
     },
-    relations: { author: { cardinality: 'm1', entity: () => Author, references: (post) => post.authorId } },
-  });
+  }).relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (post) => post.authorId }) }));
 
   expect(entityTypesSource([Author, Post])).toBe(
     [
@@ -52,24 +40,22 @@ it('should write an interface per registered entity, relations included', () => 
 });
 
 it('should emit names a generated file can carry, whatever a content type was called', () => {
-  const Outside = { outside: class {} }.outside;
-  defineEntity(Outside, { fields: { id: { type: Number, isId: true } } });
+  const Outside = defineEntity({ name: 'outside', fields: { id: f.number().id() } });
 
   // A slug carries what an identifier cannot, and two of them collide once that is stripped.
-  const dashed = { 'blog-post': class {} }['blog-post'];
-  defineEntity(dashed, {
+  const dashed = defineEntity({
+    name: 'blog-post',
     fields: {
-      id: { type: Number, isId: true },
-      'hero-image': { type: String },
-      outsideId: { references: () => Outside },
+      id: f.number().id(),
+      'hero-image': f.string().nullable(),
+      outsideId: f.number().nullable(),
     },
-    relations: { outside: { cardinality: 'm1', entity: () => Outside, references: () => 'outsideId' } },
-  });
-  const collides = { blogpost: class {} }.blogpost;
-  defineEntity(collides, { fields: { id: { type: Number, isId: true } } });
+  })
+    .references({ outsideId: () => Outside })
+    .relations((rel) => ({ outside: () => rel.manyToOne(Outside, { references: (post) => post.outsideId }) }));
+  const collides = defineEntity({ name: 'blogpost', fields: { id: f.number().id() } });
   // A slug can also start with what an identifier cannot.
-  const numeric = { '2fa': class {} }['2fa'];
-  defineEntity(numeric, { fields: { id: { type: Number, isId: true } } });
+  const numeric = defineEntity({ name: '2fa', fields: { id: f.number().id() } });
 
   expect(entityTypesSource([numeric])).toContain('export interface Entity2fa {');
   const source = entityTypesSource([dashed, collides]);
@@ -82,8 +68,7 @@ it('should emit names a generated file can carry, whatever a content type was ca
 });
 
 it('should keep the letters of a name in any script', () => {
-  const owner = { dueño: class {} }.dueño;
-  defineEntity(owner, { fields: { id: { type: Number, isId: true }, größe: { type: String } } });
+  const owner = defineEntity({ name: 'dueño', fields: { id: f.number().id(), größe: f.string().nullable() } });
 
   const source = entityTypesSource([owner]);
   expect(source).toContain('export interface Dueño {');
@@ -92,18 +77,22 @@ it('should keep the letters of a name in any script', () => {
 
 /** Declared as a class would declare it, so a read has what every row has and an insert names it. */
 it('should declare each field as present, optional or nullable as its column is', () => {
-  const Invoice = { Invoice: class {} }.Invoice;
-  defineEntity(Invoice, {
+  const Invoice = defineEntity({
+    name: 'Invoice',
     fields: {
-      id: { type: Number, isId: true },
-      number: { type: String, nullable: false },
-      status: { type: String, nullable: false, defaultValue: 'draft' },
-      issuedAt: { type: Date, nullable: false, onInsert: () => new Date() },
-      pdf: { type: 'blob', nullable: false, eager: false },
-      note: { type: String },
-      total: { type: Number, nullable: false, computed: sql`1`, stored: true },
+      id: f.number().id(),
+      number: f.string(),
+      status: f.string().default('draft'),
+      issuedAt: f.date().onInsert(() => new Date()),
+      pdf: f.column('blob').eager(false),
+      note: f.string().nullable(),
     },
-  });
+  }).computed((invoice) => ({
+    total: f
+      .number()
+      .as(sql`1`)
+      .stored(),
+  }));
 
   expect(entityTypesSource([Invoice])).toBe(
     [

@@ -5,6 +5,7 @@ export * from './fieldOption.util.js';
 export * from './filters.util.js';
 export * from './hook.util.js';
 export * from './ddlExpression.util.js';
+export * from './indexEntry.util.js';
 export * from './logger.js';
 export * from './object.util.js';
 export * from './sql.js';

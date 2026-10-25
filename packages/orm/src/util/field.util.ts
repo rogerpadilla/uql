@@ -92,6 +92,12 @@ export function aggregateOf(field: FieldOptions | undefined): RelationAggregateS
   return computed instanceof RelationAggregate ? computed.spec : undefined;
 }
 
+/** An aggregate as a computed field holds it: `null` where the relation holds no row, but for a count or a sum. */
+export function aggregateField(aggregate: RelationAggregate): FieldOptions {
+  const { op } = aggregate.spec;
+  return { computed: aggregate, ...(op !== '$count' && op !== '$sum' && { nullable: true }) };
+}
+
 /**
  * Whether the database supplies this field's value, so no insert or update may write it: a stored
  * computed column *is* a real column, read like one, but writing to it is an error on every engine.
@@ -120,12 +126,9 @@ export function fieldFamily(field: FieldOptions): ColumnFamily | undefined {
   return columnFamily(field.columnType ?? field.type);
 }
 
-/**
- * Whether the column is NOT NULL: the field declares `nullable: false` or is a key. A key counts whatever its
- * property says: `id?: number` is optional because the database assigns it, not because it can be null.
- */
+/** Whether the column is NOT NULL: every column is, a key included, unless it declares `nullable()`. */
 export function declaresNotNull(field: FieldOptions): boolean {
-  return field.isId === true || field.nullable === false;
+  return field.nullable !== true;
 }
 
 /** Whether `key` is a field of `meta`, as opposed to a relation, a JSON path or an unknown key. */
@@ -143,15 +146,18 @@ export function fieldKeys<E>(meta: EntityMeta<E>, pick: (field: FieldMeta) => un
 }
 
 /**
- * The fields a read answers with where it names none. A relation aggregate is left out unless it asks
- * for `eager: true`: it reads the related rows, which is what a relation does, and a relation is loaded
- * only when a query asks for it. Naming one in `$select` reads it, whatever the default.
+ * The fields a read answers with where it names none, kept on the entity once it is resolved. A relation
+ * aggregate is left out unless it asks for `eager: true`: it reads the related rows, which is what a relation
+ * does, and a relation is loaded only when a query asks for it. Naming one in `$select` reads it, whatever the default.
  */
-export function defaultReadKeys<E>(meta: EntityMeta<E>): FieldKey<E>[] {
-  return fieldKeys(meta, (field) => field.eager ?? !aggregateOf(field));
+export function defaultReadKeys<E>(meta: EntityMeta<E>): readonly FieldKey<E>[] {
+  return meta.readKeys ?? fieldKeys(meta, (field) => field.eager ?? !aggregateOf(field));
 }
 
-const JSON_KEY = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+/** A JSON key a path may name, unanchored, for a pattern that reads one inside a name. */
+export const JSON_KEY_PATTERN = '[\\p{L}_][\\p{L}\\p{N}_]*';
+
+const JSON_KEY = new RegExp(`^${JSON_KEY_PATTERN}$`, 'u');
 
 /**
  * A JSON document key, refused unless it is an identifier: the one shape every engine's path reads

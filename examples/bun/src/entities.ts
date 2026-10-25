@@ -1,13 +1,13 @@
-import { Entity, Field, Id } from 'uql-orm';
+import { Entity, f, Field } from 'uql-orm';
 
 @Entity()
 export class Todo {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String, nullable: false })
+  @Field(f.string())
   title!: string;
 
-  @Field({ type: Boolean, defaultValue: false })
+  @Field(f.boolean().nullable().default(false))
   completed?: boolean | null;
 }

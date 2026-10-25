@@ -1,21 +1,21 @@
-import { Entity, Field, Id, ManyToOne, OneToMany, type Json } from 'uql-orm';
+import { Entity, Field, ManyToOne, OneToMany, f, type Json } from 'uql-orm';
 import { Post } from './Post.js';
 
 @Entity({ name: 'users' })
 export class User {
-  @Id({ type: 'int' })
+  @Field(f.column('int').id())
   id!: number;
 
-  @Field({ type: 'varchar', length: 255, nullable: false, unique: true })
+  @Field(f.column('varchar').length(255).unique())
   email!: string;
 
-  @Field({ type: 'text' })
+  @Field(f.column('text').nullable())
   name?: string | null;
 
-  @Field({ type: 'jsonb', nullable: false, defaultValue: '{}' })
+  @Field(f.column('jsonb').default('{}'))
   settings?: Json;
 
-  @Field({ name: 'manager_id', type: 'int' })
+  @Field(f.column('int').nullable().name('manager_id'))
   managerId?: number | null;
 
   @ManyToOne({ entity: () => User, references: (user) => user.managerId })

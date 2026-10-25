@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEdits } from './edits.js';
+import { applyEdits, editedText } from './edits.js';
 
 describe('applyEdits', () => {
   it('splices each edit where it was read, whatever order they were found in', () => {
@@ -56,5 +56,15 @@ describe('applyEdits', () => {
     ];
 
     expect(() => applyEdits('abcdef', edits)).toThrow('overlapping edits');
+  });
+});
+
+describe('editedText', () => {
+  /** `ab|cd|ef` with `cd` replaced by `XYZ`: before it the offset holds, inside it maps to its start, after it shifts. */
+  it('maps each offset of the result back to where it was written', () => {
+    const { text, sourceOffset } = editedText('abcdef', [{ start: 2, end: 4, text: 'XYZ' }]);
+
+    expect(text).toBe('abXYZef');
+    expect([0, 1, 2, 4, 5, 6].map(sourceOffset)).toEqual([0, 1, 2, 2, 4, 5]);
   });
 });

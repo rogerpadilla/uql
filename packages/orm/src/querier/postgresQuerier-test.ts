@@ -1,5 +1,5 @@
 import { expect, onTestFinished } from 'vitest';
-import { Entity, Id, removeEntity } from '../entity/index.js';
+import { Entity, f, Field, removeEntity } from '../entity/index.js';
 
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import { PgLikeQuerierIt } from './pgLikeQuerier-test.js';
@@ -19,7 +19,7 @@ export class PostgresQuerierIt extends PgLikeQuerierIt {
   async shouldEstimateNoRowsForATableThatDoesNotExist() {
     @Entity({ name: 'uql_never_created' })
     class NeverCreated {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     onTestFinished(() => {
       removeEntity(NeverCreated);

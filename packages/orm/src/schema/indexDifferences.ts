@@ -1,10 +1,11 @@
-import type { IndexColumnSchema, IndexSchema } from '../type/index.js';
+import type { IndexEntry, IndexSchema } from '../type/index.js';
 import { indexDistance, isVectorIndexType } from '../type/vector.js';
+import { declaredIndexName } from '../util/ddlExpression.util.js';
 import { fulltextConfig } from '../util/dialect.util.js';
-import { isDerivedIndexName } from '../util/sql.util.js';
-import { isColumnEntry } from './indexColumns.js';
+import { indexEntryNamePart, isStored, type StoredEntry, storedColumns } from '../util/indexEntry.util.js';
+import { NAME_HASH_LENGTH, TABLE_SEPARATOR } from '../util/sql.util.js';
 import { matchByKey } from './matchByKey.js';
-import type { IndexNode } from './types.js';
+import type { IndexNode, TableNode } from './types.js';
 
 /**
  * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
@@ -29,10 +30,7 @@ type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique' | 'where'>;
  * over an expression, whose text the engine reprints, falls back to its name.
  */
 export function indexSignature(index: ComparableIndex): string {
-  const comparable = index.entries.every(isColumnEntry);
-  const identity = comparable
-    ? index.entries.map((entry) => entry.column).join(',')
-    : `name:${indexNameStem(index.name)}`;
+  const identity = storedColumns(index.entries)?.join(',') ?? `name:${indexNameStem(index.name)}`;
   return `${index.unique ? 'unique' : 'plain'}(${identity})`;
 }
 
@@ -43,7 +41,7 @@ export function indexSignature(index: ComparableIndex): string {
 export function indexNameStem(name: string): string {
   const withoutSuffix = name.replace(KIND_SUFFIX, '');
   const bare = withoutSuffix === name ? name.replace(KIND_PREFIX, '') : withoutSuffix;
-  return bare.replace(/__/g, '_');
+  return bare.replaceAll(TABLE_SEPARATOR, '_');
 }
 
 /**
@@ -78,40 +76,65 @@ export type IndexChange<I> =
   | { readonly from: IndexNode; readonly to?: undefined }
   | { readonly from: IndexNode; readonly to: I; readonly description: string };
 
-/**
- * The indexes a table lacks, the ones it no longer needs, and the ones to rebuild, differing in what
- * `facets` let the engine report. Only an unpaired index uql named, or whose name the entity claims, is
- * dropped: any other may have been made outside the ORM, so it is `kept`.
- */
-export function indexChanges<I extends IndexSchema>(
-  table: string,
+/** The indexes `current` lacks, every one it has that none declared, and the ones to rebuild, as `facets` see them. */
+export function pairedIndexChanges<I extends IndexSchema>(
   declared: readonly I[],
   current: readonly IndexNode[],
   facets: ReadonlySet<IndexFacet>,
-): { changes: IndexChange<I>[]; kept: IndexNode[] } {
+): { readonly created: I[]; readonly dropped: IndexNode[]; readonly rebuilt: IndexChange<I>[] } {
   const { created, dropped, matched } = pairIndexes(declared, current);
-  const claimed = new Set(declared.map((index) => index.name));
-  const owned = (index: IndexNode) => claimed.has(index.name) || hasDerivedName(table, index);
   const rebuilt = matched.flatMap(([to, from]): IndexChange<I>[] => {
     const differences = describeIndexDifferences(to, from, facets);
     return differences.length ? [{ from, to, description: differences.join(', ') }] : [];
   });
+  return { created, dropped, rebuilt };
+}
+
+/**
+ * {@link pairedIndexChanges} on `table`, dropping only an unpaired index uql named, or whose name the entity
+ * claims: any other may have been made outside the ORM, so it is `kept`.
+ */
+export function indexChanges<I extends IndexSchema>(
+  declared: readonly I[],
+  table: Pick<TableNode, 'name' | 'indexes' | 'indexFacets'>,
+): { changes: IndexChange<I>[]; kept: IndexNode[] } {
+  const { created, dropped, rebuilt } = pairedIndexChanges(declared, table.indexes, table.indexFacets);
+  const claimed = new Set(declared.map((index) => index.name));
+  const isOwned = (index: ComparableIndex) => claimed.has(index.name) || hasDerivedName(table.name, index);
+  const { owned = [], kept = [] } = Object.groupBy(dropped, (index) => (isOwned(index) ? 'owned' : 'kept'));
   return {
-    changes: [...created.map((to) => ({ to })), ...dropped.filter(owned).map((from) => ({ from })), ...rebuilt],
-    kept: dropped.filter((index) => !owned(index)),
+    changes: [...created.map((to) => ({ to })), ...owned.map((from) => ({ from })), ...rebuilt],
+    kept,
   };
 }
 
 /**
- * Whether uql named the index itself, from its own columns: `Order__total_idx`, its unique `_uk`, or
- * `idx_Order_total`, which a database an older uql created holds.
+ * Whether uql named the index itself, from the entries the database reports: the name it would derive for them, with
+ * the predicate's hash read off the name and a unique one's `_uk` as the migration builder names it, or as an earlier
+ * uql derived it: `expr<n>` for a JSON path, or `idx_<table>_<parts>`.
  */
 function hasDerivedName(table: string, index: ComparableIndex): boolean {
-  const parts = index.entries.map((entry, at) => (isColumnEntry(entry) ? entry.column : `expr${at}`));
-  return isDerivedIndexName(table, parts, index.name);
+  const name = index.where === undefined ? index.name : index.name.replace(PREDICATE_HASH, '');
+  const earlier = index.entries.map((entry): IndexEntry<unknown> =>
+    entry.json === undefined ? entry : { expression: '' },
+  );
+  return [index.entries, earlier].some((entries) => {
+    const parts = entries.map(indexEntryNamePart);
+    return (
+      name === declaredIndexName(undefined, table, entries) ||
+      (index.unique && name === declaredIndexName(undefined, table, entries, { unique: true })) ||
+      name === `idx_${table}_${parts.join('_')}`
+    );
+  });
 }
 
-/** What this version emits. */
+/** The hash a partial index's derived name carries before its kind. */
+const PREDICATE_HASH = new RegExp(`_[0-9a-f]{${NAME_HASH_LENGTH}}(?=_(?:idx|uk)$)`);
+
+/**
+ * The kind a name ends in: `pk`, `fk`, `idx` and `uk` are what uql derives, and `ck` and `uq` are read too, though
+ * no name it derives ends in them.
+ */
 const KIND_SUFFIX = /_(?:idx|fk|ck|pk|uk|uq)$/i;
 
 /**
@@ -132,19 +155,17 @@ export function describeIndexDifferences(
   facets: ReadonlySet<IndexFacet>,
 ): string[] {
   const differences: string[] = [];
-  const comparableEntries = [...source.entries, ...target.entries].every(isColumnEntry);
-
-  if (comparableEntries) {
-    const [sourceColumns, targetColumns] = [source, target].map((index) =>
-      textFieldOrder(
-        index,
-        facets,
-        index.entries.map((entry) => entrySignature(entry, facets)),
-      ).join(', '),
-    );
-    if (sourceColumns !== targetColumns) {
-      differences.push(`columns: (${targetColumns}) -> (${sourceColumns})`);
-    }
+  const [sourceColumns, targetColumns] = [source, target].map((index) =>
+    isStored(index.entries)
+      ? textFieldOrder(
+          index,
+          facets,
+          index.entries.map((entry) => entrySignature(entry, facets)),
+        ).join(', ')
+      : undefined,
+  );
+  if (sourceColumns !== undefined && targetColumns !== undefined && sourceColumns !== targetColumns) {
+    differences.push(`columns: (${targetColumns}) -> (${sourceColumns})`);
   }
 
   if (facets.has('textIndex') && source.type === 'fulltext' && target.type === 'fulltext') {
@@ -194,7 +215,7 @@ function textFieldOrder(index: Pick<IndexNode, 'type'>, facets: ReadonlySet<Inde
   return facets.has('textIndex') && index.type === 'fulltext' ? entries.toSorted() : entries;
 }
 
-function entrySignature(entry: IndexColumnSchema, facets: ReadonlySet<IndexFacet>): string {
+function entrySignature(entry: StoredEntry<string>, facets: ReadonlySet<IndexFacet>): string {
   const parts = [entry.column];
   if (facets.has('order')) {
     parts.push(entry.order ?? 'asc');

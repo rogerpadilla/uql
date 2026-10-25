@@ -1,7 +1,7 @@
 import type { ColumnRenames, Rename } from '../type/migration.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
-import { type IndexChange, indexChanges } from './indexDifferences.js';
+import { type IndexChange, pairedIndexChanges } from './indexDifferences.js';
 import { matchByKey, pairUnique } from './matchByKey.js';
 import type { SchemaAST } from './schemaAST.js';
 import { writtenDefault } from './sqlExpression.js';
@@ -206,9 +206,13 @@ function matchTables(desired: SchemaAST, actual: SchemaAST, opts: Required<DiffO
  * name when there is one.
  */
 function diffTableIndexes(source: TableNode, target: TableNode): IndexDiff[] {
-  const { changes, kept } = indexChanges(source.name, source.indexes, target.indexes, target.indexFacets);
-  const drops = kept.map((from): IndexChange<IndexNode> => ({ from }));
-  return [...changes, ...drops].map((change) => ({
+  const { created, dropped, rebuilt } = pairedIndexChanges(source.indexes, target.indexes, target.indexFacets);
+  const changes: IndexChange<IndexNode>[] = [
+    ...created.map((to) => ({ to })),
+    ...rebuilt,
+    ...dropped.map((from) => ({ from })),
+  ];
+  return changes.map((change) => ({
     ...change,
     table: source.name,
     name: change.to === undefined ? change.from.name : change.to.name,

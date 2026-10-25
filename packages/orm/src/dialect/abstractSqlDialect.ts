@@ -28,7 +28,6 @@ import {
   type QueryContext,
   type QueryContextOptions,
   type QueryCount,
-  type QueryExclude,
   type QueryGroupOp,
   type QueryHavingMap,
   type QueryRenderOptions,
@@ -36,6 +35,7 @@ import {
   type QueryPager,
   type QueryPopulate,
   QuerySql,
+  renderSql,
   type QuerySqlFnOptions,
   type QuerySearch,
   type QuerySelectValue,
@@ -298,18 +298,17 @@ export function relationTermKey({ sql, key }: SelectTerm): string {
 }
 
 /**
- * What a projection reads: its raw expressions, or its fields past any `$exclude`, and every field where
- * none is left of a row crossing JSON, which answers only under keys.
+ * What a projection reads: its raw expressions, or the fields its map selects, and every field where none is
+ * left of a row crossing JSON, which answers only under keys.
  */
 function projectedKeys<E>(
   meta: EntityMeta<E>,
   select: QuerySelectValue<E> | undefined,
-  exclude: QueryExclude<E> | undefined,
   json: boolean | undefined,
 ): readonly (FieldKey<E> | QuerySql)[] {
   const selected: readonly (FieldKey<E> | QuerySql)[] = isSelectList(select)
     ? select.map(selectRaw)
-    : normalizeScalarFieldSelection(meta, select, exclude);
+    : normalizeScalarFieldSelection(meta, select);
   return selected.length || !json ? selected : normalizeScalarFieldSelection(meta);
 }
 
@@ -617,10 +616,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     select: QuerySelectValue<E> | undefined,
     opts: SelectOptions = {},
-    exclude?: QueryExclude<E>,
   ): SelectTerm[] {
     const meta = getMeta(entity);
-    const selected = projectedKeys(meta, select, exclude, opts.json);
+    const selected = projectedKeys(meta, select, opts.json);
     const missingIds = opts.joined ? meta.ids.filter((key) => !selected.includes(key)) : [];
     const keys = missingIds.length ? [...missingIds, ...selected] : selected;
     if (!keys.length) {
@@ -696,7 +694,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): void {
     const keys = textSearchFields(meta, search);
     const index = fulltextIndexOver(meta, keys);
-    const weights = index && fulltextWeights({ type: index.type, entries: index.columns });
+    const weights = index && fulltextWeights(index);
     if (!weights) {
       this.appendTextScore(ctx, meta, search, keys, prefix);
       return;
@@ -782,7 +780,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const parent = opts.prefix ?? this.resolveTableAlias(meta);
     const distinct = !!q.$distinct;
     return [
-      ...this.selectTerms(ctx, entity, q.$select, opts, q.$exclude),
+      ...this.selectTerms(ctx, entity, q.$select, opts),
       ...this.selectJoinedRows(ctx, joins, opts.json, distinct),
       ...this.selectToManyRelations(ctx, meta, q.$populate, parent, distinct),
       ...this.selectRelationCounts(ctx, meta, q.$count, parent),
@@ -807,19 +805,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     q: Query<E>,
     prefix: string | undefined,
   ): SelectTerm[] {
-    const distances = Object.entries(q.$sort ?? {}).flatMap(([key, value]) =>
-      isVectorSearch(value) && value.$project
+    const score = textSortOf(q.$sort)?.project;
+    return Object.entries(q.$sort ?? {}).flatMap(([key, value]) =>
+      isVectorSearch(value) && value.$project !== undefined
         ? [
             this.sortProjection(ctx, meta, value.$project, (fragmentCtx) =>
               this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
             ),
           ]
-        : [],
+        : key === '$text' && score !== undefined
+          ? [this.sortProjection(ctx, meta, score, this.textRanker(meta, q.$where, prefix))]
+          : [],
     );
-    const score = textSortOf(q.$sort)?.project;
-    return score
-      ? [...distances, this.sortProjection(ctx, meta, score, this.textRanker(meta, q.$where, prefix))]
-      : distances;
   }
 
   private sortProjection<E>(ctx: QueryContext, meta: EntityMeta<E>, alias: string, build: QueryBuildFn): SelectTerm {
@@ -900,7 +897,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       if (!join.projected) continue;
       const opts = { prefix: join.alias, json, joined: true };
       const row = [
-        ...this.selectTerms(ctx, join.entity, join.query.$select, opts, join.query.$exclude),
+        ...this.selectTerms(ctx, join.entity, join.query.$select, opts),
         ...this.selectToManyRelations(ctx, join.meta, join.query.$populate, join.alias, distinct),
       ];
       const [idKey] = join.meta.ids;
@@ -1454,7 +1451,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /**
    * Walks `$sort` against the metadata of the entity each level addresses, rather than flattening it
    * to dotted strings and reading every key off the root: only that way does a related column resolve
-   * through its own `@Field({ name })`, and only that way is `tax.category` the one alias the join
+   * through its own `.name()`, and only that way is `tax.category` the one alias the join
    * carries instead of two quoted identifiers.
    */
   private collectSortTerms<E>(
@@ -1475,10 +1472,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         if (path) {
           throw new UqlUsageError(`$sort by $text is only supported on the queried entity, not on relation '${path}'`);
         }
-        // Where projected in the SELECT list, ordered by that alias rather than scored twice.
         const { order, project } = textSortOf(sort)!;
-        const expr = project ? this.escapeId(project) : this.buildFragment(ctx, opts.rankText);
-        columns.push({ key, expr, ...parseSortDirection(order), output: project !== undefined });
+        columns.push({
+          key,
+          ...this.projectedSortTerm(ctx, project, opts, opts.rankText),
+          ...parseSortDirection(order),
+        });
         continue;
       }
       if (relation) {
@@ -1520,18 +1519,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         continue;
       }
       if (isVectorSearch(value)) {
-        // Already projected in the SELECT list: order by that alias rather than recomputing it.
-        vectors.push(
-          value.$project
-            ? { key: keyPath, expr: this.escapeId(value.$project), output: true }
-            : {
-                key: keyPath,
-                expr: this.buildFragment(ctx, (fragmentCtx) =>
-                  this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
-                ),
-                output: false,
-              },
-        );
+        vectors.push({
+          key: keyPath,
+          ...this.projectedSortTerm(ctx, value.$project, opts, (fragmentCtx) =>
+            this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
+          ),
+        });
         continue;
       }
       const order = parseSortDirection(value);
@@ -1540,6 +1533,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         columns.push({ key: index ? `${keyPath}:${index}` : keyPath, ...column, ...order });
       });
     }
+  }
+
+  /** A term the SELECT list projects is ordered by its alias, not computed twice, where the alias is in reach. */
+  private projectedSortTerm(
+    ctx: QueryContext,
+    project: string | undefined,
+    opts: QuerySortOptions,
+    compute: QueryBuildFn,
+  ): Pick<SortTerm, 'expr' | 'output'> {
+    return project !== undefined && !opts.unaliased
+      ? { expr: this.escapeId(project), output: true }
+      : { expr: this.buildFragment(ctx, compute), output: false };
   }
 
   /**
@@ -2665,7 +2670,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): string {
     const ctx = this.createContext({ inlineValues: true });
     if (sql instanceof QuerySql) {
-      sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
+      renderSql(sql, { ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
     } else if (entity) {
       assertNoUndefined(sql, `a predicate over '${entity.name}'`);
       this.renderWhere(ctx, entity, sql, { clause: false, escapedPrefix, operand });
@@ -2680,7 +2685,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   getRawValue(ctx: QueryContext, opts: QuerySqlFnOptions & { value: QuerySql }) {
     const { value, prefix = '', escapedPrefix } = opts;
-    value.render({
+    renderSql(value, {
       ...opts,
       ctx,
       dialect: this,
@@ -2720,7 +2725,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected abstract jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string;
 
   /**
-   * A field key's mapped column (`@Field({ name })`), escaped, memoized per dialect instance: field
+   * A field key's mapped column (`.name()`), escaped, memoized per dialect instance: field
    * metadata is shared between dialects while this result is not, since `escapeIdChar` and the naming
    * strategy differ. Weakly keyed so a transient entity's metadata stays collectable.
    */
@@ -2972,7 +2977,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (!query.$distinct || !query.$sort) {
       return;
     }
-    const selected: readonly unknown[] = projectedKeys(meta, query.$select, query.$exclude, true);
+    const selected: readonly unknown[] = projectedKeys(meta, query.$select, true);
     for (const key of getKeys(query.$sort)) {
       if (!selected.includes(key)) {
         throw new UqlUsageError(

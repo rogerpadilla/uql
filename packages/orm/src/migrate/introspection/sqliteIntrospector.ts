@@ -2,7 +2,7 @@ import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { CheckSchema } from '../../schema/types.js';
 import type {
   ForeignKeySchema,
-  IndexColumnSchema,
+  IndexEntry,
   IndexSchema,
   PrimaryKeySchema,
   QuerySql,
@@ -86,10 +86,11 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     // The key's own index ('pk') is left out; a unique constraint's ('u') is reported as every engine reports one.
     for (const index of list.filter((it) => it.origin !== 'pk')) {
       const sql = statements.get(index.name) ?? '';
-      // `PRAGMA index_info` names an expression entry `null`, its text kept only in `sqlite_master.sql`: it is
-      // reported as the expression it is, as MySQL reports one, and libSQL's vector index is read off that text.
-      const entries = (await this.getIndexColumns(read, index.name)).map(({ name }): IndexColumnSchema =>
-        name === null ? { column: '', expression: true } : { column: name },
+      // `PRAGMA index_info` names an expression entry `null`, its text kept only in `sqlite_master.sql`, which is
+      // where it is read from, as libSQL's vector index is.
+      const written = indexEntries(sql);
+      const entries = (await this.getIndexColumns(read, index.name)).map(({ name }, at): IndexEntry<string> =>
+        name === null ? { expression: written[at] ?? '' } : { column: name },
       );
       indexes.push(
         this.vectorIndex(index.name, sql) ?? {
@@ -145,7 +146,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       entries: [{ column }],
       unique: false,
       type: 'vector',
-      distance: this.dialect.indexedDistance(metric),
+      distance: this.dialect.distanceOfMetric(metric),
     };
   }
 
@@ -215,16 +216,32 @@ export function generatedExpression(ddl: string, column: string): string | undef
 
 /** A `CREATE TABLE` body split at each comma outside any parentheses or quotes: one entry per column or constraint. */
 function tableEntries(ddl: string): string[] {
-  const body = ddl.slice(ddl.indexOf('(') + 1, ddl.lastIndexOf(')'));
-  const entries: string[] = [];
+  return topLevelParts(ddl.slice(ddl.indexOf('(') + 1, ddl.lastIndexOf(')')));
+}
+
+/** A `CREATE INDEX` statement's entries as written, each without its order. */
+function indexEntries(ddl: string): string[] {
+  let open = -1;
+  scan(ddl, (char, index) => {
+    open = char === '(' ? index : open;
+    return open >= 0;
+  });
+  return open < 0
+    ? []
+    : topLevelParts(parenthesized(ddl.slice(open))).map((entry) => entry.replace(/\s+(?:ASC|DESC)$/i, ''));
+}
+
+/** `text` split at each comma outside any parentheses or quotes, each part trimmed. */
+function topLevelParts(text: string): string[] {
+  const parts: string[] = [];
   let start = 0;
-  scan(body, (char, index, depth) => {
+  scan(text, (char, index, depth) => {
     if (char === ',' && depth === 0) {
-      entries.push(body.slice(start, index));
+      parts.push(text.slice(start, index));
       start = index + 1;
     }
   });
-  return [...entries, body.slice(start)];
+  return [...parts, text.slice(start)].map((part) => part.trim());
 }
 
 /** A partial index's predicate: what follows `WHERE` after its column list, as the statement gave it. */

@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { f } from '../column.js';
 import { getMeta } from '../metadata/definition.js';
 import { Entity } from './entity.js';
-import { AfterInsert, AfterLoad, AfterUpdate, BeforeDelete, BeforeInsert, BeforeUpdate, Field, Id } from './members.js';
+import { AfterInsert, AfterLoad, AfterUpdate, BeforeDelete, BeforeInsert, BeforeUpdate, Field } from './members.js';
 
 describe('hook decorators', () => {
   it('should register a @BeforeInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -15,13 +16,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'onBeforeInsert' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'onBeforeInsert' }]);
   });
 
   it('should register a @AfterInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @AfterInsert()
@@ -29,13 +30,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.afterInsert).toEqual([{ methodName: 'onAfterInsert' }]);
+    expect(meta.hooks?.afterInsert).toMatchObject([{ methodName: 'onAfterInsert' }]);
   });
 
   it('should register a @BeforeUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeUpdate()
@@ -43,13 +44,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeUpdate).toEqual([{ methodName: 'onBeforeUpdate' }]);
+    expect(meta.hooks?.beforeUpdate).toMatchObject([{ methodName: 'onBeforeUpdate' }]);
   });
 
   it('should register a @AfterUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @AfterUpdate()
@@ -57,13 +58,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.afterUpdate).toEqual([{ methodName: 'onAfterUpdate' }]);
+    expect(meta.hooks?.afterUpdate).toMatchObject([{ methodName: 'onAfterUpdate' }]);
   });
 
   it('should register @AfterLoad hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @AfterLoad()
@@ -71,13 +72,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.afterLoad).toEqual([{ methodName: 'onLoad' }]);
+    expect(meta.hooks?.afterLoad).toMatchObject([{ methodName: 'onLoad' }]);
   });
 
   it('should register @BeforeDelete hook', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeDelete()
@@ -85,13 +86,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeDelete).toEqual([{ methodName: 'onBeforeDelete' }]);
+    expect(meta.hooks?.beforeDelete).toMatchObject([{ methodName: 'onBeforeDelete' }]);
   });
 
   it('should register multiple hooks for the same event', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -102,13 +103,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'firstHook' }, { methodName: 'secondHook' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'firstHook' }, { methodName: 'secondHook' }]);
   });
 
   it('should register hooks for multiple different events', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -119,14 +120,14 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'onInsert' }]);
-    expect(meta.hooks?.afterUpdate).toEqual([{ methodName: 'onUpdate' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'onInsert' }]);
+    expect(meta.hooks?.afterUpdate).toMatchObject([{ methodName: 'onUpdate' }]);
   });
 
   it('should support stacking multiple decorators on one method', () => {
     @Entity()
     class TestEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -135,13 +136,13 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(TestEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'normalize' }]);
-    expect(meta.hooks?.beforeUpdate).toEqual([{ methodName: 'normalize' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'normalize' }]);
+    expect(meta.hooks?.beforeUpdate).toMatchObject([{ methodName: 'normalize' }]);
   });
 
   it('should inherit hooks from parent entity', () => {
     class BaseEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -150,7 +151,7 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field({ type: String })
+      @Field(f.string().nullable())
       name?: string | null;
 
       @BeforeInsert()
@@ -159,12 +160,12 @@ describe('hook decorators', () => {
 
     const meta = getMeta(ChildEntity);
     // Parent hooks come first
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }, { methodName: 'childHook' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'baseHook' }, { methodName: 'childHook' }]);
   });
 
   it('should inherit parent hooks when the child declares none of its own', () => {
     class BaseEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -173,17 +174,17 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field({ type: String })
+      @Field(f.string().nullable())
       name?: string | null;
     }
 
     const meta = getMeta(ChildEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'baseHook' }]);
   });
 
   it('should merge parent and child hooks registered on different events', () => {
     class BaseEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -192,7 +193,7 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field({ type: String })
+      @Field(f.string().nullable())
       name?: string | null;
 
       @AfterUpdate()
@@ -200,17 +201,17 @@ describe('hook decorators', () => {
     }
 
     const meta = getMeta(ChildEntity);
-    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }]);
-    expect(meta.hooks?.afterUpdate).toEqual([{ methodName: 'childHook' }]);
+    expect(meta.hooks?.beforeInsert).toMatchObject([{ methodName: 'baseHook' }]);
+    expect(meta.hooks?.afterUpdate).toMatchObject([{ methodName: 'childHook' }]);
   });
 
   it('should not have hooks when none are defined', () => {
     @Entity()
     class PlainEntity {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       name?: string | null;
     }
 

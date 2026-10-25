@@ -53,7 +53,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     const meta = getMeta(entity);
     const terms = this.projection(ctx, entity, query, { prefix: alias, json: true }, joins);
     const order = this.buildFragment(ctx, (fragmentCtx) =>
-      this.sort(fragmentCtx, entity, query, { prefix: alias, joins }),
+      this.sort(fragmentCtx, entity, query, { prefix: alias, joins, unaliased: true }),
     );
     const page = this.buildFragment(ctx, (fragmentCtx) => this.pager(fragmentCtx, query));
     const from = this.buildFragment(ctx, (fragmentCtx) => {

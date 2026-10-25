@@ -1,12 +1,34 @@
 import ts from 'typescript';
+import { BUILDER_NAMES, isBuilder, toBuilders } from './builders.js';
+import { foldClassDecorators } from './classOptions.js';
 import { rewriteColumnRefs } from './columnRefs.js';
-import { type Context, createContext, instanceTypeOf, memberNames, type Owner, ownerOf } from './context.js';
-import { appended, applyEdits, type Edit, inserted, original, type Part, replaced } from './edits.js';
+import {
+  type Context,
+  createContext,
+  instanceTypeOf,
+  locationAt,
+  memberNames,
+  type Owner,
+  ownerOf,
+} from './context.js';
+import { definerCall } from './definers.js';
+import {
+  appended,
+  type Edit,
+  editedText,
+  followed,
+  inserted,
+  original,
+  type Part,
+  type Pass,
+  replaced,
+  unedited,
+} from './edits.js';
 import { columnExpressions, handNamedColumns, sqlTag, sqlWhereEdit, templateOf } from './entitySql.js';
-import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
 import {
   clashingName,
   deadImportNames,
+  foreignNames,
   LEGACY_SQL_TAG,
   reportRemovedExports,
   rewriteImports,
@@ -16,6 +38,7 @@ import {
   uqlImport,
   uqlImportDeclarations,
 } from './imports.js';
+import { rewriteBuilderIndexLengths, rewriteJsonIndexEntries } from './jsonIndex.js';
 import {
   type Edits,
   entityGetterTarget,
@@ -28,21 +51,27 @@ import {
   quoted,
   referencesEdits,
 } from './keyMaps.js';
+import { toMigrationBuilders } from './migrationBuilders.js';
+import { relationTargetFor } from './relationTarget.js';
+import { toSchemaEntities } from './schemaEntity.js';
 import { statementTemplate } from './statementSql.js';
 import {
   arrayElements,
   decoratorName,
   decoratorsOf,
+  FIELD_DECORATORS,
   identifierText,
+  indentOf,
   type NamedProperty,
   namedProperty,
   objectLiteral,
   objectProperties,
+  type Options,
+  optionsOf,
   propertyKey,
   propertyValue,
 } from './syntax.js';
 
-const FIELD_DECORATORS = new Set(['Field', 'Id']);
 const RELATION_DECORATORS = new Set(['OneToOne', 'ManyToOne', 'OneToMany', 'ManyToMany']);
 const TO_ONE_DECORATORS = new Set(['OneToOne', 'ManyToOne']);
 const TO_ONE_CARDINALITIES = new Set(['11', 'm1']);
@@ -69,18 +98,6 @@ export type FileResult = {
   readonly notes: readonly string[];
 };
 
-/**
- * What the codemod can see of an options object. `opaque` is one it cannot write into without dropping what
- * the author put there: `@Field(shared)`, or `{ ...base }`, whose spread may carry the option and would win.
- */
-type Options =
-  | { readonly kind: 'empty'; readonly call: ts.CallExpression }
-  | { readonly kind: 'literal'; readonly node: ts.ObjectLiteralExpression }
-  | { readonly kind: 'opaque'; readonly reason: string };
-
-/** The forms an option can be written into, which is what {@link insertOption} needs and nothing more. */
-type WritableOptions = Extract<Options, { kind: 'empty' | 'literal' }>;
-
 /** A decorator's options; `@Field` uncalled is opaque, since adding a call would guess it is the factory. */
 function decoratorOptions(node: ts.Decorator): Options {
   if (!ts.isCallExpression(node.expression)) {
@@ -88,16 +105,6 @@ function decoratorOptions(node: ts.Decorator): Options {
   }
   const [first] = node.expression.arguments;
   return first ? optionsOf(first) : { kind: 'empty', call: node.expression };
-}
-
-/** The options `value` writes: a literal to read and write into, or why it is not one. */
-function optionsOf(value: ts.Expression): Options {
-  if (!ts.isObjectLiteralExpression(value)) {
-    return { kind: 'opaque', reason: `its options are passed as '${value.getText()}'` };
-  }
-  return value.properties.some(ts.isSpreadAssignment)
-    ? { kind: 'opaque', reason: 'its options object spreads another' }
-    : { kind: 'literal', node: value };
 }
 
 /** The option `name`, however its key is written: a stated option is left alone, and a renamed one moved. */
@@ -143,79 +150,19 @@ function noteHandNamedColumns(sql: ts.Expression | undefined, owner: Owner, ctx:
   );
 }
 
-/** Inserts `option` into the decorator's options object, creating one in an empty argument list. */
-function insertOption(options: WritableOptions, option: string): Edit {
-  if (options.kind === 'empty') {
-    const { arguments: args } = options.call;
-    return { start: args.pos, end: args.end, text: `{ ${option} }` };
-  }
-  const first = options.node.properties[0];
-  return first ? inserted(first, `${option}, `) : replaced(options.node, `{ ${option} }`);
-}
-
-/**
- * Writes one option the decorator can no longer infer at runtime, or records why it could not. Returns the
- * property's type where it wrote one, for the caller to say more about.
- */
-function addInferredOption(
+/** Reports a decorator lacking `option` unless one of `satisfiedBy` states it, or options it cannot read, which may. */
+function reportMissingOption(
   decorator: ts.Decorator,
   node: ts.PropertyDeclaration,
   ctx: Context,
-  spec: {
-    readonly option: string;
-    /** Options whose presence makes this one unnecessary. */
-    readonly satisfiedBy: readonly string[];
-    readonly infer: (type: ts.Type) => string | undefined;
-  },
-): ts.Type | undefined {
+  spec: { readonly option: string; readonly satisfiedBy: readonly string[]; readonly advice: string },
+): void {
   const options = decoratorOptions(decorator);
-  if (spec.satisfiedBy.some((name) => findProperty(options, name))) {
-    return undefined;
-  }
   if (options.kind === 'opaque') {
-    ctx.report(node, `cannot add '${spec.option}' because ${options.reason}`);
-    return undefined;
+    ctx.report(node, options.reason);
+  } else if (!spec.satisfiedBy.some((name) => findProperty(options, name))) {
+    ctx.report(node, `has no '${spec.option}': ${spec.advice}`);
   }
-  const type = ctx.checker.getTypeAtLocation(node);
-  const value = spec.infer(type);
-  if (!value) {
-    ctx.report(node, `cannot infer '${spec.option}' for ${ctx.checker.typeToString(type)}`);
-    return undefined;
-  }
-  ctx.edits.push(insertOption(options, `${spec.option}: ${value}`));
-  return type;
-}
-
-/**
- * Writes the `type` that `design:type` supplied, unless `references` (the key it points at decides) or
- * `computed` does. A branded id erased to `String`, which keeps the column; `'uuid'` would change it, so that
- * is noted rather than decided.
- */
-function addFieldType(decorator: ts.Decorator, node: ts.PropertyDeclaration, ctx: Context): void {
-  const type = addInferredOption(decorator, node, ctx, {
-    option: 'type',
-    satisfiedBy: ['type', 'references', 'computed'],
-    infer: fieldTypeFor,
-  });
-  if (type && isBrandedString(type)) {
-    ctx.note(
-      node,
-      `set 'type: ${fieldTypeFor(type)}' for ${ctx.checker.typeToString(type)}, matching the previous behaviour. ` +
-        "If the column should be 'uuid', change it deliberately: that alters the schema.",
-    );
-  }
-}
-
-/** Writes the `entity` getter relations can no longer infer. */
-function addRelationEntity(decorator: ts.Decorator, node: ts.PropertyDeclaration, ctx: Context): void {
-  addInferredOption(decorator, node, ctx, {
-    option: 'entity',
-    satisfiedBy: ['entity'],
-    infer: (t) => {
-      const target = relationTargetFor(t, ctx.checker);
-      return target && `() => ${target}`;
-    },
-  });
 }
 
 /**
@@ -295,11 +242,6 @@ function foreignKeyColumn(
   );
 }
 
-/** The whitespace a line starting at `node` is indented by. */
-function indentOf(node: ts.Node): string {
-  return ' '.repeat(node.getSourceFile().getLineAndCharacterOfPosition(node.getStart()).character);
-}
-
 /** The key's type as written where that is in scope, the same file, or as the checker spells it out. */
 function keyTypeSource(key: ts.Symbol, at: ts.Node, checker: ts.TypeChecker): string {
   const written = key.declarations?.find(isIdProperty)?.type;
@@ -309,14 +251,28 @@ function keyTypeSource(key: ts.Symbol, at: ts.Node, checker: ts.TypeChecker): st
   return checker.typeToString(checker.getNonNullableType(checker.getTypeOfSymbolAtLocation(key, at)), at);
 }
 
-/** Whether a declaration is a property carrying one of `names` as a decorator. */
-const decoratedWith =
-  (names: ReadonlySet<string>) =>
-  (node: ts.Declaration): node is ts.PropertyDeclaration =>
-    ts.isPropertyDeclaration(node) && decoratorsOf(node).some((decorator) => names.has(decoratorName(decorator) ?? ''));
+/** Whether a declaration is a property declaring a column, `@Field(...)` or `@Id(...)`. */
+function isFieldProperty(node: ts.Declaration): node is ts.PropertyDeclaration {
+  return (
+    ts.isPropertyDeclaration(node) &&
+    decoratorsOf(node).some((decorator) => FIELD_DECORATORS.has(decoratorName(decorator)))
+  );
+}
 
-const isIdProperty = decoratedWith(new Set(['Id']));
-const isFieldProperty = decoratedWith(FIELD_DECORATORS);
+/** Whether a declaration is a key property: `@Id(...)`, or `@Field({ isId: true, ... })`. */
+function isIdProperty(node: ts.Declaration): node is ts.PropertyDeclaration {
+  return ts.isPropertyDeclaration(node) && decoratorsOf(node).some(declaresKey);
+}
+
+function declaresKey(decorator: ts.Decorator): boolean {
+  const name = decoratorName(decorator);
+  if (name !== 'Field') {
+    return name === 'Id';
+  }
+  const options = decoratorOptions(decorator);
+  const isId = options.kind === 'literal' ? propertyValue(options.node, 'isId') : undefined;
+  return isId?.kind === ts.SyntaxKind.TrueKeyword;
+}
 
 /**
  * Writes the edits `rewrite` reads off `value`, which still names members as strings, or reports it
@@ -370,6 +326,7 @@ function rewriteClassDecorators(node: ts.ClassLikeDeclaration, ctx: Context): vo
       renameOption(optionsOf(second), 'condition', 'where', decorator, ctx);
     } else if (name === 'Entity' && options) {
       rewriteEntityOptions(options, owner, ctx);
+      reportEntityMembers(options, ctx);
     }
   }
 }
@@ -380,20 +337,22 @@ function rewriteClassDecorators(node: ts.ClassLikeDeclaration, ctx: Context): vo
  * Only uql's shapes, a class and a literal options object, are read.
  */
 function rewriteDefineCall(call: ts.CallExpression, ctx: Context): void {
-  const name = identifierText(call.expression);
-  const [entity = call, second, third] = call.arguments;
-  const owner = ownerOf(entity);
-  const options = objectLiteral(second);
-  const relation = objectLiteral(third);
-  if (name === 'defineEntity' && options) {
-    rewriteEntityOptions(options, owner, ctx);
-  } else if (name === 'defineIndex' && options) {
-    rewriteIndexOptions(options, owner, ctx);
-  } else if (name === 'defineRelation' && relation) {
-    rewriteRelationOptions(relation, owner.param, ctx);
-    addForeignKeyReference(relation, second && ts.isStringLiteralLike(second) ? second.text : undefined, owner, ctx);
-  } else if (name === 'defineFilter' && third) {
-    renameOption(optionsOf(third), 'condition', 'where', call, ctx);
+  const read = definerCall(call);
+  if (!read) {
+    return;
+  }
+  const { definer, key, options } = read;
+  const owner = ownerOf(read.entity);
+  const literal = objectLiteral(options);
+  if (definer === 'defineEntity' && literal) {
+    rewriteEntityOptions(literal, owner, ctx);
+  } else if (definer === 'defineIndex' && literal) {
+    rewriteIndexOptions(literal, owner, ctx);
+  } else if (definer === 'defineRelation' && literal) {
+    rewriteRelationOptions(literal, owner.param, ctx);
+    addForeignKeyReference(literal, key, owner, ctx);
+  } else if (definer === 'defineFilter' && options) {
+    renameOption(optionsOf(options), 'condition', 'where', call, ctx);
   }
 }
 
@@ -409,7 +368,6 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
   }
   for (const field of objectProperties(fields)) {
     renameSqlOption(optionsOf(field.initializer), 'virtual', 'computed', field, owner, ctx);
-    admitNullOnDefined(field, owner, ctx);
   }
   for (const filter of objectProperties(propertyValue(options, 'filters'))) {
     renameOption(optionsOf(filter.initializer), 'condition', 'where', filter, ctx);
@@ -421,6 +379,23 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
     if (ts.isObjectLiteralExpression(relation.initializer)) {
       rewriteRelationOptions(relation.initializer, owner.param, ctx);
       addForeignKeyReference(relation.initializer, propertyKey(relation.name), owner, ctx, objectLiteral(fields));
+    }
+  }
+}
+
+/** The options `@Entity` no longer takes: the members, which the decorators declare, and a base, which the class extends. */
+const DECORATED_MEMBER_OPTIONS: ReadonlyMap<string, string> = new Map([
+  ['fields', 'declare each with @Field or @Id'],
+  ['relations', 'declare each with its relation decorator'],
+  ['hooks', 'mark each method with its hook decorator'],
+  ['extends', 'extend the base class itself'],
+]);
+
+function reportEntityMembers(options: ts.ObjectLiteralExpression, ctx: Context): void {
+  for (const [option, advice] of DECORATED_MEMBER_OPTIONS) {
+    const property = namedProperty(options, option);
+    if (property) {
+      ctx.report(property, `@Entity takes no '${option}' now: ${advice}`);
     }
   }
 }
@@ -443,6 +418,7 @@ function rewriteIndex(
 ): void {
   const literal = objectLiteral(options);
   rewriteKeyList(columns, owner.param, node, what, ctx);
+  rewriteJsonIndexEntries(columns, ctx);
   rewriteKeyList(literal && propertyValue(literal, 'include'), owner.param, node, "'include'", ctx);
   rewriteIndexWhere(literal, ctx);
   for (const sql of [...columnExpressions(columns, ctx.checker), literal && propertyValue(literal, 'where')]) {
@@ -589,6 +565,7 @@ function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
     ? BUILDER_INDEX_METHODS.get(call.expression.name.text)
     : undefined;
   if (at !== undefined) {
+    rewriteBuilderIndexLengths(call.arguments[at - 1], ctx);
     rewriteIndexWhere(objectLiteral(call.arguments[at]), ctx);
   }
 }
@@ -647,7 +624,33 @@ function rewriteStatementKeys(node: ts.PropertyAssignment, ctx: Context): void {
     rewriteValue(node.initializer, fieldKeysEdits, node, "write '$fields' as { field: true }", ctx);
   } else if (key === '$lock' && ts.isObjectLiteralExpression(node.initializer)) {
     rewriteLock(node.initializer, ctx);
+  } else if (key === '$exclude') {
+    rewriteExclude(node, ctx);
   }
+}
+
+/** `$exclude: { body: true }` as `$select: { body: false }`, the one way left to leave a field out. */
+function rewriteExclude(exclude: ts.PropertyAssignment, ctx: Context): void {
+  if (ts.isObjectLiteralExpression(exclude.parent) && propertyValue(exclude.parent, '$select')) {
+    ctx.report(exclude, "merge '$exclude' into the '$select' beside it, each field as `field: false`");
+    return;
+  }
+  const fields = objectLiteral(exclude.initializer);
+  const entries = objectProperties(fields);
+  if (
+    !fields ||
+    entries.length !== fields.properties.length ||
+    !entries.every((it) => isTruthyLiteral(it.initializer))
+  ) {
+    ctx.report(exclude, "write '$exclude' as `$select: { field: false }`");
+    return;
+  }
+  ctx.edits.push(replaced(exclude.name, '$select'), ...entries.map((entry) => replaced(entry.initializer, 'false')));
+}
+
+/** `true` or `1`, how an `$exclude` entry leaves its field out. */
+function isTruthyLiteral(node: ts.Expression): boolean {
+  return node.kind === ts.SyntaxKind.TrueKeyword || (ts.isNumericLiteral(node) && node.text === '1');
 }
 
 /** `{ wait: 'skip' }` as `{ $wait: 'skip' }`, and `{}` or a `'block'` wait as `true`, which waits. */
@@ -698,24 +701,6 @@ function dropDeclare(node: ts.PropertyDeclaration, ctx: Context): void {
   }
 }
 
-/**
- * Unwraps `Relation<Company>` to `Company`. The alias is `type Relation<T> = T`, and it existed only
- * because reflection stored the property's type at class-definition time, which forced a real import and
- * so created the circular-import problem it was working around.
- */
-function unwrapRelationAlias(node: ts.PropertyDeclaration, ctx: Context): void {
-  const declared = node.type;
-  if (
-    declared &&
-    ts.isTypeReferenceNode(declared) &&
-    identifierText(declared.typeName) === 'Relation' &&
-    declared.typeArguments?.length === 1
-  ) {
-    ctx.edits.push(replaced(declared, [original(declared.typeArguments[0])]));
-    ctx.rewritten.Relation += 1;
-  }
-}
-
 /** The names a key is read from without help, mirroring `NamedIdKey` in `uql-orm`. */
 const CONVENTIONAL_ID_NAMES = new Set(['id', '_id', 'uuid']);
 
@@ -760,18 +745,23 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
   for (const decorator of decorators) {
     const name = decoratorName(decorator) ?? '';
     const options = decoratorOptions(decorator);
-    if (FIELD_DECORATORS.has(name)) {
+    if (FIELD_DECORATORS.has(name) && !writesBuilder(decorator)) {
       if (name === 'Field') {
         admitNull(options, node, ctx);
       }
-      addFieldType(decorator, node, ctx);
-      if (options.kind === 'opaque' && /\bvirtual\b/.test(decorator.getText())) {
-        ctx.report(node, options.reason);
-      }
+      reportMissingOption(decorator, node, ctx, {
+        option: 'type',
+        satisfiedBy: ['type', 'references', 'computed'],
+        advice: 'declare its column as a builder, such as `f.string()`',
+      });
       renameSqlOption(options, 'virtual', 'computed', node, owner, ctx);
     }
     if (RELATION_DECORATORS.has(name)) {
-      addRelationEntity(decorator, node, ctx);
+      reportMissingOption(decorator, node, ctx, {
+        option: 'entity',
+        satisfiedBy: ['entity'],
+        advice: 'name its target, `entity: () => Target`',
+      });
       if (options.kind === 'literal') {
         const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
         rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
@@ -784,13 +774,18 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
   if (decorators.length) {
     dropDeclare(node, ctx);
   }
-  unwrapRelationAlias(node, ctx);
+}
+
+/** Whether a field decorator already declares its column with a builder, which states everything the rewrites add. */
+function writesBuilder(decorator: ts.Decorator): boolean {
+  const [first] = ts.isCallExpression(decorator.expression) ? decorator.expression.arguments : [];
+  return first !== undefined && isBuilder(first);
 }
 
 /**
  * A column holds `null` unless `nullable: false` says otherwise, so the property says so too. A key is NOT NULL
  * everywhere and a relation aggregate types its own, so neither is touched; nor are options it cannot read,
- * which may state `nullable` and are reported by {@link addFieldType} already.
+ * which may state `nullable` and are reported by {@link reportMissingOption} already.
  */
 function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context): void {
   if (
@@ -798,6 +793,7 @@ function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context)
     !ctx.strictNullChecks ||
     declaresNotNull(options) ||
     findProperty(options, 'isId') ||
+    findProperty(options, 'version') ||
     (findProperty(options, 'computed') && !findProperty(options, 'type'))
   ) {
     return;
@@ -806,19 +802,6 @@ function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context)
     ctx.note(node, `declare '${propertyKey(node.name)}' as a type that admits 'null', which the column holds`);
   } else if (!admitsNull(node.type)) {
     ctx.edits.push(appended(node.type, ' | null'));
-  }
-}
-
-/** The same null rule where `defineEntity` names the field, on the property of the class the call takes. */
-function admitNullOnDefined(field: ts.PropertyAssignment, owner: Owner, ctx: Context): void {
-  const key = propertyKey(field.name);
-  const declaration = key
-    ? instanceTypeOf(owner.entity, ctx.checker)
-        .getProperty(key)
-        ?.declarations?.find((it) => ts.isPropertyDeclaration(it))
-    : undefined;
-  if (declaration?.type) {
-    admitNull(optionsOf(field.initializer), declaration, ctx);
   }
 }
 
@@ -871,14 +854,38 @@ function rewriteRawCall(node: ts.Node, ctx: Context): void {
 }
 
 /**
- * Rewrites one source file for the standard decorator spec. The builder's and querier's methods are known by
- * name, so they are read only in a file importing uql-orm, and `expr` only where it is uql's.
+ * Rewrites one file across every breaking change: the earlier ones off the checker, then column builders and schema
+ * chains off the text those produced, so neither pass edits what the other writes.
  */
 export function transformFile(
   source: ts.SourceFile,
   checker: ts.TypeChecker,
   options: { readonly strictNullChecks: boolean } = { strictNullChecks: true },
 ): FileResult {
+  const legacy = rewriteLegacy(source, checker, options);
+  const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
+  const taken = foreignNames(source, BUILDER_NAMES, checker);
+  const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
+  const { text, unresolved } = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
+  return {
+    fileName: source.fileName,
+    text,
+    changed: text !== source.getFullText(),
+    unresolved: [...legacy.unresolved, ...builders.unresolved, ...unresolved],
+    notes: legacy.notes,
+  };
+}
+
+/**
+ * The rewrites the checker reads types for, up to the schema entities a class-form registration declares. The
+ * builder's and querier's methods are known by name, so they are read only in a file importing uql-orm, and `expr`
+ * only where it is uql's.
+ */
+export function rewriteLegacy(
+  source: ts.SourceFile,
+  checker: ts.TypeChecker,
+  options: { readonly strictNullChecks: boolean },
+): FileResult & Pass {
   const ctx = createContext(source, checker, options.strictNullChecks);
   const importsUql = uqlImportDeclarations(source, true).length > 0;
   const importsExpr = uqlImport(source, 'expr', true) !== undefined;
@@ -895,6 +902,7 @@ export function transformFile(
     if (ts.isClassLike(node)) {
       brandIdKey(node, ctx);
       rewriteClassDecorators(node, ctx);
+      foldClassDecorators(node, ctx);
     }
     if (ts.isCallExpression(node)) {
       rewriteDefineCall(node, ctx);
@@ -919,13 +927,17 @@ export function transformFile(
   const clash = clashingName(ctx);
   if (clash) {
     ctx.report(clash, `'${clash.text}' is already named here, and the codemod writes it: rename that, then run again`);
-    return fileResult(ctx, source.getFullText());
+    return { ...fileResult(ctx, source.getFullText()), ...unedited(source.getFullText()) };
   }
   const dead = new Set([...deadImportNames(ctx), ...rewriteColumnRefs(ctx)]);
   rewriteImports(dead, ctx);
   reportRemovedExports(ctx);
 
-  return fileResult(ctx, applyEdits(source.getFullText(), ctx.edits));
+  const edited = editedText(source.getFullText(), ctx.edits);
+  const schema = toSchemaEntities(source.fileName, edited.text, (at) => locationAt(source, edited.sourceOffset(at)));
+  ctx.unresolved.push(...schema.unresolved);
+  ctx.notes.push(...schema.notes);
+  return { ...fileResult(ctx, schema.text), sourceOffset: followed(edited, schema).sourceOffset };
 }
 
 function fileResult({ source, unresolved, notes }: Context, text: string): FileResult {

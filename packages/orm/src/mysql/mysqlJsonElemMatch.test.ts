@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mysqlConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
@@ -11,12 +11,14 @@ const TABLE = 'mysql_json_elem_match';
 /** The row count, with the index below, at which 26.7 starts planning the subquery as a semijoin materialization. */
 const ROWS = 1000;
 
-@Index((elemMatched) => [{ column: elemMatched.tags, jsonArray: { type: String, length: 64 } }])
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (elemMatched, index) => [index([{ column: elemMatched.tags, type: [String], charLength: 64 }])],
+})
 class ElemMatched {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) items?: Json<{ name: string }[]> | null;
-  @Field({ type: 'json' }) tags?: Json<string[]> | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.json().nullable()) items?: Json<{ name: string }[]> | null;
+  @Field(f.json().nullable()) tags?: Json<string[]> | null;
 }
 
 /**

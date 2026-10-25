@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
-import { Entity, Field, Filter, getMeta, Id, Index } from '../entity/index.js';
+import { Entity, f, Field, getMeta } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
-import type { JsonArrayUpdateOp, QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
+import type { Json, JsonArrayUpdateOp, QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
 import {
   applyFilters,
   isSelectList,
@@ -26,15 +26,18 @@ import { withDeleted } from './filters.util.js';
 import { sql } from './sql.js';
 import { UqlSecurityError } from './uqlError.js';
 
-@Filter('active', { where: { status: 'active' }, default: false })
-@Filter('recent', { where: () => ({ status: 'new' }), default: false })
-@Entity()
+@Entity({
+  filters: {
+    recent: { where: () => ({ status: 'new' }), default: false },
+    active: { where: { status: 'active' }, default: false },
+  },
+})
 class Filtered {
-  @Field({ type: Number, isId: true })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   status?: string | null;
-  @Field({ type: Date, softDelete: true })
+  @Field(f.date().nullable().softDelete())
   deletedAt?: Date | null;
 }
 
@@ -60,11 +63,12 @@ it('should resolve thunk conditions', () => {
 });
 
 it('should skip a convenience filter whose condition does not resolve', () => {
-  @Filter('mine', { where: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) })
-  @Entity()
+  @Entity({
+    filters: { mine: { where: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) } },
+  })
   class Owned {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) ownerId?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().nullable()) ownerId?: number | null;
   }
   expect(applyFilters(getMeta(Owned), {})).toEqual({});
 });
@@ -83,17 +87,20 @@ it('should not overwrite a key already in $where', () => {
   expect(applied({ deletedAt: d })).toEqual({ deletedAt: d });
 });
 
-@Filter('tenant', {
-  where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
-  security: true,
+@Entity({
+  filters: {
+    tenant: {
+      where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
+      security: true,
+    },
+  },
 })
-@Entity()
 class Tenanted {
-  @Field({ type: Number, isId: true })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   companyId?: number | null;
-  @Field({ type: Date, softDelete: true })
+  @Field(f.date().nullable().softDelete())
   deletedAt?: Date | null;
 }
 
@@ -142,12 +149,11 @@ it('should fail closed on a write whose security context is missing', () => {
   expect(() => guardWrite(getMeta(Tenanted), [{ id: 1 }], 'insert')).toThrow(UqlSecurityError);
 });
 
-@Filter('tenants', { where: { companyId: { $in: [1, 2] } }, security: true })
-@Entity()
+@Entity({ filters: { tenants: { where: { companyId: { $in: [1, 2] } }, security: true } } })
 class MultiTenanted {
-  @Field({ type: Number, isId: true })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   companyId?: number | null;
 }
 
@@ -158,16 +164,19 @@ it('should refuse a write against a security condition that is not field equalit
 });
 
 it('should read a condition resolving to {} as no restriction, merging nothing', () => {
-  @Filter('workspace', {
-    where: (ctx) =>
-      ctx?.['system'] ? {} : ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined,
-    security: true,
+  @Entity({
+    filters: {
+      workspace: {
+        where: (ctx) =>
+          ctx?.['system'] ? {} : ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined,
+        security: true,
+      },
+    },
   })
-  @Entity()
   class SystemScoped {
-    @Field({ type: Number, isId: true })
+    @Field(f.number().id())
     id?: number;
-    @Field({ type: Number })
+    @Field(f.number().nullable())
     companyId?: number | null;
   }
   const meta = getMeta(SystemScoped);
@@ -208,18 +217,24 @@ it("should read a field callback's value, or the value itself", () => {
 it("should stamp a soft delete from its option: the current time, a callback's result, or the value itself", () => {
   @Entity()
   class Dated {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
   }
   @Entity()
   class Counted {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number, softDelete: () => 42 }) deletedAt?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Field(
+      f
+        .number()
+        .nullable()
+        .softDelete(() => 42),
+    )
+    deletedAt?: number | null;
   }
   @Entity()
   class Marked {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String, softDelete: 'DELETED' }) status?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable().softDelete('DELETED')) status?: string | null;
   }
 
   expect(stampOf(deletionOf(getMeta(Dated), {})).value()).toBeInstanceOf(Date);
@@ -244,17 +259,15 @@ it('should fill the onInsert fields a payload lacks', () => {
 it('should select the scalar fields a projection names', () => {
   const meta = getMeta(User);
   expect(normalizeScalarFieldSelection(meta, { name: true } satisfies QuerySelect<User>)).toEqual(['name']);
-  expect(normalizeScalarFieldSelection(meta, undefined, { name: true } satisfies QuerySelect<User>)).not.toContain(
-    'name',
-  );
+  expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain('name');
   expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain('name');
 });
 
 @Entity()
 class LazyId {
-  @Id({ type: Number, eager: false })
+  @Field(f.number().id().eager(false))
   id?: number;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 }
 
@@ -263,20 +276,9 @@ it('should drop an eager: false id from the default selection', () => {
   expect(normalizeScalarFieldSelection(meta)).not.toContain('id');
 });
 
-it('should drop an id excluded by $exclude on a top-level query', () => {
+it('should leave out every field a falsy $select map names', () => {
   const meta = getMeta(User);
-  expect(normalizeScalarFieldSelection(meta, undefined, { id: true } satisfies QuerySelect<User>)).not.toContain('id');
-});
-
-it('should allow a falsy $select map beside $exclude', () => {
-  const meta = getMeta(User);
-  const fields = normalizeScalarFieldSelection(
-    meta,
-    { name: false } satisfies QuerySelect<User>,
-    {
-      id: true,
-    } satisfies QuerySelect<User>,
-  );
+  const fields = normalizeScalarFieldSelection(meta, { name: false, id: false } satisfies QuerySelect<User>);
   expect(fields).not.toContain('name');
   expect(fields).not.toContain('id');
 });
@@ -321,13 +323,11 @@ it('should reject an aggregate naming no op, and a group path that is no map', (
   expect(() => parseGroupMap<Item>({ code: 5 })).toThrow("$group 'code' names one field by the path to it: got 5");
 });
 
-/** Wire input, past the types: a path names one field, one key at each level. */
+/** A path names one field, one key at each level: a captured query's type says so, an open map's run time. */
 it('should reject a group path naming no field, or two', () => {
-  // @ts-expect-error: a path names one field
   expect(() => parseGroupMap<Item>({ both: { tax: { name: true, id: true } } })).toThrow(
     `$group 'both' names one field by the path to it: got {"name":true,"id":true}`,
   );
-  // @ts-expect-error: a path names a field
   expect(() => parseGroupMap<Item>({ none: { tax: {} } })).toThrow(
     `$group 'none' names one field by the path to it: got {}`,
   );
@@ -371,28 +371,30 @@ it('should reject an aggregate argument that is not one field', () => {
 });
 
 describe('textSearchFields', () => {
-  @Entity()
-  @Index((article) => [article.title, article.body], { type: 'fulltext' })
+  @Entity({ indexes: (article, index) => [index([article.title, article.body], { type: 'fulltext' })] })
   class Article {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string | null;
-    @Field({ type: String }) body?: string | null;
-    @Field({ type: String }) summary?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) title?: string | null;
+    @Field(f.string().nullable()) body?: string | null;
+    @Field(f.string().nullable()) summary?: string | null;
   }
 
   @Entity()
   class Plain {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) title?: string | null;
   }
 
-  @Entity()
-  @Index((twiceIndexed) => [twiceIndexed.title], { type: 'fulltext' })
-  @Index((twiceIndexed) => [twiceIndexed.body], { type: 'fulltext' })
+  @Entity({
+    indexes: (twiceIndexed, index) => [
+      index([twiceIndexed.body], { type: 'fulltext' }),
+      index([twiceIndexed.title], { type: 'fulltext' }),
+    ],
+  })
   class TwiceIndexed {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string | null;
-    @Field({ type: String }) body?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) title?: string | null;
+    @Field(f.string().nullable()) body?: string | null;
   }
 
   it('should search the fields it names, whatever the entity declares', () => {
@@ -409,14 +411,25 @@ describe('textSearchFields', () => {
   });
 
   it('should search only the plain columns of the fulltext index it reads', () => {
-    @Entity()
-    @Index((doc) => [sql`lower(${doc.title})`, doc.body], { type: 'fulltext' })
+    @Entity({
+      indexes: (lowered, index) => [index([sql`lower(${lowered.title})`, lowered.body], { type: 'fulltext' })],
+    })
     class Lowered {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
+      @Field(f.string().nullable()) body?: string | null;
     }
     expect(textSearchFields(getMeta(Lowered), { $value: 'x' })).toEqual(['body']);
+  });
+
+  it('should not search the JSON column a fulltext entry reads a path of, which a search of whole columns never reads', () => {
+    @Entity({ indexes: (pathed, index) => [index([pathed.meta.title, pathed.title], { type: 'fulltext' })] })
+    class Pathed {
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
+      @Field(f.jsonb().nullable()) meta?: Json<{ title: string }> | null;
+    }
+    expect(textSearchFields(getMeta(Pathed), { $value: 'x' })).toEqual(['title']);
   });
 
   it('should refuse to guess where the entity declares no fulltext index, or more than one', () => {
@@ -474,21 +487,19 @@ describe('fulltextWeights', () => {
 
 describe('findVectorIndex', () => {
   it('should find the vector index over a column', () => {
-    @Index((indexed) => [indexed.embedding], { type: 'hnsw', distance: 'cosine' })
-    @Entity()
+    @Entity({ indexes: (indexed, index) => [index([indexed.embedding], { type: 'hnsw', distance: 'cosine' })] })
     class Indexed {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Indexed), 'embedding')?.type).toBe('hnsw');
   });
 
   it('should ignore an expression index, whose text names no column however it reads', () => {
-    @Index(() => [sql`embedding`], { type: 'hnsw', distance: 'cosine' })
-    @Entity()
+    @Entity({ indexes: (expressed, index) => [index([sql`embedding`], { type: 'hnsw', distance: 'cosine' })] })
     class Expressed {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Expressed), 'embedding')).toBeUndefined();
   });
@@ -497,10 +508,10 @@ describe('findVectorIndex', () => {
 describe('fillOnFields', () => {
   @Entity()
   class Zeroed {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number, onInsert: 0 }) count?: number | null;
-    @Field({ type: String, onInsert: '' }) note?: string | null;
-    @Field({ type: Boolean, onInsert: false }) flag?: boolean | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().nullable().onInsert(0)) count?: number | null;
+    @Field(f.string().nullable().onInsert('')) note?: string | null;
+    @Field(f.boolean().nullable().onInsert(false)) flag?: boolean | null;
   }
 
   it('should fill a falsy value where the caller left the field unset', () => {
@@ -517,11 +528,23 @@ describe('fillOnFields', () => {
 describe('upsertAssigned', () => {
   @Entity()
   class Stamped {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) code?: string | null;
-    @Field({ type: String }) name?: string | null;
-    @Field({ type: Number, onInsert: () => calls.push('onInsert') }) createdAt?: number | null;
-    @Field({ type: Number, onUpdate: () => 7 }) updatedAt?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) code?: string | null;
+    @Field(f.string().nullable()) name?: string | null;
+    @Field(
+      f
+        .number()
+        .nullable()
+        .onInsert(() => calls.push('onInsert')),
+    )
+    createdAt?: number | null;
+    @Field(
+      f
+        .number()
+        .nullable()
+        .onUpdate(() => 7),
+    )
+    updatedAt?: number | null;
   }
   const calls: string[] = [];
   const meta = getMeta(Stamped);
@@ -537,8 +560,14 @@ describe('upsertAssigned', () => {
 describe('a delete of a soft-deletable entity', () => {
   @Entity()
   class Trashed {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number, softDelete: () => 9 }) deletedAt?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Field(
+      f
+        .number()
+        .nullable()
+        .softDelete(() => 9),
+    )
+    deletedAt?: number | null;
   }
   const meta = getMeta(Trashed);
 
@@ -546,8 +575,8 @@ describe('a delete of a soft-deletable entity', () => {
     const softDelete = vi.fn(() => 9);
     @Entity()
     class Stamped {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number, softDelete }) deletedAt?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable().softDelete(softDelete)) deletedAt?: number | null;
     }
     const stamped = getMeta(Stamped);
 

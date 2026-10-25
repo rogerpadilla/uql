@@ -1,5 +1,13 @@
-import { type ColumnFamily, type FamilyOf, type FieldOptions, QuerySql, type StampEvent } from '../type/index.js';
-import { fieldFamily, isInlinedExpression } from './field.util.js';
+import {
+  type BooleanColumnType,
+  type ColumnFamily,
+  type FieldOptions,
+  type NumericColumnType,
+  QuerySql,
+  type StringColumnType,
+  type TsTypeOf,
+} from '../type/index.js';
+import { columnFamily, fieldFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
 import { constantSql } from './sql.js';
 
@@ -17,6 +25,7 @@ const FIELD_OPTION_FAMILY = {
   references: '*',
   onDelete: '*',
   enum: '*',
+  shape: 'json',
   computed: '*',
   stored: '*',
   updatable: '*',
@@ -51,12 +60,11 @@ const INLINE_READS = [
   'enum',
   'eager',
   'distance',
+  'nullable',
 ] as const satisfies readonly (keyof FieldOptions)[];
 
-type InlineRead = (typeof INLINE_READS)[number];
-
 /** Every option that decides what a column holds, or whether it is written at all. */
-const VALUE_DECIDERS = [
+export const VALUE_DECIDERS = [
   'updatable',
   'onInsert',
   'onUpdate',
@@ -72,43 +80,34 @@ const VALUE_DECIDERS = [
  */
 const GENERATED_WRITES = [...VALUE_DECIDERS, 'version'] as const;
 
-type GeneratedWrite = (typeof GENERATED_WRITES)[number];
-
 /**
  * What an optimistic lock cannot use: the querier writes the column on every update and matches the
  * value the payload carried, so anything else deciding it would be fighting that, and the three that
- * would make it another kind of column entirely. Its `nullable: false` and `DEFAULT 0` are implied.
+ * would make it another kind of column entirely. Its `DEFAULT 0` is implied.
  */
 const VERSION_WRITES = [...VALUE_DECIDERS, 'computed', 'stored', 'isId'] as const;
-
-type VersionWrite = (typeof VERSION_WRITES)[number];
 
 /**
  * What bounds a type: stated separately where uql spells the type, and part of the text where the
  * engine's own is written out, which renders verbatim and leaves these unread.
  */
-const TYPE_BOUNDS = ['length', 'precision', 'scale', 'dimensions'] as const satisfies readonly (keyof FieldOptions)[];
-
-type TypeBound = (typeof TYPE_BOUNDS)[number];
-
-/**
- * Whether `key` is the `nullable: true` a NOT NULL column contradicts. `nullable: false` says what
- * such a column already is, and rejecting an accurate statement teaches an author to distrust the check.
- */
-function contradictsNotNull(opts: FieldOptions, key: keyof FieldOptions): boolean {
-  return key === 'nullable' && opts.nullable === true;
-}
+export const TYPE_BOUNDS = [
+  'length',
+  'precision',
+  'scale',
+  'dimensions',
+] as const satisfies readonly (keyof FieldOptions)[];
 
 /** Whatever leaves `key` unread, named for the message, or `undefined` where the field reads it. */
 function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined {
   if (isInlinedExpression(opts) && !INLINE_READS.some((read) => read === key)) return 'an inlined computed field';
   if (opts.stored && GENERATED_WRITES.some((write) => write === key)) return 'a column the database writes';
-  if (opts.isId === true && contradictsNotNull(opts, key)) return 'a primary key';
+  if (opts.isId === true && key === 'nullable') return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
   if (opts.columnType instanceof QuerySql && TYPE_BOUNDS.some((bound) => bound === key)) {
     return 'a column type written out as SQL, which carries its own bounds';
   }
-  if (opts.version === true && (VERSION_WRITES.some((write) => write === key) || contradictsNotNull(opts, key))) {
+  if (opts.version === true && (VERSION_WRITES.some((write) => write === key) || key === 'nullable')) {
     return 'a version field';
   }
   return undefined;
@@ -116,14 +115,18 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
 
 /**
  * The first option `opts` cannot use, phrased as the tail of `'Entity.field' ...`, or `undefined`
- * where every option applies. The runtime half of the decorators' check, so the imperative API and
- * plain JavaScript reach the same answer.
+ * where every option applies. The runtime half of the decorators' check, so plain JavaScript reaches
+ * the same answer.
  */
 export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   // Caught here rather than where the type is resolved, which is a migration on most engines and a
   // query on SQL Server, and which knows no field to name.
   if (opts.columnType instanceof QuerySql && constantSql(opts.columnType) === undefined) {
     return "cannot use 'columnType': a `sql` one names a constant type, so it can bind no value and read no column";
+  }
+  const stray = enumStray(opts);
+  if (stray) {
+    return stray;
   }
   const family = fieldFamily(opts);
   // Walked in table order, not in the order the field happened to be written, so a field with two
@@ -143,43 +146,52 @@ export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   return undefined;
 }
 
-/** The family the options put the column in; every family where they name no type to put it in. */
-type OptionsFamily<O> = O extends { readonly columnType: infer C }
-  ? FamilyOf<C>
-  : O extends { readonly type: infer T }
-    ? FamilyOf<T>
-    : ColumnFamily;
+/** What `typeof` answers on a value of `T`, where a column's values are checked: a date, a document or bytes are not. */
+type ValueTypeOf<T> = T extends string
+  ? 'string'
+  : T extends number
+    ? 'number'
+    : T extends bigint
+      ? 'bigint'
+      : T extends boolean
+        ? 'boolean'
+        : never;
 
-/** What the field's own values leave unread, matching {@link deadOn} line for line. */
-type DeadOptions<O> =
-  | (O extends { readonly stored: true | readonly StampEvent[] }
-      ? GeneratedWrite
-      : O extends { readonly computed: QuerySql }
-        ? Exclude<keyof FieldOptions, InlineRead>
-        : never)
-  | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)
-  | (O extends { readonly updatable: false } ? 'onUpdate' : never)
-  | (O extends { readonly columnType: QuerySql } ? TypeBound : never)
-  | (O extends { readonly version: true } ? VersionWrite : never)
-  | (O extends { readonly version: true; readonly nullable: true } ? 'nullable' : never);
+type ValueType = ValueTypeOf<string | number | bigint | boolean>;
 
-type Given<O> = Extract<keyof O, keyof FieldOptions>;
+/** Each `typeof` a column of `T` answers, keyed so a literal missing one `TsTypeOf` gives it, or adding one, fails to compile. */
+type ValueTypesOf<T> = { readonly [K in ValueTypeOf<TsTypeOf<T>>]: true };
 
-/** The families option `K` applies to, `'*'` for every one. */
-type OptionFamilies<K extends keyof FieldOptions> = (typeof FIELD_OPTION_FAMILY)[K] extends readonly (infer F)[]
-  ? F
-  : (typeof FIELD_OPTION_FAMILY)[K];
+type ValueTypeSet = { readonly [K in ValueType]?: true };
 
-type Offending<O> = {
-  [K in Given<O>]: [Extract<OptionFamilies<K>, OptionsFamily<O> | '*'>] extends [never]
-    ? K
-    : K extends DeadOptions<O>
-      ? K
-      : never;
-}[Given<O>];
+/** The values each family holds. A family left out is not checked. */
+const VALUE_TYPES_OF_FAMILY: { readonly [F in ColumnFamily]?: ValueTypeSet } = {
+  string: { string: true } satisfies ValueTypesOf<StringColumnType | StringConstructor>,
+  numeric: { number: true, bigint: true } satisfies ValueTypesOf<Exclude<NumericColumnType, 'decimal' | 'numeric'>>,
+  boolean: { boolean: true } satisfies ValueTypesOf<BooleanColumnType | BooleanConstructor>,
+};
 
-/**
- * Every option `O` states but cannot use, mapped to `never`, so one that would be ignored does not compile.
- * `@Id` states `{ nullable?: false }` itself, since `O` has to stay naked to be inferred.
- */
-export type RejectIncompatible<O> = [Offending<O>] extends [never] ? unknown : Record<Offending<O> & string, never>;
+/** Where a type's family does not decide its values: a constructor holds one kind, and `time` and an exact decimal read as text. */
+const VALUE_TYPES_OF_TYPE = new Map<unknown, ValueTypeSet>([
+  [Number, { number: true } satisfies ValueTypesOf<NumberConstructor>],
+  [BigInt, { bigint: true } satisfies ValueTypesOf<BigIntConstructor>],
+  ['time', { string: true } satisfies ValueTypesOf<'time'>],
+  ['decimal', { string: true } satisfies ValueTypesOf<'decimal'>],
+  ['numeric', { string: true } satisfies ValueTypesOf<'numeric'>],
+]);
+
+/** What `typeof` a value answers on a column of `type`, as `TsTypeOf` types it; nothing where none is checked. */
+export function valueTypesOf(type: FieldOptions['type']): readonly ValueType[] | undefined {
+  const family = columnFamily(type);
+  const held = VALUE_TYPES_OF_TYPE.get(type) ?? (family && VALUE_TYPES_OF_FAMILY[family]);
+  return held && getKeys(held);
+}
+
+/** An `enum` member its `type` cannot hold, which the row would still type as that member. */
+function enumStray(opts: FieldOptions): string | undefined {
+  const types = valueTypesOf(opts.type);
+  const stray = types && opts.enum?.find((member) => !types.some((type) => type === typeof member));
+  if (!types || stray === undefined) return undefined;
+  const shown = typeof stray === 'string' ? `'${stray}'` : String(stray);
+  return `cannot use 'enum': its member ${shown} is no ${types.join(' or ')}, which its type holds`;
+}

@@ -2,11 +2,13 @@ import { getMeta } from '../entity/metadata/definition.js';
 import {
   ColumnRef,
   type EntityMeta,
-  type EntitySql,
-  type EntityWhere,
-  type EntityWhereMeta,
+  type IndexRefMap,
+  JSON_PATH,
+  JsonPathRef,
   QuerySql,
   type QuerySqlFn,
+  REF_KEY,
+  renderSql,
   SQL_TEXT,
   type AggregatePage,
   type ComputedRefs,
@@ -15,6 +17,7 @@ import {
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
+  type RelationRef,
   type SqlArg,
   type SqlStatement,
   type SqlValueName,
@@ -50,7 +53,7 @@ export function sql(source: QuerySqlFn | TemplateStringsArray, ...values: readon
     ctx.append(source[0]);
     values.forEach((value, i) => {
       if (value instanceof QuerySql) {
-        value.render(opts);
+        renderSql(value, opts);
       } else {
         ctx.addValue(value);
       }
@@ -66,7 +69,7 @@ sql.join = function join(parts: readonly QuerySql[], separator = ', '): QuerySql
       if (index) {
         opts.ctx.append(separator);
       }
-      part.render(opts);
+      renderSql(part, opts);
     });
   });
 };
@@ -129,31 +132,50 @@ export const SQL_VALUES: Readonly<Record<SqlValueName, QuerySql>> = {
 
 /**
  * The fields of `entity` as {@link ColumnRef}s, each rendering inside `sql` as its column: named the way
- * the dialect names it, so the naming strategy and `@Field({ name })` apply, and qualified by the alias
+ * the dialect names it, so the naming strategy and `.name()` apply, and qualified by the alias
  * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
  */
 export function refs<E>(entity: Type<E>): RefMap<E> {
-  return new Proxy({}, { get: (_, key) => columnRef(entity, String(key)) }) as RefMap<E>;
+  return refMap<RefMap<E>>((key) => columnRef(entity, key));
 }
 
-const MEMBER_REFS = new Proxy({}, { get: (_, key) => memberRef(String(key)) });
+/** A map answering each string key with `ref(key)`, typed as the caller's map, whose keys say what it holds. */
+function refMap<T>(ref: (key: string) => unknown): T {
+  return new Proxy({}, { get: (_, key) => ref(String(key)) }) as T;
+}
 
 /**
- * The refs a definition's callbacks read: an index's, a check's, a computed field's. A member decorator
+ * The refs a definition's callbacks read: a check's, a computed field's, a predicate's. A member decorator
  * sees no class, so these name no entity and resolve against the one rendering them.
  */
 export function memberRefs<E>(): ComputedRefs<E> {
-  return MEMBER_REFS as ComputedRefs<E>;
+  return refMap<ComputedRefs<E>>(memberRef);
 }
 
-/** SQL a definition writes, a callback's refs read off {@link memberRefs}. */
-export function entitySql<E>(statement: EntitySql<E>): QuerySql {
-  return statement instanceof QuerySql ? statement : statement(memberRefs<E>());
+/** Each to-many as a schema's aggregates read it, by key: the same refs {@link memberRefs} gives a decorated entity. */
+export function relationRefs(): Readonly<Record<string, RelationRef<object>>> {
+  return refMap<Readonly<Record<string, RelationRef<object>>>>(memberRef);
 }
 
-/** A definition's predicate, its callback resolved the way {@link entitySql} resolves one. */
-export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
-  return typeof where === 'function' ? where(memberRefs<E>()) : where;
+/**
+ * The refs an index's callbacks read: each field's column, a JSON one also read into along its paths,
+ * `(user) => [user.settings.theme]`. Named for no entity, as {@link memberRefs} are.
+ */
+export function indexRefs<E>(): IndexRefMap<E> {
+  return refMap<IndexRefMap<E>>((key) => readsPaths(columnRef(undefined, key)));
+}
+
+/** `ref`, where any string key it has not got of its own reads one key further down the column's document. */
+function readsPaths<T extends ColumnRef | JsonPathRef>(ref: T): T {
+  return new Proxy(ref, {
+    get: (target, prop, receiver) => {
+      if (typeof prop !== 'string' || prop in target) {
+        return Reflect.get(target, prop, receiver);
+      }
+      const path = target instanceof JsonPathRef ? `${target[JSON_PATH]}.${prop}` : prop;
+      return readsPaths(new JsonPathRef(target[REF_KEY], path));
+    },
+  });
 }
 
 /**
@@ -163,7 +185,7 @@ export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
  */
 function memberRef(relation: string): ColumnRef {
   const over = (op: Exclude<RelationAggregateOp, '$count'>) => (pick: PickedRef, q?: AggregatePage<object>) =>
-    relationAggregate({ relation, op, field: pick(memberRefs<object>()).key, ...rowsOf(q) });
+    relationAggregate({ relation, op, field: pick(memberRefs<object>())[REF_KEY], ...rowsOf(q) });
   return Object.assign(columnRef(undefined, relation), {
     count: (q?: AggregatePage<object>) => relationAggregate({ relation, op: '$count', ...rowsOf(q) }),
     sum: over('$sum'),
@@ -237,7 +259,7 @@ function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderO
           'with no table in scope to correlate a subquery to. Name the columns it is derived from instead.',
       );
     }
-    grouped(field.computed).render(scope);
+    renderSql(grouped(field.computed), scope);
     return;
   }
   scope.ctx.append(scope.escapedPrefix + scope.dialect.escapeId(scope.dialect.columnOf(meta, key), true));

@@ -80,28 +80,81 @@ describe('describeIndexDifferences', () => {
 
 describe('indexChanges', () => {
   const table = mockTableNode('users', [{ name: 'email' }]);
+  /** The table as the database holds it: these indexes. */
+  const holding = (indexes: IndexNode[]) => ({ name: 'users', indexes, indexFacets: new Set<never>() });
   const emailIndex = (name: string) => ({ name, table, entries: [{ column: 'email' }], unique: true });
 
   /** A unique column is a unique index: its legacy `_uk` spelling is the same one, and a second is a duplicate uql made. */
   it('should keep the index a unique column is, and drop a duplicate of it', () => {
     const current = [emailIndex('users__email_uk'), emailIndex('idx_users_email')];
 
-    expect(indexChanges('users', [emailIndex('users__email_idx')], current, new Set())).toEqual({
+    expect(indexChanges([emailIndex('users__email_idx')], holding(current))).toEqual({
       changes: [{ from: emailIndex('idx_users_email') }],
       kept: [],
     });
   });
 
   /** Its expression cannot be compared, so the name uql derives for it is how it is known as uql's. */
-  it('should drop an expression index uql named, which nothing declares anymore', () => {
+  it('should drop an expression index uql named, which nothing declares anymore, and keep one named like it', () => {
     const lowered = {
       name: 'users__expr0_idx',
       table,
-      entries: [{ column: 'lower(email)', expression: true }],
+      entries: [{ expression: 'lower(email)' }],
       unique: false,
     };
 
-    expect(indexChanges('users', [], [lowered], new Set())).toEqual({ changes: [{ from: lowered }], kept: [] });
+    const handMade = { ...lowered, name: 'users__lower_email_idx' };
+
+    expect(indexChanges([], holding([lowered, handMade]))).toEqual({
+      changes: [{ from: lowered }],
+      kept: [handMade],
+    });
+  });
+
+  /** The engine reports a JSON path's column and keys, so the name uql derives from them is computed forwards. */
+  it('should drop a JSON path index uql named, now or as an earlier uql did, and keep one named otherwise', () => {
+    const pathIndex = (name: string) => ({ name, table, entries: [{ json: 'kind', path: 'name' }], unique: false });
+    const derived = pathIndex('users__kind_name_idx');
+    const earlier = pathIndex('users__expr0_idx');
+
+    expect(indexChanges([], holding([derived, earlier, pathIndex('kind_name_by_dba')]))).toEqual({
+      changes: [{ from: derived }, { from: earlier }],
+      kept: [pathIndex('kind_name_by_dba')],
+    });
+  });
+
+  /** A shortened name ends in a hash of the whole, so nothing short of the whole name derived again can claim one. */
+  it('should keep a hand-made index whose long name only shares a derived lead', () => {
+    const filler = 'x'.repeat(63 - 'users__tenantId__abcdef'.length);
+    const lead = (entries: IndexNode['entries'], start: string) => ({
+      name: `${start}${filler.slice(start.length - 'users__tenantId_'.length)}_abcdef`,
+      table,
+      entries,
+      unique: false,
+    });
+    const overExpression = lead([{ column: 'tenantId' }, { expression: 'lower(email)' }], 'users__tenantId_');
+    const overPath = lead([{ json: 'settings', path: 'theme' }], 'users__settings_theme_');
+
+    expect(overExpression.name).toHaveLength(63);
+    expect(indexChanges([], holding([overExpression, overPath]))).toEqual({
+      changes: [],
+      kept: [overExpression, overPath],
+    });
+  });
+
+  /** An entity names its unique indexes as any other, and the migration builder's `unique()` with `_uk`. */
+  it('should drop a unique index uql named either way', () => {
+    const fromEntity = emailIndex('users__email_idx');
+    const fromBuilder = emailIndex('users__email_uk');
+
+    expect(indexChanges([], holding([fromEntity]))).toEqual({ changes: [{ from: fromEntity }], kept: [] });
+    expect(indexChanges([], holding([fromBuilder]))).toEqual({ changes: [{ from: fromBuilder }], kept: [] });
+  });
+
+  it('should drop a partial index uql named, its predicate hash read off the name', () => {
+    const partial = { ...emailIndex('users__email_1a2b3c_uk'), where: 'live' };
+
+    expect(indexChanges([], holding([partial]))).toEqual({ changes: [{ from: partial }], kept: [] });
   });
 
   /** The predicate is named in the index's own name, so an edit to it is a new name and the old one is dropped. */
@@ -115,7 +168,7 @@ describe('indexChanges', () => {
     };
     const archived = { ...live, name: 'users__email_4d5e6f_idx', where: 'archived' };
 
-    expect(indexChanges('users', [archived], [live], new Set())).toEqual({
+    expect(indexChanges([archived], holding([live]))).toEqual({
       changes: [{ to: archived }, { from: live }],
       kept: [],
     });
@@ -124,9 +177,7 @@ describe('indexChanges', () => {
   it('should keep an index uql did not name, which may have been made outside it', () => {
     const current = [emailIndex('users__email_idx'), emailIndex('hand_made')];
 
-    expect(indexChanges('users', [emailIndex('users__email_idx')], current, new Set()).kept).toEqual([
-      emailIndex('hand_made'),
-    ]);
+    expect(indexChanges([emailIndex('users__email_idx')], holding(current)).kept).toEqual([emailIndex('hand_made')]);
   });
 });
 
@@ -193,7 +244,7 @@ describe('indexSignature', () => {
    * declared. The name is the only handle such an index has.
    */
   it('should fall back to the name for an index whose expression it cannot compare', () => {
-    const entries = [{ column: 'lower(email)', expression: true }];
+    const entries = [{ expression: 'lower(email)' }];
     expect(indexSignature({ name: 'User__lower_idx', entries, unique: false })).toBe(
       indexSignature({ name: 'idx_User_lower', entries, unique: false }),
     );

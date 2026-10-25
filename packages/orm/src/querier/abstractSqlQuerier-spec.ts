@@ -64,58 +64,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.execute).toHaveBeenCalledTimes(1);
   }
 
-  async shouldRefuseASelectAndExcludeConflictOnFindOne() {
-    await expect(
-      this.querier.findOne(User, {
-        $select: { name: true },
-        $exclude: { createdAt: true },
-      }),
-    ).rejects.toThrow('Cannot combine $select and $exclude');
-  }
-
-  /** Checked as written, before the page reads a sort key the projection left out and spells `$select` whole. */
-  async shouldRefuseASelectAndExcludeConflictOnFindManyPage() {
-    await expect(
-      this.querier.findManyPage(User, {
-        $select: { name: true },
-        $exclude: { email: true },
-        $sort: { createdAt: -1, id: 1 },
-        $limit: 2,
-      }),
-    ).rejects.toThrow('Cannot combine $select and $exclude');
-  }
-
-  async shouldRefuseASelectAndExcludeConflictOnFindManyAndCount() {
-    await expect(
-      this.querier.findManyAndCount(User, {
-        $select: { name: true },
-        $exclude: { createdAt: true },
-      }),
-    ).rejects.toThrow('Cannot combine $select and $exclude');
-  }
-
-  shouldRefuseASelectAndExcludeConflictOnFindManyStream() {
-    expect(() =>
-      this.querier.findManyStream(User, {
-        $select: { name: true },
-        $exclude: { createdAt: true },
-      }),
-    ).toThrow('Cannot combine $select and $exclude');
-  }
-
-  async shouldRefuseANestedSelectAndExcludeConflict() {
-    await expect(
-      this.querier.findMany(User, {
-        $populate: {
-          profile: {
-            $select: { picture: true },
-            $exclude: { createdAt: true },
-          },
-        },
-      }),
-    ).rejects.toThrow('Cannot combine $select and $exclude');
-  }
-
   async shouldHydrateJsonFieldFromDriverString() {
     this.execute.mockResolvedValueOnce({ rows: [{ kind: '{"label":"x","isArchived":true}' }] });
 

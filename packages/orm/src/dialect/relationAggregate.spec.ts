@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { defineField, Entity, Field, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { Computed, Entity, f, Field, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { untypedColumn } from '../test/spec.util.js';
 import type { Query, QueryAggregate } from '../type/index.js';
 import { memberRefs, sql } from '../util/index.js';
 
@@ -10,30 +11,48 @@ import { memberRefs, sql } from '../util/index.js';
  */
 @Entity()
 class Task {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Project, type: Number }) projectId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Project),
+  )
+  projectId?: number | null;
   @ManyToOne({ entity: () => Project, references: (task) => task.projectId }) project?: Project;
-  @Field({ type: Number }) hours?: number | null;
-  @Field({ type: Boolean }) done?: boolean | null;
+  @Field(f.number().nullable()) hours?: number | null;
+  @Field(f.boolean().nullable()) done?: boolean | null;
 }
 
 @Entity()
 class Tag {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) weight?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) weight?: number | null;
 }
 
 @Entity()
 class ProjectTag {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Project, type: Number }) projectId?: number | null;
-  @Field({ references: () => Tag, type: Number }) tagId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Project),
+  )
+  projectId?: number | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Tag),
+  )
+  tagId?: number | null;
 }
 
 @Entity()
 class Project {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) owner?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) owner?: string | null;
 
   @OneToMany({ entity: () => Task, mappedBy: (task) => task.project })
   tasks?: Task[];
@@ -41,46 +60,42 @@ class Project {
   @ManyToMany({ entity: () => Tag, through: () => ProjectTag })
   tags?: Tag[];
 
-  @Field({ computed: (project) => project.tasks.count() })
+  @Computed((project) => project.tasks.count())
   readonly taskCount?: number;
 
-  @Field({ computed: (project) => project.tasks.count({ $where: { done: true } }) })
+  @Computed((project) => project.tasks.count({ $where: { done: true } }))
   readonly doneCount?: number;
 
-  @Field({ computed: (project) => project.tasks.sum((task) => task.hours) })
+  @Computed((project) => project.tasks.sum((task) => task.hours))
   readonly totalHours?: number;
 
-  @Field({ computed: (project) => project.tasks.max((task) => task.hours) })
+  @Computed((project) => project.tasks.max((task) => task.hours))
   readonly longestTask?: number | null;
 
-  @Field({ computed: (project) => project.tags.count() })
+  @Computed((project) => project.tags.count())
   readonly tagCount?: number;
 
   /** A column of the far side of a many-to-many: reachable as a page, which reads the target itself. */
-  @Field({ computed: (project) => project.tags.max((tag) => tag.weight, { $sort: { weight: -1 }, $limit: 1 }) })
+  @Computed((project) => project.tags.max((tag) => tag.weight, { $sort: { weight: -1 }, $limit: 1 }))
   readonly heaviestTag?: number | null;
 
   /** The same column without one: read off each target once, whichever junction rows pair it. */
-  @Field({ computed: (project) => project.tags.max((tag) => tag.weight) })
+  @Computed((project) => project.tags.max((tag) => tag.weight))
   readonly unpagedTagWeight?: number | null;
 
   /** Capped: the page is read first, then aggregated over, so the cap applies to rows and not to the answer. */
-  @Field({ computed: (project) => project.tasks.count({ $limit: 100 }) })
+  @Computed((project) => project.tasks.count({ $limit: 100 }))
   readonly cappedCount?: number;
 
-  @Field({
-    computed: (project) => project.tasks.sum((task) => task.hours, { $sort: { hours: -1 }, $limit: 5, $skip: 1 }),
-  })
+  @Computed((project) => project.tasks.sum((task) => task.hours, { $sort: { hours: -1 }, $limit: 5, $skip: 1 }))
   readonly topHours?: number;
 
   /** A page ordered through a to-one of the target, which joins it inside the page. */
-  @Field({
-    computed: (project) => project.tasks.sum((task) => task.hours, { $sort: { project: { owner: 1 } }, $limit: 3 }),
-  })
+  @Computed((project) => project.tasks.sum((task) => task.hours, { $sort: { project: { owner: 1 } }, $limit: 3 }))
   readonly firstOwnedHours?: number;
 
   /** Past the first rows, uncapped: skipping is a page as much as capping is. */
-  @Field({ computed: (project) => project.tasks.count({ $skip: 2 }) })
+  @Computed((project) => project.tasks.count({ $skip: 2 }))
   readonly laterCount?: number;
 }
 
@@ -166,13 +181,16 @@ describe('relation aggregate', () => {
 
   /** The subquery is spliced into each read, so there is nothing for a generated column to hold. */
   it('should refuse to store one', () => {
-    expect(() =>
-      defineField(Project, 'storedTaskCount', {
-        type: Number,
-        computed: memberRefs<Project>().tasks.count(),
-        stored: true,
-      }),
-    ).toThrow("cannot be 'stored'");
+    expect(() => {
+      @Entity()
+      class Stored {
+        @Field(f.number().id()) id?: number;
+        @OneToMany({ entity: () => Task, mappedBy: (task) => task.project }) tasks?: Task[];
+        @Field(untypedColumn({ computed: memberRefs<{ tasks: Task[] }>().tasks.count(), stored: true }))
+        readonly taskCount?: number;
+      }
+      return Stored;
+    }).toThrow("cannot be 'stored'");
   });
 
   /** Read off a definition's refs, an aggregate names no entity: it renders only inside its own. */

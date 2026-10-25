@@ -47,7 +47,7 @@ export function kindOf(value: unknown): string {
 }
 
 /**
- * Thrown when an update's `@Field({ version })` no longer matches the row: another writer moved it on,
+ * Thrown when an update's `f.version()` column no longer matches the row: another writer moved it on,
  * or it is gone. `expected` is what the payload carried, `actual` what the row holds now, `undefined`
  * where there is no row left.
  */

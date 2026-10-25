@@ -1,66 +1,65 @@
 import { canonicalToColumnType, isVectorCategory } from '../../schema/canonicalType.js';
-import { SqlExpression, type SqlExpressionKind } from '../../schema/sqlExpression.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ColumnNode } from '../../schema/types.js';
 import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
 import { quoted, sqlTag } from './sourceLiteral.js';
 
 /** What a field of the column contributes, given the property it maps to, which decides whether a `name` is needed. */
-type OptionSource = (col: ColumnNode, propertyName: string) => readonly string[];
+type MethodSource = (col: ColumnNode, propertyName: string) => readonly string[];
 
-/** What each field of a {@link ColumnNode} contributes to `@Field({ ... })`, in emit order; `satisfies` makes a new field answer. */
-const OPTION_SOURCE = {
-  // Without this the entity maps to a column named after the property, which for anything the
-  // transformer rewrote - every `user_id` - is a column the database does not have.
-  name: (col, propertyName) => (propertyName === col.name ? [] : [`name: ${quoted(col.name)}`]),
-  // The column type as `type`, which the decorator checks the property against and the schema reads
-  // exactly as it reads `columnType`.
-  type: (col) => {
-    const columnType = canonicalToColumnType(col.type);
-    return [
-      `type: ${quoted(columnType)}`,
-      ...(col.type.length && col.type.category === 'string' ? [`length: ${col.type.length}`] : []),
-      ...(col.type.length && isVectorCategory(col.type.category) ? [`dimensions: ${col.type.length}`] : []),
-      ...(writesPrecision(col.type) ? [`precision: ${col.type.precision}`] : []),
-      ...(col.type.precision !== undefined && col.type.scale !== undefined ? [`scale: ${col.type.scale}`] : []),
-    ];
-  },
-  // A column is nullable unless it says otherwise, and a key is NOT NULL without saying so.
-  nullable: (col) => (col.nullable || col.isPrimaryKey ? [] : ['nullable: false']),
-  isUnique: (col) => (col.isUnique ? ['unique: true'] : []),
-  defaultValue: (col) =>
-    col.defaultValue === undefined ? [] : [`defaultValue: ${defaultValueSource(col.defaultValue)}`],
-  generatedAs: (col) => (col.generatedAs ? [`computed: ${sqlTag(col.generatedAs)}`, 'stored: true'] : []),
-  comment: (col) => (col.comment ? [`comment: ${quoted(col.comment)}`] : []),
-
-  // A key is `@Id`, which says it on its own, and generates where `isAutoIncrement` says, which only a
-  // column the database treats otherwise contradicts.
-  isPrimaryKey: null,
+/**
+ * What each field of a {@link ColumnNode} chains onto its builder, in emit order; `satisfies` makes a new field
+ * answer. The builder itself is the column's type, `f.column('varchar')`.
+ */
+const METHOD_SOURCE = {
+  // The type's bounds, which its family's builder takes.
+  type: (col) => [
+    ...(col.type.length && col.type.category === 'string' ? [`.length(${col.type.length})`] : []),
+    ...(col.type.length && isVectorCategory(col.type.category) ? [`.dimensions(${col.type.length})`] : []),
+    ...(writesPrecision(col.type) ? [`.precision(${col.type.precision})`] : []),
+    ...(col.type.precision !== undefined && col.type.scale !== undefined ? [`.scale(${col.type.scale})`] : []),
+  ],
+  // A column is NOT NULL unless it says otherwise; a key is a key, which holds no null.
+  nullable: (col) => (col.nullable && !col.isPrimaryKey ? ['.nullable()'] : []),
+  isPrimaryKey: (col) => (col.isPrimaryKey ? ['.id()'] : []),
+  // Generates where `isAutoIncrement` says, which only a column the database treats otherwise contradicts.
   isAutoIncrement: (col) =>
     isAutoIncrement(
       { type: canonicalToColumnType(col.type) },
       col.isPrimaryKey && col.table.primaryKey?.columns.length === 1,
     ) === col.isAutoIncrement
       ? []
-      : [`autoIncrement: ${col.isAutoIncrement}`],
+      : [col.isAutoIncrement ? '.autoIncrement()' : '.autoIncrement(false)'],
+  isUnique: (col) => (col.isUnique ? ['.unique()'] : []),
+  defaultValue: (col) => (col.defaultValue === undefined ? [] : [`.default(${defaultValueSource(col.defaultValue)})`]),
+  // Without this the entity maps to a column named after the property, which for anything the
+  // transformer rewrote - every `user_id` - is a column the database does not have.
+  name: (col, propertyName) => (propertyName === col.name ? [] : [`.name(${quoted(col.name)})`]),
+  comment: (col) => (col.comment ? [`.comment(${quoted(col.comment)})`] : []),
+  // Emitted after the index: a generated column is the builder computed `as()` its SQL, and kept.
+  generatedAs: (col) => (col.generatedAs ? [`.as(${sqlTag(col.generatedAs)}).stored()`] : []),
   // The graph link: a foreign key becomes a relation decorator, emitted beside the field rather than in it.
   table: null,
-} as const satisfies Record<keyof ColumnNode, OptionSource | null>;
+} as const satisfies Record<keyof ColumnNode, MethodSource | null>;
 
 /** Whether to write `type`'s precision: not for a timestamp at a `Date`'s milliseconds, its default. */
 function writesPrecision(type: ColumnNode['type']): boolean {
   return type.precision !== undefined && !(type.category === 'timestamp' && type.precision === DATE_PRECISION);
 }
 
-/** A column's `@Id({ ... })` or `@Field({ ... })` options as source. */
+/** A column's builder as source, `f.column('varchar').length(80).nullable()`, its plain index's name chained on. */
 export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, indexName?: string): string {
-  const options = [
-    ...Object.values(OPTION_SOURCE).flatMap((source) => source?.(col, propertyName) ?? []),
-    // Not a column field: the index is a table-level object the field only borrows.
-    ...(indexName ? [`index: ${quoted(indexName)}`] : []),
-  ];
+  const { generatedAs, ...methodSources } = METHOD_SOURCE;
+  const methods = Object.values(methodSources).flatMap((source) => source?.(col, propertyName) ?? []);
+  // Not a column field: the index is a table-level object the field only borrows.
+  const index = indexName ? [`.index(${quoted(indexName)})`] : [];
+  return `f.column(${quoted(canonicalToColumnType(col.type))})${[...methods, ...index, ...generatedAs(col)].join('')}`;
+}
 
-  return `{ ${options.join(', ')} }`;
+/** The decorator declaring the column `builder` writes: `@Computed` for one the database generates. */
+export function fieldDecoratorSource(builder: string, col: ColumnNode): string {
+  return col.generatedAs ? `@Computed(() => ${builder})` : `@Field(${builder})`;
 }
 
 /** The uql imports the field's decorator needs besides `Field`, as {@link indexNeedsRaw} tells for an index. */
@@ -82,7 +81,7 @@ function defaultValueSource(value: unknown): string {
  * name (`currentTimestamp`), and `sql` for any other SQL, as introspection reads it back.
  */
 function sqlDefaultSource({ kind, sql }: SqlExpression): {
-  readonly name: SqlExpressionKind;
+  readonly name: SqlExpression['kind'];
   readonly source: string;
 } {
   return sql === undefined ? { name: kind, source: kind } : { name: 'sql', source: sqlTag(sql) };

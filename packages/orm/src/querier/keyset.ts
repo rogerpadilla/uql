@@ -60,7 +60,7 @@ export function keysetRead<E extends object>(
   const query: Query<E> = {
     ...rest,
     // Rewrite the projection as an explicit `$select` that adds the sort keys it left out, which the cursor needs.
-    ...(carried.length > 0 && { $select: keySet([...projected, ...carried]), $exclude: undefined }),
+    ...(carried.length > 0 && { $select: keySet([...projected, ...carried]) }),
     $sort: backward ? sortOf(order.map(inverted).map((key) => [key.key, spelling(key)])) : rest.$sort,
     $where:
       cursor === undefined
@@ -163,7 +163,7 @@ function totalPrefix<E>(meta: EntityMeta<E>, order: readonly PageKey<E>[]): Page
     meta.ids,
     ...declaredIndexes(meta)
       .filter((index) => index.unique && !index.where)
-      .map((index) => index.columns.map(({ column }) => column))
+      .map((index) => index.entries.map(({ column }) => column))
       .filter((columns): columns is string[] =>
         columns.every((column) => typeof column === 'string' && notNull(column)),
       ),
@@ -256,11 +256,11 @@ function anyOf<E>(alternatives: QueryWhere<E>[]): QueryWhere<E> {
  * The fields the query's projection reads, resolved by `normalizeScalarFieldSelection` the same way on every
  * backend. A raw `$select` is refused: it names no fields, and the cursor is read off the fields.
  */
-function projectedKeys<E>(meta: EntityMeta<E>, q: QueryKeyset<E>): FieldKey<E>[] {
+function projectedKeys<E>(meta: EntityMeta<E>, q: QueryKeyset<E>): readonly FieldKey<E>[] {
   if (isSelectList(q.$select)) {
     throw new UqlUsageError(`a page of '${entityName(meta)}' selects fields, which its cursor is read off`);
   }
-  return normalizeScalarFieldSelection(meta, q.$select, q.$exclude);
+  return normalizeScalarFieldSelection(meta, q.$select);
 }
 
 /** Hashes the entity and each sort key's direction and placement, so a cursor only works with the sort it came from. */

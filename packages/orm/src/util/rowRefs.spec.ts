@@ -1,22 +1,28 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
+import { Computed, Entity, f, Field, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { QuerySql, RefMap, TriggerRowName } from '../type/index.js';
 import { sql, rowRefs } from './sql.js';
 
 @Entity()
 class Author {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, name: 'full_name' }) name?: string | null;
-  @Field({ type: String, computed: (author) => sql`upper(${author.name})` }) loud?: string | null;
-  @Field({ computed: (author) => author.posts.count() }) postCount?: number;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().name('full_name')) name?: string | null;
+  @Computed((author) =>
+    f
+      .string()
+      .nullable()
+      .as(sql`upper(${author.name})`),
+  )
+  loud?: string | null;
+  @Computed((author) => author.posts.count()) postCount?: number;
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
 }
 
 @Entity()
 class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Author }) authorId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
 }
 

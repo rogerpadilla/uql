@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { anyUuid, Company, Coupon, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
 import type { QueryConflictPaths } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
@@ -60,8 +60,8 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
   shouldThrowForVectorSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(() =>
       this.exec((ctx) =>

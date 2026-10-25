@@ -1,22 +1,23 @@
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { indexDefinition } from '../generator/definitionToNode.js';
-import { TableDefinitionBuilder } from './tableBuilder.js';
+import { tableColumns } from './columnBuilder.js';
+import { tableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
   ForeignKeyOptions,
   ForeignKeyTarget,
   FullColumnDefinition,
   AlterTableBuilder,
-  ColumnBuilder,
-  ColumnFactory,
   MigrationBuilder,
   TableBuilder,
+  TableColumnBuilder,
+  TableColumnFactory,
 } from './types.js';
 
-/** One column declared through `createTable`'s vocabulary, a throwaway {@link TableDefinitionBuilder}, so its type is stated. */
-function buildOneColumn(callback: (columns: ColumnFactory) => ColumnBuilder): FullColumnDefinition {
-  return callback(new TableDefinitionBuilder('')).build();
+/** One column declared through `createTable`'s vocabulary, so its type is stated. */
+function buildOneColumn(callback: (columns: TableColumnFactory) => TableColumnBuilder): FullColumnDefinition {
+  return callback(tableColumns((column) => column)).build();
 }
 
 /** The operations one `alterTable` callback declares, collected in order, since its methods are synchronous. */
@@ -25,7 +26,7 @@ class AlterTableOperations implements AlterTableBuilder {
 
   constructor(private readonly tableName: string) {}
 
-  addColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this {
+  addColumn(callback: (columns: TableColumnFactory) => TableColumnBuilder): this {
     this.operations.push({
       type: 'addColumn',
       tableName: this.tableName,
@@ -54,7 +55,7 @@ class AlterTableOperations implements AlterTableBuilder {
   }
 
   /** Alters only the column: throws if it declares an index or a foreign key, rather than dropping them. */
-  alterColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this {
+  alterColumn(callback: (columns: TableColumnFactory) => TableColumnBuilder): this {
     const column = buildOneColumn(callback);
     if (column.index || column.foreignKey) {
       throw new UqlUsageError(
@@ -110,9 +111,9 @@ export class MigrationOperationBuilder implements MigrationBuilder {
   constructor(private readonly apply: (operation: AnyMigrationOperation) => Promise<void>) {}
 
   createTable(name: string, callback: (table: TableBuilder) => void): Promise<void> {
-    const builder = new TableDefinitionBuilder(name);
-    callback(builder);
-    return this.apply({ type: 'createTable', table: builder.build() });
+    const table = tableBuilder(name);
+    callback(table);
+    return this.apply({ type: 'createTable', table: table.build() });
   }
 
   dropTable(name: string, options: { ifExists?: boolean; cascade?: boolean } = {}): Promise<void> {
@@ -132,7 +133,7 @@ export class MigrationOperationBuilder implements MigrationBuilder {
   }
 
   // Each single change delegates to `alterTable`, so each operation is implemented only once.
-  addColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void> {
+  addColumn(tableName: string, callback: (columns: TableColumnFactory) => TableColumnBuilder): Promise<void> {
     return this.alterTable(tableName, (table) => table.addColumn(callback));
   }
 
@@ -140,7 +141,7 @@ export class MigrationOperationBuilder implements MigrationBuilder {
     return this.alterTable(tableName, (table) => table.dropColumn(columnName));
   }
 
-  alterColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void> {
+  alterColumn(tableName: string, callback: (columns: TableColumnFactory) => TableColumnBuilder): Promise<void> {
     return this.alterTable(tableName, (table) => table.alterColumn(callback));
   }
 

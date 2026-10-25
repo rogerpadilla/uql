@@ -1,7 +1,8 @@
 /**
  * What UQL's types cost a consuming project's compiler, measured on `dist` as a consumer compiles it (build
- * first): a project with no queries, the fixed cost, and one with `calls` blocks of them. A published version,
- * `bun run ts.perf 200 0.93.1`, is measured beside it. Instantiations are deterministic; the clock is not.
+ * first): a project with no queries, the fixed cost, then `calls` blocks of queries, then `calls` indexed entities
+ * of each form.
+ * A published version, `bun run ts.perf 200 0.93.1`, is measured beside it. Instantiations are deterministic.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -9,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { $ } from 'bun';
-import { writeFixture } from './typeFixture.js';
+import { type FixtureSize, writeConsumerProject } from './typeFixture.js';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const calls = Number(process.argv[2] ?? 200);
@@ -20,10 +21,16 @@ if (!(await Bun.file(built).exists())) {
   throw new Error(`no declarations at ${built} - run 'bun run build' first.`);
 }
 
-async function measure(declarations: string, blocks: number): Promise<string> {
+async function measure(declarations: string, size: FixtureSize): Promise<string> {
   const dir = mkdtempSync(resolve(tmpdir(), 'uql-type-perf-'));
   try {
-    writeFixture(dir, declarations, blocks, { target: 'es2025', skipLibCheck: true });
+    writeConsumerProject(dir, size, {
+      target: 'es2025',
+      module: 'NodeNext',
+      lib: ['ESNext'],
+      skipLibCheck: true,
+      paths: { 'uql-orm': [declarations] },
+    });
     const out = await $`${resolve(root, 'node_modules/.bin/tsc')} -p ${dir} --extendedDiagnostics`.nothrow().text();
     // A failed compile still prints counters, and a project that resolves nothing prints zeroes, so
     // the numbers are only worth reading once the fixture is known to have type-checked.
@@ -52,9 +59,21 @@ async function published(version: string, dir: string): Promise<string> {
 const downloads = mkdtempSync(resolve(tmpdir(), 'uql-type-perf-published-'));
 try {
   const targets = [['dist', built], ...(version ? [[version, await published(version, downloads)]] : [])];
+  const rows: readonly (readonly [string, FixtureSize])[] = [
+    ['fixed (0 queries)', { queries: 0, definitions: 0, schemas: 0 }],
+    [`${calls * 4} queries`, { queries: calls, definitions: 0, schemas: 0 }],
+    [`${calls} definitions`, { queries: 0, definitions: calls, schemas: 0 }],
+    [`${calls} schemas`, { queries: 0, definitions: 0, schemas: calls }],
+  ];
   for (const [label, declarations] of targets) {
-    console.log(`${label.padEnd(8)} fixed (0 queries)  ${await measure(declarations, 0)}`);
-    console.log(`${label.padEnd(8)} ${String(calls * 4).padEnd(5)} queries      ${await measure(declarations, calls)}`);
+    for (const [what, size] of rows) {
+      const read = await measure(declarations, size).catch((error: unknown) => {
+        // A published version older than an API the fixture uses reports that, rather than ending the run.
+        if (label === 'dist') throw error;
+        return String(error).split('\n')[0];
+      });
+      console.log(`${label.padEnd(8)} ${what.padEnd(18)} ${read}`);
+    }
   }
 } finally {
   rmSync(downloads, { recursive: true, force: true });

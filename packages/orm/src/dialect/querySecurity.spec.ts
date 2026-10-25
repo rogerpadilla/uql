@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
+import { Entity, f, Field, getMeta } from '../entity/index.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -20,35 +20,13 @@ describe('normalizeScalarFieldSelection - field validation', () => {
     expect(result).toEqual(['name']);
   });
 
-  it('should filter out unknown fields from $exclude', () => {
-    // @ts-expect-error: not a field of `User`
-    const result = normalizeScalarFieldSelection(userMeta, undefined, { nonexistent: true });
-    expect(result).toContain('name');
-  });
-
   it('should handle empty $select - falls back to all fields', () => {
-    const result = normalizeScalarFieldSelection(userMeta, {}, undefined);
-    expect(result).toContain('name');
-  });
-
-  it('should handle empty $exclude - returns all fields', () => {
-    const result = normalizeScalarFieldSelection(userMeta, undefined, {});
+    const result = normalizeScalarFieldSelection(userMeta, {});
     expect(result).toContain('name');
   });
 
   it('should exclude a field $select gives false', () => {
     const result = normalizeScalarFieldSelection(userMeta, { name: false });
-    expect(result).not.toContain('name');
-  });
-
-  it('should exclude a field $exclude gives true', () => {
-    const result = normalizeScalarFieldSelection(userMeta, undefined, { name: true });
-    expect(result).not.toContain('name');
-  });
-
-  it('should ignore non-boolean values in $exclude', () => {
-    // @ts-expect-error: not a boolean
-    const result = normalizeScalarFieldSelection(userMeta, undefined, { name: 'yes' });
     expect(result).not.toContain('name');
   });
 });
@@ -88,19 +66,19 @@ describe('SQL generation - $select field name validation', () => {
   });
 });
 
-describe('SQL generation - $exclude field name validation', () => {
-  it('should ignore unknown field keys in $exclude at runtime', () => {
+describe('SQL generation - a falsy $select field name', () => {
+  it('should ignore unknown field keys a falsy $select names at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     // @ts-expect-error: not a field of `User`
-    pg.find(ctx, User, { $exclude: { nonexistent: true } });
+    pg.find(ctx, User, { $select: { nonexistent: false } });
     expect(ctx.sql).toContain('"name"');
   });
 
   it('should leave an excluded field out of the statement', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $exclude: { name: true } });
+    pg.find(ctx, User, { $select: { name: false } });
     // name should be excluded, other fields present
     expect(ctx.sql).not.toContain('"name"');
     expect(ctx.sql).toContain('"email"');
@@ -246,12 +224,11 @@ describe('SQL generation - JSON path keys', () => {
   });
 });
 
-@Filter('tenant', { where: (ctx) => ({ tenantId: ctx?.secureTenantId }), security: true })
-@Entity()
+@Entity({ filters: { tenant: { where: (ctx) => ({ tenantId: ctx?.secureTenantId }), security: true } } })
 class LooseTenantRow {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   tenantId?: number | null;
 }
 

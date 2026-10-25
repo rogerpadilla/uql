@@ -1,37 +1,38 @@
 /**
- * A consuming project as `tsc` sees it: decorated entities, then `blocks` call sites mixing the clauses a
- * real query does, with `uql-orm` resolved to `declarations`. Shared by `type-perf.ts` and `type-floor.ts`.
+ * A consuming project as `tsc` sees it: decorated entities, `queries` call sites mixing the clauses a real query
+ * does, then `definitions` decorated and `schemas` schema entities declaring the same indexes, each read once.
+ * The caller makes `uql-orm` resolve. Shared by `type-perf.ts`, `type-floor.ts` and `packages/orm/verify-dist.ts`.
  */
 
 import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join } from 'node:path';
 
-const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany } from 'uql-orm';
+const entities = /*ts*/ `import { Entity, f, Field, idKey, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity() export class Company {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: Number }) size?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.number().nullable()) size?: number | null;
   @OneToMany({ entity: () => User, mappedBy: (u) => u.company }) users?: User[];
 }
 @Entity() export class User {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: String }) email?: string | null;
-  @Field({ type: Number }) age?: number | null;
-  @Field({ type: Date }) createdAt?: Date | null;
-  @Field({ type: Number, references: () => Company }) companyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.number().nullable()) age?: number | null;
+  @Field(f.date().nullable()) createdAt?: Date | null;
+  @Field(f.references(() => Company).nullable()) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (u) => u.companyId }) company?: Company;
 }
 @Entity() export class Membership {
   [idKey]?: 'userId' | 'companyId';
-  @Id({ type: Number }) userId?: number;
-  @Id({ type: Number }) companyId?: number;
+  @Field(f.number().id()) userId?: number;
+  @Field(f.number().id()) companyId?: number;
 }
 @Entity() export class Seat {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) memberUserId?: number | null;
-  @Field({ type: Number }) memberCompanyId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) memberUserId?: number | null;
+  @Field(f.number().nullable()) memberCompanyId?: number | null;
   @ManyToOne({
     entity: () => Membership,
     references: (s, m) => [{ local: s.memberUserId, foreign: m.userId }, { local: s.memberCompanyId, foreign: m.companyId }],
@@ -44,7 +45,7 @@ const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany
 const block = (i: number) => /*ts*/ `
 export async function q${i}(q: Querier) {
   const a = await q.findMany(User, { $select: { id: true, name: true }, $where: { age: { $gte: ${i} } }, $sort: { createdAt: -1 } });
-  const b = await q.findOne(User, { $exclude: { email: true }, $where: { name: 'x' } });
+  const b = await q.findOne(User, { $select: { email: false }, $where: { name: 'x' } });
   const c = await q.findMany(Company, { $populate: { users: { $select: { name: true } } }, $where: { size: ${i} } });
   await q.insertMany(User, [{ name: 'x', age: ${i} }]);
   const e = await q.insertOne(User, { name: 'x', age: ${i} }, { returning: { id: true, name: true } });
@@ -58,36 +59,117 @@ export async function q${i}(q: Querier) {
   return [a[0]?.name, b?.name, c[0]?.users, d[0]?.companyName, e.name];
 }`;
 
-export function writeFixture(
-  dir: string,
-  declarations: string,
-  blocks: number,
-  options: { readonly target: string; readonly skipLibCheck: boolean },
-): void {
-  writeFileSync(resolve(dir, 'package.json'), JSON.stringify({ type: 'module' }));
-  writeFileSync(resolve(dir, 'entities.ts'), entities);
-  writeFileSync(
-    resolve(dir, 'calls.ts'),
-    [
+/** A composite index, an expression index and three JSON path indexes: one list, so both forms declare the same. */
+const indexes = /*ts*/ `(row, index) => [
+    index([row.name, { column: row.createdAt, order: 'desc' }]),
+    index([sql\`lower(\${row.email})\`], { unique: true }),
+    index([row.settings.theme]),
+    index([{ column: row.settings.rating, type: Number }]),
+    index([{ column: row.tags, type: [String], charLength: 64 }]),
+  ]`;
+
+/** A read through the entity's relation and aggregate, so each form's row is weighed where a query reads it. */
+const read = (entity: string, i: number) => /*ts*/ `
+export async function read${entity}${i}(q: Querier) {
+  const rows = await q.findMany(${entity}${i}, {
+    $select: { id: true, name: true, childCount: true },
+    $where: { name: 'x' },
+    $populate: { children: { $select: { parentId: true } } },
+  });
+  return rows[0]?.children[0]?.parentId;
+}`;
+
+/** One decorated entity per definition site: the indexes, and a to-many with its aggregate. */
+const definition = (i: number) => /*ts*/ `
+@Entity({ indexes: ${indexes} })
+export class Indexed${i} {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.date().nullable()) createdAt?: Date | null;
+  @Field(f.json({ theme: String, rating: Number }).nullable()) settings?: Json<{ theme: string; rating: number }> | null;
+  @Field(f.json([String]).nullable()) tags?: Json<string[]> | null;
+  @OneToMany({ entity: () => Child${i}, mappedBy: (child) => child.parent }) children?: Child${i}[];
+  @Computed((row) => row.children.count()) readonly childCount?: number;
+}
+@Entity() export class Child${i} {
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Indexed${i}).nullable()) parentId?: number | null;
+  @ManyToOne({ entity: () => Indexed${i}, references: (child) => child.parentId }) parent?: Indexed${i};
+}
+${read('Indexed', i)}`;
+
+/** The same entity and indexes declared by its schema, its row derived, to weigh the two forms against each other. */
+const schema = (i: number) => /*ts*/ `
+export const Schema${i} = defineEntity({
+  name: 'Schema${i}',
+  fields: {
+    id: f.number().id(),
+    name: f.string().nullable(),
+    email: f.string().nullable(),
+    createdAt: f.date().nullable(),
+    settings: f.json({ theme: String, rating: Number }).nullable(),
+    tags: f.json([String]).nullable(),
+  },
+})
+  .indexes(${indexes})
+  .relations(
+    (rel) => ({ children: () => rel.oneToMany(SchemaChild${i}, { mappedBy: (child) => child.parent }) }),
+    (agg) => ({ childCount: () => agg.children.count() }),
+  );
+export const SchemaChild${i} = defineEntity({
+  name: 'SchemaChild${i}',
+  fields: { id: f.number().id(), parentId: f.number().nullable() },
+}).relations((rel) => ({ parent: () => rel.manyToOne(Schema${i}, { references: (child) => child.parentId }) }));
+${read('Schema', i)}`;
+
+/** How many of each block the project holds. */
+export type FixtureSize = { readonly queries: number; readonly definitions: number; readonly schemas: number };
+
+const times = (count: number, write: (i: number) => string) => Array.from({ length: count }, (_, i) => write(i));
+
+/** The project's sources by file name. */
+function sources({ queries, definitions, schemas }: FixtureSize): Record<string, string> {
+  return {
+    'entities.ts': entities,
+    'calls.ts': [
       /*ts*/ `import type { Querier } from 'uql-orm';`,
       /*ts*/ `import { Company, User } from './entities.js';`,
       /*ts*/ `export type Fixture = [Querier, typeof Company, typeof User];`,
-      ...Array.from({ length: blocks }, (_, i) => block(i)),
+      ...times(queries, block),
     ].join('\n'),
-  );
-  writeFileSync(
-    resolve(dir, 'tsconfig.json'),
-    JSON.stringify({
-      compilerOptions: {
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        lib: ['ESNext'],
-        types: [],
-        strict: true,
-        noEmit: true,
-        paths: { 'uql-orm': [declarations] },
-        ...options,
-      },
-    }),
-  );
+    'definitions.ts': [
+      /*ts*/ `import { Computed, Entity, f, Field, ManyToOne, OneToMany, sql, type Json, type Querier } from 'uql-orm';`,
+      ...times(definitions, definition),
+    ].join('\n'),
+    'schemas.ts': [
+      /*ts*/ `import { defineEntity, f, sql, type Querier } from 'uql-orm';`,
+      ...times(schemas, schema),
+    ].join('\n'),
+  };
+}
+
+/**
+ * Writes the project into `dir`: the fixture's sources, `files` beside them, and a strict tsconfig with no
+ * ambient types, `compilerOptions` added. Every `.ts` file in `dir` is compiled.
+ */
+export function writeConsumerProject(
+  dir: string,
+  size: FixtureSize,
+  compilerOptions: Readonly<Record<string, unknown>>,
+  files: Readonly<Record<string, string>> = {},
+): void {
+  const tsconfig = {
+    compilerOptions: { strict: true, noEmit: true, types: [], ...compilerOptions },
+    include: ['*.ts'],
+  };
+  const project = {
+    'package.json': JSON.stringify({ type: 'module' }),
+    'tsconfig.json': JSON.stringify(tsconfig),
+    ...sources(size),
+    ...files,
+  };
+  for (const [name, content] of Object.entries(project)) {
+    writeFileSync(join(dir, name), content);
+  }
 }

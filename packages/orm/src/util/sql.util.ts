@@ -27,7 +27,7 @@ export function splitQualifiedName(qualified: string): { readonly name: string; 
 const MAX_IDENTIFIER_LENGTH = 63;
 
 /** Hex chars of hash kept when a name has to be shortened. 24 bits over one table's constraints. */
-const NAME_HASH_LENGTH = 6;
+export const NAME_HASH_LENGTH = 6;
 
 /**
  * The name of a derived index or constraint, such as `Order__total_idx`, with the kind last as Postgres names
@@ -35,13 +35,17 @@ const NAME_HASH_LENGTH = 6;
  * all use this one rule.
  */
 function derivedConstraintName(table: string, parts: readonly string[], kind: ConstraintKind): string {
-  const { name } = splitQualifiedName(table);
-  const body = parts.length ? `${name}${TABLE_SEPARATOR}${parts.join('_')}` : name;
+  const body = parts.length ? `${tableStem(table)}${parts.join('_')}` : splitQualifiedName(table).name;
   return clampIdentifier(`${body}_${kind}`);
 }
 
+/** What a derived name over parts starts with: its table, unqualified, and the separator. */
+function tableStem(table: string): string {
+  return splitQualifiedName(table).name + TABLE_SEPARATOR;
+}
+
 /** Between table and columns, doubled: index names share one namespace per database, where `a` + `b_c` and `a_b` + `c` would collide. */
-const TABLE_SEPARATOR = '__';
+export const TABLE_SEPARATOR = '__';
 
 /** The kinds of derived name, its last part. */
 type ConstraintKind = 'pk' | 'fk' | 'idx' | 'uk';
@@ -90,22 +94,6 @@ function hashIdentifier(value: string): string {
 export function derivedIndexName(table: string, columns: readonly string[], unique = false, where?: string): string {
   const parts = where === undefined ? columns : [...columns, hashIdentifier(where)];
   return derivedConstraintName(table, parts, unique ? 'uk' : 'idx');
-}
-
-/** The hash a partial index's derived name carries before its kind. */
-const PREDICATE_HASH = new RegExp(`_[0-9a-f]{${NAME_HASH_LENGTH}}(?=_(?:idx|uk)$)`);
-
-/**
- * Whether uql named the index `name` itself from `columns`: `derivedIndexName`'s forms, with a predicate's hash or
- * without, and the `idx_<table>_<columns>` spelling an older uql gave one.
- */
-export function isDerivedIndexName(table: string, columns: readonly string[], name: string): boolean {
-  const plain = [derivedIndexName(table, columns), derivedIndexName(table, columns, true)];
-  return (
-    plain.includes(name) ||
-    plain.includes(name.replace(PREDICATE_HASH, '')) ||
-    name === `idx_${table}_${columns.join('_')}`
-  );
 }
 
 /**

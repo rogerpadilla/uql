@@ -4,76 +4,71 @@
  * by `bun run ts` only.
  */
 import { v7 as uuidv7 } from 'uuid';
-import { defineEntity, Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { defineEntity, Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { filledKey, idKey, type Querier, type Type, versionKey } from '../index.js';
 
 @Entity()
 class Author {
-  @Id({ type: 'uuid', onInsert: uuidv7 }) id!: string;
-  @Field({ type: String, nullable: false }) name!: string;
+  @Field(f.uuid().id().onInsert(uuidv7)) id!: string;
+  @Field(f.string()) name!: string;
   @OneToMany({ entity: () => Article, mappedBy: (article) => article.author }) articles?: Article[];
 }
 
 @Entity()
 class Article {
-  @Id({ type: 'uuid', onInsert: uuidv7 }) id!: string;
-  @Field({ type: String, nullable: false }) slug!: string;
-  @Field({ type: Number, nullable: false, defaultValue: 0 }) views?: number;
-  @Field({ type: String }) summary?: string | null;
-  @Field({ references: () => Author }) authorId?: string | null;
+  @Field(f.uuid().id().onInsert(uuidv7)) id!: string;
+  @Field(f.string()) slug!: string;
+  @Field(f.number().default(0)) views?: number;
+  @Field(f.string().nullable()) summary?: string | null;
+  @Field(f.references(() => Author).nullable()) authorId?: string | null;
   @ManyToOne({ entity: () => Author, references: (article) => article.authorId }) author?: Author;
 }
 
 @Entity()
 class Membership {
   [idKey]?: 'authorId' | 'groupId';
-  @Id({ type: 'uuid' }) authorId!: string;
-  @Id({ type: 'uuid' }) groupId!: string;
-  @Field({ type: String, nullable: false }) role!: string;
+  @Field(f.uuid().id()) authorId!: string;
+  @Field(f.uuid().id()) groupId!: string;
+  @Field(f.string()) role!: string;
 }
 
 @Entity()
 class Draft {
   [versionKey]?: 'version';
-  @Id({ type: Number }) id!: number;
-  @Field({ type: String, nullable: false }) body!: string;
-  @Field({ type: Number, version: true }) version!: number;
+  @Field(f.number().id()) id!: number;
+  @Field(f.string()) body!: string;
+  @Field(f.version()) version!: number;
 }
 
 @Entity()
 class Stock {
   [filledKey]?: 'units' | 'createdAt';
-  @Id({ type: Number }) id!: number;
-  @Field({ type: String, nullable: false }) sku!: string;
-  @Field({ type: Number, nullable: false, defaultValue: 0 }) units!: number;
-  @Field({ type: Date, nullable: false, onInsert: () => new Date() }) createdAt!: Date;
+  @Field(f.number().id()) id!: number;
+  @Field(f.string()) sku!: string;
+  @Field(f.number().default(0)) units!: number;
+  @Field(f.date().onInsert(() => new Date())) createdAt!: Date;
 }
 
 // @ts-expect-error a brand naming no field is a typo
 @Entity()
 export class Misbranded {
   [filledKey]?: 'unitz';
-  @Id({ type: Number }) id!: number;
-  @Field({ type: Number, nullable: false, defaultValue: 0 }) units!: number;
+  @Field(f.number().id()) id!: number;
+  @Field(f.number().default(0)) units!: number;
 }
 
-class Tally {
-  id!: number;
-  label!: string;
+@Entity()
+export class Unfilled {
+  [filledKey]?: 'units';
+  @Field(f.number().id()) id!: number;
+  // @ts-expect-error the brand lets an insert leave it out, so a default has to fill it
+  @Field(f.number()) units!: number;
 }
 
-defineEntity(Tally, {
-  fields: { id: { type: Number, isId: true }, label: { type: String, nullable: false } },
+const Tally = defineEntity({
+  name: 'Tally',
+  fields: { id: f.number().id(), label: f.string() },
 });
-
-class MisbrandedTally {
-  [filledKey]?: 'lable';
-  id!: number;
-  label!: string;
-}
-
-// @ts-expect-error a brand naming no field is a typo here too
-defineEntity(MisbrandedTally, { fields: { id: { type: Number, isId: true }, label: { type: String } } });
 
 declare const querier: Querier;
 
@@ -104,7 +99,7 @@ export async function anInsertNamesTheRest() {
   await querier.insertMany(Article, [{ views: 1 }]);
   // @ts-expect-error ...and where an upsert may insert
   await querier.upsertOne(Article, { id: true }, { id: 'a' });
-  // @ts-expect-error ...on an entity `defineEntity` declares alike
+  // @ts-expect-error ...on a schema entity alike
   await querier.insertOne(Tally, {});
   // @ts-expect-error a composite key is the references the row is made of, which the caller supplies
   await querier.insertOne(Membership, { authorId: 'a', role: 'owner' });

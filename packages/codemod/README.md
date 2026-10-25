@@ -24,35 +24,45 @@ Only `--flag=value` is read, and anything unrecognised is an error. It exits `0`
 
 ## What it rewrites
 
-- `type` on a `@Field`/`@Id` that has none, from the property's declared type; not beside `references`, whose column comes from the key it points at.
-- `entity: () => X` on a bare relation decorator, and `Relation<T>` to `T`, its import going with the last use.
-- `virtual` to `computed` (on `@Field` and in `defineEntity`'s `fields`), a check's `expression` and a filter's `condition` to `where` (`@Entity`/`defineEntity`, `@Filter`, `defineFilter`), `raw('...')` to the `sql` tagged template, and a second argument onto `.as()`.
-- Members named by string to callbacks: `mappedBy: 'author'` to `(post) => post.author`, and `@Index`, `include`, `references` and `@Entity`/`defineEntity`'s `indexes` and `hooks` likewise: `@Index((post) => [post.title])`.
-- `references: (post) => post.authorId` on a to-one (`@ManyToOne`, `@OneToOne`, or `defineEntity`/`defineRelation`) that names no foreign key, declaring `@Field({ references: () => User }) authorId` first on a decorated class that has no such column, typed as the key it points at.
+- `virtual` to `computed` (on `@Field` and in `defineEntity`'s `fields`), a check's `expression` and a filter's `condition` to `where` (`@Entity`, `defineEntity`, `@Filter`), `raw('...')` to the `sql` tagged template, and a second argument onto `.as()`.
+- A column's options to its builder, last, after the rewrites above: `@Id()` and `@Field({ type: String, nullable: true, length: 80 })` to `@Field(f.number().id())` and `@Field(f.string().nullable().length(80))`, a NOT NULL column losing its `nullable: false`, `computed` to `@Computed((row) => f.string().as(...))` or `@Computed((row) => row.books.count())`, and a schema's `fields` likewise; a schema's other options to the sections chained after it, its column-level `references` to `.references({ authorId: () => User })` and its `aggregates` to `.relations()`' second callback, and each index, check and trigger entry, in `@Entity` and a schema, to the helper its callback is handed: `(post, index) => [index([post.title], 'by_title')]`.
+- A migration's columns to the same methods: `table.string('email', { length: 80, nullable: true })` to `table.string('email').length(80).nullable()`, `.defaultValue()` to `.default()`, `.primaryKey()` to `.id()`, `.computed()` to `.as()`, and `.notNullable()` dropped.
+- `@Index`, `@Trigger` and `@Filter` into `@Entity`'s `indexes`, `triggers` and `filters`, each decorator's comments kept above its entry; a class with no `@Entity` becomes `@Entity({ abstract: true, ... })`, a base that is never a table.
+- Members named by string to callbacks: `mappedBy: 'author'` to `(post) => post.author`, and `include`, `references` and `@Entity`/`defineEntity`'s `indexes` and `hooks` likewise: `{ columns: (post) => [post.title] }`.
+- `references: (post) => post.authorId` on a to-one (`@ManyToOne`, `@OneToOne`, or in `defineEntity`) that names no foreign key, declaring `@Field({ references: () => User }) authorId` first on a decorated class that has no such column, typed as the key it points at.
 - A partial-index `where` string to `sql`, importing it, on entities and in the migration builder.
+- A class registered with `defineEntity(Post, { ... })` to the schema it declares, `export const Post = defineEntity({ name: 'Post', ... })` and `export type Post = InstanceType<typeof Post>`, the class removed and a table it named kept as `table`: each relation as `author: () => rel.manyToOne(User, { ... })`, a computed field under `computed`, a relation aggregate under `aggregates`, a hook's method as a function of the row (`this` read as the row), and the same class's `defineField`, `defineId`, `defineRelation`, `defineHook`, `defineIndex`, `defineTrigger` and `defineFilter` folded in.
+- A JSON index entry to the path read off the column's ref: `{ column: post.kind, jsonPath: { path: 'theme', type: Number } }` to `{ column: post.kind.theme, type: Number }`, and a `jsonArray`'s element type to `type: [String]`.
 - `col('cost')` to the ref it names, ``(product) => sql`${product.cost}` `` in a `computed` and `refs(Item).cost` in a statement, and `$lock: { wait: 'skip' }` to `{ $wait: 'skip' }`, or to `true` for `{}` and a `'block'` wait.
+- `$exclude` to a `$select` leaving its fields out: `$exclude: { password: true }` to `$select: { password: false }`, at every depth of `$populate`.
 - An aggregate's `$agg` to `$select`, and each field it or `$text`'s `$fields` names to a key: `{ $sum: { amount: true } }`.
-- Renamed exports, at the import and every use: `raw` to `sql`, `QueryWhereMap` to `QueryWhere`, `RelationKeyMap` to `KeyMap`, `FilterCondition` to `FilterWhere`, `SqlMigrationModuleOptions` to `MigrationModuleOptions`, `buildSqlQuerierMigrationModule` to `buildMigrationModule`, `QueryDialect` to `SqlQueryDialect`, `EngineFeatures` to `DialectFeatures`, `KnownMigratorDialect` to `DialectName`, `D1Preparer`/`D1Database` to `D1Queryable`, and the removed driver classes to the one each extended: `PgDialect`/`NeonDialect`/`PgliteDialect` to `PostgresDialect`, `CrdbQuerier`/`NeonQuerier` to `PgQuerier`, `LibsqlQuerier`/`TursoQuerier` to `HranaQuerier`, `TursoLocalQuerier` to `SqliteQuerier` and `TursoDatabase` to `SqliteDatabase`, `MySql2Dialect` to `MySqlDialect`, `MongodbNativeDialect` to `MongoDialect`, `Sqlite3QuerierPool` to `SqliteQuerierPool`, the migration builder's `I`-prefixed types to the unprefixed name, moving the import to the entry that exports it; and `MongoQuerier`, `isMongoQuerier` and `MongoSchemaIntrospector` to `uql-orm/mongodb`.
+- Renamed exports, at the import and every use: `raw` to `sql`, `QueryWhereMap` to `QueryWhere`, `IndexColumnSchema` to `IndexEntry`, `IndexColumnModifiers` to `IndexEntryModifiers`, `RelationKeyMap` to `KeyMap`, `FilterCondition` to `FilterWhere`, `SqlMigrationModuleOptions` to `MigrationModuleOptions`, `buildSqlQuerierMigrationModule` to `buildMigrationModule`, `QueryDialect` to `SqlQueryDialect`, `EngineFeatures` to `DialectFeatures`, `KnownMigratorDialect` to `DialectName`, `D1Preparer`/`D1Database` to `D1Queryable`, and the removed driver classes to the one each extended: `PgDialect`/`NeonDialect`/`PgliteDialect` to `PostgresDialect`, `CrdbQuerier`/`NeonQuerier` to `PgQuerier`, `LibsqlQuerier`/`TursoQuerier` to `HranaQuerier`, `TursoLocalQuerier` to `SqliteQuerier` and `TursoDatabase` to `SqliteDatabase`, `MySql2Dialect` to `MySqlDialect`, `MongodbNativeDialect` to `MongoDialect`, `Sqlite3QuerierPool` to `SqliteQuerierPool`, the migration builder's `I`-prefixed types to the unprefixed name (`IColumnBuilder`/`IColumnFactory`, and `uql-orm/migrate`'s `ColumnBuilder`/`ColumnFactory`, to `TableColumnBuilder`/`TableColumnFactory`), moving the import to the entry that exports it; and `MongoQuerier`, `isMongoQuerier` and `MongoSchemaIntrospector` to `uql-orm/mongodb`.
 - Imports off `uql-orm/maria`, `uql-orm/mongo` and `uql-orm/bunSql` to `uql-orm/mariadb`, `uql-orm/mongodb` and `uql-orm/bun-sql`, and off `uql-orm/type`, `uql-orm/dialect`, `uql-orm/entity`, `uql-orm/querier` and `uql-orm/namingStrategy` to `uql-orm`.
 - The `[idKey]?: '...'` brand, and its import, on a key not called `id`, `_id` or `uuid` and on every composite.
-- `import 'reflect-metadata'`, and `experimentalDecorators`/`emitDecoratorMetadata` in `tsconfig.json`, comments and formatting kept.
 
 ## What it leaves to you
 
 Reported with what to do, never guessed:
 
-- `target: esnext`, the one target that leaves decorators untransformed, and a value inherited through `extends`.
+- `target: esnext`, the one target that leaves decorators untransformed, a value inherited through `extends`, and `experimentalDecorators`/`emitDecoratorMetadata` in `tsconfig.json`, which the standard spec replaces: remove those by hand.
 - `@Log()`, `@Serialized()`, `@Transactional()` and `@InjectQuerier()`: a `@Transactional()` method becomes a `pool.transaction()` around its body, and only you know which pool.
 - An export removed with no one-to-one replacement (`setQuerierPool`, `getQuerier`, `augmentWhere`, `AbstractPgQuerier`, ...), an internal the root no longer exports (`AbstractSqlQuerier`, `fieldOf`, ...), the migration storages, and any import from `uql-orm/util` the root does not export (`refs`, ... move to `uql-orm`).
 - A value it cannot read: options passed as a variable or a spread, a list that is not a literal, a key under a computed name.
+- An `$exclude` it cannot read, or one beside a `$select`: merge it in, each field as `field: false`.
 - A to-one onto a composite key: declare a column per key and pair each with it in `references`.
-- A to-one whose `<relation>Id` is not a declared column: an undecorated property, a `defineEntity` whose `fields` leave it out, or a `defineRelation` whose entity has no such member.
+- A to-one whose `<relation>Id` is not a declared column: an undecorated property, or a `defineEntity` whose `fields` leave it out.
+- A class `defineEntity` registers that a schema cannot declare as it is: one that extends another class, has a method no hook runs or is decorated as well; options it cannot read; a class registered in another file, or an entity that is no class declared in the file.
+- A definer on a decorated class (`defineIndex(Post, ...)`), and `@Entity`'s `fields`, `relations`, `hooks` and `extends`: each is a decorator, or the class's own `extends`, now.
+- A property typed more narrowly than its schema derives, as a note: a `Json<T>` column wants `shape`, a string-literal union `enum`.
 - A partial-index `where` string that interpolates, since `sql` would bind what the template spliced in.
+- A JSON index entry whose `path` is not a string literal, or that takes an option besides `path`, `type` and `length`.
 - A `col()` whose entity it cannot tell: a raw built apart from its query, one under a relation filter, or a column no field maps.
 - SQL in a definition that names a column by hand, as a note: a rename reaches a callback's refs, ``(user) => sql`lower(${user.email})` ``, and never the text.
-- A file that already names something the codemod would write (`sql`, `refs`, `idKey`, a renamed export): left unchanged and reported, since the new import would shadow it or be shadowed.
+- A file that already names something the codemod would write (`sql`, `refs`, `idKey`, `f`, a renamed export): left unchanged and reported, since the new import would shadow it or be shadowed.
 - A property whose type maps to no column (`Json<T>`, a vector, a mixed union).
-- A branded string id, written as `type: String` to keep the column you have, with a note: `'uuid'` is a native column, and a migration.
+- A column option it cannot write as a method: `shape` on a column that is not JSON, a migration column's options passed as a variable, or a flag such as `unique: isUnique` that no literal states.
+- A `@Field`/`@Id` with no `type`, and a relation with no `entity`: declare the column as a builder (`f.string()`) and name the target (`entity: () => Target`). A branded string id's column, `f.uuid()` or `f.string()`, is yours to pick.
+- `Relation<T>` imported from `uql-orm`, which no longer exports it: write the property's type without it, and drop the import.
 
 ## After it runs
 
@@ -60,7 +70,7 @@ Reported with what to do, never guessed:
 
 ## Why TypeScript 6
 
-Reading each property's type needs the checker, so TypeScript is a runtime dependency. 7's entry point exports no compiler API yet and has no standalone parser, which the `tsconfig.json` rewrite needs to keep your formatting; revisit once that API is stable.
+Reading each property's type needs the checker, so TypeScript is a runtime dependency. 7's entry point exports no compiler API yet and has no standalone parser, which the `tsconfig.json` check needs to read its comments; revisit once that API is stable.
 
 ## License
 

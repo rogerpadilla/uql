@@ -1,4 +1,4 @@
-import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 
 declare module '../type/index.js' {
   interface UqlContext {
@@ -7,44 +7,55 @@ declare module '../type/index.js' {
 }
 
 /** The joined (m1) side of a `security: true` filter, which a JOIN or a populate applies as a read does. */
-@Filter('tenant', {
-  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-  security: true,
+@Entity({
+  filters: {
+    tenant: {
+      where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+      security: true,
+    },
+  },
 })
-@Entity()
 export class SecureRelated {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   tenantId?: number | null;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 }
 
 @Entity()
 export class SecureParent {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => SecureRelated })
+  @Field(f.references(() => SecureRelated).nullable())
   relatedId?: number | null;
   @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
 
 /** The relation-subquery target: a `security: true` filter and a soft-delete field must both scope it. */
-@Filter('tenant', {
-  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-  security: true,
+@Entity({
+  filters: {
+    tenant: {
+      where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+      security: true,
+    },
+  },
 })
-@Entity()
 export class SecureChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   tenantId?: number | null;
-  @Field({ references: () => SecureCollection })
+  @Field(f.references(() => SecureCollection).nullable())
   collectionId?: number | null;
-  @Field({ type: Number, softDelete: () => Date.now() })
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
   deletedAt?: number | null;
   @ManyToOne({ entity: () => SecureCollection, references: (secureChild) => secureChild.collectionId })
   collection?: SecureCollection;
@@ -53,9 +64,9 @@ export class SecureChild {
 /** No filters of its own, so a count over the junction to it stays junction-only. */
 @Entity()
 export class PlainChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => SecureCollection })
+  @Field(f.references(() => SecureCollection).nullable())
   collectionId?: number | null;
   @ManyToOne({ entity: () => SecureCollection, references: (plainChild) => plainChild.collectionId })
   collection?: SecureCollection;
@@ -64,51 +75,66 @@ export class PlainChild {
 /** A many-to-many's junction: each side joins by the one column referencing it. */
 @Entity()
 class SecureCollectionChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => SecureCollection })
+  @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
-  @Field({ references: () => SecureChild })
+  @Field(f.references(() => SecureChild).nullable())
   secureChildId?: number | null;
 }
 
 @Entity()
 class SecureCollectionPlain {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => SecureCollection })
+  @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
-  @Field({ references: () => PlainChild })
+  @Field(f.references(() => PlainChild).nullable())
   plainChildId?: number | null;
 }
 
 /** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
 @Entity()
 class SecureCollectionRenamed {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ name: 'renamed_collection', references: () => SecureCollection })
+  @Field(
+    f
+      .references(() => SecureCollection)
+      .nullable()
+      .name('renamed_collection'),
+  )
   secureCollectionId?: number | null;
-  @Field({ name: 'renamed_child', references: () => SecureChild })
+  @Field(
+    f
+      .references(() => SecureChild)
+      .nullable()
+      .name('renamed_child'),
+  )
   secureChildId?: number | null;
 }
 
 /** A soft-deletable junction: an unlinked row must not count as a link. */
 @Entity()
 class SecureCollectionLink {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => SecureCollection })
+  @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
-  @Field({ references: () => PlainChild })
+  @Field(f.references(() => PlainChild).nullable())
   plainChildId?: number | null;
-  @Field({ type: Number, softDelete: () => Date.now() })
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
   deletedAt?: number | null;
 }
 
 @Entity()
 export class SecureCollection {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
   @OneToMany({ entity: () => SecureChild, mappedBy: (secureChild) => secureChild.collectionId })
   children?: SecureChild[];

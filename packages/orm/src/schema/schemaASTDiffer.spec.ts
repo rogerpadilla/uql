@@ -801,8 +801,8 @@ describe('SchemaASTDiffer', () => {
 
     it('should leave the entries of an expression index uncompared, whatever the text says', () => {
       const diffs = diffIndexes(
-        { entries: [{ column: 'lower(email)', expression: true }] },
-        { entries: [{ column: 'upper(email)', expression: true }] },
+        { entries: [{ expression: 'lower(email)' }] },
+        { entries: [{ expression: 'upper(email)' }] },
         [],
       );
 
@@ -810,11 +810,7 @@ describe('SchemaASTDiffer', () => {
     });
 
     it('should still compare the rest of an index whose expression it cannot read', () => {
-      const diffs = diffIndexes(
-        { entries: [{ column: 'lower(email)', expression: true }], unique: true },
-        { unique: false },
-        [],
-      );
+      const diffs = diffIndexes({ entries: [{ expression: 'lower(email)' }], unique: true }, { unique: false }, []);
 
       expect(diffs.length).toBe(1);
       expect(diffs[0].description).toBe('unique: false -> true');

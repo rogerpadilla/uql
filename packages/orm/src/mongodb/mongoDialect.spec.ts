@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb';
+import { type Document, ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
 import {
@@ -8,7 +8,7 @@ import {
   relTempField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
-import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
+import { Computed, Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
   Company,
@@ -29,7 +29,7 @@ import {
   VectorDoc,
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
-import { idKey, type QueryWhere } from '../type/index.js';
+import { idKey, type Query, type QueryOptions, type QuerySortMap, type QueryWhere, type Type } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
@@ -43,11 +43,11 @@ const exists = (temp: string) => ({ $gt: [{ $size: `$${temp}` }, 0] });
 /** A string key and a string reference: the shape the two wire seams convert. */
 @Entity()
 class Doc {
-  @Id({ type: String })
+  @Field(f.string().id())
   id?: string;
-  @Field({ references: () => Doc })
+  @Field(f.references(() => Doc).nullable())
   parentId?: string | null;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 }
 
@@ -58,48 +58,57 @@ class Doc {
  */
 @Entity({ name: 'renamed_doc' })
 class RenamedDoc {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: String, name: 'the_label' })
+  @Field(f.string().nullable().name('the_label'))
   label?: string | null;
-  @Field({ type: Date, name: 'deleted_at', softDelete: true })
+  @Field(f.date().nullable().softDelete().name('deleted_at'))
   deletedAt?: Date | null;
 }
 
 @Entity()
 class AggregateLine {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ references: () => AggregateDoc, type: Number })
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => AggregateDoc),
+  )
   docId?: number | null;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   price?: number | null;
 }
 
 /** Relation aggregates a document engine builds out of stages: one over a page, one over a filtered page. */
 @Entity()
 class AggregateDoc {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
   @OneToMany({ entity: () => AggregateLine, mappedBy: (line) => line.docId })
   lines?: AggregateLine[];
-  @Field({ computed: (doc) => doc.lines.max((line) => line.price, { $sort: { price: -1 }, $limit: 2 }) })
+  @Computed((doc) => doc.lines.max((line) => line.price, { $sort: { price: -1 }, $limit: 2 }))
   readonly topPrice?: number | null;
-  @Field({
-    computed: (doc) =>
-      doc.lines.sum((line) => line.price, { $where: { price: { $gt: 0 } }, $sort: { price: 1 }, $limit: 5, $skip: 1 }),
-  })
+  @Computed((doc) =>
+    doc.lines.sum((line) => line.price, { $where: { price: { $gt: 0 } }, $sort: { price: 1 }, $limit: 5, $skip: 1 }),
+  )
   readonly laterTotal?: number;
 }
 
 /** The other arm of `computed`: SQL, which no document engine evaluates. */
 @Entity()
 class SqlComputedDoc {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   price?: number | null;
-  @Field({ type: Number, computed: (doc) => sql`${doc.price} * 2` })
+  @Computed((doc) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`${doc.price} * 2`),
+  )
   readonly doubled?: number | null;
 }
 
@@ -111,6 +120,32 @@ class MongoDialectSpec implements Spec {
   }
 
   /** MongoDB has no root `$not`, so both negations become its `$nor`. */
+  /** The `$vectorSearch` stage a read ordered by `sort` runs first. */
+  vectorStage<E extends Document>(
+    entity: Type<E>,
+    sort: QuerySortMap<E>,
+    where: QueryWhere<E> | undefined,
+    limit: number,
+    opts?: QueryOptions,
+    candidates?: number,
+  ) {
+    const read = this.dialect.readPlan(
+      entity,
+      { $sort: sort, $where: where, $limit: limit, $candidates: candidates },
+      opts,
+    );
+    if (!('pipeline' in read)) {
+      throw new Error('a vector search reads through a pipeline');
+    }
+    return read.pipeline[0];
+  }
+
+  /** The ordering a read runs: its `find` sort, else the `$sort` its pipeline holds. */
+  sortOf<E extends Document>(entity: Type<E>, q: Query<E>) {
+    const read = this.dialect.readPlan(entity, q);
+    return 'sort' in read ? read.sort : read.pipeline.findLast((stage) => '$sort' in stage)?.$sort;
+  }
+
   shouldBuildWhereWithRootNegations() {
     expect(this.dialect.where(Item, { $not: [{ name: 'a' }] })).toEqual({ $nor: [{ name: 'a' }] });
 
@@ -227,10 +262,21 @@ class MongoDialectSpec implements Spec {
     );
   }
 
+  /** A plain ordering runs on the `find` cursor, ordered as `sort` would order it. */
+  shouldPlanAPlainReadAsAFindCursor() {
+    expect(this.dialect.readPlan(RenamedDoc, { $sort: { label: -1 } })).toEqual({ sort: { the_label: -1 } });
+  }
+
+  /** A placement adds a field to order by, which only a pipeline can. */
+  shouldPlanAPlacedOrderingThroughThePipeline() {
+    const q = { $sort: { label: 'ascNullsLast' } } as const;
+    expect(this.dialect.readPlan(RenamedDoc, q)).toEqual({ pipeline: this.dialect.aggregationPipeline(RenamedDoc, q) });
+  }
+
   /** Reads address the stored column, never the property key. */
   shouldAddressStoredColumnsForRenamedFields() {
     expect(this.dialect.select(RenamedDoc, { id: true, label: true })).toEqual({ _id: 1, the_label: 1 });
-    expect(this.dialect.sort(RenamedDoc, { $sort: { label: -1, id: 1 } })).toEqual({ the_label: -1, _id: 1 });
+    expect(this.sortOf(RenamedDoc, { $sort: { label: -1, id: 1 } })).toEqual({ the_label: -1, _id: 1 });
     expect(this.dialect.where(RenamedDoc, { label: 'x' })).toEqual({ the_label: 'x', deleted_at: null });
     // group by the column, project back under the caller's key
     expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $select: { n: { $count: '*' } } })) //
@@ -316,15 +362,15 @@ class MongoDialectSpec implements Spec {
     expect(unwind).toEqual({ $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: false } });
   }
 
-  /** `$exclude` of the primary key needs `_id: 0`: MongoDB returns `_id` unless told not to. */
+  /** Leaving the primary key out needs `_id: 0`: MongoDB returns `_id` unless told not to. */
   shouldExcludePrimaryKeyExplicitly() {
-    expect(this.dialect.select(RenamedDoc, undefined, { id: true })).toEqual({ the_label: 1, deleted_at: 1, _id: 0 });
+    expect(this.dialect.select(RenamedDoc, { id: false })).toEqual({ the_label: 1, deleted_at: 1, _id: 0 });
   }
 
   /** ...and a populated query too: its lookups read the key before the projection drops it. */
   shouldExcludeThePrimaryKeyBesideAPopulatedRelation() {
     const pipeline = this.dialect.aggregationPipeline(Item, {
-      $exclude: { id: true },
+      $select: { id: false },
       $populate: { tax: true, tags: true },
     });
     const projections = pipeline.filter((stage) => stage.$project && stage.$project['_uql_joined_tax']);
@@ -352,7 +398,7 @@ class MongoDialectSpec implements Spec {
   shouldLeaveARelationAggregateOutOfAReadThatDoesNotNameIt() {
     const pipeline = this.dialect.aggregationPipeline(Item, { $populate: { tax: true } });
     expect(pipeline.some((stage) => '$addFields' in stage)).toBe(false);
-    expect(this.dialect.select(Item, undefined, { id: true })).not.toHaveProperty('tagsCount');
+    expect(this.dialect.select(Item, { id: false })).not.toHaveProperty('tagsCount');
   }
 
   /**
@@ -413,13 +459,13 @@ class MongoDialectSpec implements Spec {
 
   /** A projection by exclusion skips a SQL-computed field it leaves in, rather than refusing a field nobody named. */
   shouldSkipASqlComputedFieldAnExclusionLeavesIn() {
-    expect(this.dialect.select(SqlComputedDoc, undefined, { price: true })).toEqual({ _id: 1 });
+    expect(this.dialect.select(SqlComputedDoc, { price: false })).toEqual({ _id: 1 });
   }
 
   /** A `$distinct` over no projected column has nothing to group by, so it collapses nothing. */
   shouldCollapseNothingWhereADistinctProjectsNoColumn() {
     expect(
-      this.dialect.aggregationPipeline(SqlComputedDoc, { $distinct: true, $exclude: { id: true, price: true } }),
+      this.dialect.aggregationPipeline(SqlComputedDoc, { $distinct: true, $select: { id: false, price: false } }),
     ).toEqual([{ $project: { _id: 0 } }]);
   }
 
@@ -526,19 +572,19 @@ class MongoDialectSpec implements Spec {
   shouldApplyEveryRelationSize() {
     @Entity()
     class Shelf {
-      @Id({ type: String }) id?: string;
+      @Field(f.string().id()) id?: string;
       @OneToMany({ entity: () => Book, mappedBy: (book) => book.shelfId }) books?: Book[];
       @OneToMany({ entity: () => Lamp, mappedBy: (lamp) => lamp.shelfId }) lamps?: Lamp[];
     }
     @Entity()
     class Book {
-      @Id({ type: String }) id?: string;
-      @Field({ references: () => Shelf }) shelfId?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.references(() => Shelf).nullable()) shelfId?: string | null;
     }
     @Entity()
     class Lamp {
-      @Id({ type: String }) id?: string;
-      @Field({ references: () => Shelf }) shelfId?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.references(() => Shelf).nullable()) shelfId?: string | null;
     }
     const tally = (temp: string) => ({ $ifNull: [{ $arrayElemAt: [`$${temp}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] });
 
@@ -548,6 +594,20 @@ class MongoDialectSpec implements Spec {
     expect(stages).toContainEqual({
       $match: { $expr: { $and: [{ $eq: [tally(cond(0)), 1] }, { $eq: [tally(cond(1)), 2] }] } },
     });
+  }
+
+  /** `$text` runs only as a pipeline's first stage, which a relation's lookup is not, to-one or to-many. */
+  shouldRefuseATextSearchInARelation() {
+    expect(() =>
+      this.dialect.aggregationPipeline(MeasureUnitCategory, {
+        $populate: { measureUnits: { $where: { $text: { $value: 'kg' } } } },
+      }),
+    ).toThrow("cannot $text search relation 'measureUnits' on MongoDB: $text runs only on the queried entity");
+    expect(() =>
+      this.dialect.aggregationPipeline(MeasureUnit, {
+        $populate: { category: { $where: { $text: { $value: 'mass' } } } },
+      }),
+    ).toThrow("cannot $text search relation 'category' on MongoDB: $text runs only on the queried entity");
   }
 
   /** MongoDB's `$size` takes only a number, so bounds are counted in an `$expr`, which only an array meets. */
@@ -662,15 +722,15 @@ class MongoDialectSpec implements Spec {
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
   shouldSortByRelationField() {
-    expect(this.dialect.sort(Item, { $sort: { tax: { name: -1 } }, $populate: { tax: true } })).toEqual({
+    expect(this.sortOf(Item, { $sort: { tax: { name: -1 } }, $populate: { tax: true } })).toEqual({
       '_uql_joined_tax.name': -1,
     });
-    expect(this.dialect.sort(User, { $sort: { profile: { picture: 1 } }, $populate: { profile: true } })).toEqual({
+    expect(this.sortOf(User, { $sort: { profile: { picture: 1 } }, $populate: { profile: true } })).toEqual({
       '_uql_joined_profile.image': 1,
     });
     // As many of its fields as the caller asks for, and alongside the parent's own columns.
     expect(
-      this.dialect.sort(Item, { $sort: { tax: { name: 1, percentage: -1 }, code: -1 }, $populate: { tax: true } }),
+      this.sortOf(Item, { $sort: { tax: { name: 1, percentage: -1 }, code: -1 }, $populate: { tax: true } }),
     ).toEqual({
       '_uql_joined_tax.name': 1,
       '_uql_joined_tax.percentage': -1,
@@ -685,7 +745,7 @@ class MongoDialectSpec implements Spec {
    * it asked for, in the order it asked for.
    */
   shouldSortByAnUnpopulatedRelation() {
-    expect(this.dialect.sort(Item, { $sort: { tax: { name: 1 } } })).toEqual({ '_uql_joined_tax.name': 1 });
+    expect(this.sortOf(Item, { $sort: { tax: { name: 1 } } })).toEqual({ '_uql_joined_tax.name': 1 });
 
     const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } });
     expect(pipeline.map((stage) => Object.keys(stage)[0])).toEqual(['$lookup', '$unwind', '$sort', '$unset']);
@@ -706,6 +766,44 @@ class MongoDialectSpec implements Spec {
     ).toThrow("cannot $sort by relation 'tax' with $distinct unless 'tax' is populated");
   }
 
+  /**
+   * A distance nothing projects is a field the grouping would key on, so rows with equal names would not collapse.
+   * Refused in the terms `SELECT DISTINCT` refuses an ordering by a column it did not select.
+   */
+  shouldRejectDistinctSortedByAnUnprojectedVectorDistance() {
+    @Entity({ name: 'DistinctVector' })
+    class DistinctVector {
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
+    }
+    expect(() =>
+      this.dialect.aggregationPipeline(DistinctVector, {
+        $select: { name: true },
+        $distinct: true,
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 5,
+      }),
+    ).toThrow('cannot $sort by a vector distance or text score with $distinct unless it is projected');
+  }
+
+  /** A projected distance is a column the grouping keeps, so the ordering it names is answered. */
+  shouldGroupDistinctSortedByAProjectedVectorDistance() {
+    @Entity({ name: 'DistinctProjected' })
+    class DistinctProjected {
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
+    }
+    const pipeline = this.dialect.aggregationPipeline(DistinctProjected, {
+      $select: { name: true },
+      $distinct: true,
+      $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
+      $limit: 5,
+    });
+    expect(pipeline.some((stage) => '$group' in stage)).toBe(true);
+  }
+
   /** A relation `$populate` asked for stays on the document; only the ordering's own lookups are undone. */
   shouldKeepAPopulatedRelationItAlsoSortsBy() {
     const pipeline = this.dialect.aggregationPipeline(Item, {
@@ -717,16 +815,16 @@ class MongoDialectSpec implements Spec {
 
   shouldThrowOnUnjoinableRelationInSort() {
     // @ts-expect-error: a to-many sorts by `$count` alone
-    expect(() => this.dialect.sort(Item, { $sort: { tags: { name: 1 } }, $populate: { tags: true } })).toThrow(
+    expect(() => this.sortOf(Item, { $sort: { tags: { name: 1 } }, $populate: { tags: true } })).toThrow(
       "cannot $sort by 'tags'",
     );
     // Every level of the path gets its own lookup, so a nested ordering resolves without populating.
-    expect(this.dialect.sort(Item, { $sort: { tax: { category: { name: 1 } } } })).toEqual({
+    expect(this.sortOf(Item, { $sort: { tax: { category: { name: 1 } } } })).toEqual({
       '_uql_joined_tax._uql_joined_category.name': 1,
     });
     // Populating the whole path orders by the same nested alias the SQL dialects join to.
     expect(
-      this.dialect.sort(Item, {
+      this.sortOf(Item, {
         $sort: { tax: { category: { name: -1 } } },
         $populate: { tax: { $populate: { category: true } } },
       }),
@@ -769,13 +867,13 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldBuildSort() {
-    expect(this.dialect.sort(Item, { $sort: {} })).toEqual({});
-    expect(this.dialect.sort(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
-    expect(this.dialect.sort(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
-    expect(this.dialect.sort(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
-    expect(this.dialect.sort(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
-    expect(this.dialect.sort(Item, { $sort: { name: 1, createdAt: -1 } })).toEqual({ name: 1, createdAt: -1 });
-    expect(this.dialect.sort(Item, { $sort: { name: -1, createdAt: -1 } })).toEqual({ name: -1, createdAt: -1 });
+    expect(this.sortOf(Item, { $sort: {} })).toEqual({});
+    expect(this.sortOf(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
+    expect(this.sortOf(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
+    expect(this.sortOf(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
+    expect(this.sortOf(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
+    expect(this.sortOf(Item, { $sort: { name: 1, createdAt: -1 } })).toEqual({ name: 1, createdAt: -1 });
+    expect(this.sortOf(Item, { $sort: { name: -1, createdAt: -1 } })).toEqual({ name: -1, createdAt: -1 });
   }
 
   shouldNormalizeIds() {
@@ -1540,8 +1638,8 @@ class MongoDialectSpec implements Spec {
   shouldRefuseToMintAKeyDeclaredByTypeName() {
     @Entity()
     class BigKeyed {
-      @Id({ type: 'bigint' }) id?: bigint;
-      @Field({ type: String }) title?: string | null;
+      @Field(f.column('bigint').id()) id?: bigint;
+      @Field(f.string().nullable()) title?: string | null;
     }
     expect(() => this.dialect.getPersistables(getMeta(BigKeyed), { title: 't' }, 'onInsert')).toThrow(
       "'BigKeyed.id' is declared 'bigint' and left to the database",
@@ -1655,8 +1753,8 @@ class MongoDialectSpec implements Spec {
   shouldKeepAKeyThatIsAlreadyNamedId() {
     @Entity()
     class RawDoc {
-      @Id({ type: String }) _id?: string;
-      @Field({ type: String }) title?: string | null;
+      @Field(f.string().id()) _id?: string;
+      @Field(f.string().nullable()) title?: string | null;
     }
     expect(this.dialect.normalizeId(getMeta(RawDoc), { _id: 'x', title: 't' })).toEqual({ _id: 'x', title: 't' });
   }
@@ -1738,10 +1836,10 @@ class MongoDialectSpec implements Spec {
   shouldBuildBasicVectorSearchStage() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(VectorItem, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
+    const result = this.vectorStage(VectorItem, { vec: { $vector: [1, 2, 3] } }, undefined, 10);
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -1757,23 +1855,24 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchOnUnknownField() {
     @Entity({ name: 'VectorUnknown' })
     class VectorUnknown {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(() =>
-      this.dialect.buildVectorSearchStage(VectorUnknown, 'nope', { $vector: [1, 2, 3] }, undefined, 10),
+      // @ts-expect-error a field the entity lacks, as the untyped query data `$sort` reads sends one
+      this.vectorStage(VectorUnknown, { nope: { $vector: [1, 2, 3] } }, undefined, 10),
     ).toThrow("Field 'nope' not found in entity 'VectorUnknown'");
   }
 
   shouldDeriveNumCandidatesFromLimit() {
     @Entity({ name: 'VectorNum' })
     class VectorNum {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const r5 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
+    const r5 = this.vectorStage(VectorNum, { vec: { $vector: [1, 2, 3] } }, undefined, 5);
     expect(r5).toMatchObject({ $vectorSearch: { numCandidates: 50 } });
-    const r20 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 20);
+    const r20 = this.vectorStage(VectorNum, { vec: { $vector: [1, 2, 3] } }, undefined, 20);
     expect(r20).toMatchObject({ $vectorSearch: { numCandidates: 200 } });
   }
 
@@ -1781,10 +1880,10 @@ class MongoDialectSpec implements Spec {
   shouldCapNumCandidatesAtTheAtlasMaximum() {
     @Entity({ name: 'VectorCap' })
     class VectorCap {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const stage = this.dialect.buildVectorSearchStage(VectorCap, 'vec', { $vector: [1, 2, 3] }, undefined, 5000);
+    const stage = this.vectorStage(VectorCap, { vec: { $vector: [1, 2, 3] } }, undefined, 5000);
     expect(stage).toMatchObject({ $vectorSearch: { numCandidates: 10_000 } });
   }
 
@@ -1792,12 +1891,12 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchWithoutALimit() {
     @Entity({ name: 'VectorNoLimit' })
     class VectorNoLimit {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    expect(() =>
-      this.dialect.buildVectorSearchStage(VectorNoLimit, 'vec', { $vector: [1, 2, 3] }, undefined, 0),
-    ).toThrow("$vectorSearch requires $limit (vector sort on 'vec' of 'VectorNoLimit')");
+    expect(() => this.vectorStage(VectorNoLimit, { vec: { $vector: [1, 2, 3] } }, undefined, 0)).toThrow(
+      "$vectorSearch requires $limit (vector sort on 'vec' of 'VectorNoLimit')",
+    );
   }
 
   /**
@@ -1824,17 +1923,11 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterVectorSearch() {
     @Entity({ name: 'VectorItem2' })
     class VectorItem2 {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) category!: string | null;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) category!: string | null;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(
-      VectorItem2,
-      'vec',
-      { $vector: [1, 2, 3] },
-      { category: 'science' },
-      10,
-    );
+    const result = this.vectorStage(VectorItem2, { vec: { $vector: [1, 2, 3] } }, { category: 'science' }, 10);
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -1850,15 +1943,14 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterWithComplexWhere() {
     @Entity({ name: 'VectorComplex' })
     class VectorComplex {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) category!: string | null;
-      @Field({ type: String }) status!: string | null;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) category!: string | null;
+      @Field(f.string().nullable()) status!: string | null;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(
+    const result = this.vectorStage(
       VectorComplex,
-      'vec',
-      { $vector: [1, 2, 3] },
+      { vec: { $vector: [1, 2, 3] } },
       { $or: [{ category: 'science' }, { status: 'published' }] },
       10,
     );
@@ -1877,10 +1969,10 @@ class MongoDialectSpec implements Spec {
   shouldNotAddFilterForEmptyWhere() {
     @Entity({ name: 'VectorItem3' })
     class VectorItem3 {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(VectorItem3, 'vec', { $vector: [1, 2, 3] }, {}, 10);
+    const result = this.vectorStage(VectorItem3, { vec: { $vector: [1, 2, 3] } }, {}, 10);
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -1895,16 +1987,10 @@ class MongoDialectSpec implements Spec {
   shouldProjectVectorSearchScore() {
     @Entity({ name: 'VectorProj' })
     class VectorProj {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(
-      VectorProj,
-      'vec',
-      { $vector: [1, 2, 3], $project: 'similarity' },
-      undefined,
-      10,
-    );
+    const result = this.vectorStage(VectorProj, { vec: { $vector: [1, 2, 3], $project: 'similarity' } }, undefined, 10);
     // $project is not part of the $vectorSearch stage - it's handled in mongodbQuerier via $meta
     expect(result).toEqual({
       $vectorSearch: {
@@ -1917,60 +2003,72 @@ class MongoDialectSpec implements Spec {
     });
   }
 
-  shouldIgnoreDistanceMetricForMongo() {
+  /** The metric lives in the Atlas index, so a `$distance` agreeing with it is checked, never sent. */
+  shouldAcceptTheDistanceTheIndexRanksBy() {
     @Entity({ name: 'VectorDist' })
     class VectorDist {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable().distance('l2')) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(
-      VectorDist,
-      'vec',
-      { $vector: [1, 2, 3], $distance: 'l2' },
-      undefined,
-      10,
-    );
-    // $distance is accepted but ignored - metric lives in Atlas index
+    const result = this.vectorStage(VectorDist, { vec: { $vector: [1, 2, 3], $distance: 'l2' } }, undefined, 10);
     expect(result['$vectorSearch']).not.toHaveProperty('distance');
     expect(result['$vectorSearch']).not.toHaveProperty('similarity');
   }
 
   shouldUseCustomIndexName() {
-    @Entity({ name: 'VectorCustomIdx' })
-    @Index((vectorCustomIdx) => [vectorCustomIdx.vec], { type: 'vectorSearch', name: 'my_custom_idx' })
+    @Entity({
+      name: 'VectorCustomIdx',
+      indexes: (vectorCustomIdx, index) => [
+        index([vectorCustomIdx.vec], { type: 'vectorSearch', name: 'my_custom_idx' }),
+      ],
+    })
     class VectorCustomIdx {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
-    const result = this.dialect.buildVectorSearchStage(VectorCustomIdx, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
+    const result = this.vectorStage(VectorCustomIdx, { vec: { $vector: [1, 2, 3] } }, undefined, 10);
     expect(result).toMatchObject({ $vectorSearch: { index: 'my_custom_idx' } });
   }
-  shouldExtractVectorSortFromMixed() {
-    const result = this.dialect.extractVectorSort({
-      vec: { $vector: [1, 2, 3] },
-      name: -1,
-      createdAt: 'desc',
+  shouldOrderAVectorSearchByTheRestOfTheSort() {
+    @Entity({ name: 'VectorMixed' })
+    class VectorMixed {
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.date().nullable()) createdAt?: Date | null;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
+    }
+    expect(
+      this.dialect.readPlan(VectorMixed, {
+        $sort: { vec: { $vector: [1, 2, 3] }, name: -1, createdAt: 'desc' },
+        $limit: 5,
+      }),
+    ).toMatchObject({
+      pipeline: expect.arrayContaining([
+        { $vectorSearch: expect.objectContaining({ queryVector: [1, 2, 3] }) },
+        { $sort: expect.objectContaining({ name: -1, createdAt: -1 }) },
+      ]),
     });
-    expect(result).toBeDefined();
-    expect(result?.vectorKey).toBe('vec');
-    expect(result?.vectorSearch).toEqual({ $vector: [1, 2, 3] });
-    expect(result?.regularSort).toEqual({ name: -1, createdAt: 'desc' });
   }
 
-  shouldExtractVectorOnlySort() {
-    const result = this.dialect.extractVectorSort({ vec: { $vector: [4, 5, 6] } });
-    expect(result).toBeDefined();
-    expect(result?.vectorKey).toBe('vec');
-    expect(result?.vectorSearch).toEqual({ $vector: [4, 5, 6] });
-    expect(result?.regularSort).toEqual({});
+  shouldRunAVectorSearchWithNoOtherOrdering() {
+    @Entity({ name: 'VectorOnly' })
+    class VectorOnly {
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
+    }
+    expect(this.dialect.readPlan(VectorOnly, { $sort: { vec: { $vector: [4, 5, 6] } }, $limit: 5 })).toMatchObject({
+      pipeline: [{ $vectorSearch: expect.objectContaining({ queryVector: [4, 5, 6] }) }],
+    });
   }
 
-  shouldReturnUndefinedForNonVectorSort() {
-    expect(this.dialect.extractVectorSort({ name: -1, createdAt: 'desc' })).toBeUndefined();
+  shouldPlanANonVectorSortAsAFindCursor() {
+    expect(this.dialect.readPlan(Item, { $sort: { name: -1, createdAt: 'desc' } })).toEqual({
+      sort: { name: -1, createdAt: -1 },
+    });
   }
 
-  shouldReturnUndefinedForUndefinedSort() {
-    expect(this.dialect.extractVectorSort(undefined)).toBeUndefined();
+  shouldPlanAReadWithNoOrderingAsAFindCursor() {
+    expect(this.dialect.readPlan(Item, {})).toEqual({ sort: {} });
   }
   /** Every update is one pipeline, so a `null` or missing document or array counts as empty, as on SQL. */
   shouldWriteEveryUpdateAsAPipeline() {
@@ -2168,9 +2266,9 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Enrolment {
       [idKey]?: 'studentId' | 'courseId';
-      @Id({ type: Number }) studentId?: number;
-      @Id({ type: String }) courseId?: string;
-      @Field({ type: String }) grade?: string | null;
+      @Field(f.number().id()) studentId?: number;
+      @Field(f.string().id()) courseId?: string;
+      @Field(f.string().nullable()) grade?: string | null;
     }
     const meta = getMeta(Enrolment);
     expect(() => this.dialect.columnOf(meta, 'studentId')).toThrow(
@@ -2192,14 +2290,14 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Enrolment {
       [idKey]?: 'studentId' | 'courseId';
-      @Id({ type: Number }) studentId?: number;
-      @Id({ type: String }) courseId?: string;
+      @Field(f.number().id()) studentId?: number;
+      @Field(f.string().id()) courseId?: string;
     }
     @Entity()
     class Attendance {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) enrolmentStudentId?: number | null;
-      @Field({ type: String }) enrolmentCourseId?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable()) enrolmentStudentId?: number | null;
+      @Field(f.string().nullable()) enrolmentCourseId?: string | null;
       @ManyToOne({
         entity: () => Enrolment,
         references: (attendance, enrolment) => [

@@ -17,7 +17,7 @@ export interface Config {
 
   /**
    * List of entity classes to be managed by the ORM.
-   * If omitted, classes that completed `defineEntity` (including via `@Entity()`) are discovered via `getEntities()`.
+   * If omitted, every registered entity (`@Entity()` or `defineEntity`) is discovered via `getEntities()`.
    */
   entities?: Type<object>[];
 

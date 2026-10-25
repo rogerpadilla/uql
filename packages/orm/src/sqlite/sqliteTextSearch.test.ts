@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
-import type { WithProjection } from '../type/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 
 import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 
 /** An FTS5 table, which SQLite's `$text` searches: UQL does not create one, so it is made here by hand. */
 @Entity({ name: 'fts_doc' })
 class FtsDoc {
-  @Id({ type: Number, name: 'rowid' }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) bodyText?: string | null;
+  @Field(f.number().id().name('rowid')) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) bodyText?: string | null;
 }
 
 /** `$text` against a real FTS5 table: the query bound whole, column filter and all. */
@@ -20,7 +19,7 @@ describe('SQLite text search', () => {
       $select: { title: true },
       $where: { $text: { $fields: { title: true, bodyText: true }, $value } },
       $sort: { $text: { $project: 'score' } },
-    }) as Promise<WithProjection<FtsDoc, 'score'>[]>;
+    });
 
   beforeAll(async () => {
     await pool.run`CREATE VIRTUAL TABLE fts_doc USING fts5(title, bodyText)`;

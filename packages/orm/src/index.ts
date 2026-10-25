@@ -1,27 +1,14 @@
 export { captureContext, getContext, withContext } from './context/context.js';
 export * from './entity/decorator/entity.js';
 export * from './entity/decorator/members.js';
-export {
-  defineEntity,
-  defineField,
-  defineFilter,
-  defineHook,
-  defineId,
-  defineIndex,
-  defineRelation,
-  defineTrigger,
-  getMeta,
-  idOf,
-  keyOf,
-  removeEntity,
-} from './entity/metadata/definition.js';
+export { f } from './entity/column.js';
+export { defineEntity, getMeta, idOf, keyOf, removeEntity } from './entity/metadata/definition.js';
 export * from './namingStrategy/index.js';
 export { type QueryError, queryErrorKind } from './querier/queryError.js';
 export type * from './type/index.js';
 export { filledKey, idKey, isSqlQuerier, versionKey } from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
 export { sortOf } from './util/query.util.js';
-export type { HookContext } from './util/hook.util.js';
 export { DefaultLogger } from './util/logger.js';
 export { currentDate, currentTime, currentTimestamp, raw, refs, sql, uuid, uuidv7 } from './util/sql.js';
 export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './util/triggerWrite.js';

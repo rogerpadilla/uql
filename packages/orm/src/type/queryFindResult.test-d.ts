@@ -27,9 +27,16 @@ class Story {
   writers?: Writer[];
 }
 
+class Clip {
+  id!: number;
+  title!: string;
+  embedding?: number[] | null;
+}
+
 class Pitch {
   id!: number;
   writer!: Writer;
+  clips?: Clip[];
 }
 
 declare const querier: Querier;
@@ -68,18 +75,11 @@ export async function projectedRows() {
   // @ts-expect-error misspelled column off a loaded relation
   populated.writers[0].nmae;
 
-  // A falsy `$select` entry subtracts, like `$exclude`, rather than selecting.
+  // A falsy `$select` entry leaves its field out rather than selecting.
   const [subtracted] = await querier.findMany(Story, { $select: { points: false } });
   subtracted.title.trim();
-  // @ts-expect-error subtracted by a falsy `$select` entry
+  // @ts-expect-error left out by a falsy `$select` entry
   subtracted.points;
-  const [excluded] = await querier.findMany(Story, { $exclude: { points: true } });
-  excluded.title.trim();
-  // @ts-expect-error excluded
-  excluded.points;
-  // A falsy `$exclude` entry excludes nothing, which is what the runtime does with it.
-  const [keptByFalsyExclude] = await querier.findMany(Story, { $exclude: { points: false } });
-  keptByFalsyExclude.points;
 
   // Modifiers survive: an optional field stays optional.
   const [optional] = await querier.findMany(Story, { $select: { points: true } });
@@ -194,13 +194,10 @@ export async function undecidedEntries() {
   selected.id.toFixed();
   // @ts-expect-error `title` is selected only when `flag` is
   const title: string = selected.title;
-  const [excluded] = await querier.findMany(Story, { $exclude: { title: flag } });
-  // @ts-expect-error `title` is left out when `flag` is
-  const kept: string = excluded.title;
   const [counted] = await querier.findMany(Story, { $count: { writers: flag } });
   // @ts-expect-error counted only when `flag` is
   const tally: number = counted._count.writers;
-  return [title, kept, tally];
+  return [title, tally];
 }
 
 export async function anUnpopulatedRelationKeepsItsDeclaration() {
@@ -216,3 +213,80 @@ export async function anEmptyProjectionReadsEveryField() {
 
 // @ts-expect-error the key-union form takes the keys alone
 export type KeyUnionTakesKeysAlone = QueryFindResult<Story, 'title', false>;
+
+export async function sortProjections() {
+  // A projected distance is on the row beside what `$select` narrowed it to.
+  const [near] = await querier.findMany(Clip, {
+    $select: { title: true },
+    $sort: { embedding: { $vector: [1, 0, 0], $project: 'distance' } },
+  });
+  near.distance.toFixed();
+  near.title.trim();
+  // @ts-expect-error left out by the projection, which a projected distance does not widen
+  near.embedding;
+
+  // And beside the whole entity where nothing narrows it, from any read.
+  const nearest = await querier.findOne(Clip, { $sort: { embedding: { $vector: [1, 0, 0], $project: 'distance' } } });
+  nearest?.distance.toFixed();
+  nearest?.embedding;
+
+  // A `$text` relevance the same way, and both where a sort projects both.
+  const [ranked] = await querier.findMany(Clip, {
+    $where: { $text: { $value: 'x' } },
+    $sort: { $text: { $project: 'score', $order: 'asc' }, embedding: { $vector: [1, 0, 0], $project: 'distance' } },
+  });
+  ranked.score.toFixed();
+  ranked.distance.toFixed();
+
+  // A populated relation's rows each carry the distance its own sort projects, and the parent does not.
+  const [pitch] = await querier.findMany(Pitch, {
+    $populate: {
+      clips: { $select: { title: true }, $sort: { embedding: { $vector: [1, 0, 0], $project: 'distance' } } },
+    },
+  });
+  pitch.clips.map((it) => it.distance.toFixed() + it.title);
+  // @ts-expect-error the distance is the rows', not the parent's
+  pitch.distance;
+
+  // A sort that projects nothing adds nothing.
+  const [unprojected] = await querier.findMany(Clip, {
+    $where: { $text: { $value: 'x' } },
+    $sort: { $text: 'desc', embedding: { $vector: [1, 0, 0] } },
+  });
+  const clip: Clip = unprojected;
+  // @ts-expect-error nothing projected a score
+  unprojected.score;
+
+  // A query assembled elsewhere names no projection the types can see.
+  const q: Query<Clip> = { $sort: { embedding: { $vector: [1, 0, 0], $project: 'distance' } } };
+  const [dynamic] = await querier.findMany(Clip, q);
+  // @ts-expect-error not captured, so not projected
+  dynamic.distance;
+  return clip;
+}
+
+/** A row is plain data however it is read, so the methods of the class it is read through are not on it. */
+class Ledger {
+  id!: number;
+  total!: number;
+  entries?: Pitch[];
+  balance(): number {
+    return this.total;
+  }
+}
+
+export async function rowsHaveNoMethods() {
+  const [whole] = await querier.findMany(Ledger, {});
+  whole.total.toFixed();
+  // @ts-expect-error a read row has no methods
+  whole.balance();
+
+  const [populated] = await querier.findMany(Ledger, { $populate: { entries: true } });
+  populated.entries.map((it) => it.id);
+  // @ts-expect-error a read row has no methods
+  populated.balance();
+
+  const [excluded] = await querier.findMany(Ledger, { $select: { total: false } });
+  // @ts-expect-error a read row has no methods
+  excluded.balance();
+}

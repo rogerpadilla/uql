@@ -42,10 +42,9 @@ describe('SQL values', () => {
   it('should refuse a value the engine has no function for, naming it', () => {
     expect(() => sqlite.compileDdl(uuid)).toThrow('SQLite has no uuid; write it as raw SQL this engine accepts');
   });
-
   it('should read each one as its kind in the schema, under its own name', () => {
     expect(SQL_VALUE_NAMES.map((name) => schemaDefault(SQL_VALUES[name], (sql) => postgres.compileDdl(sql)))).toEqual(
-      SQL_VALUE_NAMES.map((name) => new SqlExpression(name)),
+      SQL_VALUE_NAMES.map((name) => SqlExpression.named(name)),
     );
   });
 
@@ -57,9 +56,11 @@ describe('SQL values', () => {
 
   /** What lets drift compare a declared value with the catalogue, and `generate:from-db` name it. */
   it('should read SQL a catalogue reports back as the value that spells it', () => {
-    expect(knownDefault(SqlExpression.parenthesized('gen_random_uuid()'), postgres)).toEqual(new SqlExpression('uuid'));
+    expect(knownDefault(SqlExpression.parenthesized('gen_random_uuid()'), postgres)).toEqual(
+      SqlExpression.named('uuid'),
+    );
     expect(knownDefault(SqlExpression.parenthesized('CURRENT_TIMESTAMP'), postgres)).toEqual(
-      new SqlExpression('currentTimestamp'),
+      SqlExpression.named('currentTimestamp'),
     );
     const other = SqlExpression.parenthesized("nextval('s')");
     expect(knownDefault(other, postgres)).toBe(other);

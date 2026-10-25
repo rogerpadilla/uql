@@ -11,7 +11,7 @@ import type {
 } from '../schema/types.js';
 import type {
   Except,
-  IndexColumnSchema,
+  IndexEntry,
   IndexedVectorField,
   LoggingOptions,
   Querier,
@@ -161,10 +161,10 @@ export interface IndexSchema extends VectorIndexOptions, IndexedVectorField {
   /**
    * What the index is over, in order. Named `entries` and not `columns` because an entry need not be
    * a column at all: ``sql`lower(email)` `` is one, and so is a column carrying a prefix length or a
-   * stored order. The authored form, `@Index`, still spells this `columns`, since that is what
-   * it reads like at the call site.
+   * stored order. An entity's `indexes` entry, as authored, still spells this `columns`, since that is
+   * what it reads like there.
    */
-  readonly entries: readonly IndexColumnSchema[];
+  readonly entries: readonly IndexEntry<string>[];
   readonly unique: boolean;
   /** Index type (btree, hnsw, ivfflat, etc.) */
   readonly type?: IndexType;
@@ -184,7 +184,7 @@ export interface ForeignKeySchema {
   readonly columns: string[];
   /**
    * The far end, as one thing. Same shape and same name as everywhere else a relationship's target is
-   * described - `@Field({ references })`, `addForeignKey`'s `target`, a `RelationshipNode`'s `to` -
+   * described - `f.references()`, `addForeignKey`'s `target`, a `RelationshipNode`'s `to` -
    * so nothing has to be destructured on the way between them.
    */
   readonly references: { readonly table: string; readonly columns: string[] };

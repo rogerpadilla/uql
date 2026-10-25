@@ -2,7 +2,7 @@
 // make: each test updates through raw SQL.
 
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { PrimaryKey } from '../type/index.js';
@@ -12,33 +12,54 @@ import { Migrator } from './migrator.js';
 /** What `onUpdate` already does: the database computes it, but only in the statement uql emits. */
 @Entity({ name: 'StampTouch' })
 class StampTouch {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, onUpdate: sql`1` }) touched?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .onUpdate(sql`1`),
+  )
+  touched?: number | null;
 }
 
 @Entity({ name: 'StampNote' })
 class StampNote {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, computed: sql`1`, stored: ['insert', 'update'] }) readonly touched?: number | null;
-  @Field({ type: Date, computed: currentTimestamp, stored: ['insert', 'update'] }) readonly stampedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`1`)
+      .stored(['insert', 'update']),
+  )
+  readonly touched?: number | null;
+  @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['insert', 'update']))
+  readonly stampedAt?: Date | null;
 }
 
 @Entity({ name: 'StampClocks' })
 class StampClocks {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: Date, computed: currentTimestamp, stored: ['update'] }) readonly editedAt?: Date | null;
-  @Field({ type: Date, computed: currentTimestamp, stored: ['update'] }) readonly savedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly editedAt?: Date | null;
+  @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly savedAt?: Date | null;
 }
 
 /** A code held as text, which a test retypes. */
 @Entity({ name: 'StampRetyped' })
 class StampCoded {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) code?: string | null;
-  @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) code?: string | null;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`1`)
+      .stored(['update']),
+  )
+  readonly touched?: number | null;
 }
 
 describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
@@ -104,9 +125,16 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
   it('should still stamp once its table is retyped', async () => {
     @Entity({ name: 'StampRetyped' })
     class Retyped {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) code?: number | null;
-      @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable()) code?: number | null;
+      @Computed((row) =>
+        f
+          .number()
+          .nullable()
+          .as(sql`1`)
+          .stored(['update']),
+      )
+      readonly touched?: number | null;
     }
     const id = await pool().insertOne(StampCoded, { code: '1' });
     const migrator = new Migrator(pool(), { entities: [Retyped] });

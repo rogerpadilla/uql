@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { postgresConnection } from '../test/index.js';
 import { syncedPool } from '../test/sqlPools.js';
@@ -13,20 +13,24 @@ const TABLE = 'RawColumnTypeCaption';
  * ranks by. Only Postgres is driven here: every dialect renders a column type through `canonicalToSql`,
  * which returns a raw one verbatim before any engine mapping is consulted.
  */
-@Index((caption) => [caption.searchVector], { name: 'rct_search_idx', type: 'gin' })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (caption, index) => [index([caption.searchVector], { name: 'rct_search_idx', type: 'gin' })],
+})
 class Caption {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
 
-  @Field({ type: String }) text?: string | null;
+  @Field(f.string().nullable()) text?: string | null;
 
-  @Field({
-    type: String,
-    columnType: sql`tsvector`,
-    computed: (caption) => sql`to_tsvector('simple', coalesce(${caption.text}, ''))`,
-    stored: true,
-    eager: false,
-  })
+  @Computed((caption) =>
+    f
+      .string()
+      .nullable()
+      .eager(false)
+      .columnType(sql`tsvector`)
+      .as(sql`to_tsvector('simple', coalesce(${caption.text}, ''))`)
+      .stored(),
+  )
   readonly searchVector?: string | null;
 }
 

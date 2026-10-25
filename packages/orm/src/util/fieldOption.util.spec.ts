@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { defineEntity, defineField } from '../entity/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
+import { untypedColumn } from '../test/spec.util.js';
 import { fieldOptionConflict } from './fieldOption.util.js';
 import { sql } from './sql.js';
 
@@ -75,14 +76,12 @@ it('should leave a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: Number, computed: sql`1`, eager: false })).toBe(undefined);
   // An option stated as `undefined` is one the field never gave.
   expect(fieldOptionConflict({ type: Number, index: undefined, computed: sql`1` })).toBe(undefined);
-  // A key is NOT NULL, so saying so states what it already is - only claiming the opposite is a conflict.
-  expect(fieldOptionConflict({ type: Number, isId: true, nullable: false })).toBe(undefined);
 });
 
 it('should let a stored computed column keep what a real column has, and refuse what the engine fills', () => {
   const stored = { type: String, computed: sql`a || b`, stored: true } as const;
 
-  expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: false })).toBeUndefined();
+  expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: true })).toBeUndefined();
   expect(fieldOptionConflict({ ...stored, defaultValue: 'x' })).toBe(
     "cannot use 'defaultValue': it is ignored on a column the database writes",
   );
@@ -92,15 +91,45 @@ it('should let a stored computed column keep what a real column has, and refuse 
 });
 
 it('should backstop at run time what the decorators reject at compile time', () => {
-  class Backstopped {
-    id?: number;
-    computed?: number;
-  }
+  expect(() => {
+    @Entity()
+    class Backstopped {
+      @Field(f.number().id()) id?: number;
+      @Computed(() =>
+        f
+          .number()
+          .nullable()
+          .index()
+          .as(sql`1`),
+      )
+      computed?: number | null;
+    }
+    return Backstopped;
+  }).toThrow("'Backstopped.computed' cannot use 'index': it is ignored on an inlined computed field.");
+  expect(() => {
+    @Entity()
+    class Backstopped {
+      @Field(untypedColumn({ type: Number, isId: true, nullable: true })) id?: number;
+    }
+    return Backstopped;
+  }).toThrow("'Backstopped.id' cannot use 'nullable': it is ignored on a primary key.");
+});
 
-  expect(() => defineField(Backstopped, 'computed', { type: Number, computed: sql`1`, index: true })).toThrow(
-    "'Backstopped.computed' cannot use 'index': it is ignored on an inlined computed field.",
+/** A schema built from data at run time reaches here without the types' check. */
+it('should report an enum member its type cannot hold', () => {
+  expect(fieldOptionConflict({ type: String, enum: ['draft', 2] })).toBe(
+    "cannot use 'enum': its member 2 is no string, which its type holds",
   );
-  expect(() => defineEntity(Backstopped, { fields: { id: { type: Number, isId: true, nullable: true } } })).toThrow(
-    "'Backstopped.id' cannot use 'nullable': it is ignored on a primary key.",
+  expect(fieldOptionConflict({ type: 'int', enum: [1, 'two'] })).toBe(
+    "cannot use 'enum': its member 'two' is no number or bigint, which its type holds",
   );
+  expect(fieldOptionConflict({ type: 'decimal', enum: [1.5] })).toBe(
+    "cannot use 'enum': its member 1.5 is no string, which its type holds",
+  );
+});
+
+it('should leave an enum its type holds', () => {
+  expect(fieldOptionConflict({ type: String, enum: ['draft', 'paid'] })).toBeUndefined();
+  expect(fieldOptionConflict({ type: Number, enum: [1, 2] })).toBeUndefined();
+  expect(fieldOptionConflict({ type: 'uuid', enum: ['a'] })).toBeUndefined();
 });

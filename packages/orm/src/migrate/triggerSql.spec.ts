@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { Entity, Field, Filter, Id, removeEntity } from '../entity/index.js';
+import { Computed, Entity, f, Field, removeEntity } from '../entity/index.js';
 import { getMeta } from '../entity/metadata/definition.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
@@ -16,9 +16,9 @@ import { dropTrigger, namesAny, renderTrigger, stampTriggers } from './triggerSq
 
 @Entity()
 class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: String }) searchVector?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Field(f.string().nullable()) searchVector?: string | null;
 }
 
 const stamp: EntityTriggerMeta<Post> = {
@@ -40,9 +40,9 @@ const nameOf = (dialect: AbstractSqlDialect, trigger: EntityTriggerMeta<Post>, i
 
 @Entity()
 class Tally {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, unique: true }) postId?: number | null;
-  @Field({ type: Number }) count?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable().unique()) postId?: number | null;
+  @Field(f.number().nullable()) count?: number | null;
 }
 
 afterAll(() => {
@@ -70,7 +70,7 @@ describe('renderTrigger', () => {
   it('should keep two entities sharing a label apart', () => {
     @Entity({ name: 'Page' })
     class Page {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     expect(nameOf(new PostgresDialect(), { ...stamp, name: 'audit' })).toMatch(/^_uql_Post__audit_/);
     expect(renderTrigger(new PostgresDialect(), getMeta(Page), { ...plain, name: 'audit' }, 0).name).toMatch(
@@ -98,7 +98,7 @@ describe('renderTrigger', () => {
   it('should keep a name, hash included, inside the shortest identifier every engine accepts', () => {
     @Entity({ name: 'A'.repeat(60) })
     class Long {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const { name } = renderTrigger(new PostgresDialect(), getMeta(Long), plain, 0);
     expect(name.length).toBeLessThanOrEqual(63);
@@ -342,13 +342,12 @@ describe('the guard, however the engine states one', () => {
 });
 
 describe('the where guard', () => {
-  @Filter('tenant', { where: { tenantId: 7 }, security: true })
-  @Entity({ name: 'Scoped' })
+  @Entity({ name: 'Scoped', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
   class Scoped {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) tenantId?: number | null;
-    @Field({ type: String }) status?: string | null;
-    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().nullable()) tenantId?: number | null;
+    @Field(f.string().nullable()) status?: string | null;
+    @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
   }
 
   afterAll(() => removeEntity(Scoped));
@@ -444,8 +443,15 @@ describe('the where guard', () => {
 describe('a stamp, which uql writes the body of', () => {
   @Entity({ name: 'Note' })
   class Note {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number, computed: sql`1`, stored: ['update'] }) touched?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Computed((row) =>
+      f
+        .number()
+        .nullable()
+        .as(sql`1`)
+        .stored(['update']),
+    )
+    touched?: number | null;
   }
 
   const stampSql = (dialect: AbstractSqlDialect, meta = getMeta(Note)) =>
@@ -485,9 +491,16 @@ describe('a stamp, which uql writes the body of', () => {
     @Entity({ name: 'Pair' })
     class Pair {
       [idKey]?: 'left';
-      @Id({ type: Number }) left?: number;
-      @Id({ type: Number }) right?: number;
-      @Field({ type: Number, computed: sql`1`, stored: ['update'] }) touched?: number | null;
+      @Field(f.number().id()) left?: number;
+      @Field(f.number().id()) right?: number;
+      @Computed((row) =>
+        f
+          .number()
+          .nullable()
+          .as(sql`1`)
+          .stored(['update']),
+      )
+      touched?: number | null;
     }
     const statement = stampSql(new SqliteDialect(), getMeta(Pair));
     expect(statement).toContain('WHERE `Pair`.`left` = NEW.`left` AND `Pair`.`right` = NEW.`right` AND');
@@ -497,8 +510,15 @@ describe('a stamp, which uql writes the body of', () => {
   it('should install one trigger per event, so neither replaces the other', () => {
     @Entity({ name: 'Both' })
     class Both {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number, computed: sql`1`, stored: ['insert', 'update'] }) touched?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Computed((row) =>
+        f
+          .number()
+          .nullable()
+          .as(sql`1`)
+          .stored(['insert', 'update']),
+      )
+      touched?: number | null;
     }
     const names = stampTriggers(new PostgresDialect(), getMeta(Both)).map((it) => it.name);
     expect(names).toEqual(['touched_insert', 'touched_update']);
@@ -569,7 +589,7 @@ describe('the rows it reads', () => {
   it('should name the table behind its schema where the entity claims one', () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const statement = renderTrigger(new PostgresDialect(), getMeta(Note), plain, 0).statements.join('\n');
     expect(statement).toContain('ON "sales"."Note"');
@@ -580,7 +600,7 @@ describe('the rows it reads', () => {
   it("should put the function in the table's schema, leaving the trigger name bare, on Postgres", () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const meta = getMeta(Note);
     const { name, statements } = renderTrigger(new PostgresDialect(), meta, plain, 0);
@@ -597,7 +617,7 @@ describe('the rows it reads', () => {
   it("should name the trigger in the table's schema where the engine keeps names per schema", () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const meta = getMeta(Note);
     const mysql = renderTrigger(new MySqlDialect(), meta, { on: 'afterInsert', run: () => sql`SET @x = 1;` }, 0);
@@ -621,22 +641,34 @@ describe('the rows it reads', () => {
 describe('a write in the body, to another table', () => {
   // Each option here is one a request's write applies and a trigger's must not: a security filter, a soft
   // delete, a JavaScript fill standing on a column default.
-  @Filter('tenant', { where: { tenantId: 7 }, security: true })
-  @Entity({ name: 'WriteAudit' })
+  @Entity({ name: 'WriteAudit', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
   class WriteAudit {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number, name: 'post_id' }) postId?: number | null;
-    @Field({ type: String }) body?: string | null;
-    @Field({ type: Number, onInsert: () => 7, defaultValue: 0 }) hits?: number | null;
-    @Field({ type: 'jsonb' }) tags?: Json<{ list?: string[] }> | null;
-    @Field({ type: Number }) tenantId?: number | null;
-    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().nullable().name('post_id')) postId?: number | null;
+    @Field(f.string().nullable()) body?: string | null;
+    @Field(
+      f
+        .number()
+        .nullable()
+        .default(0)
+        .onInsert(() => 7),
+    )
+    hits?: number | null;
+    @Field(f.jsonb().nullable()) tags?: Json<{ list?: string[] }> | null;
+    @Field(f.number().nullable()) tenantId?: number | null;
+    @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
   }
 
   @Entity({ name: 'UuidAudit' })
   class UuidAudit {
-    @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
-    @Field({ type: Number }) postId?: number | null;
+    @Field(
+      f
+        .uuid()
+        .id()
+        .onInsert(() => crypto.randomUUID()),
+    )
+    id?: string;
+    @Field(f.number().nullable()) postId?: number | null;
   }
 
   afterAll(() => {

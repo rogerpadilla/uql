@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { defineField } from '../entity/index.js';
 import { cachedIn, chunk, clone, entityName, getKeys, hasKeys, isScalarId, omitKeys } from './object.util.js';
 
 describe('clone of what has nothing to copy', () => {
@@ -10,10 +9,10 @@ describe('clone of what has nothing to copy', () => {
 });
 
 describe('entityName', () => {
-  /** A meta registered through `@Field` alone never named its table, so it goes by its class. */
+  /** A base registered through `@Field` alone never named its table, so it goes by its class. */
   it('should fall back to the class for a meta that names no table', () => {
     class Unnamed {}
-    expect(entityName(defineField(Unnamed, 'label', { type: String }))).toBe('Unnamed');
+    expect(entityName({ entity: Unnamed, ids: [], fields: {}, relations: {} })).toBe('Unnamed');
   });
 });
 

@@ -60,16 +60,16 @@ The chain compares only the shortest leading run of the sort that proves it tota
 The condition and the `ORDER BY` have to agree about where nulls sit. Half of that shipped ahead of this feature, since it was already a hole without it: the same `$sort` answered in a different order per engine. See [sorting](https://uql-orm.dev/querying/sorting) for what landed - four placements on `$sort`, rendered as the clause, a leading `IS NULL` term, a `CASE`, or MongoDB's flag field.
 
 - `col > x` never matches a row whose `col` is null, so the chain carries a null arm per nullable key: `col IS NOT NULL` past a null where the null block is behind, `col > x OR col IS NULL` where it lies ahead, and within the block `col IS NULL` with the next key deciding.
-- **A UQL column is nullable unless it says otherwise**, and a decorator cannot see that the property was declared non-optional, so refusing a nullable sort key would refuse `{ createdAt: -1 }` on nearly every entity. The null arms are the default, and a declared `nullable: false` or a key column is what drops them.
-- **A null arm ahead costs the seek.** `(a >= x OR a IS NULL)` cannot seek, so Postgres reads the index from the top: 15.4 ms against 0.05 ms for the same page by a `nullable: false` key, over 200k rows, the cursor mid-table. Entering the null block with a second, seekable statement would recover it, and is not done: the docs point the leading key at `nullable: false` instead.
+- **A UQL column is NOT NULL unless it declares `nullable()`**, so the null arms appear only for a key declared so; a key column never has them.
+- **A null arm ahead costs the seek.** `(a >= x OR a IS NULL)` cannot seek, so Postgres reads the index from the top: 15.4 ms against 0.05 ms for the same page by a NOT NULL key, over 200k rows, the cursor mid-table. Entering the null block with a second, seekable statement would recover it, and is not done: the docs point the leading key at a NOT NULL column instead.
 - **`DialectFeatures.nullsSortLowest`** says where an unqualified sort puts the nulls: lowest everywhere but Postgres, CockroachDB included. A placement answers for itself.
-- **A placement costs the index on MySQL, MariaDB and SQL Server**, where it renders as a leading expression no index serves. Keyset paging there wants keys declared `nullable: false` and no placement.
+- **A placement costs the index on MySQL, MariaDB and SQL Server**, where it renders as a leading expression no index serves. Keyset paging there wants NOT NULL keys and no placement.
 
 One parser, `parseSortDirection`, reads a direction for the SQL `ORDER BY`, MongoDB's `$sort` and the condition alike. Resolving it twice is what breaks this elsewhere, in three separate ways: the rewritten order drops the qualifier, `desc nulls first` reads as ascending, and a non-null offset never enters the null block. `$before` inverts a placement with the order (`descNullsLast` walks back as `ascNullsFirst`) and leaves an unqualified key unqualified, since the engine's own placement inverts with it.
 
 ## Totality
 
-A keyset over a non-total sort skips or repeats rows silently, so it is refused rather than paged. The proof is in metadata and costs nothing at run time: the sort's key set must contain every column of `meta.ids`, or of some `unique` field or index whose columns are all declared `nullable: false` (a nullable unique column permits duplicate nulls on every engine here). Otherwise throw, naming the fix.
+A keyset over a non-total sort skips or repeats rows silently, so it is refused rather than paged. The proof is in metadata and costs nothing at run time: the sort's key set must contain every column of `meta.ids`, or of some `unique` field or index whose columns are all NOT NULL (a nullable unique column permits duplicate nulls on every engine here). Otherwise throw, naming the fix.
 
 - A composite key is several sort keys, which the chain handles as-is.
 - A unique index with a `where` proves nothing: the rows outside it are free to tie.

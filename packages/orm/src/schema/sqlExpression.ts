@@ -2,36 +2,29 @@ import { QuerySql, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
 import { isRecord } from '../util/object.util.js';
 import { SQL_VALUES } from '../util/sql.js';
 
-/**
- * The kind of a {@link SqlExpression}: a value uql exports by name, which `formatDefaultValue` spells for the
- * engine at DDL time, or `raw`, carrying its own SQL.
- */
-export type SqlExpressionKind = SqlValueName | 'sql';
+const EXPRESSION: unique symbol = Symbol('sqlExpression');
 
 /**
- * A column default that is SQL rather than a literal, whether an entity or a migration declares it or
- * introspection reads it back. It is a class, not a plain object, so a JSON default cannot pass for one.
+ * A column default that is SQL rather than a literal: a value uql exports by name, which each engine spells for the
+ * column it fills, or raw SQL carrying its own text. Built by `SqlExpression`, branded by a symbol JSON cannot carry.
  */
-export class SqlExpression {
-  /** `sql` is set only for the `sql` kind, which carries its own text verbatim. */
-  constructor(
-    readonly kind: SqlExpressionKind,
-    readonly sql?: string,
-  ) {}
+export type SqlExpression = { readonly [EXPRESSION]: true } & (
+  | { readonly kind: SqlValueName; readonly sql?: undefined }
+  | { readonly kind: 'sql'; readonly sql: string }
+);
 
-  static isExpression(value: unknown): value is SqlExpression {
-    return value instanceof SqlExpression;
-  }
-
+export const SqlExpression = {
+  named: (kind: SqlValueName): SqlExpression => ({ [EXPRESSION]: true, kind }),
+  raw: (sql: string): SqlExpression => ({ [EXPRESSION]: true, kind: 'sql', sql }),
   /** Wraps `sql` in parentheses, which every engine accepts for a default expression and SQLite and MySQL require. */
-  static parenthesized(sql: string): SqlExpression {
-    return new SqlExpression('sql', `(${sql})`);
-  }
+  parenthesized: (sql: string): SqlExpression => SqlExpression.raw(`(${sql})`),
+  isExpression: (value: unknown): value is SqlExpression =>
+    typeof value === 'object' && value !== null && EXPRESSION in value,
+};
 
-  /** Its SQL, or its kind, as diffs and drift reports show it. */
-  toString(): string {
-    return this.sql ?? this.kind;
-  }
+/** Its SQL, or its kind, as diffs and drift reports show it. */
+export function sqlExpressionText(expression: SqlExpression): string {
+  return expression.sql ?? expression.kind;
 }
 
 const NAME_OF: ReadonlyMap<unknown, SqlValueName> = new Map(SQL_VALUE_NAMES.map((name) => [SQL_VALUES[name], name]));
@@ -43,7 +36,7 @@ const NAME_OF: ReadonlyMap<unknown, SqlValueName> = new Map(SQL_VALUE_NAMES.map(
 export function schemaDefault(value: unknown, compile: (sql: QuerySql) => string): unknown {
   const name = NAME_OF.get(value);
   if (name) {
-    return new SqlExpression(name);
+    return SqlExpression.named(name);
   }
   return value instanceof QuerySql ? SqlExpression.parenthesized(compile(value)) : value;
 }

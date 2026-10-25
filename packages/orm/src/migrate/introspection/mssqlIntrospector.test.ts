@@ -81,10 +81,10 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
       negative: -3,
       fraction: -1.5,
       blank: null,
-      stamped: new SqlExpression('sql', '(getdate())'),
-      summed: new SqlExpression('sql', '((1)+(2))'),
+      stamped: SqlExpression.raw('(getdate())'),
+      summed: SqlExpression.raw('((1)+(2))'),
       bare: undefined,
-      clock: new SqlExpression('currentTimestamp'),
+      clock: SqlExpression.named('currentTimestamp'),
     });
   }
 

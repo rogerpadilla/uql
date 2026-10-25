@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { queryPlanOf } from '../querier/jsonPathIndex-test.js';
 import { driftOf } from '../test/drift.js';
@@ -15,13 +15,15 @@ const TABLE = 'mysql_json_array_index';
 const ROWS = 1000;
 
 /** The array is the whole column, which `$all`'s `JSON_CONTAINS` and `$elemMatch`'s `MEMBER OF` name. */
-@Index((jsonArrayIndexed) => [{ column: jsonArrayIndexed.tags, jsonArray: { type: String, length: 64 } }], {
-  name: 'ix_json_tags',
+@Entity({
+  name: TABLE,
+  indexes: (jsonArrayIndexed, index) => [
+    index([{ column: jsonArrayIndexed.tags, type: [String], charLength: 64 }], 'ix_json_tags'),
+  ],
 })
-@Entity({ name: TABLE })
 class JsonArrayIndexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) tags?: Json<string[]> | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.json().nullable()) tags?: Json<string[]> | null;
 }
 
 /**

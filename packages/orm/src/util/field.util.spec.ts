@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldOptions } from '../type/index.js';
-import { columnFamily, isAutoIncrement, isIntegerColumn } from './field.util.js';
+import { aggregateField, columnFamily, declaresNotNull, isAutoIncrement, isIntegerColumn } from './field.util.js';
+import { memberRefs } from './sql.js';
 
 describe('columnFamily', () => {
   it('should place the constructors', () => {
@@ -101,5 +102,27 @@ describe('isAutoIncrement', () => {
   it('should return false if onInsert is defined', () => {
     const field: FieldOptions = { type: Number, onInsert: () => 1 };
     expect(isAutoIncrement(field, true)).toBe(false);
+  });
+});
+
+describe('declaresNotNull', () => {
+  it('should read a column as NOT NULL unless it declares nullable', () => {
+    expect(declaresNotNull({ type: String })).toBe(true);
+    expect(declaresNotNull({ type: String, nullable: true })).toBe(false);
+  });
+});
+
+describe('aggregateField', () => {
+  const { items } = memberRefs<{ items: { id: number; amount: number }[] }>();
+
+  it('should declare an aggregate nullable where the relation holding no row reads null', () => {
+    expect(declaresNotNull(aggregateField(items.max((item) => item.amount)))).toBe(false);
+    expect(declaresNotNull(aggregateField(items.min((item) => item.amount)))).toBe(false);
+    expect(declaresNotNull(aggregateField(items.avg((item) => item.amount)))).toBe(false);
+  });
+
+  it('should declare a count and a sum NOT NULL', () => {
+    expect(declaresNotNull(aggregateField(items.count()))).toBe(true);
+    expect(declaresNotNull(aggregateField(items.sum((item) => item.amount)))).toBe(true);
   });
 });

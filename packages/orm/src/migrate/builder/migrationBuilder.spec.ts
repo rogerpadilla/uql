@@ -21,7 +21,7 @@ describe('MigrationOperationBuilder operations', () => {
 
       await recorder.createTable('users', (table) => {
         table.id();
-        table.string('email', { unique: true });
+        table.string('email').unique();
       });
 
       const ops = operations;
@@ -253,10 +253,10 @@ describe('MigrationOperationBuilder operations', () => {
       const { recorder, operations } = recording();
 
       await recorder.alterTable('users', (table) => {
-        table.addColumn((c) => c.string('email', { unique: true }));
+        table.addColumn((c) => c.string('email').unique());
         table.dropColumn('old_field');
         table.renameColumn('old_name', 'new_name');
-        table.alterColumn((c) => c.string('email', { nullable: true }));
+        table.alterColumn((c) => c.string('email').nullable());
       });
 
       const ops = operations;
@@ -269,7 +269,7 @@ describe('MigrationOperationBuilder operations', () => {
     it('should record alterColumn operation', async () => {
       const { recorder, operations } = recording();
 
-      await recorder.alterColumn('users', (c) => c.string('email', { nullable: true }));
+      await recorder.alterColumn('users', (c) => c.string('email').nullable());
 
       const ops = operations;
       expect(ops.length).toBe(1);
@@ -361,7 +361,7 @@ describe('migrationBuilderFor', () => {
       const builder = await migrationBuilderFor(mockQuerier);
 
       await builder.alterTable('users', (table) => {
-        table.addColumn((c) => c.string('nickname', { nullable: true }));
+        table.addColumn((c) => c.string('nickname').nullable());
         table.dropColumn('legacy');
       });
 
@@ -391,10 +391,10 @@ describe('migrationBuilderFor', () => {
       await builder.createTable('t', (t) => t.id());
       await builder.dropTable('t');
       await builder.renameTable('t', 't2');
-      await builder.addColumn('t', (c) => c.integer('c', { nullable: true }));
+      await builder.addColumn('t', (c) => c.integer('c').nullable());
       await builder.dropColumn('t', 'c');
       await builder.renameColumn('t', 'c', 'c2');
-      await builder.alterColumn('t', (c) => c.integer('c', { nullable: true }));
+      await builder.alterColumn('t', (c) => c.integer('c').nullable());
       await builder.createIndex('t', ['c']);
       await builder.dropIndex('t', 'i');
       await builder.addForeignKey('t', ['c'], { table: 't2', columns: ['id'] });

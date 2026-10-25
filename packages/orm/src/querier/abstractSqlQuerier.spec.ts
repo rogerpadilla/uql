@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -16,11 +16,11 @@ import { TunedItem } from './vectorTuning-test.js';
 
 @Entity()
 class HydratedChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: 'jsonb' })
+  @Field(f.jsonb().nullable())
   payload?: Json<{ b?: number }> | null;
-  @Field({ references: () => HydratedParent })
+  @Field(f.references(() => HydratedParent).nullable())
   parentId?: number | null;
   @ManyToOne({ entity: () => HydratedParent, references: (hydratedChild) => hydratedChild.parentId })
   parent?: HydratedParent;
@@ -28,11 +28,11 @@ class HydratedChild {
 
 @Entity()
 class HydratedParent {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: 'json' })
+  @Field(f.json().nullable())
   settings?: Json<{ a?: number }> | null;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
   @OneToMany({ entity: () => HydratedChild, mappedBy: (hydratedChild) => hydratedChild.parent })
   children?: HydratedChild[];

@@ -53,25 +53,25 @@ describe('generate:from-db (PostgreSQL)', () => {
 
   // The expression comes back as Postgres reprints it, which is what the entity then declares.
   it('should carry a stored generated column as a computed field the database owns', () => {
-    expect(code).toContain('computed: sql`upper(name)`, stored: true');
+    expect(code).toContain('.as(sql`upper(name)`).stored()');
     expect(code).toContain('readonly nameUpper?');
   });
 
   /** Written as text, the SQL a column defaults to would be the text of its spelling on the next database. */
   it('should write a default that is SQL as SQL, and a literal that spells SQL as text', () => {
-    expect(code).toContain("defaultValue: 'CURRENT_TIMESTAMP'");
-    expect(code).toContain('defaultValue: currentTimestamp');
-    expect(code).toContain("defaultValue: sql`(COALESCE(NULL, 'a'))`");
+    expect(code).toContain(".default('CURRENT_TIMESTAMP')");
+    expect(code).toContain('.default(currentTimestamp)');
+    expect(code).toContain(".default(sql`(COALESCE(NULL, 'a'))`)");
   });
 
   /** Postgres states no digits on a bare `TIMESTAMPTZ`, which holds 6, so an entity left to uql's 3 would cut them. */
   it("should write the precision a timestamp holds, the engine's own included", () => {
-    expect(code).toContain("@Field({ type: 'timestamptz', precision: 6 })");
+    expect(code).toContain("@Field(f.column('timestamptz').precision(6)");
   });
 
   it('should carry a plain index on the field and everything else in its own decorator', () => {
-    expect(code).toContain("index: 'cfd_plain'");
-    expect(code).toContain("unique: true, index: 'cfd_unique'");
+    expect(code).toContain(".index('cfd_plain')");
+    expect(code).toContain(".unique().index('cfd_unique')");
   });
 
   // `btree` is reported on every index Postgres has, so writing it would put it in every entity.
@@ -81,7 +81,7 @@ describe('generate:from-db (PostgreSQL)', () => {
 
   it('should write the expression whole, however long the catalogue prints it', () => {
     expect(code).toContain(
-      "=> [sql`to_tsvector('english'::regconfig, (name || ' '::text) || status)`], { name: 'cfd_expr' })",
+      "index([sql`to_tsvector('english'::regconfig, (name || ' '::text) || status)`], 'cfd_expr')",
     );
   });
 
@@ -90,15 +90,15 @@ describe('generate:from-db (PostgreSQL)', () => {
    * decorator says which one it is, and a column that is already camelCase must not be rewritten at all.
    */
   it('should name the column wherever the property cannot', () => {
-    expect(code).toContain("@Field({ name: 'is_enabled'");
+    expect(code).toContain(".name('is_enabled')");
     expect(code).toContain('isEnabled?: boolean | null;');
     expect(code).toContain('tenantId?: number | null;');
     expect(code).not.toContain('tenantid');
-    expect(code).not.toContain("name: 'tenantId'");
+    expect(code).not.toContain(".name('tenantId')");
   });
 
   it('should write a partial predicate and a covering list', () => {
     expect(code).toContain('where: sql`"deletedAt" IS NULL`');
-    expect(code).toMatch(/\{ name: 'cfd_covering', include: \((\w+)\) => \[\1\.status\] \}/);
+    expect(code).toMatch(/\{ name: 'cfd_covering', include: \[(\w+)\.status\] \}/);
   });
 });

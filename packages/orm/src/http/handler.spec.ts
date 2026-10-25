@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
-import { defineEntity, getMeta } from '../entity/index.js';
+import { defineEntity, Entity, f, Field, getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, Item, type MockedQuerier, Tax, User } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
@@ -23,12 +23,9 @@ describe('createRequestHandler', () => {
 
   /** The route is one path segment, which a composite key has no spelling for on either side yet. */
   it('should refuse a by-id route on a composite key, naming the handler', async () => {
-    class Enrolment {
-      studentId?: number;
-      courseId?: string;
-    }
-    defineEntity(Enrolment, {
-      fields: { studentId: { type: Number, isId: true }, courseId: { type: String, isId: true } },
+    const Enrolment = defineEntity({
+      name: 'Enrolment',
+      fields: { studentId: f.number().id(), courseId: f.string().id() },
     });
     const handle = createRequestHandler({ include: [Enrolment], pool });
 
@@ -78,14 +75,8 @@ describe('createRequestHandler', () => {
   // The path comes from the class name, so two entities on the same table in different schemas would
   // land on one path, the second unreachable.
   it('should throw when two entities claim the same path', () => {
-    class Company {
-      id?: number;
-    }
-    defineEntity(Company, { schema: 'crm', fields: { id: { isId: true, type: Number } } });
-    const Shadow = class Company {
-      id?: number;
-    };
-    defineEntity(Shadow, { schema: 'billing', name: 'Company', fields: { id: { isId: true, type: Number } } });
+    const Company = defineEntity({ name: 'Company', schema: 'crm', fields: { id: f.number().id() } });
+    const Shadow = defineEntity({ name: 'Company', schema: 'billing', fields: { id: f.number().id() } });
 
     expect(() => createRequestHandler({ pool, include: [Company, Shadow] })).toThrow(
       '/company <- Company (crm.Company), Company (billing.Company)',
@@ -103,14 +94,15 @@ describe('createRequestHandler', () => {
   });
 
   it('should name a colliding table by itself when it has no schema', () => {
+    @Entity()
     class Order {
-      id?: number;
+      @Field(f.number().id()) id?: number;
     }
-    defineEntity(Order, { fields: { id: { isId: true, type: Number } } });
-    const Archived = class Order {
-      id?: number;
-    };
-    defineEntity(Archived, { name: 'order_archive', fields: { id: { isId: true, type: Number } } });
+    const Archived =
+      @Entity({ name: 'order_archive' })
+      class Order {
+        @Field(f.number().id()) id?: number;
+      };
 
     expect(() => createRequestHandler({ pool, include: [Order, Archived] })).toThrow(
       '/order <- Order (Order), Order (order_archive)',
@@ -125,10 +117,7 @@ describe('createRequestHandler', () => {
   });
 
   it('should serve no entity it does not name, however defined', () => {
-    class OtherEntity {
-      id?: number;
-    }
-    defineEntity(OtherEntity, { fields: { id: { type: Number, isId: true } } });
+    defineEntity({ name: 'OtherEntity', fields: { id: f.number().id() } });
     const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
   });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { sql } from '../util/sql.js';
 
@@ -12,10 +12,10 @@ import { sql } from '../util/sql.js';
 /** Only the constraint: the database removes the children, so the querier does nothing about them. */
 @Entity()
 class DelegatedParent {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 
   @OneToMany({ entity: () => DelegatedChild, mappedBy: (delegatedChild) => delegatedChild.parent })
@@ -24,10 +24,10 @@ class DelegatedParent {
 
 @Entity()
 class DelegatedChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   parentId?: number | null;
 
   @ManyToOne({
@@ -41,10 +41,10 @@ class DelegatedChild {
 /** Only `cascade: 'delete'`: no constraint to lean on, so the walk has to happen here. */
 @Entity()
 class WalkedParent {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 
   @OneToMany({ entity: () => WalkedChild, mappedBy: (walkedChild) => walkedChild.parent, cascade: 'delete' })
@@ -53,10 +53,10 @@ class WalkedParent {
 
 @Entity()
 class WalkedChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   parentId?: number | null;
 
   @ManyToOne({

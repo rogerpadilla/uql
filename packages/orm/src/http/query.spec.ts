@@ -37,7 +37,14 @@ describe('wireJson', () => {
 describe('parseQueryParams rejections', () => {
   /** A row lock outlives the request that asked for it over HTTP, so it is refused rather than dropped. */
   it('should refuse a $lock', () => {
-    expect(() => parseQueryParams({ $lock: 'true' })).toThrow("'$lock' is not supported over HTTP");
+    expect(() => parseQueryParams({ $lock: 'true' })).toThrow("'$lock' is not a query key HTTP takes");
+  });
+
+  /** Dropped, a removed or misspelt clause would answer another read: `$exclude` would read every column. */
+  it.each(['$exclude', '$entity', '$customKey'])('should refuse %s, a $ key the wire query does not take', (key) => {
+    expect(() => parseQueryParams({ [key]: '{"name": true}' })).toThrow(
+      expect.objectContaining({ message: `'${key}' is not a query key HTTP takes`, status: 400 }),
+    );
   });
 });
 
@@ -51,7 +58,6 @@ describe('parseQueryParams', () => {
     const queryStr = {
       $select: '{ "id": true, "name": true }',
       $populate: '{ "measureUnit": true, "tax": true }',
-      $exclude: '{ "createdAt": true }',
       $where: '{ "name": "lorem", "companyId": "40" }',
       $sort: '{ "name": -1, "companyId": 1 }',
       $skip: '200',
@@ -66,7 +72,6 @@ describe('parseQueryParams', () => {
         measureUnit: true,
         tax: true,
       },
-      $exclude: { createdAt: true },
       $where: { name: 'lorem', companyId: '40' },
       $sort: { name: -1, companyId: 1 },
       $skip: 200,
@@ -103,11 +108,6 @@ describe('parseQueryParams', () => {
     it('should reject __proto__ pollution via $select', () => {
       parseQueryParams({ $select: '{"__proto__": {"polluted2": true}}' });
       expect({}).not.toHaveProperty('polluted2');
-    });
-
-    it('should reject __proto__ pollution via $exclude', () => {
-      parseQueryParams({ $exclude: '{"__proto__": {"polluted3": true}}' });
-      expect({}).not.toHaveProperty('polluted3');
     });
 
     it('should reject constructor.prototype pollution via $populate', () => {
@@ -194,9 +194,8 @@ describe('parseQueryParams', () => {
     },
   );
 
-  it('should drop unknown query keys (allowlist) so clients cannot inject filters/context', () => {
-    const query = parseQueryParams({ $customKey: 'value', filters: 'false', context: '{}' });
-    expect(query).not.toHaveProperty('$customKey');
+  it('should drop unknown option keys (allowlist) so clients cannot inject filters/context', () => {
+    const query = parseQueryParams({ filters: 'false', context: '{}' });
     expect(query).not.toHaveProperty('filters');
     expect(query).not.toHaveProperty('context');
   });

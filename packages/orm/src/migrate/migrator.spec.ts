@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { MongoDialect } from '../mongodb/mongoDialect.js';
 import { MongoSchemaGenerator } from '../mongodb/mongoSchemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -18,20 +18,20 @@ import { createMigrationsTable } from './storage/databaseStorage.js';
 
 @Entity()
 class MigNote {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
 }
 
 @Entity()
 class MigAuthor {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   @OneToMany({ entity: () => MigBook, mappedBy: (book) => book.author }) books?: MigBook[];
 }
 
 @Entity()
 class MigBook {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => MigAuthor }) authorId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => MigAuthor).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => MigAuthor, references: (book) => book.authorId }) author?: MigAuthor;
 }
 
@@ -371,13 +371,13 @@ describe('Migrator', () => {
     it('should drop a column replaced by one identical to it but for its name, suggesting the rename', async () => {
       @Entity({ name: 'Doc' })
       class DocBefore {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: 'text' }) legacyNotes?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.text().nullable()) legacyNotes?: string | null;
       }
       @Entity({ name: 'Doc' })
       class DocAfter {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: 'text' }) publicSummary?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.text().nullable()) publicSummary?: string | null;
       }
       await migratorOf({ entities: [DocBefore] }).sync();
 
@@ -397,13 +397,13 @@ describe('Migrator', () => {
     it('should rename a column its naming strategy now spells otherwise, keeping its data', async () => {
       @Entity({ name: 'Person' })
       class PersonBefore {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) firstName?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) firstName?: string | null;
       }
       @Entity({ name: 'Person' })
       class PersonAfter {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, name: 'first_name' }) firstName?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable().name('first_name')) firstName?: string | null;
       }
       await migratorOf({ entities: [PersonBefore] }).sync();
       await pool.insertOne(PersonBefore, { firstName: 'Ada' });
@@ -445,12 +445,12 @@ describe('Migrator', () => {
     it('should roll back the latest diff first, each as its reverse', async () => {
       @Entity({ name: 'First' })
       class First {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) a?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) a?: string | null;
       }
       @Entity({ name: 'Second' })
       class Second {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       await pool.run(sql.text('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)'));
       await pool.run(sql.text('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)'));
@@ -475,7 +475,7 @@ describe('Migrator', () => {
     it('should roll a dropped required column back nullable, saying it needs filling', async () => {
       @Entity({ name: 'Code' })
       class Code {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       await pool.run(sql.text('CREATE TABLE `Code` (`id` INTEGER PRIMARY KEY, `expiresAt` TEXT NOT NULL)'));
       await pool.run(sql.text("INSERT INTO `Code` (`id`, `expiresAt`) VALUES (1, 'soon')"));

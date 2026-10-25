@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { JSON_UPDATE_PAYLOADS } from '../dialect/abstractSqlDialect-spec.js';
 import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { Company, createSpec, InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
 import { sql } from '../util/index.js';
@@ -33,8 +33,8 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldCastHalfvecSort() {
     @Entity({ name: 'HalfvecItem' })
     class HalfvecItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'halfvec' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('halfvec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, HalfvecItem, {
@@ -55,8 +55,8 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldBindSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'sparsevec' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('sparsevec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SparsevecItem, {
@@ -72,8 +72,8 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldInsertSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem2' })
     class SparsevecItem2 {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'sparsevec' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('sparsevec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));
     expect(statement).toBe('INSERT INTO "SparsevecItem2" ("vec") VALUES ($1::sparsevec) RETURNING "id" "id"');
@@ -287,6 +287,18 @@ class PostgresDialectSpec extends PgFamilySpec {
 
     expect(statement).toContain(`JSON_AGG("_uql_row" ORDER BY "tags"."rank" DESC)`);
     expect(statement).toContain(`WEBSEARCH_TO_TSQUERY($1)) "rank" FROM "Tag" "tags"`);
+  }
+
+  /** An empty name is refused as any other, rather than ordering by a column nothing selected. */
+  shouldRejectAnEmptyTextProjection() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, {
+          $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+          $sort: { $text: { $project: '' } },
+        }),
+      ),
+    ).toThrow("$project '' is no plain name");
   }
 
   /** A to-one is joined, so its filter joins with it, binding before the parent's own. */

@@ -76,9 +76,9 @@ const storedLiteral = (value: unknown, dialect: AbstractSqlDialect): unknown =>
  */
 export function knownDefault(expression: SqlExpression, dialect: AbstractSqlDialect): SqlExpression {
   const name = SQL_VALUE_NAMES.find(
-    (kind) => dialect.sqlValues[kind] !== undefined && sameDefault(new SqlExpression(kind), expression, dialect),
+    (kind) => dialect.sqlValues[kind] !== undefined && sameDefault(SqlExpression.named(kind), expression, dialect),
   );
-  return name ? new SqlExpression(name) : expression;
+  return name ? SqlExpression.named(name) : expression;
 }
 
 /**
@@ -118,16 +118,17 @@ function defaultLiteral(value: unknown, dialect: AbstractSqlDialect, columnType?
 }
 
 /** A raw expression's own SQL, else the engine's spelling of the value it names. */
-function expressionSql({ kind, sql }: SqlExpression, dialect: AbstractSqlDialect, columnType?: string): string {
-  if (sql !== undefined) {
-    return sql;
+function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect, columnType?: string): string {
+  if (expression.kind === 'sql') {
+    return expression.sql;
   }
+  const { kind } = expression;
   const { preciseTypes } = DIALECT_DEFAULTS[dialect.dialectName];
   if (kind === 'currentTimestamp' && preciseTypes) {
     const precision = columnType === undefined ? undefined : preciseTypes.exec(columnType)?.[1];
     return precision ? `CURRENT_TIMESTAMP(${precision})` : 'CURRENT_TIMESTAMP';
   }
-  const spelled = kind === 'sql' ? undefined : dialect.sqlValues[kind];
+  const spelled = dialect.sqlValues[kind];
   if (spelled === undefined) {
     throw new UqlUsageError(`${dialect.engineName} has no ${kind}; write it as raw SQL this engine accepts`);
   }

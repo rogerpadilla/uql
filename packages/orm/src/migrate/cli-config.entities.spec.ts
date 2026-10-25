@@ -20,11 +20,11 @@ afterEach(async () => {
 it('should register decorator metadata for the entities the config imports', async () => {
   await fs.writeFile(
     entityPath,
-    `import { Entity, Field, Id } from 'uql-orm';
+    `import { Entity, f, Field } from 'uql-orm';
 @Entity()
 export class UqlConfigProbe {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string;
 }
 `,
   );

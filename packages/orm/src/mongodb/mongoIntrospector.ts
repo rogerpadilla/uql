@@ -1,7 +1,8 @@
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
-import type { QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
+import type { IndexEntry, QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
+import { entryColumns } from '../util/indexEntry.util.js';
 import { type MongoValidator, validatorCheck } from './mongoCommand.js';
 import { type MongoQuerier, withMongoQuerierForMigrations } from './mongoQuerier.js';
 import { textConfigOf } from './textLanguage.js';
@@ -79,13 +80,13 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
                   type: 'fulltext' as const,
                   config: default_language && textConfigOf(default_language),
                 }
-              : { entries: Object.keys(key).map((column) => ({ column })) }),
+              : { entries: Object.keys(key).map(documentEntry) }),
           })),
           ...searchIndexes
             .filter((idx) => idx.type === 'vectorSearch')
             .map((idx) => ({
               name: idx.name,
-              entries: idx.latestDefinition.fields.map(({ path }) => ({ column: path })),
+              entries: idx.latestDefinition.fields.map(({ path }) => documentEntry(path)),
               unique: false,
               type: 'vectorSearch' as const,
             })),
@@ -113,8 +114,14 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 }
 
 /** A text index field as an entity declares it: its weight stated only where it is not the default 1. */
-function textIndexEntry([column, weight]: [string, number]): { column: string; weight?: number } {
-  return weight === 1 ? { column } : { column, weight };
+function textIndexEntry([key, weight]: [string, number]): IndexEntry<string> {
+  return weight === 1 ? documentEntry(key) : { ...documentEntry(key), weight };
+}
+
+/** A key as the entity declares it: the field, then the path inside it, so the two compare and name alike. */
+export function documentEntry(key: string): IndexEntry<string> {
+  const dot = key.indexOf('.');
+  return dot < 0 ? { column: key } : { json: key.slice(0, dot), path: key.slice(dot + 1) };
 }
 
 /** A collection's Atlas search indexes, none where the server has no Atlas Search. */
@@ -148,7 +155,7 @@ function buildTable({ name, indexes = [], checks = [] }: TableSchema): TableNode
   table.checks.push(...checks);
 
   for (const index of indexes) {
-    for (const { column } of index.entries) {
+    for (const column of entryColumns(index.entries)) {
       if (!table.columns.has(column)) {
         table.columns.set(column, {
           name: column,

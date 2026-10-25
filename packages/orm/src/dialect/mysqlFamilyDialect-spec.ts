@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { InvoiceLine, JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
@@ -59,7 +59,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   shouldEstimateTheCountInTheSchemaTheEntityNames() {
     @Entity({ schema: 'crm' })
     class Ledger {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Ledger));
     expect(sql).toBe(
@@ -70,12 +70,11 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
 
   /** With no `$fields`, the search runs over exactly the columns the `FULLTEXT` index `MATCH` needs covers. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
-    @Entity()
-    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
+    @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
     expect(sql).toBe(' WHERE MATCH(`name`, `description`) AGAINST(?)');
@@ -84,12 +83,15 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
 
   /** A heavier column's own `MATCH` reads the one-column `FULLTEXT` index a weighted index declares for it. */
   shouldRankByAWeightedFulltextIndex() {
-    @Entity()
-    @Index((listing) => [{ column: listing.name, weight: 3 }, listing.description], { type: 'fulltext' })
+    @Entity({
+      indexes: (listing, index) => [
+        index([{ column: listing.name, weight: 3 }, listing.description], { type: 'fulltext' }),
+      ],
+    })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Listing, {

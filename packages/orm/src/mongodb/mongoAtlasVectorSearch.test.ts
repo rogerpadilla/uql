@@ -1,18 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mongoUri, provisioningTimeout } from '../test/index.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
 const COLLECTION = 'atlas_vector_chunk';
 
-@Index((chunk) => [chunk.embedding, chunk.tenant], { type: 'vectorSearch' })
-@Entity({ name: COLLECTION })
+@Entity({
+  name: COLLECTION,
+  indexes: (chunk, index) => [index([chunk.embedding, chunk.tenant], { type: 'vectorSearch' })],
+})
 class Chunk {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) tenant?: string | null;
-  @Field({ type: Number }) degrees?: number | null;
-  @Field({ type: 'vector', dimensions: 2 }) embedding?: number[] | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) tenant?: string | null;
+  @Field(f.number().nullable()) degrees?: number | null;
+  @Field(f.vector(2).nullable()) embedding?: number[] | null;
 }
 
 const at = (degrees: number) => [Math.cos((degrees * Math.PI) / 180), Math.sin((degrees * Math.PI) / 180)];
@@ -73,6 +75,18 @@ describe('MongoDB Atlas vector search', () => {
     });
 
     expect(found.map((doc) => doc.degrees)).toEqual([90, 100, 80]);
+  });
+
+  /** The distance as the SQL engines answer it, lower nearer, not Atlas's score: 2 degrees is 1 - cos 2 apart. */
+  it('should project the distance', async () => {
+    const [nearest] = await pool.findMany(Chunk, {
+      $select: { degrees: true },
+      $sort: { embedding: { $vector: at(92), $project: 'distance' } },
+      $limit: 1,
+    });
+
+    expect(nearest.degrees).toBe(90);
+    expect(nearest.distance).toBeCloseTo(1 - Math.cos((2 * Math.PI) / 180), 6);
   });
 
   /** 90 is odd, so its two even neighbours are nearest. */

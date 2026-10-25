@@ -1,19 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { HookContext } from '../../util/index.js';
-import {
-  BeforeInsert,
-  defineEntity,
-  defineField,
-  defineRelation,
-  Entity,
-  Field,
-  getMeta,
-  Id,
-  Index,
-  ManyToOne,
-  OneToMany,
-} from '../index.js';
-import { applyMembers } from '../metadata/definition.js';
+import { untypedColumn } from '../../test/spec.util.js';
+import type { HookContext } from '../../type/index.js';
+import { BeforeInsert, Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../index.js';
+import { registerEntity } from '../metadata/definition.js';
 import { drainRegistrations, memberRegistrations } from './bag.js';
 
 /**
@@ -25,8 +14,8 @@ describe('standard decorators', () => {
   it('should register fields, the id and the entity name', () => {
     @Entity()
     class Basic {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
     }
 
     const meta = getMeta(Basic);
@@ -39,13 +28,13 @@ describe('standard decorators', () => {
 
   it('should inherit fields from an undecorated abstract base, parent fields first', () => {
     abstract class Base {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Date }) createdAt?: Date | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.date().nullable()) createdAt?: Date | null;
     }
 
     @Entity()
     class Child extends Base {
-      @Field({ type: String }) name?: string | null;
+      @Field(f.string().nullable()) name?: string | null;
     }
 
     const meta = getMeta(Child);
@@ -56,17 +45,17 @@ describe('standard decorators', () => {
 
   it('should keep sibling subclasses of one base independent', () => {
     abstract class Shared {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
 
     @Entity()
     class Left extends Shared {
-      @Field({ type: String }) leftOnly?: string | null;
+      @Field(f.string().nullable()) leftOnly?: string | null;
     }
 
     @Entity()
     class Right extends Shared {
-      @Field({ type: Number }) rightOnly?: number | null;
+      @Field(f.number().nullable()) rightOnly?: number | null;
     }
 
     // A bag that copied its parent's map, or mutated a shared one, would leak these into each other.
@@ -76,7 +65,7 @@ describe('standard decorators', () => {
 
   it('should register an inherited hook exactly once', () => {
     abstract class HookedBase {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
 
       @BeforeInsert()
       stamp(_ctx: HookContext) {}
@@ -84,24 +73,24 @@ describe('standard decorators', () => {
 
     @Entity()
     class HookedChild extends HookedBase {
-      @Field({ type: String }) name?: string | null;
+      @Field(f.string().nullable()) name?: string | null;
     }
 
     // Both the bag drain and `extendMeta` see this hook; only one of them may register it.
-    expect(getMeta(HookedChild).hooks?.beforeInsert).toEqual([{ methodName: 'stamp' }]);
+    expect(getMeta(HookedChild).hooks?.beforeInsert).toMatchObject([{ methodName: 'stamp' }]);
   });
 
   it('should register relations from the entity getter', () => {
     @Entity()
     class Owner {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
       @OneToMany({ entity: () => Owned, mappedBy: (owned) => owned.owner }) owned?: Owned[];
     }
 
     @Entity()
     class Owned {
-      @Id({ type: Number }) id?: number;
-      @Field({ references: () => Owner }) ownerId?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.references(() => Owner).nullable()) ownerId?: number | null;
       @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
     }
 
@@ -111,15 +100,14 @@ describe('standard decorators', () => {
   });
 
   it('should apply @Index stacked above @Entity', () => {
-    @Index((indexed) => [indexed.title], { unique: true })
-    @Entity()
+    @Entity({ indexes: (indexed, index) => [index([indexed.title], { unique: true })] })
     class Indexed {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
     }
 
     // Class decorators apply bottom-up in both specs, so `@Entity()` finalizes before `@Index` appends.
-    expect(getMeta(Indexed).indexes).toMatchObject([{ columns: [{ column: 'title' }], unique: true }]);
+    expect(getMeta(Indexed).indexes).toMatchObject([{ entries: [{ column: 'title' }], unique: true }]);
   });
 
   /**
@@ -139,29 +127,34 @@ describe('standard decorators', () => {
     Object.defineProperty(Base, Symbol.metadata, { value: baseMetadata, configurable: true });
     Object.defineProperty(Child, Symbol.metadata, { value: childMetadata, configurable: true });
 
-    applyMembers(Child, drainRegistrations(childMetadata));
-    defineEntity(Child);
+    registerEntity(Child, {}, drainRegistrations(childMetadata));
 
     const meta = getMeta(Child);
     expect(Object.keys(meta.fields)).toEqual(['id', 'name']);
     expect(meta.ids[0]).toBe('id');
   });
 
-  // The compile-time guard is covered by `type/entityOptions.test-d.ts`; this is the runtime backstop
-  // for callers reaching `defineField` from plain JavaScript, where no such guard exists.
+  // The compile-time guards are the decorators' types; these are the runtime backstops a JavaScript caller hits.
   it('should refuse a field with no type and nothing to resolve one from', () => {
-    class Untyped {
-      mystery?: string;
-    }
-    expect(() => defineField(Untyped, 'mystery', {})).toThrow(/needs a 'type'/);
+    expect(() => {
+      @Entity()
+      class Untyped {
+        @Field(f.number().id()) id?: number;
+        @Field(untypedColumn({})) mystery?: string | null;
+      }
+      return Untyped;
+    }).toThrow(/needs a 'type'/);
   });
 
   it('should refuse a relation with no entity getter', () => {
-    class NoTarget {
-      other?: unknown;
-    }
-    // The type makes `entity` mandatory; the guard is what a JavaScript caller hits.
-    // @ts-expect-error - deliberately omitted
-    expect(() => defineRelation(NoTarget, 'other', { cardinality: 'm1' })).toThrow(/needs an 'entity' getter/);
+    expect(() => {
+      @Entity()
+      class NoTarget {
+        @Field(f.number().id()) id?: number;
+        // @ts-expect-error deliberately omitted
+        @ManyToOne({}) other?: NoTarget;
+      }
+      return NoTarget;
+    }).toThrow(/needs an 'entity' getter/);
   });
 });

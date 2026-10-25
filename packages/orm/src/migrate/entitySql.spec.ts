@@ -1,59 +1,62 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { defineEntity, Entity, Field, Id, Index } from '../entity/index.js';
+import { Computed, defineEntity, Entity, f, Field } from '../entity/index.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { EntityWhere, Json, Type } from '../type/index.js';
-import { sql } from '../util/index.js';
+import type { EntityWhereMeta, Json, Type } from '../type/index.js';
+import { memberRefs, sql } from '../util/index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
-  checks: [{ where: { balance: { $gte: 0 } } }, { where: (ledger) => sql`${ledger.spent} >= ${ledger.refunded}` }],
+  checks: (ledger, check) => [check({ balance: { $gte: 0 } }), check(sql`${ledger.spent} >= ${ledger.refunded}`)],
 })
 class Ledger {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number | null;
-  @Field({ type: Number }) spent?: number | null;
-  @Field({ type: Number }) refunded?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) balance?: number | null;
+  @Field(f.number().nullable()) spent?: number | null;
+  @Field(f.number().nullable()) refunded?: number | null;
 }
 
-@Index((account) => [account.emailAddress], { unique: true, where: { deletedAt: null } })
-@Index((account) => [sql`lower(${account.emailAddress})`], {
-  where: (account) => sql`${account.deletedAt} IS NULL`,
+@Entity({
+  indexes: (account, index) => [
+    index([sql`lower(${account.emailAddress})`], { where: sql`${account.deletedAt} IS NULL` }),
+    index([account.emailAddress], { unique: true, where: { deletedAt: null } }),
+  ],
 })
-@Entity()
 class Account {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) emailAddress?: string | null;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) emailAddress?: string | null;
+  @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
 @Entity()
 class Scored {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) rawScore?: number | null;
-  @Field({ type: Number, computed: (scored) => sql`${scored.rawScore} + 1`, stored: true }) nextScore?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) rawScore?: number | null;
+  @Computed((scored) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`${scored.rawScore} + 1`)
+      .stored(),
+  )
+  nextScore?: number | null;
 }
 
-class Line {
-  id?: number;
-  unitPrice?: number | null;
-  qty?: number | null;
-  total?: number | null;
-}
-
-defineEntity(Line, {
-  fields: {
-    id: { type: Number, isId: true },
-    unitPrice: { type: Number },
-    qty: { type: Number },
-    total: { type: Number, computed: (line) => sql`${line.unitPrice} * ${line.qty}`, stored: true },
-  },
-});
+const Line = defineEntity({
+  name: 'Line',
+  fields: { id: f.number().id(), unitPrice: f.number().nullable(), qty: f.number().nullable() },
+}).computed((line) => ({
+  total: f
+    .number()
+    .nullable()
+    .as(sql`${line.unitPrice} * ${line.qty}`)
+    .stored(),
+}));
 
 const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
@@ -74,7 +77,7 @@ describe('SQL an entity declares', () => {
     expect(ddl(new PostgresDialect(), Account)).toContain('((lower("emailAddress"))) WHERE "deletedAt" IS NULL;');
   });
 
-  it('should resolve every reference through the naming strategy, from a decorator and from defineEntity alike', () => {
+  it('should resolve every reference through the naming strategy, from a decorator and from a schema alike', () => {
     const snake = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
     expect(ddl(snake, Account)).toContain('((lower("email_address"))) WHERE "deleted_at" IS NULL;');
     expect(ddl(snake, Scored)).toContain('GENERATED ALWAYS AS ("raw_score" + 1) STORED');
@@ -86,10 +89,10 @@ describe('SQL an entity declares', () => {
   });
 
   it('should write the vector a predicate compares against as its literal, like any other value', () => {
-    @Entity({ checks: [{ where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 0.5 } } } }] })
+    @Entity({ checks: (near, check) => [check({ embedding: { $near: { $vector: [1, 2, 3], $lt: 0.5 } } })] })
     class Near {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(ddl(new PostgresDialect(), Near)).toContain(`CHECK ("embedding" <=> '[1,2,3]'::vector < 0.5)`);
   });
@@ -108,10 +111,10 @@ describe('a date SQL an entity declares compares against', () => {
   it('should be written in UTC, so the DDL does not depend on the machine generating it', () => {
     vi.stubEnv('TZ', 'America/New_York');
     const epoch = new Date(0);
-    @Entity({ checks: [{ where: { closedAt: { $gte: epoch } } }, { where: { closedAt: { $in: [epoch] } } }] })
+    @Entity({ checks: (dated, check) => [check({ closedAt: { $gte: epoch } }), check({ closedAt: { $in: [epoch] } })] })
     class Dated {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Date }) closedAt?: Date | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.date().nullable()) closedAt?: Date | null;
     }
     const pg = ddl(new PostgresDialect(), Dated);
     expect(pg).toContain(`"closedAt" TIMESTAMPTZ`);
@@ -129,21 +132,20 @@ type TicketShape = {
   data?: Json<{ theme?: string }> | null;
 };
 
-const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
-  @Index((ticket) => [ticket.status], { name: 'ticket_idx', where })
-  @Entity()
+const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): Type<object> => {
+  @Entity({ indexes: (ticket, index) => [index([ticket.status], { name: 'ticket_idx', where })] })
   class Ticket implements TicketShape {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) status?: string | null;
-    @Field({ type: Number }) priority?: number | null;
-    @Field({ type: Date }) closedAt?: Date | null;
-    @Field({ type: 'json' }) data?: Json<{ theme?: string }> | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) status?: string | null;
+    @Field(f.number().nullable()) priority?: number | null;
+    @Field(f.date().nullable()) closedAt?: Date | null;
+    @Field(f.json().nullable()) data?: Json<{ theme?: string }> | null;
   }
   return Ticket;
 };
 
 describe('a SQL Server filtered index', () => {
-  const refused: [string, EntityWhere<TicketShape>][] = [
+  const refused: [string, EntityWhereMeta<TicketShape>][] = [
     ['$or', { $or: [{ status: 'open' }, { priority: 1 }] }],
     ['$not', { $not: [{ status: 'open' }] }],
     ['$nin', { status: { $nin: ['closed'] } }],
@@ -160,7 +162,7 @@ describe('a SQL Server filtered index', () => {
   });
 
   it('should take comparisons, IN and IS NULL, joined by AND', () => {
-    const where: EntityWhere<TicketShape> = {
+    const where: EntityWhereMeta<TicketShape> = {
       closedAt: null,
       priority: { $gte: 1, $ne: 3 },
       $and: [{ status: { $in: ['open', 'held'] } }],
@@ -171,12 +173,12 @@ describe('a SQL Server filtered index', () => {
   });
 
   it('should refuse an $and left undefined, as the query does', () => {
-    const where: EntityWhere<TicketShape> = { status: 'open', $and: undefined };
+    const where: EntityWhereMeta<TicketShape> = { status: 'open', $and: undefined };
     expect(() => ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toThrow("holds undefined at '$and'");
   });
 
   it('should leave a raw predicate to the server', () => {
-    const where: EntityWhere<TicketShape> = (ticket) => sql`${ticket.closedAt} IS NOT NULL`;
+    const where: EntityWhereMeta<TicketShape> = sql`${memberRefs<TicketShape>().closedAt} IS NOT NULL`;
     expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "closedAt" IS NOT NULL;`);
   });
 });

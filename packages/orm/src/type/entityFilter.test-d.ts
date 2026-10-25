@@ -1,11 +1,11 @@
 /**
- * Named `$where` filters (`@Filter`, `defineFilter`, `EntityOptions.filters`): a plain `QueryWhere<E>`
+ * Named `$where` filters (`@Entity`'s and a schema's `filters`): a plain `QueryWhere<E>`
  * fragment or a function of the ambient {@link UqlContext}, both checked against the entity declaring
  * it. Type-checked by `bun run ts` only.
  */
 
 import type { FilterOptions } from '../index.js';
-import { defineEntity, defineFilter, Field, Filter, Id } from '../index.js';
+import { defineEntity, Entity, f, Field } from '../index.js';
 
 class Invoice {
   id?: number;
@@ -38,31 +38,37 @@ export const contextFilterReturningFragment: FilterOptions<Invoice> = {
   where: () => ({ status: 'active' }),
 };
 
-// ─── @Filter decorator: `E` is inferred from the class it decorates ───
-@Filter('active', { where: { status: 'active' }, default: false })
-// @ts-expect-error 'statuz' is not a field of the decorated entity
-@Filter('broken', { where: { statuz: 'active' } })
+// ─── `@Entity({ filters })`: `E` is inferred from the class it decorates ───
+@Entity({ filters: { active: { where: { status: 'active' }, default: false } } })
 class DecoratedInvoice {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) status?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) status?: string | null;
 }
 void DecoratedInvoice;
 
-// ─── EntityOptions.filters: reached through defineEntity, same as decorators ───
-class Bill {
-  id?: number;
-  status?: string | null;
-}
-defineEntity(Bill, {
-  fields: { id: { type: Number, isId: true }, status: { type: String } },
-  filters: { active: { where: { status: 'active' } } },
-});
-defineEntity(Bill, {
-  fields: { id: { type: Number, isId: true } },
+@Entity({
   filters: {
-    // @ts-expect-error 'statuz' is not a field of Bill
-    active: { where: { statuz: 'active' } },
+    // @ts-expect-error 'statuz' is not a field of the decorated entity
+    broken: { where: { statuz: 'active' } },
   },
+})
+class MisfilteredInvoice {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) status?: string | null;
+}
+void MisfilteredInvoice;
+
+// ─── a schema's filters: checked against its columns, same as decorators ───
+defineEntity({
+  name: 'Bill',
+  fields: { id: f.number().id(), status: f.string().nullable() },
+}).filters({ active: { where: { status: 'active' } } });
+defineEntity({
+  name: 'Bill',
+  fields: { id: f.number().id() },
+}).filters({
+  // @ts-expect-error 'statuz' is not a column of Bill
+  active: { where: { statuz: 'active' } },
 });
 
 // ─── a security filter fails closed, and `softDelete` is the built-in filter's name ───
@@ -70,18 +76,21 @@ defineEntity(Bill, {
 export const skippingSecurityFilter: FilterOptions<Invoice> = { where: {}, security: true, onMissing: 'skip' };
 export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active' }, onMissing: 'skip' };
 
-// @ts-expect-error `softDelete` is reserved for the filter `@Field({ softDelete })` registers
-@Filter('softDelete', { where: { status: 'active' } })
+@Entity({
+  filters: {
+    // @ts-expect-error `softDelete` is reserved for the filter `@Field({ softDelete })` registers
+    softDelete: { where: { status: 'active' } },
+  },
+})
 class ReservedInvoice {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) status?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) status?: string | null;
 }
 void ReservedInvoice;
 
-// @ts-expect-error likewise imperatively
-defineFilter(Bill, 'softDelete', { where: { status: 'active' } });
-defineEntity(Bill, {
-  fields: { id: { type: Number, isId: true } },
+defineEntity({
+  name: 'Bill',
+  fields: { id: f.number().id(), status: f.string().nullable() },
+})
   // @ts-expect-error and among an entity's filters
-  filters: { softDelete: { where: { status: 'active' } } },
-});
+  .filters({ softDelete: { where: { status: 'active' } } });

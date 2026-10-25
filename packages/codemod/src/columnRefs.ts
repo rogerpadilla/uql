@@ -4,7 +4,7 @@ import { type Edit, inserted, replaced } from './edits.js';
 import { isSqlCall } from './entitySql.js';
 import { uqlImport, usesOf } from './imports.js';
 import { type Edits, memberAccess } from './keyMaps.js';
-import { identifierText, propertyKey, propertyValue } from './syntax.js';
+import { identifierText, mentions, propertyKey, propertyValue } from './syntax.js';
 
 /**
  * Rewrites each `col('x')` into the ref it names - `product.x` in a `computed` callback, `refs(Item).x` in a
@@ -97,14 +97,6 @@ function statementRefEdit(call: ts.CallExpression, ctx: Context): Edit | undefin
 function columnMember(call: ts.CallExpression, members: ReadonlySet<string>): string | undefined {
   const [name] = call.arguments;
   return call.arguments.length === 1 && ts.isStringLiteralLike(name) && members.has(name.text) ? name.text : undefined;
-}
-
-/** Whether `node` reads a binding named `name`, which a callback parameter of that name would shadow. */
-function mentions(node: ts.Node, name: string): boolean {
-  if (ts.isIdentifier(node)) {
-    return node.text === name && !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node);
-  }
-  return ts.forEachChild(node, (child) => mentions(child, name) || undefined) ?? false;
 }
 
 type NamedEntity = { readonly name: string; readonly type: ts.Type };

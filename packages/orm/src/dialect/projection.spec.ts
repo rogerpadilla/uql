@@ -22,7 +22,7 @@ const cases: ProjectionCase[] = [
   },
   {
     name: 'exclude subtractive',
-    query: { $exclude: { name: true } },
+    query: { $select: { name: false } },
     sqlIncludes: ['"id"', '"createdAt"'],
     sqlExcludes: ['"name"'],
     // the primary key is stored as `_id` on MongoDB; `normalizeId` maps it back to `id`
@@ -30,7 +30,7 @@ const cases: ProjectionCase[] = [
   },
   {
     name: 'exclude id (plain top-level query, no $populate)',
-    query: { $exclude: { id: true } },
+    query: { $select: { id: false } },
     sqlIncludes: ['"name"', '"createdAt"'],
     sqlExcludes: ['"id"'],
     // `_id: 0` is required: MongoDB returns `_id` unless it is explicitly excluded
@@ -66,7 +66,7 @@ it.each(cases)(
     }
 
     const mongo = new MongoDialect();
-    const select = mongo.select(User, query.$select, query.$exclude);
+    const select = mongo.select(User, query.$select);
     expect(select).toEqual(mongoProjection);
   },
 );

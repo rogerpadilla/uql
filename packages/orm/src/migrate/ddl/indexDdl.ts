@@ -1,16 +1,15 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
-import type { IndexType } from '../../schema/types.js';
 import {
   type EngineName,
   INDEX_FEATURE_LABELS,
-  type IndexColumnSchema,
+  type IndexEntry,
   type IndexFeature,
-  type IndexJsonPath,
   type IndexSchema,
 } from '../../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { fulltextConfig, getKeys } from '../../util/index.js';
+import { type JsonIndexRead, jsonIndexRead, storedColumns } from '../../util/indexEntry.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { INDEX_CAPABILITIES, type IndexCapabilities } from './indexCapabilities.js';
 
@@ -20,35 +19,36 @@ import { INDEX_CAPABILITIES, type IndexCapabilities } from './indexCapabilities.
  * whether an index wants it - which is how a JSON path once slipped past the entry comparison.
  */
 const INDEX_FEATURE_PROBES: Record<IndexFeature, (index: IndexSchema) => boolean> = {
-  expression: (index) => index.entries.some((entry) => entry.expression),
-  jsonPath: (index) => index.entries.some((entry) => entry.jsonPath),
-  jsonArray: (index) => index.entries.some((entry) => entry.jsonArray),
+  expression: (index) => index.entries.some((entry) => entry.expression !== undefined),
+  jsonPath: (index) => index.entries.some((entry) => jsonIndexRead(entry)?.elements === false),
+  jsonArray: (index) => index.entries.some((entry) => jsonIndexRead(entry)?.elements === true),
   partial: (index) => index.where !== undefined,
-  prefixLength: (index) => index.entries.some((entry) => entry.length !== undefined),
+  prefixLength: (index) => index.entries.some((entry) => entry.prefixLength !== undefined),
+  fulltextPath: (index) =>
+    index.type === 'fulltext' && index.entries.some((entry) => jsonIndexRead(entry) !== undefined),
   nullsOrder: (index) => index.entries.some((entry) => entry.nulls !== undefined),
   opsClass: (index) => index.entries.some((entry) => entry.opsClass !== undefined),
   include: (index) => Boolean(index.include?.length),
 };
 
-/** Refuses an index of a type `types` lacks, `hints` naming what to declare instead. */
-export function assertIndexType(
-  index: IndexSchema,
-  types: ReadonlySet<IndexType>,
-  engine: EngineName,
-  hints: ReadonlyMap<IndexType, string> = new Map(),
-): void {
-  if (index.type && !types.has(index.type)) {
-    throw new UqlUsageError(
-      `${engine} has no ${index.type} index (index "${index.name}")` + (hints.get(index.type) ?? ''),
-    );
+/**
+ * Refuses an index `capabilities` cannot express: a type it lacks, its hint naming what to declare instead, or a
+ * feature that type cannot take, naming the type where another of the engine's can.
+ */
+export function assertExpressible(index: IndexSchema, capabilities: IndexCapabilities, engine: EngineName): void {
+  const { types, hints } = capabilities;
+  const type = index.type ?? 'btree';
+  const features = types.get(type);
+  if (!features) {
+    throw new UqlUsageError(`${engine} has no ${type} index (index "${index.name}")` + (hints.get(type) ?? ''));
   }
-}
-
-/** Refuses an index asking for a feature `features` lacks. */
-export function assertIndexFeatures(index: IndexSchema, features: ReadonlySet<IndexFeature>, engine: EngineName): void {
   for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
     if (INDEX_FEATURE_PROBES[feature](index) && !features.has(feature)) {
-      throw new UqlUsageError(`${engine} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`);
+      const elsewhere = [...types.values()].some((expressed) => expressed.has(feature));
+      throw new UqlUsageError(
+        `${engine} does not support ${INDEX_FEATURE_LABELS[feature]}${elsewhere ? ` on a ${type} index` : ''} ` +
+          `(index "${index.name}")`,
+      );
     }
   }
 }
@@ -66,7 +66,7 @@ export class IndexDdl {
   }
 
   getCreateIndexStatement(tableName: string, index: IndexSchema, opts: { ifNotExists?: boolean } = {}): string {
-    this.assertExpressible(index);
+    assertExpressible(index, this.capabilities, this.dialect.engineName);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
     return (
@@ -83,14 +83,8 @@ export class IndexDdl {
     if (!this.capabilities.inline || index.type || index.unique) {
       return undefined;
     }
-    this.assertExpressible(index);
+    assertExpressible(index, this.capabilities, this.dialect.engineName);
     return `INDEX ${this.dialect.escapeId(index.name)} ${this.indexBody(index)}`;
-  }
-
-  private assertExpressible(index: IndexSchema): void {
-    const { types, features, hints } = this.capabilities;
-    assertIndexType(index, types, this.dialect.engineName, hints);
-    assertIndexFeatures(index, features, this.dialect.engineName);
   }
 
   /** What follows the name and access method, in either form: the columns, then what qualifies them. */
@@ -115,15 +109,18 @@ export class IndexDdl {
 
   /** What the index is over, between the parentheses: a fulltext one's columns as a search matches them, else its entries. */
   protected indexTarget(index: IndexSchema): string {
-    if (index.type === 'fulltext' && !index.entries.some((entry) => entry.expression)) {
-      const columns = index.entries.map((entry) => this.dialect.escapeId(entry.column));
-      return this.dialect.textSearchTarget(columns, fulltextConfig(index));
+    const columns = index.type === 'fulltext' ? storedColumns(index.entries) : undefined;
+    if (columns) {
+      return this.dialect.textSearchTarget(
+        columns.map((column) => this.dialect.escapeId(column)),
+        fulltextConfig(index),
+      );
     }
     return index.entries.map((entry) => this.indexColumn(entry, index)).join(', ');
   }
 
   /** One index entry: what is indexed, its operator class if any, then its stored order. */
-  protected indexColumn(entry: IndexColumnSchema, index: IndexSchema): string {
+  protected indexColumn(entry: IndexEntry<string>, index: IndexSchema): string {
     return `${this.indexColumnTarget(entry)}${this.indexColumnOpsClass(entry, index)}${this.indexColumnOrder(entry)}`;
   }
 
@@ -133,29 +130,30 @@ export class IndexDdl {
    * rendering serves every engine that has expression indexes. A JSON entry is one of those too, its
    * expression compiled from the path rather than written out by the caller.
    */
-  protected indexColumnTarget(entry: IndexColumnSchema): string {
-    if (entry.expression) {
-      return `(${entry.column})`;
+  protected indexColumnTarget(entry: IndexEntry<string>): string {
+    if (entry.expression !== undefined) {
+      return `(${entry.expression})`;
+    }
+    const json = jsonIndexRead(entry);
+    if (json) {
+      return `(${this.jsonIndexExpr(this.dialect.escapeId(json.column), json)})`;
     }
     const column = this.dialect.escapeId(entry.column);
-    if (entry.jsonPath) {
-      return `(${this.jsonPathIndexExpr(column, entry.jsonPath)})`;
-    }
-    return entry.length === undefined ? column : `${column}(${entry.length})`;
+    return entry.prefixLength === undefined ? column : `${column}(${entry.prefixLength})`;
   }
 
   /** The path read the way a query comparing it reads it, which is how the planner matches the two. */
-  protected jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
+  protected jsonIndexExpr(escapedColumn: string, json: JsonIndexRead): string {
     return this.dialect.jsonPathExpr(escapedColumn, json.path, jsonTypeMode(json.type));
   }
 
   /** Postgres-wire dialects put a vector or user-declared operator class here. */
-  protected indexColumnOpsClass(_entry: IndexColumnSchema, _index: IndexSchema): string {
+  protected indexColumnOpsClass(_entry: IndexEntry<string>, _index: IndexSchema): string {
     return '';
   }
 
   /** `ASC` is every engine's default, so only `DESC` is worth emitting. */
-  protected indexColumnOrder(entry: IndexColumnSchema): string {
+  protected indexColumnOrder(entry: IndexEntry<string>): string {
     const order = entry.order === 'desc' ? ' DESC' : '';
     return entry.nulls ? `${order} NULLS ${entry.nulls.toUpperCase()}` : order;
   }
@@ -186,7 +184,7 @@ export class IndexDdl {
   }
 
   /**
-   * The partial-index predicate. Engines without one reject the index in {@link assertIndexFeatures}
+   * The partial-index predicate. Engines without one reject the index in {@link assertExpressible}
    * rather than reaching here: silently widening a partial unique index changes which rows the
    * database accepts.
    */

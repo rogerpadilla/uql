@@ -82,13 +82,6 @@ export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? never : P]: T[P] };
 
 /**
- * Each key of `K` mapped to `never`, so an intersection with it makes naming one a compile error;
- * `unknown`, inert, when there are none. A captured type parameter needs it: TypeScript skips the
- * excess-property check on one.
- */
-export type RejectKeys<K> = [K] extends [never] ? unknown : Record<K & string, never>;
-
-/**
  * Exactly one key of `T` with its value; every other key is forbidden (`never`). `Pick`, not `Record`,
  * so the chosen key stays linked to `T`'s own property and renames follow it through.
  */

@@ -75,7 +75,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
       lined: 'a\nb',
       fraction: -12.5,
       negative: -3,
-      stamped: new SqlExpression('currentTimestamp'),
+      stamped: SqlExpression.named('currentTimestamp'),
       note: "o'k",
       bare: undefined,
       spelled: 'CURRENT_TIMESTAMP',

@@ -15,6 +15,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFi
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
+import { writeConsumerProject } from '../../scripts/typeFixture.js';
 
 const pkgDir = import.meta.dirname;
 const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
@@ -199,10 +200,10 @@ function checkPeerReach(): void {
 // these budgets aren't. Each is the entry as measured plus 2%, rounded up to the next hundred, so
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
-  // The root is decorators, types and helpers: no querier or dialect is reachable from it.
-  '.': 8_600,
-  './postgres': 43_500,
-  './migrate': 62_300,
+  // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
+  '.': 11_300,
+  './postgres': 47_300,
+  './migrate': 69_200,
   './browser': 2_100,
 };
 
@@ -256,7 +257,7 @@ function checkDeclarationsStandalone(checkDir: string, installed: string): void 
     refuse(
       'a consumer cannot use the published surface',
       inConsumer,
-      'The entity in `entity.ts` is written the way the README says one is written. If the decorators ' +
+      'The fixture (`scripts/typeFixture.ts`) is written the way the README says entities are. If the decorators ' +
         'now need `experimentalDecorators`, or a name moved off the root entry, that promise is broken.',
     );
   }
@@ -327,8 +328,8 @@ function checkDriverLoads(): void {
   }
 }
 
-/** The temp project the check runs in: `dist` installed as the only package, one entry file per export. */
-function writeConsumerProject(): { checkDir: string; installed: string } {
+/** The temp project the check runs in: `dist` installed as the only package, the fixture, one entry file per export. */
+function installConsumerProject(): { checkDir: string; installed: string } {
   const checkDir = mkdtempSync(join(tmpdir(), 'uql-dts-'));
   const installed = join(checkDir, 'node_modules', pkg.name);
 
@@ -336,49 +337,24 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
   cpSync(join(pkgDir, 'dist'), join(installed, 'dist'), { recursive: true });
   writeFileSync(join(installed, 'package.json'), JSON.stringify(pkg));
 
-  for (const [index, entry] of entries.entries()) {
-    writeFileSync(join(checkDir, `entry${index}.ts`), `export * from '${specifierOf(entry)}';\n`);
-  }
-  // Re-exporting every entry proves the declarations resolve, but never applies one. The README
-  // promises entities are "plain classes on the standard TC39 decorators: no `reflect-metadata`, no
-  // `experimentalDecorators`", and the tsconfig below sets neither - so this file is that promise,
-  // compiled. Without it the first thing to find out would be a consumer, or the docs build.
-  writeFileSync(
-    join(checkDir, 'entity.ts'),
-    `import { Entity, Field, Id, ManyToOne, OneToMany } from '${pkg.name}';
-
-@Entity()
-export class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ references: () => User }) authorId?: string | null;
-  @ManyToOne({ entity: () => User, references: (post) => post.authorId }) author?: User;
-}
-
-@Entity()
-export class User {
-  @Id({ type: 'uuid' }) id?: string;
-  @Field({ type: String }) email?: string | null;
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
-}
-`,
+  // Re-exporting every entry proves the declarations resolve, but never applies one; the fixture writes
+  // entities and queries the way the README does, on standard decorators with no compiler flag for them.
+  const reexports = Object.fromEntries(
+    entries.map((entry, index) => [`entry${index}.ts`, `export * from '${specifierOf(entry)}';\n`]),
   );
-  writeFileSync(
-    join(checkDir, 'tsconfig.json'),
-    JSON.stringify({
-      compilerOptions: {
-        target: 'es2025',
-        // What a browser consumer has, and no more.
-        lib: ['esnext', 'dom'],
-        module: 'preserve',
-        moduleResolution: 'bundler',
-        strict: true,
-        skipLibCheck: false,
-        noEmit: true,
-        types: [],
-      },
-      include: ['*.ts'],
-    }),
+  writeConsumerProject(
+    checkDir,
+    { queries: 1, definitions: 1, schemas: 1 },
+    // What a browser consumer has, and no more; `declaration` as a library exporting its entities emits them.
+    {
+      target: 'es2025',
+      lib: ['esnext', 'dom'],
+      module: 'preserve',
+      moduleResolution: 'bundler',
+      skipLibCheck: false,
+      declaration: true,
+    },
+    reexports,
   );
   return { checkDir, installed };
 }
@@ -397,7 +373,7 @@ function typeCheck(checkDir: string): string {
 /**
  * Diagnostics in the consumer's own files rather than in `dist`. {@link ownUnresolvedNames} discards
  * these deliberately - another package's declarations are that package's problem - which would also
- * discard the entity that exercises the decorators, so it is read separately.
+ * discard the fixture that applies the declarations, so it is read separately.
  */
 function consumerErrors(output: string, checkDir: string, installed: string): string[] {
   const problems: string[] = [];
@@ -443,7 +419,7 @@ const browserModules = checkBrowserGraph();
 checkPeerReach();
 checkDriverLoads();
 await checkSizeBudgets();
-const { checkDir, installed } = writeConsumerProject();
+const { checkDir, installed } = installConsumerProject();
 try {
   checkDeclarationsStandalone(checkDir, installed);
   checkRuntimes(checkDir);

@@ -55,6 +55,9 @@ export const OUTPUT_TABLE = `@${OWNED_PREFIX}_output`;
 /** The field a MongoDB `$sort` by `$text` reads `textScore` from where it projects none, taken back out after. */
 export const TEXT_SCORE_ALIAS = `${OWNED_PREFIX}_text_score`;
 
+/** A relation's row's distance from the vector its `$sort` ranks by, where it projects none. */
+export const NEAREST_DISTANCE_ALIAS = `${OWNED_PREFIX}_nearest`;
+
 /**
  * The field a MongoDB `$sort` placing nulls orders by first: 1 where the value is null or missing, 0
  * where it is not. MongoDB takes no `NULLS FIRST`, so the placement is this flag plus the sort on it.

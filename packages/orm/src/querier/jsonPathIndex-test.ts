@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { driftOf } from '../test/drift.js';
 import type { Spec } from '../test/index.js';
@@ -12,12 +12,16 @@ const TABLE = 'json_path_index';
 /** Enough rows that a scan is the costlier plan, so the planner's choice means something. */
 const ROWS = 1000;
 
-@Index((row) => [{ column: row.kind, jsonPath: { path: 'name', type: String, length: 32 } }], { name: 'ix_json_name' })
-@Index((row) => [{ column: row.kind, jsonPath: { path: 'score', type: Number } }], { name: 'ix_json_score' })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (jsonPathIndexed, index) => [
+    index([{ column: jsonPathIndexed.kind.score, type: Number }], 'ix_json_score'),
+    index([{ column: jsonPathIndexed.kind.name, charLength: 32 }], 'ix_json_name'),
+  ],
+})
 class JsonPathIndexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) kind?: Json<{ name: string; score: number }> | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.json().nullable()) kind?: Json<{ name: string; score: number }> | null;
 }
 
 /** The engine's plan for the statement `find` builds, as text to look for an index in; `explain` is its prefix. */

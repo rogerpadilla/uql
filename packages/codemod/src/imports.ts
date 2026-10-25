@@ -1,12 +1,13 @@
 import ts from 'typescript';
-import type { Context } from './context.js';
-import { inserted, removeFromList, removeStatement, replaced } from './edits.js';
+import { type Context, REWRITTEN } from './context.js';
+import { type Edit, inserted, removeFromList, removeStatement, replaced } from './edits.js';
 
 /**
  * Exports that no longer exist, mapped to what to do instead. Reported rather than rewritten: what replaces
  * each is decided at its call site.
  */
 const REMOVED_EXPORTS = new Map([
+  ['Relation', "write the property's type without it, and drop the import"],
   [
     'setQuerierPool',
     'pass the pool where it is used: `createFetchHandler({ pool, include })`, `querierMiddleware({ pool, include })`',
@@ -31,8 +32,11 @@ const REMOVED_EXPORTS = new Map([
   ['SqlCallback', 'use `EntitySql<E>`, which holds the callback form'],
   [
     'IndexColumnOptions',
-    "an entity's index entry is `EntityIndexColumnInput<E>`, the migration builder's `IndexColumnInput`",
+    "an entity's index entry is `EntityIndexColumnInput`, the migration builder's `IndexColumnInput`",
   ],
+  ['EntityIndexColumn', "an entity's index entry is `EntityIndexColumnInput`, the migration builder's `IndexEntry`"],
+  ['IndexJsonPath', "read the path off the column's ref: `{ column: post.meta.lang, type: Number }`"],
+  ['IndexJsonArray', "give the elements' type: `{ column: post.tags, type: [String] }`"],
   ['isKnownMigratorDialect', 'every dialect has a migrator, so it always held: drop the check'],
   ['QuerierPoolDialect', "read the pool's own: `P['dialect']`"],
   ['QuerierPoolQuerier', "read the pool's own: `Awaited<ReturnType<P['getQuerier']>>`"],
@@ -78,6 +82,8 @@ export const SQL_TAG = 'sql';
  */
 const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: string }>([
   ['QueryWhereMap', { to: 'QueryWhere' }],
+  ['IndexColumnSchema', { to: 'IndexEntry' }],
+  ['IndexColumnModifiers', { to: 'IndexEntryModifiers' }],
   ['RelationKeyMap', { to: 'KeyMap' }],
   ['FilterCondition', { to: 'FilterWhere' }],
   ['PgDialect', { to: 'PostgresDialect', from: 'uql-orm/postgres' }],
@@ -106,8 +112,10 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['IMigrationBuilder', { to: 'MigrationBuilder' }],
   ['ITableBuilder', { to: 'TableBuilder' }],
   ['IAlterTableBuilder', { to: 'AlterTableBuilder' }],
-  ['IColumnBuilder', { to: 'ColumnBuilder' }],
-  ['IColumnFactory', { to: 'ColumnFactory' }],
+  ['IColumnBuilder', { to: 'TableColumnBuilder' }],
+  ['IColumnFactory', { to: 'TableColumnFactory' }],
+  ['uql-orm/migrate#ColumnBuilder', { to: 'TableColumnBuilder' }],
+  ['uql-orm/migrate#ColumnFactory', { to: 'TableColumnFactory' }],
   ['IForeignKeyBuilder', { to: 'ForeignKeyBuilder' }],
   ['ITableForeignKeyBuilder', { to: 'TableForeignKeyBuilder' }],
   ['UqlLockUsageError', { to: 'UqlUsageError' }],
@@ -193,18 +201,46 @@ function importedName(element: ts.ImportSpecifier): string {
 
 /** Every identifier in the file bound to the same symbol as `name`, besides `name` itself. */
 export function usesOf(source: ts.SourceFile, name: ts.Identifier, checker: ts.TypeChecker): ts.Identifier[] {
-  const symbol = checker.getSymbolAtLocation(name);
-  const uses: ts.Identifier[] = [];
+  return usesOfEach(source, [name], checker)[0];
+}
+
+type Binding = { readonly name: ts.Identifier; readonly symbol: ts.Symbol | undefined; readonly uses: ts.Identifier[] };
+
+/** {@link usesOf} for each of `names`, in their order, from one walk of the file. */
+function usesOfEach(
+  source: ts.SourceFile,
+  names: readonly ts.Identifier[],
+  checker: ts.TypeChecker,
+): ts.Identifier[][] {
+  const bound = names.map((name): Binding => ({ name, symbol: checker.getSymbolAtLocation(name), uses: [] }));
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && node !== name && node.text === name.text) {
-      if (symbol && checker.getSymbolAtLocation(node) === symbol) {
-        uses.push(node);
+    if (ts.isIdentifier(node)) {
+      const symbol = checker.getSymbolAtLocation(node);
+      for (const binding of bound) {
+        if (symbol && binding.symbol === symbol && binding.name !== node) binding.uses.push(node);
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return uses;
+  return bound.map(({ uses }) => uses);
+}
+
+/** The names among `names` the file binds or reads as something other than uql-orm's export, which a rewrite would shadow. */
+export function foreignNames(
+  source: ts.SourceFile,
+  names: ReadonlySet<string>,
+  checker: ts.TypeChecker,
+): ReadonlySet<string> {
+  const found = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && names.has(node.text) && isForeignName(node, checker)) {
+      found.add(node.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
 }
 
 /** The rename `element` still needs, none where it already names the export at its entry. */
@@ -245,26 +281,22 @@ function isTypeOnly(declaration: ts.ImportDeclaration): boolean {
   return declaration.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
 }
 
-/**
- * The imported names the codemod removes once every use was rewritten: `Relation` unwrapped and `expr` defaults.
- * A removed decorator keeps its import on purpose: deleting it would swap a clear error for a puzzling one.
- */
+/** The imported names of `REWRITTEN` the codemod removes, once every use was rewritten. */
 export function deadImportNames(ctx: Context): ReadonlySet<string> {
   const { source, rewritten } = ctx;
-  const uses = (name: keyof Context['rewritten']) => {
+  const imported = REWRITTEN.flatMap((name) => {
     const element = uqlImport(source, name, true);
-    return element ? usesOf(source, element.name, ctx.checker).length : 0;
-  };
-  const relations = uses('Relation');
-  if (relations > rewritten.Relation) {
-    ctx.unresolved.push(
-      `${source.fileName}: ${relations - rewritten.Relation} 'Relation<T>' reference(s) are somewhere this codemod ` +
-        'does not rewrite; unwrap them and drop the import by hand',
-    );
-  }
-  const names = ['Relation', 'expr'] as const;
-  return new Set(names.filter((name) => rewritten[name] > 0 && rewritten[name] === uses(name)));
+    return element ? [[name, element.name] as const] : [];
+  });
+  const found = usesOfEach(
+    source,
+    imported.map(([, element]) => element),
+    ctx.checker,
+  );
+  const uses = new Map(imported.map(([name], at) => [name, found[at].length]));
+  return new Set(REWRITTEN.filter((name) => rewritten[name] > 0 && rewritten[name] === (uses.get(name) ?? 0)));
 }
+
 /** The `uql-orm` export `node` names, where its symbol is an import of it or of one of its entries. */
 export function uqlExport(node: ts.Node | undefined, checker: ts.TypeChecker): string | undefined {
   const declaration = node && ts.isIdentifier(node) ? checker.getSymbolAtLocation(node)?.declarations?.[0] : undefined;
@@ -352,10 +384,6 @@ export function rewriteImports(dead: ReadonlySet<string>, ctx: Context): void {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
-    if (statement.moduleSpecifier.text === 'reflect-metadata' && !statement.importClause) {
-      ctx.edits.push(removeStatement(statement));
-      continue;
-    }
     const uql = imports.get(statement);
     const join = uql === home ? written.map(([name]) => name) : [];
     const entry = uql && entryOf(uql.entry);
@@ -368,7 +396,7 @@ export function rewriteImports(dead: ReadonlySet<string>, ctx: Context): void {
 }
 
 /** An import of `names` from `from`, quoted as the file quotes its imports. */
-const importText = (keyword: string, names: readonly string[], from: string, quote = "'"): string =>
+export const importText = (keyword: string, names: readonly string[], from: string, quote = "'"): string =>
   `${keyword} { ${names.join(', ')} } from ${quote}${from}${quote};`;
 
 /**
@@ -412,6 +440,57 @@ function rebuildImport(
   ctx.edits.push(statements.length ? replaced(declaration, statements.join('\n')) : removeStatement(declaration));
 }
 
+/**
+ * The import without `dropped` of its `elements`: the whole statement where nothing else is left of it, and the
+ * braces with them where a default import stays.
+ */
+export function importRemovalEdits(
+  declaration: ts.ImportDeclaration,
+  elements: readonly ts.ImportSpecifier[],
+  dropped: readonly ts.ImportSpecifier[],
+): readonly Edit[] {
+  if (dropped.length !== elements.length) {
+    return removeFromList(elements, dropped, declaration.getSourceFile());
+  }
+  const clause = declaration.importClause;
+  return clause?.name
+    ? [{ start: clause.name.getEnd(), end: clause.getEnd(), text: '' }]
+    : [removeStatement(declaration)];
+}
+
+/** Every name the file spells outside its imports, which an import it binds is still used under if listed here. */
+export function spelledNames(source: ts.SourceFile): ReadonlySet<string> {
+  const names = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) {
+      names.add(node.text);
+    }
+    if (!ts.isImportDeclaration(node)) {
+      ts.forEachChild(node, visit);
+    }
+  };
+  visit(source);
+  return names;
+}
+
+/** The import names in `candidates` that the file no longer spells. */
+export function deadImports(
+  elements: readonly ts.ImportSpecifier[],
+  candidates: ReadonlySet<string | undefined>,
+  spelled: ReadonlySet<string>,
+): readonly ts.ImportSpecifier[] {
+  return elements.filter((it) => candidates.has(it.name.text) && !spelled.has(it.name.text));
+}
+
+/** The edits dropping each `uql-orm` import name in `candidates` that the file no longer spells. */
+export function unusedImportEdits(source: ts.SourceFile, candidates: ReadonlySet<string>): readonly Edit[] {
+  const spelled = spelledNames(source);
+  return uqlImportDeclarations(source, true).flatMap(({ declaration, elements }) => {
+    const dead = deadImports(elements, candidates, spelled);
+    return dead.length ? importRemovalEdits(declaration, elements, dead) : [];
+  });
+}
+
 /** The import with the `dead` names out and `join` in, nothing else of it touched. */
 function patchImport(
   declaration: ts.ImportDeclaration,
@@ -425,11 +504,11 @@ function patchImport(
   }
   const dropped = named.elements.filter((element) => dead.has(element.name.text));
   const statement = importText('import', join, 'uql-orm');
-  if (dropped.length === named.elements.length && !declaration.importClause?.name) {
-    ctx.edits.push(join.length ? replaced(declaration, statement) : removeStatement(declaration));
+  if (join.length && dropped.length === named.elements.length && !declaration.importClause?.name) {
+    ctx.edits.push(replaced(declaration, statement));
     return;
   }
-  ctx.edits.push(...removeFromList(named.elements, dropped, ctx.source));
+  ctx.edits.push(...importRemovalEdits(declaration, named.elements, dropped));
   if (join.length) {
     ctx.edits.push(
       isTypeOnly(declaration)

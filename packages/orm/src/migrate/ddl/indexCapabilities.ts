@@ -1,13 +1,14 @@
 import { INDEX_TYPES, type IndexType } from '../../schema/types.js';
-import type { IndexFeature, SqlDialectName } from '../../type/index.js';
+import type { DialectName, IndexFeature } from '../../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../../type/vector.js';
 
 /** What an engine's `CREATE INDEX` can say; an index asking for anything else is refused rather than emitted. */
 export type IndexCapabilities = {
-  /** The types its `CREATE INDEX` takes. SQLite's has no `USING`, so every type builds its plain index there. */
-  readonly types: ReadonlySet<IndexType>;
-  /** The features it can express, each supported by one engine and a hard error at the server on another. */
-  readonly features: ReadonlySet<IndexFeature>;
+  /**
+   * Each type its `CREATE INDEX` takes, with the features it can express on one, each a hard error at the server
+   * where it is missing. An untyped index is its `btree`. SQLite's has no `USING`, so every type builds its plain one.
+   */
+  readonly types: ReadonlyMap<IndexType, ReadonlySet<IndexFeature>>;
   /**
    * The types it spells as a keyword of their own (`FULLTEXT INDEX`, `VECTOR INDEX`) rather than as an access
    * method: one table drives both, so a keyword never also leaks out as a ` USING` the engine has no word for.
@@ -24,30 +25,42 @@ const NONE: ReadonlyMap<IndexType, string> = new Map();
 /** A full-text index is its own keyword in the MySQL family: `USING fulltext` is a syntax error there. */
 const MYSQL_LIKE_KEYWORDS: ReadonlyMap<IndexType, string> = new Map([['fulltext', 'FULLTEXT INDEX']]);
 
+/** Each of `types`, expressing the same `features`. */
+function typesWith(
+  types: readonly IndexType[],
+  features: readonly IndexFeature[],
+): Map<IndexType, ReadonlySet<IndexFeature>> {
+  const expressed: ReadonlySet<IndexFeature> = new Set(features);
+  return new Map(types.map((type) => [type, expressed]));
+}
+
 const DECLARE_VECTOR = "; declare type: 'vector' instead";
 
-/** Each engine's {@link IndexCapabilities}, total over the SQL engines. */
-export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabilities>> = {
+/** Each engine's {@link IndexCapabilities}, total over the engines. */
+export const INDEX_CAPABILITIES: Readonly<Record<DialectName, IndexCapabilities>> = {
   /** Postgres 18's `pg_am`, with pgvector's two, and `fulltext`, which builds a `gin` one. */
   postgres: {
-    types: new Set(['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat', 'fulltext']),
-    features: new Set(['expression', 'partial', 'nullsOrder', 'opsClass', 'include', 'jsonPath']),
+    types: typesWith(
+      ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat', 'fulltext'],
+      ['expression', 'partial', 'nullsOrder', 'opsClass', 'include', 'jsonPath'],
+    ),
     keywords: NONE,
     hints: NONE,
     inline: false,
   },
   /** v26.3 answers `hash` and `brin` "unimplemented", `ivfflat` "unrecognized"; no nulls order nor operator class. */
   cockroachdb: {
-    types: new Set(['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext']),
-    features: new Set(['expression', 'partial', 'include', 'jsonPath']),
+    types: typesWith(
+      ['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext'],
+      ['expression', 'partial', 'include', 'jsonPath'],
+    ),
     keywords: new Map([['vector', 'VECTOR INDEX']]),
     hints: new Map([['ivfflat', DECLARE_VECTOR]]),
     inline: true,
   },
   /** No vector index: MySQL 26.7 has no distance function outside HeatWave, and `VECTOR INDEX` is MariaDB's. */
   mysql: {
-    types: new Set(['btree', 'hash', 'fulltext']),
-    features: new Set(['expression', 'prefixLength', 'jsonPath', 'jsonArray']),
+    types: typesWith(['btree', 'hash', 'fulltext'], ['expression', 'prefixLength', 'jsonPath', 'jsonArray']),
     keywords: MYSQL_LIKE_KEYWORDS,
     hints: new Map(VECTOR_INDEX_TYPES.map((type) => [type, '. Vector search on MySQL needs HeatWave'])),
     inline: true,
@@ -57,8 +70,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
    * either. A vector index of its own, `CREATE VECTOR INDEX`, 11.7+.
    */
   mariadb: {
-    types: new Set(['btree', 'hash', 'fulltext', 'vector']),
-    features: new Set(['prefixLength']),
+    types: typesWith(['btree', 'hash', 'fulltext', 'vector'], ['prefixLength']),
     keywords: new Map([...MYSQL_LIKE_KEYWORDS, ['vector', 'VECTOR INDEX']]),
     hints: new Map([
       ['hnsw', DECLARE_VECTOR],
@@ -71,16 +83,28 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
    * the rowstore B-tree, since the index built in its place fails on a `VECTOR` or `nvarchar(max)` (Msg 1978).
    */
   mssql: {
-    types: new Set(['btree']),
-    features: new Set(['partial']),
+    types: typesWith(['btree'], ['partial']),
     keywords: NONE,
     hints: NONE,
     inline: false,
   },
   /** Every type builds a plain index, so an entity written for Postgres migrates; libSQL's vector is DiskANN. */
   sqlite: {
-    types: new Set(INDEX_TYPES),
-    features: new Set(['expression', 'partial', 'jsonPath']),
+    types: typesWith(INDEX_TYPES, ['expression', 'partial', 'jsonPath']),
+    keywords: NONE,
+    hints: NONE,
+    inline: false,
+  },
+  /**
+   * A key spec says a plain key or `'text'`, and Atlas adds its vector search index, which pre-filters on fields
+   * instead of a predicate. A path inside a document, or each element of an array there, is a key like any other:
+   * a multikey index on an array.
+   */
+  mongodb: {
+    types: new Map([
+      ...typesWith(['btree', 'fulltext'], ['partial', 'jsonPath', 'jsonArray', 'fulltextPath']),
+      ['vectorSearch', new Set()],
+    ]),
     keywords: NONE,
     hints: NONE,
     inline: false,

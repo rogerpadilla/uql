@@ -9,6 +9,7 @@ import type {
   ColumnSchema,
   Except,
   ForeignKeySchema,
+  IndexEntry,
   IndexSchema,
   PrimaryKeySchema,
   QuerierPool,
@@ -19,11 +20,13 @@ import type {
   StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
+import { entryModifiers } from '../../util/indexEntry.util.js';
 import { cachedIn } from '../../util/object.util.js';
 import { sql } from '../../util/sql.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { knownDefault } from '../ddl/defaultSql.js';
+import { readIndexEntry } from './jsonIndexEntry.js';
 import { renamedTable, tableSchemasToAST } from './tableSchemaAST.js';
 
 /**
@@ -122,7 +125,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
           isUnique: unique.has(column.name),
         })),
         primaryKey,
-        indexes,
+        indexes: indexes.map((index) => ({ ...index, entries: index.entries.map(readEntry) })),
         foreignKeys,
         checks,
         triggers,
@@ -245,12 +248,18 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 }
 
+/** An entry the engine reports as an expression, read back as the JSON path uql compiled it from where it is one. */
+function readEntry(entry: IndexEntry<string>): IndexEntry<string> {
+  return entry.expression === undefined ? entry : { ...entryModifiers(entry), ...readIndexEntry(entry.expression) };
+}
+
 /** The columns a unique index makes unique alone: over that one plain column, unfiltered. The key's is not among them. */
 function uniqueColumns(indexes: readonly IndexSchema[]): Set<string> {
   return new Set(
-    indexes.flatMap(({ unique, where, entries }) =>
-      unique && !where && entries.length === 1 && !entries[0].expression ? [entries[0].column] : [],
-    ),
+    indexes.flatMap(({ unique, where, entries }) => {
+      const column = entries.length === 1 ? entries[0].column : undefined;
+      return unique && !where && column !== undefined ? [column] : [];
+    }),
   );
 }
 

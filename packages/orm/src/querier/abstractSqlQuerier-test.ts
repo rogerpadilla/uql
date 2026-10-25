@@ -771,24 +771,24 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(id).toBe(existingId);
   }
 
-  async shouldFindWith$excludeOmittingTheColumn() {
+  async shouldFindWithAFalsySelectOmittingTheColumn() {
     const id = await this.querier.insertOne(LedgerAccount, { name: 'Some Account' });
 
-    const [found] = await this.querier.findMany(LedgerAccount, { $exclude: { name: true } });
+    const [found] = await this.querier.findMany(LedgerAccount, { $select: { name: false } });
 
     expect(found.id).toBe(id);
     expect('name' in found).toBe(false);
   }
 
   /** Read with the parent, the children need no id of it, so the parent keeps what it selected. */
-  async shouldPopulateAToManyWhen$excludeSubtractsTheParentId() {
+  async shouldPopulateAToManyWhenAFalsySelectSubtractsTheParentId() {
     await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
 
     const [found] = await this.querier.findMany(InventoryAdjustment, {
-      $exclude: { id: true },
+      $select: { id: false },
       $populate: { itemAdjustments: { $select: { buyPrice: true }, $sort: { buyPrice: 1 } } },
     });
 
@@ -796,8 +796,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(found.itemAdjustments).toEqual([{ buyPrice: 50 }, { buyPrice: 300 }]);
   }
 
-  /** The children's own `$exclude` applies to what they answer under. */
-  async shouldPopulateAToManyWhen$excludeSubtractsTheChildForeignKey() {
+  /** The children's own falsy `$select` applies to what they answer under. */
+  async shouldPopulateAToManyWhenAFalsySelectSubtractsTheChildForeignKey() {
     await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
@@ -805,7 +805,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const [found] = await this.querier.findMany(InventoryAdjustment, {
       $populate: {
-        itemAdjustments: { $exclude: { inventoryAdjustmentId: true, number: true }, $sort: { buyPrice: 1 } },
+        itemAdjustments: { $select: { inventoryAdjustmentId: false, number: false }, $sort: { buyPrice: 1 } },
       },
     });
 

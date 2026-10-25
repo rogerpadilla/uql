@@ -1,9 +1,8 @@
 /**
  * Find-query input: a typo'd key fails in every clause, natively where typed against `Query<E>` and by
- * its own key constraint where the result captures it. A vector distance projection is annotated with
- * `WithProjection`. Type-checked by `bun run ts` only.
+ * its own key constraint where the result captures it. Type-checked by `bun run ts` only.
  */
-import type { Querier, WithProjection } from '../index.js';
+import type { Querier } from '../index.js';
 
 class Author {
   id!: number;
@@ -13,7 +12,6 @@ class Author {
 class Article {
   id!: number;
   title!: string;
-  embedding!: number[];
   author?: Author;
 }
 
@@ -34,11 +32,4 @@ export async function findInputSafety() {
   await querier.findMany(Article, { $sort: { titel: 1 } });
   // @ts-expect-error '$selct' is not a query clause
   await querier.findMany(Article, { $select: { id: true }, $selct: { title: true } });
-
-  // Vector-search results are plain entities; annotate with WithProjection to type the projected score.
-  const scored = (await querier.findMany(Article, {
-    $sort: { embedding: { $vector: [1], $project: 'similarity' } },
-  })) as WithProjection<Article, 'similarity'>[];
-  const similarity: number = scored[0].similarity;
-  void similarity;
 }

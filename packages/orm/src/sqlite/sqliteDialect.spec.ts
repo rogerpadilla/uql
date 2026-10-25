@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import {
   anyUuid,
   Company,
@@ -146,12 +146,11 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
   /** With no `$fields`, the FTS5 column filter names the columns of the fulltext index the entity declares. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
-    @Entity()
-    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
+    @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }),
@@ -164,8 +163,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldInsertTheDeclaredDefaultForAColumnARowLeavesOut() {
     @Entity()
     class Flagged {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String, defaultValue: 'active' }) status?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable().default('active')) status?: string | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, Flagged, [{ id: 1, status: 'x' }, { id: 2 }]),

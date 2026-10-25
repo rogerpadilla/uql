@@ -1,24 +1,36 @@
-import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
-import { sql } from '../util/sql.js';
+import { Computed, Entity, f, Field, ManyToOne } from '../entity/index.js';
+import { memberRefs, sql } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable } from '../util/triggerWrite.js';
 import type { RefMap, TriggerOptions } from './index.js';
 
 @Entity()
 class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: String }) searchVector?: string | null;
-  @Field({ type: String }) status?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Field(f.string().nullable()) searchVector?: string | null;
+  @Field(f.string().nullable()) status?: string | null;
 }
 
 @Entity()
 class PostAudit {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, references: () => Post }) postId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Post),
+  )
+  postId?: number | null;
   @ManyToOne({ entity: () => Post, references: (audit) => audit.postId }) post?: Post;
-  @Field({ type: String }) status?: string | null;
-  @Field({ type: Number }) hits?: number | null;
-  @Field({ type: Number, computed: sql`1` }) readonly score?: number | null;
+  @Field(f.string().nullable()) status?: string | null;
+  @Field(f.number().nullable()) hits?: number | null;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`1`),
+  )
+  readonly score?: number | null;
 }
 
 const tsvectorOf = (newRow: RefMap<Post>) => sql`${newRow.searchVector} := to_tsvector('english', ${newRow.body});`;
@@ -26,11 +38,13 @@ const tsvectorOf = (newRow: RefMap<Post>) => sql`${newRow.searchVector} := to_ts
 // An insert body reads the incoming row.
 () => ({ on: 'beforeInsert', run: (newRow) => tsvectorOf(newRow) }) satisfies TriggerOptions<Post>;
 
+declare const post: RefMap<Post>;
+
 // An update body reads either row, or both.
 () =>
   ({
     on: 'beforeUpdate',
-    of: (post) => [post.body],
+    of: [post.body],
     run: (newRow, oldRow) => sql`${newRow.status} := coalesce(${oldRow.status}, 'new');`,
   }) satisfies TriggerOptions<Post>;
 
@@ -80,11 +94,13 @@ const logOld = (_newRow: unknown, oldRow: RefMap<Post>) => sql`PERFORM log(${old
     run: { postgres: (newRow) => sql`PERFORM f(${newRow.id});`, mysql: (newRow) => sql`CALL f(${newRow.id});` },
   }) satisfies TriggerOptions<Post>;
 
-// @ts-expect-error a field the entity does not have cannot be watched
-() => ({ on: 'beforeUpdate', of: (post) => [post.nope], run: () => sql`x` }) satisfies TriggerOptions<Post>;
+// @ts-expect-error another entity's column cannot be watched
+() => ({ on: 'beforeUpdate', of: [memberRefs<PostAudit>().hits], run: () => sql`x` }) satisfies TriggerOptions<Post>;
 
 // @ts-expect-error `of` names columns that only an update has two sides of
-() => ({ on: 'beforeInsert', of: (post) => [post.body], run: () => sql`x` }) satisfies TriggerOptions<Post>;
+() => ({ on: 'beforeInsert', of: [memberRefs<Post>().body], run: () => sql`x` }) satisfies TriggerOptions<Post>;
+
+() => ({ on: 'beforeUpdate', of: [memberRefs<Post>().body], run: () => sql`x` }) satisfies TriggerOptions<Post>;
 
 // @ts-expect-error an insert has no previous row to read
 () => ({ on: 'beforeInsert', run: (_newRow, oldRow) => sql`${oldRow.body}` }) satisfies TriggerOptions<Post>;

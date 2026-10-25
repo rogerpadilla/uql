@@ -69,7 +69,7 @@ describe('DriftDetector', () => {
         mockTableNode('users', [
           { name: 'settings', defaultValue: { b: 1, a: [1, 2] } },
           { name: 'tags', defaultValue: ['x'] },
-          { name: 'at', defaultValue: new SqlExpression('currentTimestamp') },
+          { name: 'at', defaultValue: SqlExpression.named('currentTimestamp') },
         ]),
       );
       actual.addTable(

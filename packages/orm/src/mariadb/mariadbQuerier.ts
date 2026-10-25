@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import type { PoolConnection } from 'mariadb';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { RawRow } from '../type/index.js';
@@ -25,15 +26,13 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
    * the stream, which leaves the socket paused mid-result and the connection hung for its next statement.
    */
   override async *internalStream(query: string, values?: unknown[]) {
-    const stream = this.getConn().queryStream(query, toBindValues(values));
+    const stream: Readable & { close?(): void } = this.getConn().queryStream(query, toBindValues(values));
     try {
       for await (const row of stream) {
         yield decodeBigInts(row);
       }
     } finally {
-      if ('close' in stream && typeof stream.close === 'function') {
-        stream.close();
-      }
+      stream.close?.();
     }
   }
 

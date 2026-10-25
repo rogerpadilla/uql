@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createTableNode } from '../../schema/schemaAST.js';
 import type { IndexNode } from '../../schema/types.js';
-import type { IndexColumnSchema } from '../../type/index.js';
-import { buildIndexDecoratorSource, isPlainFieldIndex } from './indexDecoratorSource.js';
+import type { IndexEntry } from '../../type/index.js';
+import { buildIndexEntrySource, isPlainFieldIndex } from './indexEntrySource.js';
 
 const asIs = (column: string) => column;
 
-function indexNode(entries: IndexColumnSchema[], rest: Partial<IndexNode> = {}): IndexNode {
+function indexNode(entries: IndexEntry<string>[], rest: Partial<IndexNode> = {}): IndexNode {
   return { name: 'idx', table: createTableNode('t'), entries, unique: false, ...rest };
 }
 
@@ -24,16 +24,21 @@ function evaluateFirstTag(source: string): string {
   return new Function(`return ${source.slice(start + 3, end + 1)};`)();
 }
 
-describe('buildIndexDecoratorSource', () => {
+describe('buildIndexEntrySource', () => {
   /**
    * A database reprints an expression as arbitrary text: multi-line, either quote, backslashes. Every
    * one of those turns a hand-rolled string literal into source that does not compile, or - worse -
    * into source that compiles to a different index.
    */
+  it('should write a JSON path value type named by its engine, not by a constructor', () => {
+    const source = buildIndexEntrySource(indexNode([{ json: 'kind', path: 'price', type: 'decimal' }]), asIs, 'idx');
+    expect(source).toContain("{ column: idx.kind.price, type: 'decimal' }");
+  });
+
   it('should emit SQL that survives being read back as TypeScript', () => {
     const sql = '(\nCASE\n  WHEN name ~ \'\\d+\' THEN "col"\n END)';
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs, 't');
+    const source = buildIndexEntrySource(indexNode([{ expression: sql }]), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(sql);
   });
@@ -41,7 +46,7 @@ describe('buildIndexDecoratorSource', () => {
   it('should emit SQL that would otherwise end or interpolate the template', () => {
     const sql = 'name = `a` || ${b}';
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs, 't');
+    const source = buildIndexEntrySource(indexNode([{ expression: sql }]), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(sql);
   });
@@ -49,16 +54,16 @@ describe('buildIndexDecoratorSource', () => {
   it('should emit a predicate the same way', () => {
     const where = "name ~ '\\d+'";
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: 'name' }], { where }), asIs, 't');
+    const source = buildIndexEntrySource(indexNode([{ column: 'name' }], { where }), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(where);
   });
 
   it('should write an expression as raw in the list, its modifiers wrapped the way a column has them', () => {
-    const index = indexNode([{ column: 'lower(email)', expression: true, order: 'desc' }, { column: 'email' }]);
+    const index = indexNode([{ expression: 'lower(email)', order: 'desc' }, { column: 'email' }]);
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [{ column: sql`lower(email)`, order: 'desc' }, t.email], { name: 'idx' })",
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([{ column: sql`lower(email)`, order: 'desc' }, t.email], 'idx')",
     );
   });
 
@@ -67,52 +72,75 @@ describe('buildIndexDecoratorSource', () => {
       include: ['größe'],
     });
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [t.dueño, t['first-name'], t['o\\'clock']], { name: 'idx', include: (t) => [t.größe] })",
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([t.dueño, t['first-name'], t['o\\'clock']], { name: 'idx', include: [t.größe] })",
     );
   });
 
   /** Left off, the entity it writes searches with `simple` and ranks every column alike. */
+  /** Every engine reports a path inside a document as one, which the refs read the way a query names it. */
+  it('should read a JSON path off its column ref, and the whole document where it names none', () => {
+    const index = indexNode([
+      { json: 'profile', path: 'theme.color' },
+      { json: 'tags', order: 'desc' },
+    ]);
+
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([t.profile.theme.color, { column: t.tags, order: 'desc' }], 'idx')",
+    );
+  });
+
+  /** Left off, a number would be indexed as text, which no query comparing it as a number reads. */
+  it('should keep the type a JSON path is read as, and its key length', () => {
+    const index = indexNode([
+      { json: 'kind', path: 'score', type: Number },
+      { json: 'kind', path: 'name', charLength: 32 },
+      { json: 'kind', path: 'tags', type: [String], charLength: 20 },
+    ]);
+
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([{ column: t.kind.score, type: Number }, { column: t.kind.name, charLength: 32 }, { column: t.kind.tags, type: [String], charLength: 20 }], 'idx')",
+    );
+  });
+
   it("should keep a fulltext index's config and its entries' weights", () => {
     const index = indexNode([{ column: 'title', weight: 3 }, { column: 'body' }], {
       type: 'fulltext',
       config: 'english',
     });
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [{ column: t.title, weight: 3 }, t.body], { name: 'idx', type: 'fulltext', config: 'english' })",
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([{ column: t.title, weight: 3 }, t.body], { name: 'idx', type: 'fulltext', config: 'english' })",
     );
   });
 
   it('should leave off the config and the weight an index has without stating one', () => {
     const index = indexNode([{ column: 'title', weight: 1 }], { type: 'fulltext', config: 'simple' });
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [t.title], { name: 'idx', type: 'fulltext' })",
-    );
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe("index([t.title], { name: 'idx', type: 'fulltext' })");
   });
 
   it('should write a name holding a quote as source that still parses', () => {
     const index = indexNode([{ column: 'a' }, { column: 'b' }], { name: "it's" });
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe("@Index((t) => [t.a, t.b], { name: 'it\\'s' })");
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe("index([t.a, t.b], 'it\\'s')");
   });
 
   it('should give a vector index the distance it was read back with', () => {
     const index = indexNode([{ column: 'embedding' }], { type: 'hnsw', distance: 'cosine' });
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toContain("type: 'hnsw', distance: 'cosine'");
+    expect(buildIndexEntrySource(index, asIs, 't')).toContain("type: 'hnsw', distance: 'cosine'");
   });
 
   it("should keep a vector index's build parameters", () => {
     const hnsw = indexNode([{ column: 'embedding' }], { type: 'hnsw', distance: 'l2', m: 16, efConstruction: 64 });
     const ivfflat = indexNode([{ column: 'embedding' }], { type: 'ivfflat', distance: 'l2', lists: 100 });
 
-    expect(buildIndexDecoratorSource(hnsw, asIs, 't')).toBe(
-      "@Index((t) => [t.embedding], { name: 'idx', type: 'hnsw', distance: 'l2', m: 16, efConstruction: 64 })",
+    expect(buildIndexEntrySource(hnsw, asIs, 't')).toBe(
+      "index([t.embedding], { name: 'idx', type: 'hnsw', distance: 'l2', m: 16, efConstruction: 64 })",
     );
-    expect(buildIndexDecoratorSource(ivfflat, asIs, 't')).toBe(
-      "@Index((t) => [t.embedding], { name: 'idx', type: 'ivfflat', distance: 'l2', lists: 100 })",
+    expect(buildIndexEntrySource(ivfflat, asIs, 't')).toBe(
+      "index([t.embedding], { name: 'idx', type: 'ivfflat', distance: 'l2', lists: 100 })",
     );
   });
 
@@ -120,22 +148,22 @@ describe('buildIndexDecoratorSource', () => {
     const index = indexNode(
       [
         { column: 'code', opsClass: 'text_pattern_ops' },
-        { column: 'slug', length: 10 },
+        { column: 'slug', prefixLength: 10 },
       ],
       {
         unique: true,
       },
     );
 
-    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
-      "@Index((t) => [{ column: t.code, opsClass: 'text_pattern_ops' }, { column: t.slug, length: 10 }], { name: 'idx', unique: true })",
+    expect(buildIndexEntrySource(index, asIs, 't')).toBe(
+      "index([{ column: t.code, opsClass: 'text_pattern_ops' }, { column: t.slug, prefixLength: 10 }], { name: 'idx', unique: true })",
     );
   });
 
-  // `@Index` requires a distance beside a vector type, so a type with no recoverable metric would
+  // An index entry requires a distance beside a vector type, so a type with no recoverable metric would
   // generate an entity that does not compile.
   it('should leave off a vector type whose metric it cannot recover', () => {
-    const source = buildIndexDecoratorSource(indexNode([{ column: 'embedding' }], { type: 'hnsw' }), asIs, 't');
+    const source = buildIndexEntrySource(indexNode([{ column: 'embedding' }], { type: 'hnsw' }), asIs, 't');
 
     expect(source).not.toContain('hnsw');
   });
@@ -162,7 +190,7 @@ describe('isPlainFieldIndex', () => {
   });
 
   it('should not carry an expression or a stored order on the field', () => {
-    expect(isPlainFieldIndex(indexNode([{ column: 'lower(email)', expression: true }]))).toBe(false);
+    expect(isPlainFieldIndex(indexNode([{ expression: 'lower(email)' }]))).toBe(false);
     expect(isPlainFieldIndex(indexNode([{ column: 'email', order: 'desc' }]))).toBe(false);
   });
 });

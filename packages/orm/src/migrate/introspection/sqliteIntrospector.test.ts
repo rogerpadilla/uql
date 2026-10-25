@@ -22,7 +22,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     return 1;
   }
 
-  /** `PRAGMA index_info` names an expression entry `null`: it is reported as an expression, not a column called `null`. */
+  /** `PRAGMA index_info` names an expression entry `null`: it is reported as the expression its statement wrote. */
   async shouldReportAnExpressionEntryAsAnExpression() {
     const schema = await this.probe('probe_expression', async (querier, table) => {
       await querier.run(sql.text(`CREATE TABLE ${table} (name TEXT)`));
@@ -30,7 +30,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     });
 
     expect(schema.indexes).toEqual([
-      { name: 'probe_lower_idx', unique: false, entries: [{ column: '', expression: true }] },
+      { name: 'probe_lower_idx', unique: false, entries: [{ expression: 'lower(name)' }] },
     ]);
   }
 
@@ -67,17 +67,17 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
       blank: null,
-      today: new SqlExpression('sql', '(CURRENT_DATE)'),
+      today: SqlExpression.raw('(CURRENT_DATE)'),
       word: 'x',
       quoted: "it's",
       negative: -3,
       fraction: 1.5,
       truthy: 1,
       falsy: 0,
-      computed: new SqlExpression('sql', "(lower('Y'))"),
+      computed: SqlExpression.raw("(lower('Y'))"),
       bare: undefined,
-      clock: new SqlExpression('sql', '(CURRENT_TIMESTAMP)'),
-      dated: new SqlExpression('currentDate'),
+      clock: SqlExpression.raw('(CURRENT_TIMESTAMP)'),
+      dated: SqlExpression.named('currentDate'),
       spelled: 'CURRENT_TIMESTAMP',
     });
   }

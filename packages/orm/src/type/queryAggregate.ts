@@ -1,5 +1,5 @@
 import { UqlUsageError } from '../util/uqlError.js';
-import type { FieldKey, FieldKeyOf, RelationKey, RelationTarget } from './entity.js';
+import type { FieldKey, FieldKeyOf, IsUnion, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 import type { ExactlyOne, IsMany } from './utility.js';
@@ -107,17 +107,27 @@ type ColumnTypedOp = SummingOp | OpsOf<'$min' | '$max'>;
 
 /**
  * A field a group key reads, by the path to it: `{ orderId: true }`, or through a to-one relation,
- * `{ transaction: { orderId: true } }`. A to-many is `never`, since joining one multiplies the rows.
+ * `{ transaction: { orderId: true } }`. A to-many is `never`, since joining one multiplies the rows. Every key
+ * is optional, which a literal checks against cheaply; {@link OnePath} says a captured one names a single field.
  */
-export type QueryGroupRef<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = ExactlyOne<
-  Required<{
-    [P in K]: P extends RelationKey<E>
-      ? IsMany<E[P]> extends true
-        ? never
-        : QueryGroupRef<RelationTarget<E[P]>>
-      : true;
-  }>
->;
+export type QueryGroupRef<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
+  readonly [P in K]?: P extends RelationKey<E>
+    ? IsMany<E[P]> extends true
+      ? never
+      : QueryGroupRef<RelationTarget<E[P]>>
+    : true;
+};
+
+/** `unknown` where a path names one key at each step down to a `true`, `never` otherwise. */
+type OnePath<R> = R extends object
+  ? [keyof R] extends [never]
+    ? never
+    : true extends IsUnion<keyof R>
+      ? never
+      : R[keyof R] extends true
+        ? unknown
+        : OnePath<R[keyof R]>
+  : never;
 
 /** The columns to group by: a field switched on, `{ status: true }`, or an alias for a field a path reads. */
 export type QueryGroupMap<E> = { readonly [key: string]: true | QueryGroupRef<E> };
@@ -218,7 +228,7 @@ type ClosedAggregateQuery<E, G, A> = {
    * an alias for a to-one relation's field by the path to it, `{ orderId: { transaction: { orderId: true } } }`.
    */
   readonly $group?: Readonly<QuerySelect<E, FieldKey<E>, true>> & {
-    readonly [K in Exclude<keyof G, FieldKey<E>>]: QueryGroupRef<E>;
+    readonly [K in Exclude<keyof G, FieldKey<E>>]: QueryGroupRef<E> & OnePath<G[K]>;
   };
 
   /**
@@ -228,16 +238,23 @@ type ClosedAggregateQuery<E, G, A> = {
   readonly $select?: { readonly [K in keyof A]: K extends keyof G ? never : QueryAggregateFn<E> };
 
   /** Filtering after grouping, by a result column, each value typed as that column is. */
-  readonly $having?: {
-    readonly [K in keyof AggregateRow<E, G, A>]?: QueryWhereFieldValue<AggregateRow<E, G, A>[K]>;
-  };
+  readonly $having?: HavingOf<AggregateRow<E, G, A>>;
 
   /**
    * Sort the aggregated results by a grouped column or a computed alias - an aggregate's rows are
    * its groups, so any other entity field names a value the statement never produced.
    */
-  readonly $sort?: { readonly [K in keyof AggregateRow<E, G, A>]?: QuerySortDirection };
+  readonly $sort?: SortOf<AggregateRow<E, G, A>>;
 } & QueryPager;
+
+/**
+ * A `$having` over a row's columns, each value typed as its column is. Mapped over the row once it is resolved,
+ * which TypeScript does once, where mapping its key set reads each column back through the row.
+ */
+type HavingOf<R> = { readonly [K in keyof R]?: QueryWhereFieldValue<R[K]> };
+
+/** A `$sort` over a row's columns, mapped as {@link HavingOf} is. */
+type SortOf<R> = { readonly [K in keyof R]?: QuerySortDirection };
 
 /** The `$group` and `$select` maps of a captured aggregate query, or none where it names none. */
 type AggregateGroup<Q> = Q extends { readonly $group?: infer G } ? NonNullable<G> : {};

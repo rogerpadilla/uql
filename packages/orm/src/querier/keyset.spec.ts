@@ -1,40 +1,49 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
+import { Computed, Entity, f, Field, getMeta, ManyToOne, OneToMany, removeEntity } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import type { Json, QueryKeyset } from '../type/index.js';
 import { sql } from '../util/sql.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
 
-@Entity()
-@Index((order) => [order.region, order.serial], { unique: true })
-@Index((order) => [order.batch], { unique: true, where: { status: 'open' } })
+@Entity({
+  indexes: (order, index) => [
+    index([order.batch], { unique: true, where: { status: 'open' } }),
+    index([order.region, order.serial], { unique: true }),
+  ],
+})
 class Order {
-  @Id({ type: String }) id?: string;
-  @Field({ type: Number }) createdAt?: number | null;
-  @Field({ type: String, unique: true, nullable: false }) code?: string;
-  @Field({ type: String, unique: true }) ref?: string | null;
-  @Field({ type: String, nullable: false }) region?: string;
-  @Field({ type: Number, nullable: false }) serial?: number;
-  @Field({ type: String }) batch?: string | null;
-  @Field({ type: String }) status?: string | null;
-  @Field({ type: Date }) placedAt?: Date | null;
-  @Field({ type: BigInt }) wide?: bigint | null;
-  @Field({ type: 'jsonb' }) meta?: Json<{ rank?: number }> | null;
-  @Field({ type: 'blob' }) digest?: Uint8Array | null;
-  @Field({ type: Date, precision: 6 }) exactAt?: Date | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.number().nullable()) createdAt?: number | null;
+  @Field(f.string().unique()) code?: string;
+  @Field(f.string().nullable().unique()) ref?: string | null;
+  @Field(f.string()) region?: string;
+  @Field(f.number()) serial?: number;
+  @Field(f.string().nullable()) batch?: string | null;
+  @Field(f.string().nullable()) status?: string | null;
+  @Field(f.date().nullable()) placedAt?: Date | null;
+  @Field(f.bigint().nullable()) wide?: bigint | null;
+  @Field(f.jsonb().nullable()) meta?: Json<{ rank?: number }> | null;
+  @Field(f.column('blob').nullable()) digest?: Uint8Array | null;
+  @Field(f.date().nullable().precision(6)) exactAt?: Date | null;
   /** A type of the engine's own, which no column family names, so only its value can say what it holds. */
-  @Field({ type: String, columnType: sql`point` }) spot?: string | null;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
-  @Field({ references: () => Customer }) customerId?: string | null;
+  @Field(
+    f
+      .string()
+      .nullable()
+      .columnType(sql`point`),
+  )
+  spot?: string | null;
+  @Field(f.vector(3).nullable()) embedding?: number[] | null;
+  @Field(f.references(() => Customer).nullable()) customerId?: string | null;
   @ManyToOne({ entity: () => Customer, references: (order) => order.customerId }) customer?: Customer;
 }
 
 @Entity()
 class Customer {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) name?: string | null;
-  @Field({ computed: (customer) => customer.orders.count() }) orderCount?: number;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) name?: string | null;
+  @Computed((customer) => customer.orders.count()) orderCount?: number;
   @OneToMany({ entity: () => Order, mappedBy: (order) => order.customer }) orders?: Order[];
 }
 
@@ -194,8 +203,7 @@ describe('keysetRead', () => {
   });
 
   it('should carry an excluded sort key by reading the projection out', () => {
-    const read = lowest({ $exclude: { createdAt: true, meta: true }, $sort: { createdAt: -1, id: 1 }, $limit: 1 });
-    expect(read.query.$exclude).toBeUndefined();
+    const read = lowest({ $select: { createdAt: false, meta: false }, $sort: { createdAt: -1, id: 1 }, $limit: 1 });
     expect(read.query.$select).toEqual(
       Object.fromEntries(
         [

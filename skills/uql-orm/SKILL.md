@@ -10,7 +10,7 @@ description: >
 
 # UQL
 
-Entities are classes. A query is a JSON object checked key by key against the entity, and it runs the same on every supported database. There is no schema file, no generated client and no query builder.
+An entity is a decorated class, or a schema its row type is derived from. A query is a JSON object checked key by key against the entity, and it runs the same on every supported database. There is no schema file, no generated client and no query builder.
 
 Full docs are Markdown: the index at https://uql-orm.dev/llms.txt, and each page at its URL plus `.md`. Read the page for the task before guessing an option.
 
@@ -42,14 +42,19 @@ Driver entry points: `uql-orm/postgres`, `mysql`, `mariadb`, `sqlite`, `mongodb`
 ## Entities
 
 ```ts
-import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+import { Entity, f, Field, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity()
 export class User {
-  @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() })
-  id!: string;
+  @Field(
+    f
+      .uuid()
+      .id()
+      .onInsert(() => crypto.randomUUID()),
+  )
+  id?: string;
 
-  @Field({ type: String, unique: true, nullable: false })
+  @Field(f.string().unique())
   email!: string;
 
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
@@ -58,13 +63,13 @@ export class User {
 
 @Entity()
 export class Post {
-  @Id({ type: Number })
-  id!: number;
+  @Field(f.number().id())
+  id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ references: () => User })
+  @Field(f.references(() => User).nullable())
   authorId?: string | null;
 
   @ManyToOne({ entity: () => User, references: (post) => post.authorId })
@@ -72,20 +77,66 @@ export class Post {
 }
 ```
 
-- A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. The base needs no `@Entity()` unless it is a table.
-- Every `@Field` states its `type`: `String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`. A foreign key takes `references` and inherits the target's type. A JSON column of no fixed shape is a bare `Json`.
-- A column is nullable unless it says `nullable: false`. Its property must admit `null` (`title?: string | null`).
-- Declare a `nullable: false` column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable, `eager: false`, computed fields and relations. uql fills a single-column key and a `version`.
-- A `nullable: false` field a default fills (`defaultValue`, `onInsert`) is `!` and listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
-- `defaultValue` is a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
-- `Date` is an instant, stored in UTC to the millisecond on every engine. `'decimal'` is exact text (`price?: string | null`). `type: Number` with `precision`/`scale` opts into a rounding JS number.
-- Members are named by callbacks, never strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
+- A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal()`, `f.decimal(precision)`, `f.decimal(precision, scale)`, `f.boolean()`, `f.date()`, `f.json(shape?)`, `f.jsonb(shape?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other column type, and `f.references(() => Target)` for a foreign key, which takes the target's key type. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A bound holds in either order around `.columnType('char')`, but not around a `sql` type, which carries its own.
+- A column is NOT NULL unless `.nullable()`; its property then admits `null` (`title?: string | null`).
+- Declare a NOT NULL column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable, `.eager(false)`, computed fields and relations. uql fills a single-column key and a version.
+- A NOT NULL field a default fills (`.default()`, `.onInsert()`) is `!` and listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
+- `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
+- A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring indexes, filters, checks or triggers but no table is `@Entity({ abstract: true, ... })`.
+- `Date` is an instant, stored in UTC to the millisecond on every engine. `f.decimal()` is exact text (`price?: string | null`). `f.number().precision(10).scale(2)` opts into a rounding JS number.
+- Members are named by callbacks, never strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`. Either may be left out where only one member fits: a decorated many-to-one's one foreign key to its target, a one-to-many's one many-to-one pointing back.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names the junction entity. `cascade: true` writes related rows in the same transaction; an update replaces a to-many's rows.
-- **MongoDB:** a key declared `Number` and left to the database is refused, since MongoDB only generates ObjectIds. Declare the key a `String`, or give it an `onInsert` generator.
-- Optimistic lock: `@Field({ type: Number, version: true })` with `[versionKey]?: 'version'` on the class. An update must carry the version it read. A stale one throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409).
-- Computed fields are `readonly` and read in any query that names them. As SQL over the row ``(u) => sql`${u.first} || ' ' || ${u.last}` ``, or as a relation aggregate: `@Field({ computed: (user) => user.resources.count() })`. `stored: true` makes a generated column.
-- Partial index: `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })`. Write the predicate as a query, not `sql`.
-- Triggers run in the database: `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], run })`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. A trigger's writes skip uql's fills and entity filters. MongoDB has no triggers: https://uql-orm.dev/entities/triggers.md
+- **MongoDB:** a key declared `f.number()` and left to the database is refused, since MongoDB only generates ObjectIds. Declare the key a string, or give it an `.onInsert()` generator.
+- Optimistic lock: `@Field(f.version())` with `[versionKey]?: 'version'` on the class. An update must carry the version it read. A stale one throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409).
+- Computed fields are `readonly` and read in any query that names them. As SQL over the row, ``@Computed((u) => f.string().as(sql`${u.first} || ' ' || ${u.last}`))``, `.stored()` making a generated column, or as a relation aggregate: `@Computed((user) => user.resources.count())`.
+- Indexes, checks, filters and triggers are `@Entity` options, each entry made by the helper the callback is handed. Partial index: `@Entity({ indexes: (post, index) => [index([post.authorId], { where: { archived: { $ne: true } } })] })`; a string second argument is the index's name. Write the predicate as a query, not `sql`.
+- JSON path index: read the path off the column's ref, `index([user.settings.theme])` for text, `index([{ column: user.settings.rating, type: Number }])` for any other value, `type: [String]` for an array's elements. MySQL keys a text path or element as `CHAR(n)`, `{ column: user.tags, type: [String], charLength: 64 }`, and a `TEXT` column by a prefix, `{ column: post.body, prefixLength: 64 }`.
+- Triggers run in the database: `@Entity({ triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })] })`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. A trigger's writes skip uql's fills and entity filters. MongoDB has no triggers: https://uql-orm.dev/entities/triggers.md
+
+### Schema entities
+
+The same entities declared as data, the row type derived:
+
+```ts
+import { defineEntity, f, sql } from 'uql-orm';
+
+export const Author = defineEntity({
+  name: 'Author',
+  fields: {
+    id: f.number().id(),
+    name: f.string(),
+    settings: f.json({ theme: String, 'bio?': String }).nullable(),
+  },
+}).relations(
+  (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
+  (agg) => ({ bookCount: () => agg.books.count(), topStock: () => agg.books.max((book) => book.stock) }),
+);
+export type Author = InstanceType<typeof Author>;
+
+export const Book = defineEntity({
+  name: 'Book',
+  fields: {
+    id: f.number().id(),
+    title: f.string(),
+    stock: f.number().default(0),
+    authorId: f.number(),
+    editorId: f.number().nullable(),
+  },
+})
+  .computed((book) => ({ shout: f.string().as(sql`upper(${book.title})`) }))
+  .indexes((book, index) => [index([book.title])])
+  .hooks({ beforeInsert: [(book) => void (book.stock ??= 0)] })
+  .references({ editorId: { entity: () => Author, onDelete: 'SET NULL' } })
+  .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }));
+```
+
+- Each field is a column builder, as in the decorated form. The row follows from them: a key, a version and a NOT NULL column are always present, a `.nullable()` one reads `| null`; a default (`.default()`, `.onInsert()`, `.autoIncrement()`) makes it optional on insert; `f.enum()` gives the literal union. No `!`, `?` or brands to write.
+- The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `references` points a foreign key with no relation at its target; `relations` comes last. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends` and `fields`.
+- Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. `manyToOne` names its `references`; `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
+- `relations`' second callback reads values over a to-many as columns: `(agg) => ({ bookCount: () => agg.books.count() })`.
+- A hook is a function of the row and `{ querier, onCommit }`.
+- A JSON column's payload is its shape, `f.json(shape)`: `String`, `Number` or `Boolean`, an object of shapes, `[shape]` for an array, `'key?'` for an optional member. Without one, any path reads.
+- Behaviour is a function of the row, `label(author: Author)`: a row reads back as a plain object, so a method would never be there.
 
 ## Queries
 
@@ -103,7 +154,7 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- Query keys: `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
+- Query keys: `$select`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`. `$count: { posts: true }` counts a to-many under `_count` without loading it. `$select: { password: false }` reads every field but `password`.
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first, or the query's `$entity`. Signatures: https://uql-orm.dev/querying/methods.md
 - Results are narrowed to what the query selected and populated, at every depth of `$populate`. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`, or `QueryFindResult<User, typeof query>` for a query declared `as const satisfies Query<User>`. A function forwarding a query keeps the narrowing by typing it `<E extends object, const Q extends Query<E>>(entity: Type<E>, q: Captured<Query<E>, Q>): Promise<QueryFindResult<E, Q>[]>`; typed `Query<E>`, it reads whole rows.
 - `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent. A populated to-many is always a list, empty when there are no children. A to-one is optional unless `$required: true`, which keeps only the parents that have one.
@@ -111,7 +162,7 @@ const users = await pool.findMany(User, {
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`, `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`, `$isNotNull`. Combine with `$and`, `$or`, `$not`, `$nor`. `$regex` is case-sensitive unless the pattern opens with `(?i)`.
 - An `undefined` anywhere in `$where` throws. Leave the key out to skip the filter (`...(email && { email })`), or name `null`.
 - NULL compares as the engine does: on SQL, `$ne`, `$nin`, `$not` and `$nor` drop NULL rows, where MongoDB keeps them. To keep them, name NULL: `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`.
-- `findManyPage(User, { $sort: { createdAt: -1, id: 1 }, $limit: 20, $after })` pages by cursor, so page 1,000 costs what page 1 does. It returns `{ items, startCursor, endCursor, hasNextPage, hasPrevPage }`. `$sort` must end in the key or a unique `nullable: false` field, and takes no `$skip`.
+- `findManyPage(User, { $sort: { createdAt: -1, id: 1 }, $limit: 20, $after })` pages by cursor, so page 1,000 costs what page 1 does. It returns `{ items, startCursor, endCursor, hasNextPage, hasPrevPage }`. `$sort` must end in the key or a unique NOT NULL field, and takes no `$skip`.
 - `upsertOne(Entity, { email: true }, row, update?)`: a conflicting row takes `update`, an update payload with operators. Without `update`, a conflicting row takes the payload but keeps its own key. Resolves to the row's id.
 - Writes take `{ returning: { id: true } }` as their last argument and resolve to those rows. Without it, inserts and upserts resolve to ids, and updates and deletes to a count.
 - `updateMany` and `deleteMany` that name no rows throw: no `$where` holding a value, and no `$limit`. Pass `{ unfiltered: true }` to mean the whole table.

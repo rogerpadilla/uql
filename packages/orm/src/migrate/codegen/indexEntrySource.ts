@@ -1,43 +1,55 @@
 import type { IndexNode } from '../../schema/types.js';
-import { type IndexColumnSchema, isVectorIndexType } from '../../type/index.js';
+import { type IndexEntry, type IndexValueType, isVectorIndexType } from '../../type/index.js';
 import { fulltextConfig } from '../../util/dialect.util.js';
+import { jsonPathKeys } from '../../util/field.util.js';
+import { isElementsType } from '../../util/indexEntry.util.js';
 import { memberSource, quoted, sqlTag } from './sourceLiteral.js';
 
-/** What building an index's decorator source needs besides the index itself. */
+/** What building an `indexes` entry's source needs besides the index itself. */
 interface IndexSourceContext {
-  /** The callback's parameter name, such as `user` in `@Index((user) => [...])`. */
+  /** The callback's parameter name, such as `user` in `columns: (user) => [...]`. */
   readonly param: string;
   /** The property a column maps to. */
   readonly propertyName: (column: string) => string;
 }
 
-type EntrySource = (entry: IndexColumnSchema) => readonly string[];
+type EntrySource = (entry: IndexEntry<string>) => readonly string[];
 
 /**
- * The options each field of an index entry writes into `@Index`, in emit order; `satisfies` forces every new
+ * The options each field of an index entry writes, in emit order; `satisfies` forces every new
  * field to be listed. Defaults are skipped: Postgres reports each entry in full (`order: 'asc', nulls: 'last'`
  * on a plain column), and writing that out would bake its defaults into every entity.
  */
 const ENTRY_MODIFIER_SOURCE = {
+  type: (entry) => (entry.type === undefined ? [] : [`type: ${valueTypeSource(entry.type)}`]),
   order: (entry) => (entry.order === 'desc' ? [`order: 'desc'`] : []),
   opsClass: (entry) => (entry.opsClass ? [`opsClass: ${quoted(entry.opsClass)}`] : []),
-  length: (entry) => (entry.length === undefined ? [] : [`length: ${entry.length}`]),
+  prefixLength: (entry) => (entry.prefixLength === undefined ? [] : [`prefixLength: ${entry.prefixLength}`]),
+  charLength: (entry) => (entry.charLength === undefined ? [] : [`charLength: ${entry.charLength}`]),
   weight: (entry) => ((entry.weight ?? 1) === 1 ? [] : [`weight: ${entry.weight}`]),
   // Never written: only Postgres reports it, and on every entry.
   nulls: null,
-  // Written by `indexEntrySource` as the entry itself, ahead of its modifiers.
+  // Written by `entryTargetSource` as the entry itself, ahead of its modifiers.
   column: null,
+  json: null,
+  path: null,
   expression: null,
-  // Never written: introspection reads a JSON entry back as the expression the engine prints for it.
-  jsonPath: null,
-  jsonArray: null,
-} as const satisfies Record<keyof IndexColumnSchema, EntrySource | null>;
+} as const satisfies Record<keyof IndexEntry<string>, EntrySource | null>;
+
+/** A JSON path's value type as source: `Number`, `'decimal'`, or `[String]` for each element. */
+function valueTypeSource(type: IndexValueType): string {
+  if (isElementsType(type)) {
+    return `[${valueTypeSource(type[0])}]`;
+  }
+  return typeof type === 'string' ? quoted(type) : type.name;
+}
 
 type IndexOptionSource = (index: IndexNode, context: IndexSourceContext) => readonly string[];
 
-/** Each {@link IndexNode} field's `@Index` options, in emit order; `satisfies` forces a new field to be listed. */
+/** Each {@link IndexNode} field's index options, in emit order; `satisfies` forces a new field to be listed. */
 const INDEX_OPTION_SOURCE = {
-  name: (index) => (index.name ? [`name: ${quoted(index.name)}`] : []),
+  // Written by `buildIndexEntrySource` ahead of the rest, as the bare string when it is alone.
+  name: null,
   unique: (index) => (index.unique ? ['unique: true'] : []),
   type: (index) => (writesType(index) ? [`type: '${index.type}'`] : []),
   distance: (index) => (isVectorIndexType(index.type) && index.distance ? [`distance: '${index.distance}'`] : []),
@@ -52,9 +64,9 @@ const INDEX_OPTION_SOURCE = {
   where: (index) => (index.where ? [`where: ${sqlTag(index.where)}`] : []),
   include: (index, { param, propertyName }) => {
     const included = index.include?.map((column) => memberSource(param, propertyName(column))) ?? [];
-    return included.length ? [`include: (${param}) => [${included.join(', ')}]`] : [];
+    return included.length ? [`include: [${included.join(', ')}]`] : [];
   },
-  // Written as the decorator's first argument, not as an option.
+  // Written as the entry's `columns`, not as an option.
   entries: null,
   // Taken from the indexed field, never declared on the index.
   vectorType: null,
@@ -65,7 +77,7 @@ const INDEX_OPTION_SOURCE = {
 
 /**
  * Whether to write the index's type. `btree` is skipped: it is every engine's default and reported on every
- * index. So is a vector type whose distance introspection could not recover, since `@Index` requires a
+ * index. So is a vector type whose distance introspection could not recover, since an index entry requires a
  * `distance` beside a vector type and would not compile without one.
  */
 function writesType(index: IndexNode): boolean {
@@ -76,15 +88,15 @@ function writesType(index: IndexNode): boolean {
   );
 }
 
-function entryModifiers(entry: IndexColumnSchema): string[] {
+function entryModifierSources(entry: IndexEntry<string>): string[] {
   return Object.values(ENTRY_MODIFIER_SOURCE).flatMap((source) => source?.(entry) ?? []);
 }
 
 /**
- * Whether `@Field({ index })` can carry the whole index. It says only "this column is indexed under
+ * Whether `.index()` can carry the whole index. It says only "this column is indexed under
  * this name", and `unique` beside it that the index is unique, so anything else the index declares - an
  * expression, a predicate, an access method, stored columns, a stored order - has to be written out as
- * an `@Index` instead.
+ * an `indexes` entry instead.
  */
 export function isPlainFieldIndex(index: IndexNode): boolean {
   const entries = index.entries;
@@ -92,21 +104,21 @@ export function isPlainFieldIndex(index: IndexNode): boolean {
   return (
     entries.length === 1 &&
     entry !== undefined &&
-    !entry.expression &&
+    entry.column !== undefined &&
     index.where === undefined &&
     // Postgres names an access method on every index, so the default one still counts as plain.
     (index.type === undefined || index.type === 'btree') &&
     !index.include?.length &&
-    entryModifiers(entry).length === 0
+    entryModifierSources(entry).length === 0
   );
 }
 
 /**
- * One `@Index((user) => [...])` as source, for an index no `@Field` can express, its columns read off the
- * refs `param` names. Emits `sql` for an expression entry, so callers import `sql` when
- * {@link indexNeedsRaw} holds.
+ * One `@Entity` `indexes` entry as source, `index([user.email], { unique: true })`, for an index no column's
+ * `index()` can express, its columns read off the refs `param` names and a lone name written as the bare string.
+ * Emits `sql` for an expression entry, so callers import `sql` when {@link indexNeedsRaw} holds.
  */
-export function buildIndexDecoratorSource(
+export function buildIndexEntrySource(
   index: IndexNode,
   propertyName: (column: string) => string,
   param: string,
@@ -114,16 +126,33 @@ export function buildIndexDecoratorSource(
   const context = { param, propertyName };
   const entries = index.entries.map((entry) => indexEntrySource(entry, context)).join(', ');
   const options = Object.values(INDEX_OPTION_SOURCE).flatMap((source) => source?.(index, context) ?? []);
-  return `@Index((${param}) => [${entries}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''})`;
+  const name = index.name ? quoted(index.name) : undefined;
+  if (name !== undefined && options.length === 0) {
+    return `index([${entries}], ${name})`;
+  }
+  const written = name === undefined ? options : [`name: ${name}`, ...options];
+  return written.length ? `index([${entries}], { ${written.join(', ')} })` : `index([${entries}])`;
 }
 
-/** Whether emitting this index needs `sql` imported alongside `Index`. */
+/** Whether emitting this index needs `sql` imported. */
 export function indexNeedsRaw(index: IndexNode): boolean {
-  return Boolean(index.where) || index.entries.some((entry) => entry.expression);
+  return Boolean(index.where) || index.entries.some((entry) => entry.expression !== undefined);
 }
 
-function indexEntrySource(entry: IndexColumnSchema, { param, propertyName }: IndexSourceContext): string {
-  const column = entry.expression ? sqlTag(entry.column) : memberSource(param, propertyName(entry.column));
-  const modifiers = entryModifiers(entry);
-  return modifiers.length === 0 ? column : `{ column: ${column}, ${modifiers.join(', ')} }`;
+function indexEntrySource(entry: IndexEntry<string>, context: IndexSourceContext): string {
+  const target = entryTargetSource(entry, context);
+  const modifiers = entryModifierSources(entry);
+  return modifiers.length === 0 ? target : `{ column: ${target}, ${modifiers.join(', ')} }`;
+}
+
+/** What an entry indexes as source: a member, a JSON path read along one, or `sql`. */
+function entryTargetSource(entry: IndexEntry<string>, { param, propertyName }: IndexSourceContext): string {
+  if (entry.expression !== undefined) {
+    return sqlTag(entry.expression);
+  }
+  if (entry.column !== undefined) {
+    return memberSource(param, propertyName(entry.column));
+  }
+  const keys = entry.path ? jsonPathKeys(entry.path) : [];
+  return keys.reduce((source, key) => memberSource(source, key), memberSource(param, propertyName(entry.json)));
 }

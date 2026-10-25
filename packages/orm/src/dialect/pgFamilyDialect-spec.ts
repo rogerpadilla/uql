@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import {
   anyUuid,
   Company,
@@ -247,10 +247,22 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldUpsertWithTwoFallbackUpdateColumns() {
     @Entity({ name: 'UpsertFallbackWidget' })
     class UpsertFallbackWidget {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) email!: string | null;
-      @Field({ type: Number, onUpdate: () => 111 }) updatedAt?: number | null;
-      @Field({ type: String, onUpdate: () => 'v2' }) version?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) email!: string | null;
+      @Field(
+        f
+          .number()
+          .nullable()
+          .onUpdate(() => 111),
+      )
+      updatedAt?: number | null;
+      @Field(
+        f
+          .string()
+          .nullable()
+          .onUpdate(() => 'v2'),
+      )
+      version?: string | null;
     }
 
     const { sql: statement, values } = this.exec((ctx) =>
@@ -774,12 +786,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    * weight, the score over every column times the lightest plus each heavier column's own times the rest.
    */
   shouldSearchAndRankByAWeightedFulltextIndex() {
-    @Entity()
-    @Index((listing) => [{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' })
+    @Entity({
+      indexes: (listing, index) => [
+        index([{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' }),
+      ],
+    })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, Listing, {
@@ -798,12 +813,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   /** A search over other fields than the weighted index's ranks them alike: the weights belong to that index. */
   shouldRankUnweightedWhereTheFieldsAreNotTheWeightedIndexs() {
-    @Entity()
-    @Index((listing) => [{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' })
+    @Entity({
+      indexes: (listing, index) => [
+        index([{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' }),
+      ],
+    })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, Listing, {
@@ -839,8 +857,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldFormatVector() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, VectorItem, {
@@ -1272,7 +1290,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    * The children correlate on the parent's key without selecting it, so the parent keeps only what the
    * query asked for, and each child crosses JSON with its numbers as text.
    */
-  override shouldFind$excludeBesideAToMany() {
+  override shouldFindAFalsySelectBesideAToMany() {
     const children =
       `(SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json) FROM (SELECT "users"."id", "users"."companyId",` +
       ' "users"."creatorId", "users"."createdAt"::text "createdAt", "users"."updatedAt"::text "updatedAt",' +
@@ -1284,7 +1302,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ` "User"."name", "User"."email", ${children} FROM "User"`;
 
     expect(
-      this.exec((ctx) => this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } })).sql,
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } })).sql,
     ).toBe(expected);
     expect(
       this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } })).sql,
@@ -1470,12 +1488,11 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   /** With no `$fields`, the search runs over the columns of the fulltext index the entity declares, and under its config. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
-    @Entity()
-    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
+    @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string | null;
-      @Field({ type: String }) description?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) name?: string | null;
+      @Field(f.string().nullable()) description?: string | null;
     }
     const res = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
     expect(res.sql).toBe(` WHERE ${this.textSearch(['name', 'description'], 'simple')}$1)`);

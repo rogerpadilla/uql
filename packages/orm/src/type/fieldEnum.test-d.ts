@@ -1,47 +1,43 @@
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 
 @Entity()
 class Narrowed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ['draft', 'paid'] as const }) status?: 'draft' | 'paid' | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(['draft', 'paid']).nullable()) status?: 'draft' | 'paid' | null;
 }
 
 @Entity()
 class PropertyWiderThanEnum {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - the property admits a value the column would reject
-  @Field({ type: String, enum: ['draft', 'paid'] as const }) status?: 'draft' | 'paid' | 'void' | null;
+  @Field(f.enum(['draft', 'paid']).nullable()) status?: 'draft' | 'paid' | 'void' | null;
 }
 
 @Entity()
 class ValueOutsideFieldType {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - a number is not one of a String field's values
-  @Field({ type: String, enum: ['draft', 2] as const }) status?: 'draft' | 2 | null;
+  @Field(f.enum(['draft', 2]).nullable()) status?: 'draft' | 2 | null;
 }
 
 @Entity()
 class NumericNarrowed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, enum: [1, 2] as const }) level?: 1 | 2 | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum([1, 2]).nullable()) level?: 1 | 2 | null;
 }
 
 @Entity()
 class ValuesCannotBeStated {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - a set of dates is not something IN (...) can state
   @Field({ type: Date, enum: [new Date()] as const }) at?: Date | null;
 }
 
-/**
- * Widened values narrow nothing, so the check would be silently off. It is an error instead - the
- * property is narrowed to `__enumNeedsAsConst`, which nothing can hold, and the name says the cause.
- */
+/** `f.enum` reads its members as written, so a literal list narrows without `as const`. */
 @Entity()
-class ForgotAsConst {
-  @Id({ type: Number }) id?: number;
-  // @ts-expect-error - '"draft" | "paid"' is not assignable to '{ __enumNeedsAsConst: true }'
-  @Field({ type: String, enum: ['draft', 'paid'] }) status?: 'draft' | 'paid' | null;
+class WithoutAsConst {
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(['draft', 'paid']).nullable()) status?: 'draft' | 'paid' | null;
 }
 
 /**
@@ -55,28 +51,28 @@ enum Status {
 
 @Entity()
 class TsEnumValues {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: Object.values(Status) }) status?: Status | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(Object.values(Status)).nullable()) status?: Status | null;
 }
 
 @Entity()
 class TsEnumMembers {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: [Status.Draft, Status.Paid] as const }) status?: Status | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum([Status.Draft, Status.Paid]).nullable()) status?: Status | null;
 }
 
 @Entity()
 class TsEnumSubset {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - the property admits Paid, which the column would reject
-  @Field({ type: String, enum: [Status.Draft] as const }) status?: Status | null;
+  @Field(f.enum([Status.Draft]).nullable()) status?: Status | null;
 }
 
 @Entity()
 class TsEnumLiteralProperty {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - a TS enum is nominal, so its literal union is not one of its members
-  @Field({ type: String, enum: Object.values(Status) }) status?: 'draft' | 'paid' | null;
+  @Field(f.enum(Object.values(Status)).nullable()) status?: 'draft' | 'paid' | null;
 }
 
 /**
@@ -90,22 +86,21 @@ enum Level {
 
 @Entity()
 class NumericTsEnum {
-  @Id({ type: Number }) id?: number;
-  // @ts-expect-error - 'Level' is not assignable to '{ __enumNeedsAsConst: true }'
-  @Field({ type: Number, enum: [Level.Low, Level.High] as const }) level?: Level | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum([Level.Low, Level.High]).nullable()) level?: Level | null;
 }
 
 @Entity()
 class NumericTsEnumValues {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   // @ts-expect-error - Object.values on a numeric enum also yields the reverse-mapped names
-  @Field({ type: Number, enum: Object.values(Level) }) level?: Level | null;
+  @Field(f.enum(Object.values(Level)).nullable()) level?: Level | null;
 }
 
 @Entity()
 class NumericLiterals {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, enum: [0, 1] as const }) level?: 0 | 1 | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum([0, 1]).nullable()) level?: 0 | 1 | null;
 }
 
 export type _ = [
@@ -114,7 +109,7 @@ export type _ = [
   ValueOutsideFieldType,
   NumericNarrowed,
   ValuesCannotBeStated,
-  ForgotAsConst,
+  WithoutAsConst,
   TsEnumValues,
   TsEnumMembers,
   TsEnumSubset,

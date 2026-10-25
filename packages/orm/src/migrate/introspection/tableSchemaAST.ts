@@ -8,6 +8,7 @@ import {
   type TableNode,
 } from '../../schema/types.js';
 import type { ColumnRenames, DialectName, TableSchema } from '../../type/index.js';
+import { entryColumn } from '../../util/indexEntry.util.js';
 import { derivedForeignKeyName, qualifyName } from '../../util/sql.util.js';
 import { renameIndexEntries } from '../schemaChange.js';
 
@@ -102,7 +103,10 @@ function addRelationships(
 /** An expression has no column to resolve; an entry naming a column the table lacks is dropped, as the entity side does. */
 function addIndexes(ast: SchemaAST, schema: TableSchema, table: TableNode): void {
   for (const index of schema.indexes ?? []) {
-    const entries = index.entries.filter((entry) => entry.expression || table.columns.has(entry.column));
+    const entries = index.entries.filter((entry) => {
+      const column = entryColumn(entry);
+      return column === undefined || table.columns.has(column);
+    });
     if (entries.length > 0) {
       ast.addIndex({ ...index, table, entries });
     }

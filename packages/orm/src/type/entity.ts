@@ -1,7 +1,8 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { SqlDialectName } from './dialect.js';
+import type { Querier } from './querier.js';
 import type { FilterOptions, RelationQuery } from './query.js';
-import type { ColumnRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
+import type { ColumnRef, JsonPathRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type {
   AtLeastOne,
@@ -40,7 +41,7 @@ type BrandNames<E, B extends EntityBrand> = E extends { readonly [K in B]?: infe
 
 /**
  * A brand naming a key that is no field, which each reader would drop silently: refused where an entity
- * registers, `@Entity()` or `defineEntity`, by a member the class lacks that names the typo. A class with no
+ * registers, `@Entity()`, by a member the class lacks that names the typo. A class with no
  * members matches every optional brand, so only one declaring a brand is read.
  */
 export type BrandsNameFields<E> = {
@@ -50,13 +51,8 @@ export type BrandsNameFields<E> = {
   ]: never;
 };
 
-/** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
+/** The filter a `softDelete()` column registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
-
-/** A filter name an entity may declare: any but {@link SOFT_DELETE_FILTER}, which a refusal names. */
-export type FilterName<N extends string> = N extends typeof SOFT_DELETE_FILTER
-  ? `'${N}' is reserved for the filter @Field({ softDelete }) registers`
-  : N;
 
 /** The key names of an entity. */
 export type Key<E> = keyof E & string;
@@ -101,7 +97,7 @@ export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F
 
 /**
  * The property an entity brands with {@link versionKey} as its optimistic lock, `never` where it
- * brands none. The brand is what carries `@Field({ version: true })` to the type level, since a
+ * brands none. The brand is what carries `f.version()` to the type level, since a
  * decorator's options never reach `E`.
  */
 export type VersionKey<E> = E extends { [versionKey]?: infer K } ? K & FieldKey<E> : never;
@@ -135,7 +131,7 @@ type JsonPayload<V, T = NonNullable<V>> = IsJson<T> extends true ? UnwrapJson<T>
 /** Whether `V` is what a JSON column holds. */
 type IsJsonColumn<V> = [JsonPayload<V>] extends [never] ? false : true;
 
-/** The JSON columns of `E`, which an index can address. */
+/** The JSON columns of `E`. */
 type JsonColumnKey<E> = { readonly [K in keyof E]-?: IsJsonColumn<E[K]> extends true ? K : never }[Key<E>];
 
 /**
@@ -336,7 +332,7 @@ type IdMap<E> = Partial<Pick<E, IdKey<E>>>;
 export type EntityId<E> = IdValue<E> | IdMap<E>;
 
 /** Whether `T` is a union of more than one member, which for a key means the entity's is composite. */
-type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+export type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
 
 /**
  * The id a write reports: the value for a single key, the map for a composite. {@link EntityId} where
@@ -388,27 +384,33 @@ type TimeColumnType = 'time';
 /** A numeric column holding an exact decimal, read as its text: a JS number would round it. */
 type DecimalColumnType = 'decimal' | 'numeric';
 export type JsonColumnType = ColumnTypeOf<'json'>;
+
+/**
+ * A JSON column's payload described as data, in a field's vocabulary: a value's type (`String`), an object of
+ * shapes, a key ending in `?` for an optional member, and `[shape]` for an array of it.
+ * @example `{ theme: String, 'nickname?': String, tags: [String], billing: { plan: String } }`
+ */
+export type JsonShape = JsonLeaf | readonly [JsonShape] | { readonly [key: string]: JsonShape };
+
+/** The values a JSON document holds at a leaf. */
+type JsonLeaf = StringConstructor | NumberConstructor | BooleanConstructor;
+
+/** The payload a {@link JsonShape} describes. */
+export type ShapeValue<S> = S extends readonly [infer E]
+  ? ShapeValue<E>[]
+  : S extends JsonLeaf
+    ? TsTypeOf<S>
+    : [Extract<keyof S, `${string}?`>] extends [never]
+      ? { -readonly [K in keyof S]: ShapeValue<S[K]> }
+      : { -readonly [K in keyof S as K extends `${string}?` ? never : K]: ShapeValue<S[K]> } & {
+          -readonly [K in keyof S as K extends `${infer N}?` ? N : never]?: ShapeValue<S[K]>;
+        };
 export type BlobColumnType = ColumnTypeOf<'blob'>;
 export type BooleanColumnType = ColumnTypeOf<'boolean'>;
 export type VectorColumnType = ColumnTypeOf<'vector'>;
 
 /** SQL column types supported by uql migrations. */
 export type ColumnType = ColumnTypeOf<ColumnFamily>;
-
-type ColumnTypeFamily<T> = { [F in ColumnFamily]: T extends ColumnTypeOf<F> ? F : never }[ColumnFamily];
-
-/** The family a declared `type` puts a column in, or every family where it names none. */
-export type FamilyOf<T> = T extends ColumnType
-  ? ColumnTypeFamily<T>
-  : T extends NumberConstructor | BigIntConstructor
-    ? 'numeric'
-    : T extends StringConstructor
-      ? 'string'
-      : T extends DateConstructor
-        ? 'date'
-        : T extends BooleanConstructor
-          ? 'boolean'
-          : ColumnFamily;
 
 /** What a field declares its `type` as: a constructor, or a column type. */
 export type FieldType =
@@ -419,70 +421,41 @@ export type FieldType =
   | BigIntConstructor
   | ColumnType;
 
-/**
- * The {@link FieldType}s legal for a field declared as `V`, so `type: String` on a `number` does not
- * compile. JSON is matched on its brand, which a `Json<string>` shares with `string`, and arrays before
- * scalars, so a vector is not read as a `number`.
- */
-export type TypeFor<V, T = NonNullable<V>> =
-  IsJsonColumn<T> extends true
-    ? JsonColumnType
-    : T extends readonly number[]
-      ? VectorColumnType
-      : T extends string
-        ? StringConstructor | StringColumnType | TimeColumnType | DecimalColumnType
-        : T extends number
-          ? NumberConstructor | Exclude<NumericColumnType, DecimalColumnType>
-          : T extends bigint
-            ? BigIntConstructor | NumericColumnType
-            : T extends boolean
-              ? BooleanConstructor | BooleanColumnType
-              : T extends Date
-                ? DateConstructor | Exclude<DateColumnType, TimeColumnType>
-                : T extends Uint8Array
-                  ? BlobColumnType
-                  : FieldType;
-
 /** A field as the registry holds it: what was authored, plus what registration worked out, which no decorator can write. */
-export type FieldMeta<V = TsTypeOf<FieldType>> = Except<FieldOptions<V>, 'computed'> & {
-  /** {@link FieldOptions.computed}, a callback resolved to the SQL it returns. */
-  readonly computed?: QuerySql;
+export type FieldMeta<V = unknown> = FieldOptions<V> & {
   /** Whether the column type comes from the referenced key, where the field gave `references` but no `type`. */
   readonly typeFromReference?: boolean;
 };
 
 /** A field's options, checked against `V`, the value the column holds: every scalar where the field is unknown. */
-export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
+export type FieldOptions<V = unknown> = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
-  /** A vector column's dimensions: `@Field({ type: 'vector', dimensions: 1536 })`. */
+  /** A vector column's dimensions: `f.vector(1536)`. */
   readonly dimensions?: number;
   /**
    * The metric a vector search on this field uses unless it names its own `$distance`; by default its
-   * vector index's metric, else `'cosine'`.
+   * vector index's metric, else `'cosine'`. Where both name one, they must agree.
    */
   readonly distance?: VectorDistance;
   /** The entity this column is a foreign key to. */
   readonly references?: EntityGetter;
   /**
-   * The foreign key's delete action, `@Field({ references: () => Company, onDelete: 'CASCADE' })`. A
+   * The foreign key's delete action, `f.references(() => Company).onDelete('CASCADE')`. A
    * relation over the column wins, and is where the update action goes: `onUpdate` here is a value callback.
    */
   readonly onDelete?: ForeignKeyAction;
-  /**
-   * The values the column accepts, `enum: ['draft', 'paid'] as const`: a `CHECK (col IN (...))` on every
-   * SQL engine, and the property's type through the decorator, which is why they have to be `as const`.
-   */
+  /** The values the column accepts, `f.enum(['draft', 'paid'])`: a `CHECK (col IN (...))` on every SQL engine. */
   readonly enum?: EnumValues;
+  /** A JSON column's payload, which a schema entity's row reads it as: `shape: { theme: String, tags: [String] }`. */
+  readonly shape?: JsonShape;
   /**
-   * An expression the database computes, never written: spliced into each read, or with `stored` a
-   * generated column, `computed: (user) => sql`${user.first} || ' ' || ${user.last}``.
-   *
-   * A relation aggregate is the other form, `computed: (user) => user.resources.count()`, read as the
-   * subquery a `$count` reads. Both resolve to SQL at registration, so everything downstream sees one.
+   * An expression the database computes, never written: spliced into each read, or with `stored` a generated
+   * column, `.as(sql`${user.first} || ' ' || ${user.last}`)`. A relation aggregate, `user.resources.count()`,
+   * is the other form, read as the subquery a `$count` reads.
    */
-  readonly computed?: ComputedSql<E>;
+  readonly computed?: QuerySql;
   /**
    * Where {@link FieldOptions.computed} lives instead of being spliced into each read. `true` makes it a
    * generated column, which takes only an immutable expression; a list of events makes it a stamp a trigger
@@ -506,8 +479,8 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly version?: true;
 
   /**
-   * The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`.
-   * An engine's own type is a `sql` constant, `columnType: sql`tsvector``, rendered verbatim and
+   * The SQL type, where it differs from the one `type` implies: `f.string().columnType('char')`.
+   * An engine's own type is a `sql` constant, `.columnType(sql`tsvector`)`, rendered verbatim and
    * never translated, so a column declaring one is yours to keep portable.
    */
   readonly columnType?: ColumnType | QuerySql;
@@ -517,7 +490,8 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly precision?: number;
   /** A decimal column's scale. */
   readonly scale?: number;
-  readonly nullable?: boolean;
+  /** Whether the column holds NULL: NOT NULL unless `true`, as `nullable()` writes it. */
+  readonly nullable?: true;
   readonly unique?: boolean;
   /** The column's DDL default: a literal, or SQL the database evaluates per inserted row (`currentTimestamp`, `sql`). */
   readonly defaultValue?: DdlDefault<V> | QuerySql;
@@ -532,22 +506,19 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly comment?: string;
 };
 
-export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QuerySql | (() => V | QuerySql);
+export type OnFieldCallback<V = unknown> = V | QuerySql | (() => V | QuerySql);
 
 /**
  * What a column may default to: its value, or on a JSON column the document it stores, `[]`, or its SQL text,
  * `'{}'`. The erased `FieldOptions` takes them all, so every field's options stay assignable to it.
  */
-type DdlDefault<V, T = NonNullable<V>> =
+export type DdlDefault<V, T = NonNullable<V>> =
   IsJsonColumn<T> extends true ? JsonDdlDefault : [TsTypeOf<FieldType>] extends [T] ? JsonDdlDefault | T : T;
 
 /** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list included, or its text. */
 type JsonDdlDefault = Scalar | Record<string, unknown> | readonly unknown[];
 
-/**
- * The TypeScript type a declared `type` implies, the inverse of {@link TypeFor}: a decorator checks the
- * property against it, `defineEntity` the other way round. `entityOptions.test-d.ts` keeps them agreeing.
- */
+/** The TypeScript type a declared `type` implies: a decorator checks the property against it, a schema derives it. */
 export type TsTypeOf<T> = T extends StringConstructor
   ? string
   : T extends NumberConstructor
@@ -574,57 +545,10 @@ export type TsTypeOf<T> = T extends StringConstructor
                         ? readonly number[]
                         : unknown;
 
-/**
- * {@link FieldOptions} for a field declared as `V`, `type` checked by {@link TypeFor}. A foreign key may
- * omit it, taking the referenced key's column type instead.
- */
-export type FieldOptionsFor<V, E = unknown> =
-  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V>; readonly isId: true })
-  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> } & DeclaresNotNull<V>)
-  | (FieldOptions<NonNullable<V>, E> & {
-      readonly references: EntityGetter;
-      readonly type?: TypeFor<V>;
-    } & DeclaresNotNull<V>)
-  | AggregateOptionsFor<V, E>;
-
-/**
- * A column holds `null` unless `nullable: false` says otherwise, and a read hydrates one, so a property
- * that does not admit it says so here. The decorators state the same rule the other way round, against
- * the property they are applied to; a key needs neither, being NOT NULL on every engine.
- */
-type DeclaresNotNull<V> = null extends V ? unknown : { readonly nullable: false };
-
-/**
- * A field a relation aggregate computes: the aggregate types it, so it declares no `type`, and it is
- * read on each query, never `stored`.
- */
-type AggregateOptionsFor<V, E> = Except<FieldOptions<NonNullable<V>, E>, 'computed' | 'stored' | 'type'> & {
-  readonly computed: AggregateReading<E, V>;
-  readonly stored?: false;
-};
-
-/** An aggregate reading what the property holds, bivariant the way {@link EntitySql} is. */
-type AggregateReading<E, V> = {
-  agg(refs: ComputedRefs<E>): RelationAggregate<null extends V ? NonNullable<V> | null : NonNullable<V>>;
-}['agg'];
-
 /** The entity a relation points at: `Company` for `company?: Company` and `companies?: Company[]` alike. */
 export type RelationTarget<V> = Extract<Unpacked<V>, object>;
 
-/**
- * {@link RelationOptions} for a relation declared as `V`, keyed on the `cardinality` its shape allows: a
- * key rather than a conditional, which is what types a `mappedBy` callback inside `defineEntity`.
- */
-export type RelationOptionsFor<V, O = unknown> = {
-  readonly cardinality: IsMany<V> extends true ? '1m' | 'mm' : '11' | 'm1';
-} & (
-  | ({ readonly cardinality: '11' } & RelationOneToOneOptions<RelationTarget<V>, O>)
-  | ({ readonly cardinality: 'm1' } & RelationManyToOneOptions<RelationTarget<V>, O>)
-  | ({ readonly cardinality: '1m' } & RelationOneToManyOptions<RelationTarget<V>, O>)
-  | ({ readonly cardinality: 'mm' } & RelationManyToManyOptions<RelationTarget<V>, O>)
-);
-
-/** The method names of an entity, which a hook registration names. */
+/** The method names of an entity, which no query reads as a field or a relation. */
 export type MethodKey<E> = {
   readonly [K in keyof E]-?: NonNullable<E[K]> extends (...args: never[]) => unknown ? K : never;
 }[Key<E>];
@@ -641,26 +565,26 @@ export type CascadeType = 'persist' | 'delete';
  * `E` is the relation's target and `O` the entity declaring it, whose fields `references` names on its
  * `local` side; the relation decorators infer `O` from the class they sit on.
  */
-export type RelationOptions<E, O = unknown> = {
-  entity: EntityGetter<E>;
-  cardinality: RelationCardinality;
-  readonly cascade?: boolean | CascadeType;
-  /**
-   * The foreign key's delete action, the database's alternative to `cascade`, read on the owning side;
-   * unset, the column's own `@Field({ onDelete })` applies.
-   */
-  readonly onDelete?: ForeignKeyAction;
-  readonly onUpdate?: ForeignKeyAction;
-  /** The inverse side: the member of the target holding the foreign key or the owning relation, `(post) => post.author`. */
-  mappedBy?: (keys: KeyMap<E>) => RelationKey<E> | ForeignKey<E, O>;
-  /** The junction entity of a many-to-many, holding a foreign key to each side. */
-  through?: EntityGetter;
-  /**
-   * The join columns: a to-one's foreign key, `(post) => post.authorId`, or pairs where no key fits,
-   * `(order, customer) => [{ local: order.customerCode, foreign: customer.code }]`. Not with `through`.
-   */
-  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => ForeignKey<O, E> | readonly RelationReference<O, E>[];
-};
+export type RelationOptions<E, O = unknown> = RelationCascade &
+  RelationActions & {
+    entity: EntityGetter<E>;
+    cardinality: RelationCardinality;
+    /** The inverse side: the member of the target holding the foreign key or the owning relation, `(post) => post.author`. */
+    mappedBy?: (keys: KeyMap<E>) => RelationKey<E> | ForeignKey<E, O>;
+    /** The junction entity of a many-to-many, holding a foreign key to each side. */
+    through?: EntityGetter;
+    /**
+     * The join columns: a to-one's foreign key, `(post) => post.authorId`, or pairs where no key fits,
+     * `(order, customer) => [{ local: order.customerCode, foreign: customer.code }]`. Not with `through`.
+     */
+    references?: (local: KeyMap<O>, foreign: KeyMap<E>) => ForeignKey<O, E> | readonly RelationReference<O, E>[];
+  };
+
+/** Whether writes reach the related rows in the same transaction; its own type, so an option set takes it without instantiating `RelationOptions`. */
+type RelationCascade = { readonly cascade?: boolean | CascadeType };
+
+/** The foreign key's actions, read on the owning side; unset, the column's own `onDelete` applies. */
+type RelationActions = { readonly onDelete?: ForeignKeyAction; readonly onUpdate?: ForeignKeyAction };
 
 /** The one column of `O` that can be a foreign key to `E`: a field holding `E`'s key, which has to be a single one. */
 type ForeignKey<O, E> = HasCompositeKey<E> extends true ? never : FieldKeyHolding<O, IdValue<E>>;
@@ -680,9 +604,6 @@ type FieldKeyHolding<O, V> = {
   readonly [K in keyof O]-?: [NonNullable<V>] extends [NonNullable<O[K]>] ? K : never;
 }[FieldKey<O>];
 
-/** {@link RelationOptions.references} as pairs alone, for a to-many, which holds no foreign key of its own to name. */
-type RelationReferencePairs<E, O> = (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
-
 /** A relation once `getMeta` resolved it: `references` settled into pairs and `mappedBy` a name. */
 export type RelationMeta = Omit<RelationRegistration, 'references'> & { references: RelationReferences };
 
@@ -695,20 +616,52 @@ export type RelationRegistration = Omit<RelationOptions<object>, 'mappedBy' | 'r
   references?: RelationReferences | string;
 };
 
-/** How a to-many owner reaches its children: a junction entity or the join columns, never both. */
-type RelationOwnerJoin<E, O> =
-  | (Required<Pick<RelationOptions<E, O>, 'through'>> & { readonly references?: never })
-  | { readonly references: RelationReferencePairs<E, O>; readonly through?: never };
+/**
+ * What a relation's join callbacks answer, `E` its target and `O` the entity declaring it: one foreign key, pairs of
+ * columns, or the target's member mapping it. Each form states its own: a decorated class checks each member's
+ * kind, a schema reads keys alone, since its target's types are still being inferred.
+ */
+export type RelationJoins = { readonly key: unknown; readonly pairs: unknown; readonly mappedBy: unknown };
+
+/** A decorated class's joins, each member checked by kind. */
+type DecoratedJoins<E, O> = {
+  readonly key: ForeignKey<O, E>;
+  readonly pairs: readonly RelationReference<O, E>[];
+  readonly mappedBy: RelationKey<E> | ForeignKey<E, O>;
+};
 
 /**
- * The side holding the foreign key, which `references` names and the actions attach to. It cascades
- * `'persist'` only: its target may be other rows' too, so a delete cascades from the side owning the rows.
+ * The side holding the foreign key, which the actions attach to. It cascades `'persist'` only: its target may
+ * be other rows' too, so a delete cascades from the side owning the rows.
  */
-type RelationOptionsOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'onDelete' | 'onUpdate'> &
-  Required<Pick<RelationOptions<E, O>, 'references'>> & { readonly cascade?: 'persist' };
-type RelationOptionsInverseSide<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> &
-  Required<Pick<RelationOptions<E, O>, 'mappedBy'>>;
-type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> & RelationOwnerJoin<E, O>;
+type RelationOwnerSide = RelationActions & {
+  readonly cascade?: 'persist';
+  readonly mappedBy?: never;
+  readonly through?: never;
+};
+
+/** The join columns: a to-one's foreign key, `(post) => post.authorId`, or pairs where no key fits. */
+type RelationColumns<E, O, J extends RelationJoins> = (local: KeyMap<O>, foreign: KeyMap<E>) => J['key'] | J['pairs'];
+
+/** The owning side of a to-one, naming its foreign key. */
+export type RelationOwnerOptions<E, O, J extends RelationJoins> = RelationOwnerSide & {
+  readonly references: RelationColumns<E, O, J>;
+};
+
+/** The inverse side, mapped by the target's member holding the foreign key or the owning relation. */
+export type RelationInverseOptions<E, J extends RelationJoins> = RelationCascade & {
+  readonly mappedBy: (keys: KeyMap<E>) => J['mappedBy'];
+  readonly references?: never;
+  readonly through?: never;
+};
+
+/** How a to-many owner reaches its rows: a junction entity or the join columns, never both. */
+export type RelationJoinOptions<E, O, J extends RelationJoins> = RelationCascade & {
+  readonly mappedBy?: never;
+} & (
+    | { readonly through: EntityGetter; readonly references?: never }
+    | { readonly references: (local: KeyMap<O>, foreign: KeyMap<E>) => J['pairs']; readonly through?: never }
+  );
 
 /** The key names of `E` as values, so a definition reads a member off it, `(post) => post.author`, and follows a rename. */
 export type KeyMap<E> = { readonly [K in keyof E]-?: K };
@@ -716,17 +669,15 @@ export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 /** The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)`, or a definition's callback. */
 export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string, E[K]> };
 
-/** SQL a definition writes: `sql`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
-export type EntitySql<E> = QuerySql | { sql(refs: RefMap<E>): QuerySql }['sql'];
-
 /** One field of `C`, read off its refs: `(item) => item.amount`. */
 type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
 
 /**
  * A relation as a `computed` field reads it, its aggregates typed against the related entity. Each
  * reads as a subquery; all but `count` and `sum` are `null` where the relation holds no row.
+ * Declared invariant: measuring `C`'s variance walks every query type it reaches.
  */
-export type RelationRef<C> = {
+export type RelationRef<in out C> = {
   count(q?: AggregatePage<C>): RelationAggregate<number>;
   sum<K extends FieldKeyOf<C, number | bigint>>(
     pick: PickRef<C, K>,
@@ -765,26 +716,12 @@ export type AggregateTopRows<C> = AggregateFilter<C> &
 export type AggregateRows<C> = AggregateFilter<C> | AggregateTopRows<C>;
 
 /** What a `computed` callback reads: the entity's fields as columns, its to-many relations as aggregates. */
-export type ComputedRefs<E, F extends keyof E = FieldKey<E>, R extends keyof E = ToManyRelationKey<E>> = RefMap<
-  E,
-  F
-> & {
+export type ComputedRefs<E, F extends keyof E = FieldKey<E>> = RefMap<E, F> & ToManyRefs<E>;
+
+/** Each to-many relation of `E` as an aggregate reads it. */
+export type ToManyRefs<E, R extends keyof E = ToManyRelationKey<E>> = {
   readonly [K in R]-?: RelationRef<RelationTarget<E[K]>>;
 };
-
-/** A relation aggregate a definition writes, bivariant the way {@link EntitySql} is. */
-export type EntityAggregate<E> = { agg(refs: ComputedRefs<E>): RelationAggregate }['agg'];
-
-/**
- * SQL a `computed` field writes. One callback shape for every arm, aggregate or not: overload
- * resolution picks a contextual parameter type per arm only while they agree on one.
- */
-export type ComputedSql<E> = QuerySql | { sql(refs: ComputedRefs<E>): QuerySql }['sql'];
-
-/** The value a field's options declare it holds, where an aggregate is what declares it. */
-export type AggregateValue<O> = O extends { readonly computed: (...args: never[]) => RelationAggregate<infer V> }
-  ? V
-  : never;
 
 /** A predicate DDL can hold: the entity's own fields, without a relation, `$text` or a sub-query. */
 export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>]?: never } & {
@@ -793,27 +730,36 @@ export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>
   readonly $nexists?: never;
 };
 
-/** A definition's predicate: an {@link EntityPredicate}, or {@link EntitySql} for what one cannot say. */
-export type EntityWhere<E> = EntityPredicate<E> | EntitySql<E>;
-
-/** A definition's predicate as metadata keeps it, a callback resolved to its SQL, for the schema build to compile. */
+/** A definition's predicate: an {@link EntityPredicate}, or `sql` for what one cannot say. */
 export type EntityWhereMeta<E> = EntityPredicate<E> | QuerySql;
 
 export type RelationReferences = { readonly local: string; readonly foreign: string }[];
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
-export type RelationOneToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O> | RelationOptionsInverseSide<E, O>;
+export type RelationOneToOneOptions<E, O = unknown> =
+  | RelationOwnerOptions<E, O, DecoratedJoins<E, O>>
+  | RelationInverseOptions<E, DecoratedJoins<E, O>>;
+
+/** A to-many naming no join: mapped by the one relation of its target pointing back, found on first read. */
+type RelationMappedBack<E> = RelationCascade & {
+  readonly mappedBy?: never;
+  readonly through?: never;
+  readonly references?: never;
+};
 
 export type RelationOneToManyOptions<E, O = unknown> =
-  | RelationOptionsInverseSide<E, O>
-  | RelationOptionsThroughOwner<E, O>;
+  | RelationInverseOptions<E, DecoratedJoins<E, O>>
+  | RelationJoinOptions<E, O, DecoratedJoins<E, O>>
+  | RelationMappedBack<E>;
 
-export type RelationManyToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O>;
+/** A to-one holding the foreign key; with no `references`, it joins by the one field referencing its target. */
+export type RelationManyToOneOptions<E, O = unknown> = RelationOwnerSide &
+  Partial<Pick<RelationOwnerOptions<E, O, DecoratedJoins<E, O>>, 'references'>>;
 
 export type RelationManyToManyOptions<E, O = unknown> =
-  | RelationOptionsThroughOwner<E, O>
-  | RelationOptionsInverseSide<E, O>;
+  | RelationJoinOptions<E, O, DecoratedJoins<E, O>>
+  | RelationInverseOptions<E, DecoratedJoins<E, O>>;
 
 /** The lifecycle events. An upsert has its own pair: which branch a row takes is the database's to decide. */
 export type HookEvent =
@@ -827,10 +773,23 @@ export type HookEvent =
   | 'afterDelete'
   | 'afterLoad';
 
-/** A registered hook: the entity's method to call. */
-export type HookRegistration = {
-  readonly methodName: string;
+/** A hook as declared: the entity's method a decorator names, or the function a schema runs on the row. */
+export type HookDeclaration = { readonly methodName: string } | { readonly run: HookFunction };
+
+/** A registered hook, run on the row; a method's name kept so an entity overriding it replaces its base's. */
+export type HookRegistration = { readonly run: HookFunction; readonly methodName?: string };
+
+/**
+ * What a lifecycle hook is handed: the querier, to write in the same transaction, and `onCommit`, for what
+ * must wait until that transaction commits.
+ */
+export type HookContext = {
+  readonly querier: Querier;
+  readonly onCommit: Querier['onCommit'];
 };
+
+/** A schema entity's hook, bivariant in its row, so one typed by its row registers. */
+export type HookFunction = { run(row: object, ctx: HookContext): unknown }['run'];
 
 /**
  * An index type with what it needs: a vector index has to name its metric, since engines default to a
@@ -843,32 +802,8 @@ export type IndexTypeOptions =
   | { type: 'fulltext'; distance?: never; config?: string }
   | { type?: Exclude<IndexType, VectorIndexType | 'vectorSearch' | 'fulltext'>; distance?: never; config?: never };
 
-/** One index entry as the migration builder takes it: a column name, `sql`, or an object when it needs more. */
-export type IndexColumnInput = string | QuerySql | EntityIndexColumn;
-
-/**
- * One entry of an entity's index, read off its refs: a column, `sql`, or an object when it needs more.
- * @example `@Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, sql`lower(${post.email})`])`
- */
-export type EntityIndexColumnInput<E> = QuerySql | IndexColumnOptions | IndexJsonColumnOptions<E>;
-
-/** A JSON entry, its `path` checked against its own column's payload: a misspelled one builds an index nothing uses. */
-type IndexJsonColumnOptions<E> = {
-  [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: ColumnRef<K & string> } & (
-      | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
-      | { readonly jsonArray: WithCheckedPath<IndexJsonArray, E, K>; readonly jsonPath?: never }
-    );
-}[JsonColumnKey<E>];
-
-/** A JSON modifier with its `path` narrowed to the column's payload, everything else taken from `T` as declared. */
-type WithCheckedPath<T extends { path?: string }, E, K extends Key<E>> = Except<T, 'path' & keyof T> & {
-  [P in keyof Pick<T, Extract<keyof T, 'path'>>]: DeepJsonKeys<JsonPayload<E[K]>>;
-};
-
-/** What an index entry carries besides its column, shared by the authored and the normalized entry. */
-export type IndexColumnModifiers = {
-  /** Index only the first `n` characters, which the MySQL family requires on a `TEXT` or `BLOB` column. */
-  readonly length?: number;
+/** What an index entry carries besides what it indexes, at every layer. */
+export type IndexEntryModifiers = {
   /** Stored sort order, which lets `ORDER BY ... DESC` pagination use the index. */
   readonly order?: 'asc' | 'desc';
   /** Where NULLs sort. Postgres only. */
@@ -880,66 +815,135 @@ export type IndexColumnModifiers = {
    * a whole number from 1 to 99999, the range MongoDB weighs by.
    */
   readonly weight?: number;
-  /** Index a path inside a JSON column. See {@link IndexJsonPath}. */
-  readonly jsonPath?: IndexJsonPath;
-  /** Index every element of a JSON array. See {@link IndexJsonArray}. */
-  readonly jsonArray?: IndexJsonArray;
 };
+
+/** How an index reads a JSON path: the type its queries compare it as, or `[type]` for each element of an array. */
+export type IndexValueType = FieldType | readonly [FieldType];
 
 /**
- * An index over a path inside a JSON column, spelled as the `$where` on it compiles, which is how the
- * planner matches the two. `type` is how the queries compare it.
- * @example `@Index((user) => [{ column: user.kind, jsonPath: { path: 'rating', type: Number } }])`
+ * One index entry: a column as stored, a `path` inside the JSON column `json` read as `type` (text by default,
+ * the whole document where it names no path), or an expression. `Sql` is the expression's form, `QuerySql`
+ * until the schema renders it to text.
  */
-export type IndexJsonPath = {
-  /** The path inside the column, spelled as a `$where` key spells it: `'theme.color'`. */
-  readonly path: string;
-  /** How the value is read, matching what the queries over it compare against. */
-  readonly type: FieldType;
-  /** Length of a string value, which MySQL keys as `CHAR(n)` and so requires. */
-  readonly length?: number;
+export type IndexEntry<Sql = QuerySql> = IndexEntryModifiers &
+  (
+    | (ColumnLengths & {
+        readonly column: string;
+        readonly json?: never;
+        readonly path?: never;
+        readonly type?: never;
+        readonly expression?: never;
+      })
+    | (JsonLengths & {
+        readonly json: string;
+        readonly path?: string;
+        readonly type?: IndexValueType;
+        readonly column?: never;
+        readonly expression?: never;
+      })
+    | (NoLengths & {
+        readonly expression: Sql;
+        readonly column?: never;
+        readonly json?: never;
+        readonly path?: never;
+        readonly type?: never;
+      })
+  );
+
+/** The key length a column entry takes. */
+type ColumnLengths = {
+  /** A prefix of the column as the key, which the MySQL family requires on a `TEXT` or `BLOB` one. */
+  readonly prefixLength?: number;
+  readonly charLength?: never;
 };
+
+/** An entry keyed by its value whole: an expression, or a JSON number or boolean. */
+type NoLengths = { readonly prefixLength?: never; readonly charLength?: never };
+
+/** The key length a JSON path entry takes. */
+type JsonLengths = {
+  /** The `CHAR(n)` MySQL keys a string path, or each string element, as. */
+  readonly charLength?: number;
+  readonly prefixLength?: never;
+};
+
+/** One index entry as the migration builder takes it: a column name, `sql`, or an entry when it needs more. */
+export type IndexColumnInput = string | QuerySql | IndexEntry;
+
+declare const untypedJson: unique symbol;
+
+/** The value under a path of a bare {@link Json} column, which any path reads into, as text unless told otherwise. */
+type UntypedJson = { readonly [untypedJson]: true };
+
+/** Any path into an untyped payload, to any depth. */
+interface UntypedJsonPaths {
+  readonly [key: string]: JsonPathRef<UntypedJson> & UntypedJsonPaths;
+}
+
+/** The paths below one holding `V`: each key of an object, any key of an untyped payload, none past a value. */
+type JsonPathMembers<V> = unknown extends V
+  ? UntypedJsonPaths
+  : V extends readonly unknown[]
+    ? unknown
+    : V extends object
+      ? {
+          readonly [K in Exclude<keyof V, RefOwnKey>]-?: JsonPathRef<NonNullable<V[K]>> &
+            JsonPathMembers<NonNullable<V[K]>>;
+        }
+      : unknown;
+
+/** The keys a path cannot be read through: a ref's own, and `Object`'s, which every ref has. */
+type RefOwnKey = Extract<keyof ColumnRef, string> | keyof typeof Object.prototype;
+
+/** A field as an index reads it: its column, and a JSON one's paths too. */
+type IndexRef<K extends string, V> =
+  IsJsonColumn<V> extends true
+    ? ColumnRef<K, V> & JsonPathRef<UntypedLeaf<JsonPayload<V>>> & JsonPathMembers<JsonPayload<V>>
+    : ColumnRef<K, V>;
+
+type UntypedLeaf<P> = unknown extends P ? UntypedJson : P;
+
+/** An index's refs: the entity's fields, each JSON one read into along its document's paths. */
+export type IndexRefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: IndexRef<K & string, E[K]> };
+
+/** The types a JSON value of `V` can be compared as, which an index on it reads it as. */
+type JsonReadAs<V> = V extends string
+  ? StringConstructor | StringColumnType
+  : V extends number
+    ? NumberConstructor | NumericColumnType
+    : V extends boolean
+      ? BooleanConstructor | BooleanColumnType
+      : never;
 
 /**
- * MySQL's multi-valued index, one key per element of the JSON array at `path`, which `$all` and an
- * `$elemMatch` on one value or several use; refused on any other engine.
- * @example `@Index((user) => [{ column: user.tags, jsonArray: { type: String, length: 64 } }])`
+ * What an object entry indexes: a column or `sql` as it is, or a JSON path read as its queries compare it.
+ * A path holding text may say nothing; any other states its `type`, `[type]` for an array's elements.
  */
-export type IndexJsonArray = {
-  /** The array's path inside the column, spelled as a `$where` key spells it; omit for the column. */
-  readonly path?: string;
-  /** The element type, matching what the queries over the array compare against. */
-  readonly type: FieldType;
-  /** Length of a string or binary element, which MySQL's `CHAR(n) ARRAY` cast requires. */
-  readonly length?: number;
-};
+type IndexEntryTarget =
+  | (ColumnLengths & { readonly column: QuerySql; readonly type?: never })
+  | (JsonLengths & { readonly column: JsonPathRef<string>; readonly type?: JsonReadAs<string> })
+  | (NoLengths & { readonly column: JsonPathRef<number>; readonly type: JsonReadAs<number> })
+  | (NoLengths & { readonly column: JsonPathRef<boolean>; readonly type: JsonReadAs<boolean> })
+  | (JsonLengths & { readonly column: JsonPathRef<readonly string[]>; readonly type: readonly [JsonReadAs<string>] })
+  | (NoLengths & { readonly column: JsonPathRef<readonly number[]>; readonly type: readonly [JsonReadAs<number>] })
+  | (JsonLengths & { readonly column: JsonPathRef<UntypedJson>; readonly type?: IndexValueType });
 
-/** The modifiers that do not name a JSON path, and so need no entity to be checked against. */
-type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'jsonArray'>;
-
-/** An entity's entry with plain modifiers, never a JSON one, whose path would then go unchecked. */
-type IndexColumnOptions = IndexColumnPlainModifiers & {
-  /** A column read off the refs, or `sql` for an expression. */
-  readonly column: QuerySql;
-  readonly jsonPath?: never;
-  readonly jsonArray?: never;
-};
-
-/** One index entry, normalized, as every dialect and generator reads it. */
-export type IndexColumnSchema = IndexColumnModifiers & {
-  /** A column name, or raw SQL when {@link expression} is set. */
-  readonly column: string;
-  /** Whether {@link column} is an expression to emit as-is rather than an identifier to quote. */
-  readonly expression?: boolean;
-};
-
-/** One index entry as metadata keeps it: a member, or an expression rendered when the schema is built. */
-export type EntityIndexColumn = IndexColumnModifiers & { readonly column: string | QuerySql };
+/**
+ * One entry of an entity's index, read off its refs: a column, a path inside a JSON one, `sql`, or an object
+ * when it needs more.
+ * @example `{ columns: (post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, sql`lower(${post.email})`] }`
+ * @example `{ columns: (user) => [user.settings.theme, { column: user.settings.rating, type: Number }] }`
+ */
+export type EntityIndexColumnInput =
+  | QuerySql
+  | JsonPathRef<string>
+  | JsonPathRef<UntypedJson>
+  | (IndexEntryModifiers & IndexEntryTarget);
 
 /** An index as metadata keeps it. */
 export type EntityIndexMeta<E = object> = {
-  /** The indexed columns, in order. */
-  columns: readonly EntityIndexColumn[];
+  /** The indexed entries, in order. */
+  entries: readonly IndexEntry[];
   /** Custom index name */
   name?: string;
   /** Whether index is unique; omit or `false` for a non-unique index (default). */
@@ -957,12 +961,14 @@ export type EntityMeta<E> = {
   name?: string;
   /** Whether {@link name} came from the class rather than from the author, so a naming strategy applies. */
   derivedName?: boolean;
+  /** A base that is never a table, only extended. */
+  abstract?: true;
   /** Set only when the entity named one; unset defers to the pool where it is used. See `AbstractDialect.resolveSchema`. */
   schema?: string;
   /** Every column of the primary key, in declaration order. */
   ids: readonly IdKey<E>[];
   softDelete?: FieldKey<E>;
-  /** The optimistic lock's column, from `@Field({ version: true })`. */
+  /** The optimistic lock's column, from `f.version()`. */
   version?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
   filters?: Record<string, FilterOptions<E>>;
@@ -972,7 +978,7 @@ export type EntityMeta<E> = {
   relations: {
     [K in RelationKey<E>]?: RelationMeta;
   } & { [key: string]: RelationMeta | undefined };
-  /** Composite indexes defined via @Index decorator */
+  /** The indexes `@Entity({ indexes })` or a schema's `indexes` declare. */
   indexes?: EntityIndexMeta<E>[];
   /** `CHECK` constraints, compiled when the schema is built. */
   checks?: EntityCheckMeta<E>[];
@@ -980,10 +986,14 @@ export type EntityMeta<E> = {
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
   /** Triggers the database runs, compiled when the schema is built. */
   triggers?: EntityTriggerMeta<E>[];
-  /** Bumped by every `define*` call, so what is derived from the metadata can tell it changed. */
-  revision: number;
-  /** The revision `getMeta` last finalized, which is what makes finalizing idempotent and re-entrant. */
-  processedAt?: number;
+  /**
+   * How far the registry finalized it: `'declared'` while a schema takes sections and is not registered, unset
+   * once registered, `'settled'` once its schemas' relations, its bases' included, are in, and `'resolved'`
+   * once `getMeta` joined them too, which makes each step idempotent and re-entrant.
+   */
+  stage?: 'declared' | 'settled' | 'resolved';
+  /** The fields a read answers with where it names none, set once resolved: see `defaultReadKeys`. */
+  readKeys?: readonly FieldKey<E>[];
 };
 
 /** When the database writes a stamp: as the row is inserted, as it is updated, or both. */
@@ -1065,7 +1075,7 @@ export type TriggerOptions<E = unknown> = {
      * goes a `WHEN` comparing each with `IS DISTINCT FROM`, which is the point of the pair: `UPDATE OF`
      * fires on a column that was merely assigned, and the comparison narrows that to one that moved.
      */
-    readonly of?: Ev extends TriggerUpdateEvent ? (refs: RefMap<E>) => readonly ColumnRef<string>[] : never;
+    readonly of?: Ev extends TriggerUpdateEvent ? readonly ColumnRef<FieldKey<E>>[] : never;
     /**
      * A further condition, as the `WHEN` the engine evaluates before entering the body, over the rows the
      * body reads: a predicate on each, `{ $old: { status: 'draft' }, $new: { status: 'published' } }`,
@@ -1097,20 +1107,53 @@ export type EntityTriggerMeta<E = object> = Except<TriggerOptions<E>, 'of' | 'wh
 };
 
 /**
- * A body as the renderer calls it, with both rows whatever the event. Bivariant, as {@link EntitySql} is,
+ * A body as the renderer calls it, with both rows whatever the event. Bivariant,
  * so a body typing the row its event lacks as `never` is still held here.
  */
 export type TriggerMetaBody<E> = { run(newRow: RefMap<E>, oldRow: RefMap<E>): QuerySql }['run'];
 
-/**
- * A table's `CHECK`, `{ where: { balance: { $gte: 0 } } }`, or SQL off the refs,
- * `{ where: (wallet) => sql`${wallet.spent} <= ${wallet.balance}` }`.
- */
+/** A table's `CHECK`: a predicate, `{ balance: { $gte: 0 } }`, or SQL off the refs, `sql`${wallet.spent} >= 0``. */
 export type CheckOptions<E = unknown> = {
   /** Derived from the table and the constraint's position when absent. */
   readonly name?: string;
-  readonly where: EntityWhere<E>;
+  readonly where: EntityPredicate<E> | QuerySql;
 };
+
+/**
+ * Marks what a section's helper returned, so a section takes only what TypeScript checked: it checks a literal
+ * passed to a function, and never one a callback returns, where `{ uniqe: true }` would pass silently.
+ */
+export const SECTION_ENTRY: unique symbol = Symbol('sectionEntry');
+
+/** One entry of a section, as its helper made it. */
+export type SectionEntry<T, S extends string> = T & { readonly [SECTION_ENTRY]: S };
+
+/**
+ * An entity's indexes over its refs, the columns first and the options or the name after, as the migration
+ * builder's `index()` takes them: `(post, index) => [index([post.slug], { unique: true })]`.
+ */
+export type IndexSection<E> = (
+  refs: IndexRefMap<E>,
+  index: (
+    columns: readonly EntityIndexColumnInput[],
+    options?: string | EntityIndexOptions<E>,
+  ) => SectionEntry<EntityIndexInput<E>, 'index'>,
+) => readonly SectionEntry<EntityIndexInput<E>, 'index'>[];
+
+/** An entity's `CHECK`s over its refs, `(wallet, check) => [check(sql`${wallet.spent} >= 0`)]`, a name after. */
+export type CheckSection<E> = (
+  refs: RefMap<E>,
+  check: (where: CheckOptions<E>['where'], name?: string) => SectionEntry<CheckOptions<E>, 'check'>,
+) => readonly SectionEntry<CheckOptions<E>, 'check'>[];
+
+/** An entity's triggers over its refs, `(post, trigger) => [trigger({ on: 'beforeUpdate', of: [post.body], run })]`. */
+export type TriggerSection<E> = (
+  refs: RefMap<E>,
+  trigger: (trigger: TriggerOptions<E>) => SectionEntry<TriggerOptions<E>, 'trigger'>,
+) => readonly SectionEntry<TriggerOptions<E>, 'trigger'>[];
+
+/** An entity's named, default-on `$where` filters; a `softDelete()` column registers its own. */
+export type FilterSection<E> = Readonly<Record<string, FilterOptions<E>>> & { readonly [SOFT_DELETE_FILTER]?: never };
 
 /** A `CHECK` as entity metadata keeps it, its callback resolved. */
 export type EntityCheckMeta<E = object> = {
@@ -1118,68 +1161,40 @@ export type EntityCheckMeta<E = object> = {
   readonly where: EntityWhereMeta<E>;
 };
 
-/** An entity's members as the registry takes them, keyed by name: what decorators and `defineEntity` both reduce to. */
-export type EntityMembers = {
-  readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
-  readonly relations?: Readonly<Record<string, RelationRegistration | undefined>>;
-  readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
-};
-
-/** An entity's fields as `defineEntity` takes them, keyed like every entity map (see `QuerySelect`). */
-type EntityFieldOptions<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]?: FieldOptionsFor<E[K], E> };
-
-/** An entity's relations as `defineEntity` takes them, keyed over every member: only that types a `mappedBy` callback. */
-type EntityRelationOptions<E> = { readonly [K in keyof E]?: RelationOptionsFor<E[K], E> };
-
-/** An entity's options, `@Entity()` or `defineEntity`; the members too where no decorator declares them. */
+/** A decorated entity's options, `@Entity()`. */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
-  /** A base to inherit members from, for a class that cannot extend it; its real base, if any, wins. See the Inheritance guide. */
-  readonly extends?: string extends keyof E ? Type<object> : Type<Partial<E>>;
+  /** A base that is never a table: the entities extending it take what it declares. */
+  readonly abstract?: true;
   /** The schema (a MySQL database) the table lives in; unset follows the pool's. */
   readonly schema?: string;
-  /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
-  readonly filters?: Record<string, FilterOptions<E>> & { readonly [SOFT_DELETE_FILTER]?: never };
-  /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
-  readonly fields?: EntityFieldOptions<E>;
-  readonly relations?: EntityRelationOptions<E>;
-  readonly indexes?: readonly EntityIndexInput<E>[];
+  readonly filters?: FilterSection<E>;
+  readonly indexes?: IndexSection<E>;
   /** Table-level `CHECK` constraints. See {@link CheckOptions}. */
-  readonly checks?: readonly CheckOptions<E>[];
-  /** Each lifecycle event and the methods it runs, read off the key map: `{ beforeInsert: (post) => [post.stamp] }`. */
-  readonly hooks?: Partial<Record<HookEvent, (keys: KeyMap<E>) => readonly MethodKey<E>[]>>;
+  readonly checks?: CheckSection<E>;
   /** Triggers the database runs, in the order written. See {@link TriggerOptions}. */
-  readonly triggers?: readonly TriggerOptions<E>[];
+  readonly triggers?: TriggerSection<E>;
 };
 
 /**
  * Everything an index carries beyond its columns, as the migration builder's `table.index(...)` takes it,
- * and through {@link EntityIndexOptions} `@Index` and `defineEntity`. `Except` (not plain `Omit`) keeps
+ * and through {@link EntityIndexOptions} an entity's `indexes`. `Except` (not plain `Omit`) keeps
  * `type`/`distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'where'> & {
+export type IndexOptions = Except<EntityIndexMeta, 'entries' | 'where'> & {
   /** Partial-index predicate, as `sql` with no interpolation: the migration builder has no entity to compile one against. */
   readonly where?: QuerySql;
 };
 
-/**
- * {@link IndexOptions} on an entity, whose stored columns are read off its refs, `(post) => [post.slug]`,
- * so they are checked against it and follow a rename. The migration builder names raw columns instead.
- */
+/** {@link IndexOptions} on an entity, `include` and `where` read off the section's refs as its columns are. */
 export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & {
-  readonly include?: (refs: RefMap<E>) => readonly ColumnRef<FieldKey<E>>[];
+  readonly include?: readonly ColumnRef<FieldKey<E>>[];
   /**
    * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
-   * shape, so a hand-written `sql` that means the same thing leaves the index unused. See {@link EntityWhere}.
+   * shape, so a hand-written `sql` that means the same thing leaves the index unused.
    */
-  readonly where?: EntityWhere<E>;
+  readonly where?: EntityPredicate<E> | QuerySql;
 };
 
-/**
- * An index as authored on an entity, before `defineIndex` reads its columns off the refs. Only the
- * member lists are callbacks: TypeScript never checks a callback's returned literal for excess properties,
- * so the options stay a literal of their own, where `uniqe: true` is a compile error.
- */
-export type EntityIndexInput<E> = EntityIndexOptions<E> & {
-  readonly columns: (refs: RefMap<E>) => readonly EntityIndexColumnInput<E>[];
-};
+/** An index as registration reads it: its columns, read off the refs, and its options. */
+export type EntityIndexInput<E> = EntityIndexOptions<E> & { readonly columns: readonly EntityIndexColumnInput[] };

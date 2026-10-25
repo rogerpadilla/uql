@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { defineEntity } from '../entity/index.js';
+import { defineEntity, f } from '../entity/index.js';
 import { detectDrift } from '../migrate/drift/index.js';
 import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
@@ -23,14 +23,10 @@ describe('PostgreSQL column type drift', () => {
   const dialect = new PostgresDialect({});
 
   const driftFor = async (length?: number) => {
-    class Row {
-      id?: number;
-      title?: string | null;
-    }
-    defineEntity(Row, {
+    const Row = defineEntity({
       name: TABLE,
       schema: SCHEMA,
-      fields: { id: { type: Number, isId: true }, title: { type: String, length } },
+      fields: { id: f.number().id(), title: length ? f.string().nullable().length(length) : f.string().nullable() },
     });
     const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect([TABLE]);
     const generator = new SqlSchemaGenerator(dialect);

@@ -3,10 +3,10 @@
 // family refuses a write to the table firing, and SQL Server has no BEFORE.
 
 import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
-import { Entity, Field, Id, Trigger } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { assertDefined, linkUqlOrmSource, migrationsDir, provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
-import type { Type } from '../type/index.js';
+import type { Column, Type } from '../type/index.js';
 import { sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
@@ -15,23 +15,27 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({ name: 'TgAudit' })
 class TgAudit {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) postId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) postId?: number | null;
 }
 
 /** The post table, its audit firing on an update of the column `watched`, its title declared as `title`. */
-function tgPost(watched: 'title' | 'views', title: { readonly length?: number; readonly nullable?: false } = {}) {
-  @Trigger({
-    on: 'afterUpdate',
-    of: (post) => [post[watched]],
-    name: 'audit',
-    run: (newRow) => insertInto(TgAudit, { postId: newRow.id }),
+function tgPost(watched: 'title' | 'views', title: Column<unknown, string> = f.string().nullable()) {
+  @Entity({
+    name: 'TgPost',
+    triggers: (tgPost, trigger) => [
+      trigger({
+        on: 'afterUpdate',
+        of: [tgPost[watched]],
+        name: 'audit',
+        run: (newRow) => insertInto(TgAudit, { postId: newRow.id }),
+      }),
+    ],
   })
-  @Entity({ name: 'TgPost' })
   class TgPost {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String, ...title }) title?: string | null;
-    @Field({ type: Number }) views?: number | null;
+    @Field(f.number().id()) id?: number;
+    @Field(title) title?: string;
+    @Field(f.number().nullable()) views?: number | null;
   }
   return TgPost;
 }
@@ -39,7 +43,7 @@ function tgPost(watched: 'title' | 'views', title: { readonly length?: number; r
 const TgPost = tgPost('title');
 const TgPostWatchingViews = tgPost('views');
 // Nullability too, so SQLite, which has no length to retype, rebuilds the table around the trigger.
-const TgPostRetyped = tgPost('title', { length: 300, nullable: false });
+const TgPostRetyped = tgPost('title', f.string().length(300));
 
 const TRIGGER_POOLS = sqlPools('test_trigger');
 
@@ -124,9 +128,9 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   it('should drop a trigger the entity no longer declares', async () => {
     @Entity({ name: 'TgPost' })
     class Untriggered {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
-      @Field({ type: Number }) views?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
+      @Field(f.number().nullable()) views?: number | null;
     }
     restoreWhenFinished();
 
@@ -219,46 +223,52 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
 // Writing a second table with its own generated key, whose counter runs ahead of the first's: every
 // engine has to hand back the ids of the rows an insert wrote, never the log's. A statement touching
 // several rows is what tells SQL Server's one firing per statement from the others' one per row.
-@Trigger(
-  {
-    on: 'afterInsert',
-    name: 'log',
-    run: (newRow) => insertInto(TgLog, { postId: newRow.id, title: newRow.title, source: "it's" }),
-  },
-  {
-    on: 'afterUpdate',
-    name: 'relog',
-    run: (newRow) => updateTable(TgLog, { $where: { postId: newRow.id } }, { title: newRow.title }),
-  },
-  { on: 'afterDelete', name: 'unlog', run: (_newRow, oldRow) => deleteFrom(TgLog, { $where: { postId: oldRow.id } }) },
-  {
-    on: 'afterInsert',
-    name: 'flag',
-    where: { $new: { title: 'flagged' } },
-    run: (newRow) => insertInto(TgLog, { postId: newRow.id, source: 'flag' }),
-  },
-  {
-    on: 'afterUpdate',
-    name: 'unflag',
-    where: { $old: { title: 'flagged' } },
-    run: (newRow) =>
-      sql`${deleteFrom(TgLog, { $where: { postId: newRow.id, source: 'flag' } })}
+@Entity({
+  name: 'TgLogged',
+  triggers: (tgLogged, trigger) => [
+    trigger({
+      on: 'afterInsert',
+      name: 'log',
+      run: (newRow) => insertInto(TgLog, { postId: newRow.id, title: newRow.title, source: "it's" }),
+    }),
+    trigger({
+      on: 'afterUpdate',
+      name: 'relog',
+      run: (newRow) => updateTable(TgLog, { $where: { postId: newRow.id } }, { title: newRow.title }),
+    }),
+    trigger({
+      on: 'afterDelete',
+      name: 'unlog',
+      run: (_newRow, oldRow) => deleteFrom(TgLog, { $where: { postId: oldRow.id } }),
+    }),
+    trigger({
+      on: 'afterInsert',
+      name: 'flag',
+      where: { $new: { title: 'flagged' } },
+      run: (newRow) => insertInto(TgLog, { postId: newRow.id, source: 'flag' }),
+    }),
+    trigger({
+      on: 'afterUpdate',
+      name: 'unflag',
+      where: { $old: { title: 'flagged' } },
+      run: (newRow) =>
+        sql`${deleteFrom(TgLog, { $where: { postId: newRow.id, source: 'flag' } })}
         ${insertInto(TgLog, { postId: newRow.id, source: 'unflag' })}`,
-  },
-)
-@Entity({ name: 'TgLogged' })
+    }),
+  ],
+})
 class TgLogged {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
 }
 
 // A column named apart from its key, and a literal holding a quote, both carried into each engine's body.
 @Entity({ name: 'TgLog' })
 class TgLog {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, name: 'post_id' }) postId?: number | null;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) source?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable().name('post_id')) postId?: number | null;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) source?: string | null;
 }
 
 describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_engine, connect) => {
@@ -329,13 +339,17 @@ describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_en
   });
 });
 
-@Trigger({ on: 'afterDelete', name: 'kept', run: () => refuse("ledger rows are kept: it's final") })
-@Trigger({ on: 'afterUpdate', name: 'frozen', where: { $old: { frozen: true } }, run: () => refuse('frozen') })
-@Entity({ name: 'TgLedger' })
+@Entity({
+  name: 'TgLedger',
+  triggers: (tgLedger, trigger) => [
+    trigger({ on: 'afterUpdate', name: 'frozen', where: { $old: { frozen: true } }, run: () => refuse('frozen') }),
+    trigger({ on: 'afterDelete', name: 'kept', run: () => refuse("ledger rows are kept: it's final") }),
+  ],
+})
 class TgLedger {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Boolean }) frozen?: boolean | null;
-  @Field({ type: Number }) amount?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.boolean().nullable()) frozen?: boolean | null;
+  @Field(f.number().nullable()) amount?: number | null;
 }
 
 describe.each(TRIGGER_POOLS)('a refusal on %s', (_engine, connect) => {
@@ -358,16 +372,20 @@ describe.each(TRIGGER_POOLS)('a refusal on %s', (_engine, connect) => {
   });
 });
 
-@Trigger({
-  on: 'afterInsert',
-  deferred: true,
-  where: { $new: { amount: { $ne: 0 } } },
-  run: () => refuse('unbalanced'),
+@Entity({
+  name: 'TgEntry',
+  triggers: (tgEntry, trigger) => [
+    trigger({
+      on: 'afterInsert',
+      deferred: true,
+      where: { $new: { amount: { $ne: 0 } } },
+      run: () => refuse('unbalanced'),
+    }),
+  ],
 })
-@Entity({ name: 'TgEntry' })
 class TgEntry {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) amount?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) amount?: number | null;
 }
 
 describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.deferrable))(
@@ -394,37 +412,39 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.def
   },
 );
 
-@Trigger(
-  {
-    on: 'afterInsert',
-    name: 'last',
-    run: (newRow) => upsertInto(TgLast, { sku: true }, { sku: newRow.sku, qty: newRow.qty }),
-  },
-  {
-    on: 'afterInsert',
-    name: 'first',
-    run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, {}),
-  },
-)
-@Entity({ name: 'TgSale' })
+@Entity({
+  name: 'TgSale',
+  triggers: (tgSale, trigger) => [
+    trigger({
+      on: 'afterInsert',
+      name: 'last',
+      run: (newRow) => upsertInto(TgLast, { sku: true }, { sku: newRow.sku, qty: newRow.qty }),
+    }),
+    trigger({
+      on: 'afterInsert',
+      name: 'first',
+      run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, {}),
+    }),
+  ],
+})
 class TgSale {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) sku?: string | null;
-  @Field({ type: Number }) qty?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) sku?: string | null;
+  @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgLast' })
 class TgLast {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
-  @Field({ type: Number }) qty?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(20)) sku?: string | null;
+  @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgFirst' })
 class TgFirst {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
-  @Field({ type: Number }) qty?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(20)) sku?: string | null;
+  @Field(f.number().nullable()) qty?: number | null;
 }
 
 describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) => {
@@ -445,43 +465,45 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
   });
 });
 
-@Trigger(
-  {
-    on: 'afterInsert',
-    name: 'count',
-    run: (newRow) => upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
-  },
-  {
-    on: 'afterInsert',
-    name: 'total',
-    run: (newRow) =>
-      upsertInto(
-        TgTotal,
-        { sku: true },
-        { sku: newRow.sku, total: newRow.qty },
-        { total: sql`${refs(TgTotal).total} + ${newRow.qty}` },
-      ),
-  },
-)
-@Entity({ name: 'TgOrder' })
+@Entity({
+  name: 'TgOrder',
+  triggers: (tgOrder, trigger) => [
+    trigger({
+      on: 'afterInsert',
+      name: 'count',
+      run: (newRow) => upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
+    }),
+    trigger({
+      on: 'afterInsert',
+      name: 'total',
+      run: (newRow) =>
+        upsertInto(
+          TgTotal,
+          { sku: true },
+          { sku: newRow.sku, total: newRow.qty },
+          { total: sql`${refs(TgTotal).total} + ${newRow.qty}` },
+        ),
+    }),
+  ],
+})
 class TgOrder {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) sku?: string | null;
-  @Field({ type: Number }) qty?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) sku?: string | null;
+  @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgCount' })
 class TgCount {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
-  @Field({ type: Number }) hits?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(20)) sku?: string | null;
+  @Field(f.number().nullable()) hits?: number | null;
 }
 
 @Entity({ name: 'TgTotal' })
 class TgTotal {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
-  @Field({ type: Number }) total?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(20)) sku?: string | null;
+  @Field(f.number().nullable()) total?: number | null;
 }
 
 // An engine firing once per statement applies one update per target row for it, so a counter is refused there.
@@ -505,35 +527,39 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.fir
 
 // What a body kept in a function of its own can do, in the PL/pgSQL only the Postgres family runs: assign to
 // the incoming row and read the outgoing one.
-@Trigger(
-  { on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});` },
-  { on: 'beforeDelete', name: 'trash', run: (_newRow, oldRow) => insertInto(TgTrash, { postId: oldRow.id }) },
-  // A transition, which `of` alone cannot state: from one value to another.
-  {
-    on: 'afterUpdate',
-    name: 'published',
-    where: { $old: { title: 'Draft' }, $new: { title: { $in: ['Published', 'Featured'] } } },
-    run: (newRow) => insertInto(TgTrash, { postId: newRow.id }),
-  },
-  // Every character that could end a literal or the body early: a quote, a LIKE wildcard, a dollar quote.
-  {
-    on: 'afterInsert',
-    name: 'literal',
-    where: { $new: { title: "it's 100% $$" } },
-    run: (newRow) => sql`INSERT INTO "TgTrash" ("postId") SELECT ${newRow.id} WHERE ${"$$ it's"} <> '';`,
-  },
-)
-@Entity({ name: 'TgSlugged' })
+@Entity({
+  name: 'TgSlugged',
+  triggers: (tgSlugged, trigger) => [
+    trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});` }),
+    trigger({
+      on: 'beforeDelete',
+      name: 'trash',
+      run: (_newRow, oldRow) => insertInto(TgTrash, { postId: oldRow.id }),
+    }),
+    trigger({
+      on: 'afterUpdate',
+      name: 'published',
+      where: { $old: { title: 'Draft' }, $new: { title: { $in: ['Published', 'Featured'] } } },
+      run: (newRow) => insertInto(TgTrash, { postId: newRow.id }),
+    }),
+    trigger({
+      on: 'afterInsert',
+      name: 'literal',
+      where: { $new: { title: "it's 100% $$" } },
+      run: (newRow) => sql`INSERT INTO "TgTrash" ("postId") SELECT ${newRow.id} WHERE ${"$$ it's"} <> '';`,
+    }),
+  ],
+})
 class TgSlugged {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) slug?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) slug?: string | null;
 }
 
 @Entity({ name: 'TgTrash' })
 class TgTrash {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) postId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) postId?: number | null;
 }
 
 describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.body === 'function'))(
@@ -591,12 +617,20 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
 
     // A dropped trigger leaves the function it called, which would pile up with every edited body.
     it('should drop the function of each trigger it drops or replaces', async () => {
-      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := upper(${newRow.title});` })
-      @Entity({ name: 'TgSlugged' })
+      @Entity({
+        name: 'TgSlugged',
+        triggers: (upper, trigger) => [
+          trigger({
+            on: 'beforeInsert',
+            name: 'slug',
+            run: (newRow) => sql`${newRow.slug} := upper(${newRow.title});`,
+          }),
+        ],
+      })
       class Upper {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string | null;
-        @Field({ type: String }) slug?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) title?: string | null;
+        @Field(f.string().nullable()) slug?: string | null;
       }
       const declared = new Migrator(pool(), { entities: [TgTrash, TgSlugged] });
       onTestFinished(() => declared.sync({ safe: false }));
@@ -613,18 +647,27 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
     // The catalogue read, the function and its drop all have to name the schema, or a second sync never sees
     // what the first installed and tries to create it again.
     it('should keep the function of a table in a schema of its own there, and drop it with its trigger', async () => {
-      @Trigger({ on: 'beforeInsert', name: 'slug', run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});` })
-      @Entity({ name: 'TgSchemed', schema: 'tg' })
+      @Entity({
+        name: 'TgSchemed',
+        schema: 'tg',
+        triggers: (schemed, trigger) => [
+          trigger({
+            on: 'beforeInsert',
+            name: 'slug',
+            run: (newRow) => sql`${newRow.slug} := lower(${newRow.title});`,
+          }),
+        ],
+      })
       class Schemed {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string | null;
-        @Field({ type: String }) slug?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) title?: string | null;
+        @Field(f.string().nullable()) slug?: string | null;
       }
       @Entity({ name: 'TgSchemed', schema: 'tg' })
       class Untriggered {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string | null;
-        @Field({ type: String }) slug?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) title?: string | null;
+        @Field(f.string().nullable()) slug?: string | null;
       }
       onTestFinished(async () => {
         for (const statement of new SqlSchemaGenerator(pool().dialect).generateDropSchema([Schemed], {

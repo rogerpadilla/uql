@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
-import { Entity, Field, getMeta, Id, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, getMeta, OneToMany } from '../entity/index.js';
 import { parseQueryParams } from '../http/query.js';
 import {
   anyUuid,
@@ -26,43 +26,48 @@ import { sql, refs } from '../util/index.js';
 import { UqlSecurityError } from '../util/uqlError.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
-/** Each field of a tag, which a relation excluding every one reads all the same. */
+/** Each field of a tag left out, which a relation reads all the same. */
 const EVERY_TAG_FIELD = {
-  id: true,
-  companyId: true,
-  creatorId: true,
-  createdAt: true,
-  updatedAt: true,
-  name: true,
-  itemsCount: true,
+  id: false,
+  companyId: false,
+  creatorId: false,
+  createdAt: false,
+  updatedAt: false,
+  name: false,
+  itemsCount: false,
 } as const;
 
 /** Exercises a soft-delete stamp whose value is a raw SQL expression. */
 @Entity()
 class SoftDeleteRaw {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Date, softDelete: () => sql(() => 'NOW()') })
+  @Field(
+    f
+      .date()
+      .nullable()
+      .softDelete(() => sql(() => 'NOW()')),
+  )
   deletedAt?: Date | null;
 }
 
 /** A column of each literal kind an inline context writes. */
 @Entity()
 class InlineRow {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
-  @Field({ type: Boolean })
+  @Field(f.boolean().nullable())
   active?: boolean | null;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   rank?: number | null;
 }
 
 /** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
 @Entity()
 class RenamedParent {
-  @Id({ type: Number, name: 'parent_pk' })
+  @Field(f.number().id().name('parent_pk'))
   id?: number;
   @OneToMany({ entity: () => RenamedChild, mappedBy: (renamedChild) => renamedChild.parentId })
   children?: RenamedChild[];
@@ -70,9 +75,14 @@ class RenamedParent {
 
 @Entity()
 class RenamedChild {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ name: 'parent_fk', references: () => RenamedParent })
+  @Field(
+    f
+      .references(() => RenamedParent)
+      .nullable()
+      .name('parent_fk'),
+  )
   parentId?: number | null;
 }
 
@@ -1404,18 +1414,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   /**
    * The children correlate on the parent's key without selecting it, so the parent keeps only what the
-   * query asked for - after `$exclude` and a falsy `$select` alike - and the relation joins nothing.
+   * query asked for after a falsy `$select`, and the relation joins nothing.
    */
-  shouldFind$excludeBesideAToMany() {
+  shouldFindAFalsySelectBesideAToMany() {
     const e = this.dialect.escapeIdChar;
     const excluded = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } }),
-    ).sql;
-    const deselected = this.exec((ctx) =>
       this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } }),
     ).sql;
 
-    expect(deselected).toBe(excluded);
     expect(excluded).toContain(` ${e}User${e}.${e}companyId${e}, `);
     expect(excluded).not.toContain(`${e}User${e}.${e}id${e}, `);
     expect(excluded).not.toContain(' JOIN ');
@@ -1425,7 +1431,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldReadEveryFieldOfARelationExcludingAll() {
     const e = this.dialect.escapeIdChar;
     const { sql: statement } = this.exec((ctx) =>
-      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags: { $exclude: EVERY_TAG_FIELD } } }),
+      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags: { $select: EVERY_TAG_FIELD } } }),
     );
 
     expect(statement).toContain(`${e}tags${e}.${e}name${e}`);
@@ -1434,7 +1440,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** Reading every field, such a relation deduplicates on each, so it sorts by any. */
   shouldSortADistinctRelationExcludingAll() {
     const e = this.dialect.escapeIdChar;
-    const tags = { $exclude: EVERY_TAG_FIELD, $distinct: true, $sort: { name: 1 } } as const;
+    const tags = { $select: EVERY_TAG_FIELD, $distinct: true, $sort: { name: 1 } } as const;
     const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags } }),
     );
@@ -1480,12 +1486,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(statement).toContain(`${e}category.measureUnits${e}`);
   }
 
-  shouldFind$excludeOnAJoinedRelation() {
+  shouldFindAFalsySelectOnAJoinedRelation() {
     const e = this.dialect.escapeIdChar;
     const { sql: statement } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $populate: { profile: { $exclude: { picture: true } } },
+        $populate: { profile: { $select: { picture: false } } },
       }),
     );
     expect(statement).toBe(
@@ -1494,18 +1500,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /** Same rule one level down: the joined row is keyed by `profile.pk`, so subtracting it is refused. */
-  shouldFind$excludeKeepsTheIdOfAJoinedRelation() {
+  shouldFindAFalsySelectKeepsTheIdOfAJoinedRelation() {
     const e = this.dialect.escapeIdChar;
     const expected = `SELECT ${e}User${e}.${e}id${e}, ${e}profile${e}.${e}pk${e} ${e}profile.pk${e}, ${e}profile${e}.${e}companyId${e} ${e}profile.companyId${e}, ${e}profile${e}.${e}creatorId${e} ${e}profile.creatorId${e}, ${e}profile${e}.${e}createdAt${e} ${e}profile.createdAt${e}, ${e}profile${e}.${e}updatedAt${e} ${e}profile.updatedAt${e}, ${e}profile${e}.${e}image${e} ${e}profile.picture${e} FROM ${e}User${e} LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`;
 
-    expect(
-      this.exec((ctx) =>
-        this.dialect.find(ctx, User, {
-          $select: { id: true },
-          $populate: { profile: { $exclude: { pk: true } } },
-        }),
-      ).sql,
-    ).toBe(expected);
     expect(
       this.exec((ctx) =>
         this.dialect.find(ctx, User, {

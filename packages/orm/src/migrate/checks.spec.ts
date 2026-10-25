@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -12,23 +12,23 @@ import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
-  checks: [{ name: 'wallet_non_negative_ck', where: sql`"balance" >= 0` }, { where: sql`"spent" <= "balance"` }],
+  checks: (wallet, check) => [check(sql`"balance" >= 0`, 'wallet_non_negative_ck'), check(sql`"spent" <= "balance"`)],
 })
 class Wallet {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number | null;
-  @Field({ type: Number }) spent?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) balance?: number | null;
+  @Field(f.number().nullable()) spent?: number | null;
 }
 
-@Entity({ name: 'purse', checks: [{ where: sql`"balance" >= 0` }] })
+@Entity({ name: 'purse', checks: (renamedWallet, check) => [check(sql`"balance" >= 0`)] })
 class RenamedWallet {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) balance?: number | null;
 }
 
 @Entity()
 class NoChecks {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
 }
 
 const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
@@ -51,10 +51,10 @@ describe('check constraints', () => {
   });
 
   it('should name an edited check apart from the one it replaces', () => {
-    @Entity({ name: 'purse', checks: [{ where: sql`"balance" >= 1` }] })
+    @Entity({ name: 'purse', checks: (editedWallet, check) => [check(sql`"balance" >= 1`)] })
     class EditedWallet {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) balance?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable()) balance?: number | null;
     }
     expect(ownedNames(ddl(new PostgresDialect(), EditedWallet))).not.toEqual(
       ownedNames(ddl(new PostgresDialect(), RenamedWallet)),
@@ -79,17 +79,19 @@ describe('check constraints', () => {
 
 describe('check expressions', () => {
   it('should write a value as its literal, which CREATE TABLE carries inline', () => {
-    @Entity({ checks: [{ where: sql`"balance" >= ${0}` }] })
+    @Entity({ checks: (floor, check) => [check(sql`"balance" >= ${0}`)] })
     class Floor {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     expect(ddl(new PostgresDialect(), Floor)).toContain('CHECK ("balance" >= 0)');
   });
 
   it('should refuse a value left bound, which CREATE TABLE has no placeholder for', () => {
-    @Entity({ checks: [{ where: sql(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')) }] })
+    @Entity({
+      checks: (bound, check) => [check(sql(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')))],
+    })
     class Bound {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     expect(() => ddl(new PostgresDialect(), Bound)).toThrow(/no placeholder/);
   });
@@ -97,22 +99,22 @@ describe('check expressions', () => {
 
 @Entity()
 class Invoice {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ['draft', 'paid', 'void'] as const })
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(['draft', 'paid', 'void']).nullable())
   status?: 'draft' | 'paid' | 'void' | null;
-  @Field({ type: String }) note?: string | null;
+  @Field(f.string().nullable()) note?: string | null;
 }
 
 @Entity()
 class Priority {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, enum: [1, 2, 3] as const }) level?: 1 | 2 | 3 | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum([1, 2, 3]).nullable()) level?: 1 | 2 | 3 | null;
 }
 
 @Entity()
 class Quoted {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ["it's", 'plain'] as const }) label?: "it's" | 'plain' | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(["it's", 'plain']).nullable()) label?: "it's" | 'plain' | null;
 }
 
 enum Status {
@@ -122,8 +124,8 @@ enum Status {
 
 @Entity()
 class TsEnumInvoice {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: Object.values(Status) }) status?: Status | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(Object.values(Status)).nullable()) status?: Status | null;
 }
 
 describe('enum fields', () => {
@@ -134,9 +136,16 @@ describe('enum fields', () => {
   it('should keep the constraints a stored computed column declares', () => {
     @Entity({ name: 'Priced' })
     class Priced {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) net?: number | null;
-      @Field({ type: Number, computed: sql`net * 2`, stored: true, nullable: false, unique: true }) gross?: number;
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable()) net?: number | null;
+      @Computed((row) =>
+        f
+          .number()
+          .unique()
+          .as(sql`net * 2`)
+          .stored(),
+      )
+      gross?: number;
     }
 
     const statement = ddl(new PostgresDialect(), Priced);
@@ -179,19 +188,19 @@ describe('enum fields', () => {
 
 @Entity({ name: 'Bill' })
 class NarrowBill {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ['draft', 'paid'] as const }) status?: 'draft' | 'paid' | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(['draft', 'paid']).nullable()) status?: 'draft' | 'paid' | null;
 }
 
 @Entity({ name: 'Bill' })
 class WideBill {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ['draft', 'paid', 'void'] as const }) status?: 'draft' | 'paid' | 'void' | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.enum(['draft', 'paid', 'void']).nullable()) status?: 'draft' | 'paid' | 'void' | null;
 }
 
 @Entity({ name: 'Bill' })
 class PlainBill {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
 }
 
 /** `entity`'s table as the database would report it, checks included, had `installed` built it. */

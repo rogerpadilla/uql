@@ -39,6 +39,12 @@ export const RAW_ALIAS: unique symbol = Symbol('rawAlias');
 export const SQL_TEXT: unique symbol = Symbol('sqlText');
 /** Keys the phantom a ref or an aggregate carries its value type in, which no value ever fills. */
 export const SQL_VALUE_TYPE: unique symbol = Symbol('sqlValueType');
+/** The member a ref names. A symbol, as each of a ref's own keys is, so every string key is the data's. */
+export const REF_KEY: unique symbol = Symbol('refKey');
+/** The dotted path a {@link JsonPathRef} reads down its column's document. */
+export const JSON_PATH: unique symbol = Symbol('jsonPath');
+/** Keys the phantom a {@link JsonPathRef} carries the value at its path in. */
+export const JSON_VALUE: unique symbol = Symbol('jsonValue');
 
 /**
  * What a `sql` template interpolates: a value it binds, a list of them (`= ANY(${ids})`), or SQL it renders in
@@ -69,29 +75,43 @@ export class QuerySql {
   as(alias: string): QuerySql {
     return new QuerySql(this[SQL_FN], { alias, text: this[SQL_TEXT] });
   }
+}
 
-  /** Writes the expression into `opts.ctx`. The alias is the projection's to write, after the term. */
-  render(opts: QuerySqlRenderOptions): void {
-    const emitted = this[SQL_FN](opts);
-    if (typeof emitted === 'string' || (typeof emitted === 'number' && !Number.isNaN(emitted))) {
-      opts.ctx.append(String(emitted));
-    }
+/** Writes `statement` into `opts.ctx`. The alias is the projection's to write, after the term. */
+export function renderSql(statement: QuerySql, opts: QuerySqlRenderOptions): void {
+  const emitted = statement[SQL_FN](opts);
+  if (typeof emitted === 'string' || (typeof emitted === 'number' && !Number.isNaN(emitted))) {
+    opts.ctx.append(String(emitted));
   }
 }
 
 /**
  * A field of an entity as SQL, read off `refs(Entity)` or a definition's refs: interpolated into `sql`, it
- * renders as the field's column. Its `key` is how an index tells a column from an expression, and `V`,
+ * renders as the field's column. Its key is how an index tells a column from an expression, and `V`,
  * the field's type, is what a value slot checks it against: see {@link SqlFor}.
  */
 export class ColumnRef<K extends string = string, V = unknown> extends QuerySql {
   declare readonly [SQL_VALUE_TYPE]?: V;
+  readonly [REF_KEY]: K;
 
-  constructor(
-    readonly key: K,
-    value: QuerySqlFn,
-  ) {
+  constructor(key: K, value: QuerySqlFn) {
     super(value);
+    this[REF_KEY] = key;
+  }
+}
+
+/**
+ * A path inside a JSON column, read off an index's refs as the `$where` key it is: `user.settings.theme`
+ * for `'settings.theme'`. `V`, the value at the path, decides how the index has to read it.
+ */
+export class JsonPathRef<V = unknown> {
+  declare readonly [JSON_VALUE]?: V;
+  readonly [REF_KEY]: string;
+  readonly [JSON_PATH]: string;
+
+  constructor(key: string, path: string) {
+    this[REF_KEY] = key;
+    this[JSON_PATH] = path;
   }
 }
 

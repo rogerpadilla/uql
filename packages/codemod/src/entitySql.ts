@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { type Edit, inserted, type Part, replaced, type Span } from './edits.js';
 import { isSqlExport, uqlExport } from './imports.js';
-import { propertyValue } from './syntax.js';
+import { columnListEntries, propertyValue } from './syntax.js';
 
 // What replaced SQL a definition writes as text: an index expression is `sql` in its list, reading the
 // list's refs, and a partial-index `where` is `sql` or a predicate, never a string. SQL still naming a
@@ -21,9 +21,7 @@ export function isSqlCall(node: ts.Node, checker: ts.TypeChecker): node is SqlCa
 
 /** The expressions of a column list, written as one or returned by its callback: each entry or `column` that is `sql`. */
 export function columnExpressions(list: ts.Expression | undefined, checker: ts.TypeChecker): readonly SqlCall[] {
-  const body = list && ts.isArrowFunction(list) ? list.body : list;
-  const entries: readonly ts.Expression[] = body && ts.isArrayLiteralExpression(body) ? body.elements : [];
-  return entries.flatMap((entry) => {
+  return columnListEntries(list).flatMap((entry) => {
     const sql = ts.isObjectLiteralExpression(entry) ? propertyValue(entry, 'column') : entry;
     return sql && isSqlCall(sql, checker) ? [sql] : [];
   });

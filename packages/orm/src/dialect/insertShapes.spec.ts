@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 
 @Entity()
 class Shaped {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: String }) email?: string | null;
-  @Field({ type: 'json' }) settings?: object | null;
-  @Field({ type: 'vector' }) embedding?: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.json().nullable()) settings?: object | null;
+  @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 
 /**

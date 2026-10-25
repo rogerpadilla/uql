@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
@@ -8,21 +8,27 @@ import type { SqlQuerierPool } from '../type/index.js';
 
 const TABLE = 'text_weight_doc';
 
-@Index((doc) => [doc.title, doc.bodyText], { type: 'fulltext' })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (plainDoc, index) => [index([plainDoc.title, plainDoc.bodyText], { type: 'fulltext' })],
+})
 class PlainDoc {
-  @Id({ type: String, onInsert: uuidv7 }) id?: string;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) bodyText?: string | null;
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) bodyText?: string | null;
 }
 
 /** The same table, its title now weighed: what an entity becomes once a weight is added to it. */
-@Index((doc) => [{ column: doc.title, weight: 10 }, doc.bodyText], { type: 'fulltext' })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (weightedDoc, index) => [
+    index([{ column: weightedDoc.title, weight: 10 }, weightedDoc.bodyText], { type: 'fulltext' }),
+  ],
+})
 class WeightedDoc {
-  @Id({ type: String, onInsert: uuidv7 }) id?: string;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) bodyText?: string | null;
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) bodyText?: string | null;
 }
 
 /**

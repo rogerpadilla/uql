@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BeforeInsert, defineHook, Entity, Field, Id } from '../entity/index.js';
+import { BeforeInsert, defineEntity, Entity, f, Field } from '../entity/index.js';
 import { createMockQuerier } from '../test/index.js';
-import { type HookContext, runHooks } from './hook.util.js';
+import type { HookContext } from '../type/index.js';
+import { runHooks } from './hook.util.js';
 
 /**
  * `runHooks`' own contract: how a registered method is dispatched. Which events a querier emits, and
@@ -14,13 +15,13 @@ const ctx: HookContext = { querier, onCommit: querier.onCommit };
 
 @Entity()
 class Article {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   slug?: string | null;
 
   @BeforeInsert()
@@ -33,10 +34,10 @@ class Article {
 /** Its hook is the assertion: reaching it at all fails the test that says it must not run. */
 @Entity()
 class Unhooked {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
   @BeforeInsert()
@@ -65,7 +66,7 @@ describe('runHooks', () => {
 
     @Entity()
     class Ordered {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
       @BeforeInsert()
@@ -93,20 +94,105 @@ describe('runHooks', () => {
     expect(payloads).toEqual([{ title: 'untouched' }]);
   });
 
+  it("should await a schema's hook, each run on the row with the context", async () => {
+    const Note = defineEntity({
+      name: 'Note',
+      fields: { id: f.number().id(), body: f.string().nullable(), seen: f.boolean().nullable() },
+    }).hooks({
+      beforeInsert: [
+        async (note, { querier: given }) => {
+          await Promise.resolve();
+          note.seen = given === querier;
+        },
+        (note) => void (note.body = note.body?.trim() ?? null),
+      ],
+    });
+    const note: InstanceType<typeof Note> = { id: 1, body: ' hi ' };
+
+    await runHooks(Note, 'beforeInsert', [note], ctx);
+
+    expect(note).toEqual({ id: 1, body: 'hi', seen: true });
+  });
+
+  it("should run a schema base's hooks on the entities extending it", async () => {
+    const Stamped = defineEntity({
+      name: 'Stamped',
+      abstract: true,
+      fields: { by: f.string().nullable() },
+    }).hooks({ beforeInsert: [(row) => void (row.by ??= 'base')] });
+    const Note = defineEntity({ name: 'Note', extends: Stamped, fields: { id: f.number().id() } });
+    const note: InstanceType<typeof Note> = { id: 1 };
+
+    await runHooks(Note, 'beforeInsert', [note], ctx);
+
+    expect(note.by).toBe('base');
+  });
+
   it('should do nothing when there are no payloads', async () => {
     await expect(runHooks(Unhooked, 'beforeInsert', [], ctx)).resolves.toBeUndefined();
   });
 
-  it('should refuse a registered name that is no method of the entity, naming both', async () => {
-    @Entity()
-    class Misnamed {
-      @Id({ type: Number })
-      id?: number;
-    }
-    defineHook(Misnamed, 'stamp', 'beforeInsert');
+  it('should refuse a hook on a member that is no method where the entity is declared, naming both', () => {
+    expect(() => {
+      @Entity()
+      class Misnamed {
+        @Field(f.number().id())
+        id?: number;
+        // @ts-expect-error covers the runtime guard for untyped callers
+        @BeforeInsert()
+        stamp?: string;
+      }
+      return Misnamed;
+    }).toThrow("'Misnamed' runs 'stamp' on beforeInsert, but has no such method");
+  });
 
-    await expect(runHooks(Misnamed, 'beforeInsert', [new Misnamed()], ctx)).rejects.toThrow(
-      "'Misnamed' runs 'stamp' on beforeInsert, but has no such method",
-    );
+  it("should run an entity's override of the hook method its base declares", async () => {
+    @Entity()
+    class Stamped {
+      @Field(f.number().id())
+      id?: number;
+      @Field(f.string().nullable())
+      by?: string | null;
+      @BeforeInsert()
+      stamp(): void {
+        this.by = 'base';
+      }
+    }
+    @Entity()
+    class Restamped extends Stamped {
+      override stamp(): void {
+        this.by = 'child';
+      }
+    }
+    const row = new Restamped();
+
+    await runHooks(Restamped, 'beforeInsert', [row], ctx);
+
+    expect(row.by).toBe('child');
+  });
+
+  it("should run an entity's override of a hook method named by the empty string", async () => {
+    @Entity()
+    class Blank {
+      @Field(f.number().id())
+      id?: number;
+      @Field(f.string().nullable())
+      by?: string | null;
+      @BeforeInsert()
+      ['']() {
+        this.by = 'base';
+      }
+    }
+    @Entity()
+    class Reblanked extends Blank {
+      override ['']() {
+        this.by = 'child';
+      }
+    }
+    const row = new Reblanked();
+
+    await runHooks(Reblanked, 'beforeInsert', [row], ctx);
+
+    expect(row.by).toBe('child');
   });
 });

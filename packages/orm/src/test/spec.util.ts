@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { type Column, COLUMN_OPTIONS, type FieldOptions } from '../type/index.js';
 
 /** The shape of a generated key, whose value a test cannot know. */
 export const uuidPattern = /^[0-9a-f-]{36}$/;
@@ -85,4 +86,9 @@ function methodsOf(spec: object): Map<string, SpecHook> {
     }
   }
   return methods;
+}
+
+/** A column as an untyped caller hands one over, plain options no builder checked: what a runtime guard is for. */
+export function untypedColumn(options: FieldOptions): Column {
+  return { [COLUMN_OPTIONS]: options };
 }

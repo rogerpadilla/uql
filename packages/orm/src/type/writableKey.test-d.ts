@@ -3,28 +3,34 @@
  * never reaches the database, so the type should not let a caller think it does. Reads are untouched.
  * Type-checked by `bun run ts` only.
  */
-import { Entity, Field, Id, OneToMany } from '../entity/index.js';
+import { Computed, Entity, f, Field, OneToMany } from '../entity/index.js';
 import type { Querier } from '../index.js';
 
 @Entity()
 class Line {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Basket, type: Number }) basketId?: number | null;
-  @Field({ type: Number }) amount?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Basket),
+  )
+  basketId?: number | null;
+  @Field(f.number().nullable()) amount?: number | null;
 }
 
 @Entity()
 class Basket {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) label?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) label?: string | null;
 
   @OneToMany({ entity: () => Line, mappedBy: (line) => line.basketId })
   lines?: Line[];
 
-  @Field({ computed: (basket) => basket.lines.count() })
+  @Computed((basket) => basket.lines.count())
   readonly lineCount?: number;
 
-  @Field({ type: Number, computed: (basket) => basket.id, stored: true })
+  @Computed((basket) => f.number().nullable().as(basket.id).stored())
   readonly mirroredId?: number | null;
 }
 

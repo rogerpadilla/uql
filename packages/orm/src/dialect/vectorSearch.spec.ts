@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
-import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
@@ -18,24 +18,26 @@ import { encodeFloat32s, parseVectorLiteral, toSparsevecLiteral } from './vector
 /** A per-field default metric, which a query without `$distance` inherits. */
 @Entity({ name: 'L2Item' })
 class L2Item {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', distance: 'l2' }) vec!: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.column('vector').nullable().distance('l2')) vec!: number[] | null;
 }
 
 /** A field with no metric of its own, whose index names one: an index only serves the metric it was built for. */
-@Entity({ name: 'L2IndexedItem' })
-@Index((l2IndexedItem) => [l2IndexedItem.vec], { type: 'hnsw', distance: 'l2' })
+@Entity({
+  name: 'L2IndexedItem',
+  indexes: (l2IndexedItem, index) => [index([l2IndexedItem.vec], { type: 'hnsw', distance: 'l2' })],
+})
 class L2IndexedItem {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector' }) vec!: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.column('vector').nullable()) vec!: number[] | null;
 }
 
 /** A vector column named like the one of the item it joins, which only its table alias tells apart. */
 @Entity({ name: 'VectorNote' })
 class VectorNote {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
-  @Field({ references: () => VectorItem }) itemId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.vector(3).nullable()) vec!: number[] | null;
+  @Field(f.references(() => VectorItem).nullable()) itemId?: number | null;
   @ManyToOne({ entity: () => VectorItem, references: (note) => note.itemId }) item?: VectorItem;
 }
 
@@ -531,6 +533,10 @@ describe('vector $project', () => {
     expect(() => exec('id')).toThrow("$project 'id' collides with a field of 'VectorItem'");
   });
 
+  it('should reject an empty name rather than project nothing', () => {
+    expect(() => exec('')).toThrow("$project '' is no plain name");
+  });
+
   it('should accept a name of its own', () => {
     expect(exec('score')).toContain('::vector "score"');
   });
@@ -541,18 +547,22 @@ describe('vector $project', () => {
  * statement it becomes depends on the index type declared on the field - and where there is no ANN
  * index, or no vector search to rank, there is nothing to widen and nothing is emitted.
  */
-@Entity({ name: 'HnswItem' })
-@Index((hnswItem) => [hnswItem.vec], { type: 'hnsw', distance: 'cosine' })
+@Entity({
+  name: 'HnswItem',
+  indexes: (hnswItem, index) => [index([hnswItem.vec], { type: 'hnsw', distance: 'cosine' })],
+})
 class HnswItem {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.vector(3).nullable()) vec!: number[] | null;
 }
 
-@Entity({ name: 'IvfflatItem' })
-@Index((ivfflatItem) => [ivfflatItem.vec], { type: 'ivfflat', distance: 'cosine' })
+@Entity({
+  name: 'IvfflatItem',
+  indexes: (ivfflatItem, index) => [index([ivfflatItem.vec], { type: 'ivfflat', distance: 'cosine' })],
+})
 class IvfflatItem {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.vector(3).nullable()) vec!: number[] | null;
 }
 
 describe('vector query-time tuning', () => {
@@ -598,12 +608,14 @@ describe('vector query-time tuning', () => {
 
   // Two ranked vector fields is ambiguous; the first wins, on the SQL side and MongoDB alike.
   it('should take the first vector sort when more than one field is ranked', () => {
-    @Entity({ name: 'TwoVectorItem' })
-    @Index((twoVectorItem) => [twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })
+    @Entity({
+      name: 'TwoVectorItem',
+      indexes: (twoVectorItem, index) => [index([twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })],
+    })
     class TwoVectorItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) a!: number[] | null;
-      @Field({ type: 'vector', dimensions: 3 }) b!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) a!: number[] | null;
+      @Field(f.vector(3).nullable()) b!: number[] | null;
     }
 
     const tuned = pg.vectorTuningStatements(getMeta(TwoVectorItem), {
@@ -656,11 +668,13 @@ describe('vector query-time tuning', () => {
 
   /** MariaDB scopes the variable to the one statement, so it prefixes the SQL instead of preceding it. */
   it('should prefix the statement on MariaDB rather than running a SET of its own', () => {
-    @Entity({ name: 'MariaVecItem' })
-    @Index((mariaVecItem) => [mariaVecItem.vec], { type: 'vector', distance: 'cosine' })
+    @Entity({
+      name: 'MariaVecItem',
+      indexes: (mariaVecItem, index) => [index([mariaVecItem.vec], { type: 'vector', distance: 'cosine' })],
+    })
     class MariaVecItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) vec!: number[] | null;
     }
     const maria = new MariaDialect();
     const ctx = maria.createContext();
@@ -675,14 +689,16 @@ describe('vector query-time tuning', () => {
   it('should set the tuning beside the to-many cap in one prefix on MariaDB', () => {
     @Entity({ name: 'MariaVecChunk' })
     class MariaVecChunk {
-      @Id({ type: Number }) id?: number;
-      @Field({ references: () => MariaVecDoc }) docId?: number | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.references(() => MariaVecDoc).nullable()) docId?: number | null;
     }
-    @Entity({ name: 'MariaVecDoc' })
-    @Index((mariaVecDoc) => [mariaVecDoc.vec], { type: 'vector', distance: 'cosine' })
+    @Entity({
+      name: 'MariaVecDoc',
+      indexes: (mariaVecDoc, index) => [index([mariaVecDoc.vec], { type: 'vector', distance: 'cosine' })],
+    })
     class MariaVecDoc {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) vec!: number[] | null;
       @OneToMany({ entity: () => MariaVecChunk, mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
       chunks?: MariaVecChunk[];
     }
@@ -738,11 +754,10 @@ describe('libSQL vector index search', () => {
 
   /** An Atlas index names a vector search to MongoDB; libSQL builds a plain index for it, which `vector_top_k` cannot read. */
   it('should compute every distance where the index is an Atlas one', () => {
-    @Entity({ name: 'AtlasItem' })
-    @Index((atlasItem) => [atlasItem.vec], { type: 'vectorSearch' })
+    @Entity({ name: 'AtlasItem', indexes: (atlasItem, index) => [index([atlasItem.vec], { type: 'vectorSearch' })] })
     class AtlasItem {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) vec!: number[] | null;
     }
     expect(find(libsql, AtlasItem, rank).sql).not.toContain('vector_top_k');
   });

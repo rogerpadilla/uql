@@ -4,58 +4,76 @@
  * left behind, so a key whose type stops linking back to the entity property is caught. Type-checked
  * like any `.test-d.ts`.
  */
-import { defineEntity, Entity, Field, Id, Index, keyOf, ManyToOne, OneToMany } from '../entity/index.js';
+import { BeforeInsert, Computed, Entity, f, Field, keyOf, ManyToOne, OneToMany } from '../entity/index.js';
 import { sortOf, sql, refs } from '../util/index.js';
 import type { KeyMap, Querier } from './index.js';
 
 @Entity()
 class Studio {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
   @OneToMany({ entity: () => Movie, mappedBy: (movie) => movie.studio }) movies?: Movie[];
 }
 
-@Index((movie) => [movie.title, { column: movie.rating, order: 'desc' }], { include: (movie) => [movie.studioId] })
-@Index((movie) => [sql`lower(${movie.title})`], { where: (movie) => sql`${movie.rating} > 0` })
-@Index((movie) => [movie.studioId], { where: { rating: { $gt: 0 } } })
-@Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => sql`${movie.rating} <= ${10}` }] })
+@Entity({
+  checks: (movie, check) => [check({ rating: { $gte: 0 } }), check(sql`${movie.rating} <= ${10}`)],
+  indexes: (movie, index) => [
+    index([movie.studioId], { where: { rating: { $gt: 0 } } }),
+    index([sql`lower(${movie.title})`], { where: sql`${movie.rating} > 0` }),
+    index([movie.title, { column: movie.rating, order: 'desc' }], { include: [movie.studioId] }),
+  ],
+})
 class Movie {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: Number }) rating?: number | null;
-  @Field({ type: Number, references: () => Studio }) studioId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.number().nullable()) rating?: number | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Studio),
+  )
+  studioId?: number | null;
   @ManyToOne({ entity: () => Studio, references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
   studio?: Studio;
-  @Field({ type: Number, references: () => Cinema }) cinemaId?: number | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Cinema),
+  )
+  cinemaId?: number | null;
   @ManyToOne({ entity: () => Cinema, references: (movie) => movie.cinemaId }) venue?: Cinema;
-  @Field({ type: Number, computed: (movie) => sql`${movie.rating} * 2` }) score?: number | null;
+  @Computed((movie) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`${movie.rating} * 2`),
+  )
+  score?: number | null;
 }
 
-class Cinema {
-  id?: number;
-  city?: string | null;
-  label?: string | null;
-  films?: Movie[];
-  readonly filmCount?: number;
-  readonly topRating?: number | null;
-  touch(): void {}
-}
-
-defineEntity(Cinema, {
-  fields: {
-    id: { type: Number, isId: true },
-    city: { type: String },
-    label: { type: String, computed: (cinema) => sql`upper(${cinema.city})` },
-    filmCount: { computed: (cinema) => cinema.films.count({ $where: { rating: { $gt: 0 } } }) },
-    topRating: { computed: (cinema) => cinema.films.max((movie) => movie.rating) },
-  },
-  relations: { films: { cardinality: '1m', entity: () => Movie, mappedBy: (movie) => movie.cinemaId } },
-  indexes: [
-    { columns: (cinema) => [cinema.city], include: (cinema) => [cinema.id] },
-    { columns: (cinema) => [sql`lower(${cinema.city})`], where: { city: { $ne: '' } } },
+@Entity({
+  checks: (cinema, check) => [check(sql`${cinema.city} <> ''`)],
+  indexes: (cinema, index) => [
+    index([sql`lower(${cinema.city})`], { where: { city: { $ne: '' } } }),
+    index([cinema.city], { include: [cinema.id] }),
   ],
-  checks: [{ where: (cinema) => sql`${cinema.city} <> ''` }],
-  hooks: { beforeInsert: (cinema) => [cinema.touch] },
-});
+})
+class Cinema {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) city?: string | null;
+  @Computed((cinema) =>
+    f
+      .string()
+      .nullable()
+      .as(sql`upper(${cinema.city})`),
+  )
+  label?: string | null;
+  @OneToMany({ entity: () => Movie, mappedBy: (movie) => movie.cinemaId }) films?: Movie[];
+  @Computed((cinema) => cinema.films.count({ $where: { rating: { $gt: 0 } } })) readonly filmCount?: number;
+  @Computed((cinema) => cinema.films.max((movie) => movie.rating)) readonly topRating?: number | null;
+  @BeforeInsert() touch(): void {}
+}
 
 declare const querier: Querier;
 
@@ -77,7 +95,7 @@ export async function find() {
     $count: { movies: { $where: { rating: { $gt: 8 } } } },
     $where: { movies: { $size: { $gte: 1 } } },
   });
-  const excluded = await querier.findMany(Movie, { $exclude: { rating: true } });
+  const excluded = await querier.findMany(Movie, { $select: { rating: false } });
   await querier.findMany(Movie, { $sort: sortOf<Movie>([[keyOf((movie: KeyMap<Movie>) => movie.title), 'asc']]) });
   return [
     found[0].title,

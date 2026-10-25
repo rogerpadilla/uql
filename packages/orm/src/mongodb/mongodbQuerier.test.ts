@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
-import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
+import { Entity, f, Field, getEntities, getMeta } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
 import { assertDefined, createSpec, MeasureUnitCategory, mongoUri, Profile, TypedRow, User } from '../test/index.js';
 import { sql } from '../util/index.js';
@@ -15,19 +15,19 @@ function soleKeyed() {
 /** A string key left to the driver, so MongoDB mints the `ObjectId` and the read converts it. */
 @Entity()
 class Ticket {
-  @Id({ type: String })
+  @Field(f.string().id())
   id?: string;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   subject?: string | null;
 }
 
 /** Two vectors, of which `$vectorSearch` can rank by only one. */
 @Entity()
 class TwoVectorDoc {
-  @Id({ type: String }) id?: string;
-  @Field({ type: 'vector', dimensions: 2 }) title?: number[] | null;
-  @Field({ type: 'vector', dimensions: 2 }) body?: number[] | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.vector(2).nullable()) title?: number[] | null;
+  @Field(f.vector(2).nullable()) body?: number[] | null;
 }
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {

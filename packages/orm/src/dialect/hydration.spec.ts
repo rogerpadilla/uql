@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -18,23 +18,23 @@ import { DECODERS } from './hydrateColumn.js';
 /** A string key, so nothing at all needs decoding: numeric ids do (see the `number` cases below). */
 @Entity()
 class PlainRow {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) name?: string | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) name?: string | null;
 }
 
 /** A decimal reads as its exact text, declared by its SQL type or as a `String` over one; `Number` opts in to rounding. */
 @Entity()
 class PriceRow {
-  @Id({ type: String }) id?: string;
-  @Field({ type: 'decimal', precision: 30, scale: 2 }) price?: string | null;
-  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string | null;
-  @Field({ type: Number, precision: 12, scale: 2 }) rounded?: number | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.decimal(30, 2).nullable()) price?: string | null;
+  @Field(f.decimal(30, 2).nullable()) exact?: string | null;
+  @Field(f.number().nullable().precision(12).scale(2)) rounded?: number | null;
 }
 
 @Entity()
 class FlagRow {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Boolean }) active?: boolean | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.boolean().nullable()) active?: boolean | null;
 }
 
 /**
@@ -44,22 +44,22 @@ class FlagRow {
  */
 @Entity()
 class LogicalRow {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'boolean' }) active?: boolean | null;
-  @Field({ type: 'decimal', precision: 12, scale: 2 }) amount?: string | null;
-  @Field({ type: BigInt }) huge?: bigint | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.column('boolean').nullable()) active?: boolean | null;
+  @Field(f.decimal(12, 2).nullable()) amount?: string | null;
+  @Field(f.bigint().nullable()) huge?: bigint | null;
 }
 
 @Entity()
 class WideOwner {
-  @Id({ type: BigInt }) id?: bigint;
+  @Field(f.bigint().id()) id?: bigint;
 }
 
 /** A foreign key typed by the key it references, a `BigInt` one here. */
 @Entity()
 class WideOwned {
-  @Id({ type: String }) id?: string;
-  @Field({ references: () => WideOwner }) ownerId?: bigint | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.references(() => WideOwner).nullable()) ownerId?: bigint | null;
 }
 
 /** Each field `dialect` decodes and as what: for a row on the wire, or with `json`, one crossing JSON in its parent's. */

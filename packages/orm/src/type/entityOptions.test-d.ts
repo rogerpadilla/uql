@@ -2,241 +2,116 @@
  * The entity options family: a declared `type` is checked against the property's TypeScript type, so a
  * mismatch is a compile error rather than a wrong column. Type-checked by `bun run ts` only.
  */
-import { defineEntity, defineIndex, Entity, Field, Id } from '../entity/index.js';
-import type {
-  FieldKey,
-  FieldOptionsFor,
-  Json,
-  MethodKey,
-  RelationKey,
-  RelationOptionsFor,
-  RelationTarget,
-  TsTypeOf,
-  TypeFor,
-} from '../type/index.js';
+import { Entity, f, Field, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import type { FieldKey, Json, MethodKey, RelationKey } from '../type/index.js';
 import { sql } from '../util/index.js';
 
 declare function expectType<T>(value: T): void;
 
 class Company {
-  id?: number;
+  @Field(f.number().id()) id?: number;
 }
 
-// ─── TypeFor: the constructor and the column-string spelling are both accepted ───
-expectType<TypeFor<string>>(String);
-expectType<TypeFor<string>>('varchar');
-expectType<TypeFor<string | null>>('uuid');
-expectType<TypeFor<number>>(Number);
-expectType<TypeFor<number>>('int');
-expectType<TypeFor<bigint>>(BigInt);
-expectType<TypeFor<boolean>>(Boolean);
-expectType<TypeFor<boolean>>('bool');
-expectType<TypeFor<Date>>(Date);
-expectType<TypeFor<Date>>('timestamptz');
-// A time of day names no day, so it reads as the text every driver returns rather than a `Date`.
-expectType<TypeFor<string>>('time');
-// @ts-expect-error a time column holds no `Date`
-expectType<TypeFor<Date>>('time');
-expectType<TypeFor<Uint8Array>>('bytea');
-
-// A string-literal union (the shape every `as const` enum takes) is still a string column.
-type Role = 'admin' | 'member';
-expectType<TypeFor<Role>>(String);
-expectType<TypeFor<Role>>('text');
-
-// A decimal is exact text: `Number` over one opts in to rounding.
-expectType<TypeFor<string>>('decimal');
-// @ts-expect-error a decimal column is not declared a number by its SQL type
-expectType<TypeFor<number>>('decimal');
-
-// JSON is matched on the brand, so it survives intersecting its payload, and arrays of it too.
-expectType<TypeFor<Json<{ a: number }>>>('jsonb');
-expectType<TypeFor<Json<string[]>>>('jsonb');
-expectType<TypeFor<Json<{ a: number }>[]>>('json');
-
-// `number[]` is a vector, not a number.
-expectType<TypeFor<number[]>>('vector');
-expectType<TypeFor<number[]>>('halfvec');
-
-// An untyped field stays permissive rather than becoming unusable.
-expectType<TypeFor<unknown>>(String);
-expectType<TypeFor<unknown>>('jsonb');
-
-// @ts-expect-error a string field cannot be a numeric column
-expectType<TypeFor<string>>(Number);
-// @ts-expect-error a number field cannot be a string column
-expectType<TypeFor<number>>('text');
-// @ts-expect-error a Date field cannot be an integer column
-expectType<TypeFor<Date>>('int');
-// @ts-expect-error a boolean field cannot be a Date
-expectType<TypeFor<boolean>>(Date);
-// @ts-expect-error a vector field is not a plain number column
-expectType<TypeFor<number[]>>(Number);
-// @ts-expect-error a JSON field is not a text column
-expectType<TypeFor<Json<{ a: number }>>>('text');
-
-// ─── FieldOptionsFor: `type` required, except behind `references` ───
-expectType<FieldOptionsFor<string | null>>({ type: String });
-expectType<FieldOptionsFor<string | null>>({ type: 'varchar', length: 150 });
-// A property that does not admit `null` says the column refuses one, which is what a decorator checks
-// the other way round.
-expectType<FieldOptionsFor<string>>({ type: String, nullable: false });
-// @ts-expect-error the column holds `null` and the property does not admit it
-expectType<FieldOptionsFor<string>>({ type: String });
-expectType<FieldOptionsFor<number>>({ type: Number, isId: true });
-// A foreign key may omit `type` so schema generation resolves it from the referenced primary key. Unlike
-// `@Field`, this arm cannot also check the property against that key: `FieldOptionsFor<V>` is reached
-// through a mapped type, which gives the target no inference position to be read from.
-expectType<FieldOptionsFor<string | null>>({ references: () => Company });
-expectType<FieldOptionsFor<string | null>>({ references: () => Company, type: 'uuid' });
-
-// @ts-expect-error `type` is required when there is no `references` to resolve it from
-expectType<FieldOptionsFor<string>>({ length: 150 });
-// @ts-expect-error the declared type is checked even alongside other options
-expectType<FieldOptionsFor<string>>({ type: Number, length: 150 });
-// @ts-expect-error and it is checked on the `references` arm too
-expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'int' });
+// ─── @Field({ type }): the constructor and the column-string spelling are both checked ───
+export class Typed {
+  @Field(f.number().id()) id?: number;
+  @Field(f.column('varchar').nullable()) name?: string | null;
+  @Field(f.column('int').nullable()) count?: number | null;
+  @Field(f.column('timestamptz').nullable()) at?: Date | null;
+  // A time of day names no day, so it reads as the text every driver returns rather than a `Date`.
+  @Field(f.column('time').nullable()) opensAt?: string | null;
+  // @ts-expect-error a time column holds no `Date`
+  @Field(f.column('time').nullable()) closesAt?: Date | null;
+  // A decimal is exact text: `Number` over one opts in to rounding.
+  @Field(f.decimal().nullable()) price?: string | null;
+  @Field(f.number().nullable().columnType('decimal')) rounded?: number | null;
+  // A string-literal union (the shape every `as const` enum takes) is still a string column.
+  @Field(f.string().nullable()) role?: 'admin' | 'member' | null;
+  @Field(f.jsonb().nullable()) settings?: Json<{ a: number }> | null;
+  @Field(f.vector(3).nullable()) embedding?: number[] | null;
+  @Field(f.column('bytea').nullable()) avatar?: Uint8Array | null;
+  // @ts-expect-error a string field cannot be a numeric column
+  @Field(f.number().nullable()) label?: string | null;
+  // @ts-expect-error a number field cannot be a string column
+  @Field(f.text().nullable()) total?: number | null;
+  // @ts-expect-error a JSON field is not a text column
+  @Field(f.text().nullable()) meta?: Json<{ a: number }> | null;
+  // @ts-expect-error a vector field is not a plain number column
+  @Field(f.number().nullable()) vector?: number[] | null;
+}
 
 // ─── @Field({ references }): a foreign key holds the referenced key's own type ───
-// Only where the column is resolved from that key. An explicit `type` opts out of the resolution, so
-// it is checked on its own - the case `schemaASTBuilder.spec` pins, a BIGINT column over a uuid key.
+// An explicit `type` opts out of resolving the column from that key, so it may widen it, a BIGINT column over
+// a numeric key, but not hold another kind of value, which no join could match.
 export class Referrer {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number | null;
-  @Field({ type: BigInt, references: () => Company }) wideCompanyId?: bigint | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Company).nullable()) companyId?: number | null;
+  @Field(
+    f
+      .bigint()
+      .nullable()
+      .references(() => Company),
+  )
+  wideCompanyId?: bigint | null;
   // @ts-expect-error a string property cannot hold Company's numeric key
-  @Field({ references: () => Company }) misTypedId?: string | null;
+  @Field(f.references(() => Company).nullable()) misTypedId?: string | null;
+  @Field(
+    f
+      .string()
+      .nullable()
+      // @ts-expect-error a text column cannot hold Company's numeric key
+      .references(() => Company),
+  )
+  textCompanyId?: string | null;
 }
 // ─── Generators stamp the value the field declares ───
 // `defaultValue` does too, with one exception: a JSONB column defaults with a document, a list included,
 // or the SQL literal it stores, unchecked against the field: the decorator types every JSON column alike.
 class Generated {
-  @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
-  @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number | null;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
-  @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number | null;
-  @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }> | null;
-  @Field({ type: 'jsonb', defaultValue: { theme: 'dark' } }) theme?: Json<{ theme?: string }> | null;
-  @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
-  @Field({ type: 'jsonb', defaultValue: [{ at: 1 }] }) events?: Json<{ at: number }>[] | null;
+  @Field(
+    f
+      .uuid()
+      .id()
+      .onInsert(() => crypto.randomUUID()),
+  )
+  id?: string;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .onInsert(() => Date.now())
+      .onUpdate(() => Date.now()),
+  )
+  stamped?: number | null;
+  @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
+  deletedEpoch?: number | null;
+  @Field(f.jsonb().nullable().default('{}')) settings?: Json<{ theme?: string }> | null;
+  @Field(f.jsonb().nullable().default({ theme: 'dark' })) theme?: Json<{ theme?: string }> | null;
+  @Field(f.jsonb().nullable().default([])) tags?: Json<string[]> | null;
+  @Field(
+    f
+      .jsonb()
+      .nullable()
+      .default([{ at: 1 }]),
+  )
+  events?: Json<{ at: number }>[] | null;
 
-  // @ts-expect-error a uuid column is not stamped with a number
-  @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string | null;
+  @Field(
+    f
+      .uuid()
+      .nullable()
+      // @ts-expect-error a uuid column is not stamped with a number
+      .onInsert(() => 42),
+  )
+  badGenerator?: string | null;
 }
 expectType<string | undefined>(new Generated().id);
-
-// The same check on the imperative path, which `FieldOptions<V>` carries into `FieldOptionsFor<V>`.
-expectType<FieldOptionsFor<number | null>>({ type: Number, onInsert: () => Date.now() });
-expectType<FieldOptionsFor<Json<{ theme?: string }> | null>>({ type: 'jsonb', defaultValue: '{}' });
-expectType<FieldOptionsFor<Json<string[]> | null>>({ type: 'jsonb', defaultValue: [] });
-// @ts-expect-error nor to a callback
-expectType<FieldOptionsFor<Json<string[]> | null>>({ type: 'jsonb', defaultValue: () => [] });
-// @ts-expect-error a number column is not stamped with a string
-expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
-// @ts-expect-error nor does it default to one
-expectType<FieldOptionsFor<number>>({ type: Number, defaultValue: 'nope' });
-
-// ─── RelationOptionsFor: `entity` required and pinned, cardinality follows the field shape ───
-expectType<RelationTarget<Company>>(new Company());
-expectType<RelationTarget<Company[]>>(new Company());
-
-type Holder = { companyId?: number; company?: Company };
-expectType<RelationOptionsFor<Company, Holder>>({
-  entity: () => Company,
-  cardinality: 'm1',
-  references: (holder) => holder.companyId,
-});
-expectType<RelationOptionsFor<Company, Holder>>({ entity: () => Company, cardinality: '11', mappedBy: (c) => c.id });
-// @ts-expect-error the side holding the foreign key names it
-expectType<RelationOptionsFor<Company, Holder>>({ entity: () => Company, cardinality: 'm1' });
-expectType<RelationOptionsFor<Company[]>>({
-  entity: () => Company,
-  cardinality: '1m',
-  mappedBy: (company) => company.id,
-});
-// @ts-expect-error a to-many needs to say how to reach its children
-expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'mm' });
-expectType<RelationOptionsFor<Company[], Employee>>({
-  entity: () => Company,
-  cardinality: 'mm',
-  references: (employee, company) => [{ local: employee.companyId, foreign: company.id }],
-});
-expectType<RelationOptionsFor<Company, Employee>>({
-  entity: () => Company,
-  cardinality: 'm1',
-  references: (employee) => employee.companyId,
-});
-// @ts-expect-error a to-many pairs its columns rather than naming one
-expectType<RelationOptionsFor<Company[], Employee>>({
-  entity: () => Company,
-  cardinality: 'mm',
-  references: (employee) => employee.companyId,
-});
-
-// @ts-expect-error a to-many cardinality needs an array field
-expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '1m' });
-// @ts-expect-error a to-one cardinality cannot hold an array field
-expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'm1' });
-// @ts-expect-error `entity` is required
-expectType<RelationOptionsFor<Company>>({ cardinality: 'm1' });
-expectType<RelationOptionsFor<Company>>({
-  entity: () => Company,
-  cardinality: 'm1',
-  // @ts-expect-error a many-to-one holds its foreign key, so it is no inverse side
-  mappedBy: (company) => company.id,
-});
-// @ts-expect-error a to-one joins through no junction
-expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '11', through: () => Company });
-expectType<RelationOptionsFor<Company[]>>({
-  entity: () => Company,
-  cardinality: '1m',
-  mappedBy: (company) => company.id,
-  // @ts-expect-error an inverse side holds no foreign key for an action to apply to
-  onDelete: 'CASCADE',
-});
-
-// ─── mappedBy: one member of the target, read off its key map ───
-class Employee {
-  id?: number;
-  companyId?: number;
-  company?: Company;
-}
-expectType<RelationOptionsFor<Employee[]>>({
-  entity: () => Employee,
-  cardinality: '1m',
-  mappedBy: (employee) => employee.companyId,
-});
-expectType<RelationOptionsFor<Employee[]>>({
-  entity: () => Employee,
-  cardinality: '1m',
-  mappedBy: (employee) => employee.company,
-});
-
-expectType<RelationOptionsFor<Employee[]>>({
-  entity: () => Employee,
-  cardinality: '1m',
-  // @ts-expect-error a misspelled key is not a member of the target
-  mappedBy: (employee) => employee.compnayId,
-});
-// @ts-expect-error nor can the callback conjure a key name from nothing
-expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: () => 'nope' });
-// @ts-expect-error an optional member still names itself, so the callback never answers `undefined`
-expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: () => undefined });
-// @ts-expect-error a string names a key a rename cannot follow; only the callback form exists
-expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'companyId' });
-
-// ─── through: a pivot is its own entity, unrelated to the target's shape ───
-class EmployeeProject {
-  id?: number;
-  employeeId?: number;
-  projectId?: number;
-}
-// `Company` declares no relation of its own, and `through` still takes one.
-expectType<RelationOptionsFor<Company[]>>({
-  entity: () => Company,
-  cardinality: 'mm',
-  through: () => EmployeeProject,
-});
 
 // ─── FieldKey / RelationKey: an array of Json is a column, an array of entities is a relation ───
 // The two are told apart by the weak-type check: `JsonBrand` is all-optional, so an entity class
@@ -254,12 +129,6 @@ expectType<FieldKey<WithJsonArray>>('employees');
 // @ts-expect-error an array of Json is a column, so it is not a relation
 expectType<RelationKey<WithJsonArray>>('items');
 
-// And it is declarable as one, with the `json` column type `TypeFor` already allows for the shape.
-defineEntity(WithJsonArray, {
-  fields: { id: { type: Number, isId: true }, items: { type: 'jsonb' } },
-  relations: { employees: { cardinality: '1m', entity: () => Employee, mappedBy: (employee) => employee.companyId } },
-});
-
 // ─── MethodKey ───
 class WithMethods {
   id?: number;
@@ -272,209 +141,84 @@ expectType<MethodKey<WithMethods>>('reload');
 // @ts-expect-error a data property is not a method
 expectType<MethodKey<WithMethods>>('name');
 
-// ─── EntityOptions: the checks survive being reached through `defineEntity` ───
-class Account {
-  id?: number;
-  email?: string | null;
-  createdAt?: Date | null;
-  ownerId?: number | null;
-  owner?: Company;
-  touch() {}
+// ─── Relation options: each decorator takes the options its side can use ───
+class Employee {
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Company).nullable()) companyId?: number | null;
+  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
 }
 
-defineEntity(Account, {
-  fields: {
-    id: { type: Number, isId: true },
-    email: { type: String },
-    createdAt: { type: 'timestamptz' },
-    ownerId: { references: () => Company },
-  },
-  relations: { owner: { cardinality: 'm1', entity: () => Company, references: (account) => account.ownerId } },
-  indexes: [
-    { columns: (account) => [account.email], unique: true },
-    {
-      columns: (account) => [{ column: account.createdAt, order: 'desc' }, sql`lower(${account.email})`],
-      include: (account) => [account.id],
-    },
+class EmployeeProject {
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Employee).nullable()) employeeId?: number | null;
+  @Field(f.references(() => Company).nullable()) companyId?: number | null;
+}
+
+export class Staffed {
+  @Field(f.number().id()) id?: number;
+  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.company }) staff?: Employee[];
+  // A pivot is its own entity, unrelated to the target's shape.
+  @ManyToMany({ entity: () => Employee, through: () => EmployeeProject }) contractors?: Employee[];
+  // @ts-expect-error a misspelled key is not a member of the target
+  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.compnayId }) misspelled?: Employee[];
+  // @ts-expect-error a string names a key a rename cannot follow; only the callback form exists
+  @OneToMany({ entity: () => Employee, mappedBy: 'companyId' }) named?: Employee[];
+  // @ts-expect-error a to-many needs to say how to reach its children
+  @ManyToMany({ entity: () => Employee }) unjoined?: Employee[];
+  // @ts-expect-error an inverse side holds no foreign key for an action to apply to
+  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.company, onDelete: 'CASCADE' })
+  acted?: Employee[];
+  // @ts-expect-error a to-one joins through no junction
+  @OneToOne({ entity: () => Company, through: () => EmployeeProject }) pivoted?: Company;
+}
+
+// ─── @Entity: its options read the decorated class ───
+@Entity({
+  indexes: (account, index) => [
+    index([account.email], { unique: true }),
+    index([{ column: account.createdAt, order: 'desc' }, sql`lower(${account.email})`], { include: [account.id] }),
   ],
-  checks: [{ where: { email: { $ne: '' } } }, { where: (account) => sql`${account.createdAt} IS NOT NULL` }],
-  hooks: { beforeInsert: (account) => [account.touch], afterLoad: (account) => [account.touch] },
-});
-
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error a check reads the entity's own fields
-  checks: [{ where: { emial: { $ne: '' } } }],
-});
-
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error the options a relation takes are its decorator's, so a many-to-one is no inverse side
-  relations: { owner: { cardinality: 'm1', entity: () => Company, mappedBy: (company) => company.id } },
-});
-
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error a many-to-one names the foreign key it joins by
-  relations: { owner: { cardinality: 'm1', entity: () => Company } },
-});
-
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true }, email: { type: String } },
-  relations: {
-    owner: {
-      cardinality: 'm1',
-      entity: () => Company,
-      // @ts-expect-error a pair's column holds the value of the key it joins, and `email` is a string
-      references: (account, company) => [{ local: account.email, foreign: company.id }],
-    },
-  },
-});
-
-class Sponsorship {
-  id?: number;
-  sponsorId?: number | null;
-  sponsor?: Company;
-}
-defineEntity(Sponsorship, {
-  fields: { id: { type: Number, isId: true }, sponsorId: { references: () => Company, nullable: true } },
-  relations: {
-    sponsor: { cardinality: 'm1', entity: () => Company, references: (sponsorship) => sponsorship.sponsorId },
-  },
-});
-
-@Entity({ relations: { company: { cardinality: 'm1', entity: () => Company, references: (seat) => seat.companyId } } })
-export class Seat {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number | null;
-  company?: Company;
+  checks: (account, check) => [check({ email: { $ne: '' } }), check(sql`${account.createdAt} IS NOT NULL`)],
+})
+export class Account {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.column('timestamptz').nullable()) createdAt?: Date | null;
 }
 
-// @ts-expect-error a many-to-one in `@Entity` names its foreign key too
-@Entity({ relations: { company: { cardinality: 'm1', entity: () => Company } } })
-export class UnlinkedSeat {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number | null;
-  company?: Company;
+// @ts-expect-error a check reads the entity's own fields
+@Entity({ checks: (unchecked, check) => [check({ emial: { $ne: '' } })] })
+export class Unchecked {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
 }
 
-defineEntity(Account, {
-  // @ts-expect-error wrong `type` for a string field
-  fields: { id: { type: Number, isId: true }, email: { type: Number } },
-});
-defineEntity(Account, {
-  // @ts-expect-error wrong column type for a Date field
-  fields: { id: { type: Number, isId: true }, createdAt: { type: 'int' } },
-});
-defineEntity(Account, {
-  // @ts-expect-error a misspelled field name is not a field of the entity
-  fields: { id: { type: Number, isId: true }, emial: { type: String } },
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error the hook names a method the entity does not have
-  hooks: { beforeInsert: (account) => [account.nope] },
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error a field is no method to run
-  hooks: { beforeInsert: (account) => [account.email] },
-});
 /**
  * The options around each member list are a literal of their own, not a callback's return, because only
- * a literal is checked for excess properties: `afterLod` and `uniqe` below would otherwise compile, and
- * the hook never run, or the index not be unique.
+ * a literal is checked for excess properties: `uniqe` below would otherwise compile, and the index not be unique.
  */
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error each event is checked, not only the first
-  hooks: { beforeInsert: (account) => [account.touch], afterLod: (account) => [account.touch] },
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error an index option the entity index does not have
-  indexes: [{ columns: (account) => [account.email], uniqe: true }],
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error no such column to index
-  indexes: [{ columns: (account) => [account.emial] }],
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error a relation is not a column
-  indexes: [{ columns: (account) => [account.owner] }],
-});
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error no such column to include
-  indexes: [{ columns: (account) => [account.email], include: (account) => [account.idd] }],
-});
-defineIndex(Account, { columns: (account) => [account.email], unique: true });
+// @ts-expect-error an index option the entity index does not have
+@Entity({ indexes: (misindexed, index) => [index([misindexed.email], { uniqe: true })] })
+export class Misindexed {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
+}
+
 // @ts-expect-error no such column to index
-defineIndex(Account, { columns: (account) => [account.emial] });
+@Entity({ indexes: (unindexed, index) => [index([unindexed.emial])] })
+export class Unindexed {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
+}
 
-/** On `@Entity`, an index's refs and a hook's key map are typed by the decorated class, as `@Index`'s refs are. */
-@Entity({
-  indexes: [{ columns: (tagged) => [tagged.label] }],
-  hooks: { afterLoad: (tagged) => [tagged.touch] },
-})
-export class Tagged {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) label?: string | null;
-  touch() {}
+/** A base that is never a table: the entities extending it take the columns its index names. */
+@Entity({ abstract: true, indexes: (stampedBase, index) => [index([stampedBase.at])] })
+export abstract class StampedBase {
+  @Field(f.date().nullable()) at?: Date | null;
 }
-defineEntity(Account, {
-  // @ts-expect-error a field is no relation: its value is no entity to point at
-  relations: { email: { cardinality: 'm1', entity: () => Company } },
-});
-defineEntity(Account, {
-  // @ts-expect-error nor is a name the class does not declare
-  relations: { ownr: { cardinality: 'm1', entity: () => Company } },
-});
-/**
- * A relation's `entity` is checked structurally, which is as far as TypeScript can go: a class that
- * happens to satisfy the target's shape is accepted, so only a genuinely incompatible one is rejected.
- * `Account` would pass for `Company` here, because it also has an optional numeric `id`.
- */
-class Unrelated {
-  label?: string;
-}
-defineEntity(Account, {
-  fields: { id: { type: Number, isId: true } },
-  // @ts-expect-error a relation cannot point at an entity of an incompatible shape
-  relations: { owner: { cardinality: 'm1', entity: () => Unrelated } },
-});
 
-// ─── EntityOptions.extends: the base's properties are checked against the entity's own ───
-class Stamped {
-  createdAt?: Date;
+/** A key's values are checked against its type as a field's are. */
+export class EnumKeyed {
+  // @ts-expect-error a String key cannot hold a numeric member
+  @Field(f.enum(['a', 2]).id()) id?: 'a' | 2;
 }
-class Mistyped {
-  createdAt?: string;
-}
-defineEntity(Account, { extends: Stamped, fields: { id: { type: Number, isId: true } } });
-defineEntity(Account, {
-  // @ts-expect-error the base declares `createdAt` as something the entity does not
-  extends: Mistyped,
-  fields: { id: { type: Number, isId: true } },
-});
-
-// ─── TsTypeOf agrees with TypeFor ───
-// The two mappings are written independently (neither is inferable from the other), so these assert
-// they stay consistent: whatever TypeScript type a declared `type` implies must accept that `type` back.
-expectType<TypeFor<TsTypeOf<StringConstructor>>>(String);
-expectType<TypeFor<TsTypeOf<NumberConstructor>>>(Number);
-expectType<TypeFor<TsTypeOf<BigIntConstructor>>>(BigInt);
-expectType<TypeFor<TsTypeOf<BooleanConstructor>>>(Boolean);
-expectType<TypeFor<TsTypeOf<DateConstructor>>>(Date);
-expectType<TypeFor<TsTypeOf<'varchar'>>>('varchar');
-expectType<TypeFor<TsTypeOf<'uuid'>>>('uuid');
-expectType<TypeFor<TsTypeOf<'int'>>>('int');
-expectType<TypeFor<TsTypeOf<'bigint'>>>('bigint');
-expectType<TypeFor<TsTypeOf<'bool'>>>('bool');
-expectType<TypeFor<TsTypeOf<'timestamptz'>>>('timestamptz');
-expectType<TypeFor<TsTypeOf<'time'>>>('time');
-expectType<TypeFor<TsTypeOf<'jsonb'>>>('jsonb');
-expectType<TypeFor<TsTypeOf<'bytea'>>>('bytea');
-expectType<TypeFor<TsTypeOf<'vector'>>>('vector');

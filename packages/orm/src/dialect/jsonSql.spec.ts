@@ -87,7 +87,11 @@ describe('jsonSetTarget', () => {
   });
 
   it('should use a NOT NULL column directly', () => {
-    expect(jsonSetTarget('`kind`', { nullable: false }, "'{}'")).toBe('`kind`');
+    expect(jsonSetTarget('`kind`', { type: 'json' }, "'{}'")).toBe('`kind`');
+  });
+
+  it('should coalesce a nullable column', () => {
+    expect(jsonSetTarget('`kind`', { type: 'json', nullable: true }, "'{}'")).toBe("COALESCE(`kind`, '{}')");
   });
 });
 

@@ -9,8 +9,8 @@ import {
   type TableNode,
 } from '../../schema/types.js';
 import { camelCase, lowerFirst, pascalCase, singularize, upperFirst } from '../../util/string.util.js';
-import { buildFieldOptionsSource, fieldImports } from './fieldOptionsSource.js';
-import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
+import { buildFieldOptionsSource, fieldDecoratorSource, fieldImports } from './fieldOptionsSource.js';
+import { buildIndexEntrySource, indexNeedsRaw, isPlainFieldIndex } from './indexEntrySource.js';
 import { memberSource, quoted } from './sourceLiteral.js';
 
 /** The decorator on the other side of a relation. */
@@ -93,12 +93,12 @@ export class EntityCodeGenerator {
     const fileName = `${className}.ts`;
 
     const imports = this.buildImports(table);
-    const decorators = this.buildEntityDecorators(table);
+    const decorator = this.buildEntityDecorator(table);
     const brand = this.idKeyBrand(table);
     const fields = brand ? `${brand}\n\n${this.buildFields(table)}` : this.buildFields(table);
     const relations = this.options.includeRelations ? this.buildRelations(table) : '';
 
-    const code = [imports, '', decorators, `export class ${className} {`, fields, relations, '}', ''].join('\n');
+    const code = [imports, '', decorator, `export class ${className} {`, fields, relations, '}', ''].join('\n');
 
     return {
       className,
@@ -109,16 +109,14 @@ export class EntityCodeGenerator {
   }
 
   private buildImports(table: TableNode): string {
-    const uqlImports = new Set<string>(['Entity', 'Field']);
+    const uqlImports = new Set<string>(['Entity', 'f']);
     const relatedImports: string[] = [];
 
     if (this.idKeyBrand(table)) {
       uqlImports.add('idKey');
     }
     for (const col of table.columns.values()) {
-      if (col.isPrimaryKey) {
-        uqlImports.add('Id');
-      }
+      uqlImports.add(col.generatedAs === undefined ? 'Field' : 'Computed');
       for (const name of fieldImports(col)) {
         uqlImports.add(name);
       }
@@ -145,11 +143,7 @@ export class EntityCodeGenerator {
     }
 
     if (this.options.includeIndexes) {
-      const declared = this.declaredIndexes(table);
-      if (declared.length > 0) {
-        uqlImports.add('Index');
-      }
-      if (declared.some(indexNeedsRaw)) {
+      if (this.declaredIndexes(table).some(indexNeedsRaw)) {
         uqlImports.add('sql');
       }
     }
@@ -160,19 +154,24 @@ export class EntityCodeGenerator {
     ].join('\n');
   }
 
-  private buildEntityDecorators(table: TableNode): string {
-    const lines: string[] = [];
-
-    if (this.options.includeIndexes) {
-      const param = lowerFirst(this.options.classNameTransformer(table.name));
-      for (const index of this.declaredIndexes(table)) {
-        lines.push(buildIndexDecoratorSource(index, this.options.propertyNameTransformer, param));
-      }
+  private buildEntityDecorator(table: TableNode): string {
+    const param = lowerFirst(this.options.classNameTransformer(table.name));
+    const indexes = this.options.includeIndexes
+      ? this.declaredIndexes(table).map((index) =>
+          buildIndexEntrySource(index, this.options.propertyNameTransformer, param),
+        )
+      : [];
+    if (!indexes.length) {
+      return `@Entity({ name: '${table.name}' })`;
     }
-
-    lines.push(`@Entity({ name: '${table.name}' })`);
-
-    return lines.join('\n');
+    return [
+      `@Entity({`,
+      `  name: '${table.name}',`,
+      `  indexes: (${param}, index) => [`,
+      ...indexes.map((index) => `    ${index},`),
+      `  ],`,
+      `})`,
+    ].join('\n');
   }
 
   private buildFields(table: TableNode): string {
@@ -205,7 +204,7 @@ export class EntityCodeGenerator {
     const propertyName = this.options.propertyNameTransformer(col.name);
     return [
       ...this.syncDoc(`Column: ${col.name} (${formatTypeDescription(col.type)})`),
-      `  @${col.isPrimaryKey ? 'Id' : 'Field'}(${this.buildFieldOptions(col, propertyName)})`,
+      `  ${fieldDecoratorSource(this.buildFieldOptions(col, propertyName), col)}`,
       `  ${propertySource(col, propertyName)};`,
     ].join('\n');
   }
@@ -217,7 +216,7 @@ export class EntityCodeGenerator {
   }
 
   /**
-   * The indexes this table needs an `@Index` for, which is every one a `@Field({ index })` cannot
+   * The indexes this table lists under `indexes`, which is every one a `.index()` cannot
    * carry on its own.
    */
   private declaredIndexes(table: TableNode) {

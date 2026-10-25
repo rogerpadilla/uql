@@ -51,15 +51,15 @@ for (const entry of entries) {
 }
 
 const root = await import(pkg.name);
-for (const name of ['Entity', 'Field', 'Id', 'getMeta', 'defineEntity']) {
+for (const name of ['Entity', 'Field', 'Computed', 'f', 'getMeta', 'defineEntity']) {
   if (!(name in root)) broken.push(`missing root export: ${name}`);
 }
 
 // Imports resolving proves nothing about the code running, so build one query end to end. The SQL
 // itself is the dialect specs' to pin; this only proves one comes out.
-class User {}
-root.defineEntity(User, {
-  fields: { id: { type: Number, isId: true }, email: { type: String } },
+const User = root.defineEntity({
+  name: 'User',
+  fields: { id: root.f.number().id(), email: root.f.string() },
 });
 // Every other dialect's entry needs a driver peer the consumer project deliberately does not have.
 const { SqliteDialect } = await import(`${pkg.name}/sqlite`);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
@@ -7,13 +7,17 @@ import type { SqlQuerierPool } from '../type/index.js';
 
 const TABLE = 'vector_tuning';
 
-@Index((tunedItem) => [tunedItem.vec], { type: 'hnsw', distance: 'cosine', name: 'ix_vector_tuning_vec' })
 /** Three vectors under an HNSW index, which `$candidates` tunes. */
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (tunedItem, index) => [
+    index([tunedItem.vec], { type: 'hnsw', distance: 'cosine', name: 'ix_vector_tuning_vec' }),
+  ],
+})
 export class TunedItem {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.vector(3).nullable()) vec?: number[] | null;
 }
 
 /**

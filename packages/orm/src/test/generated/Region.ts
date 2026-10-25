@@ -1,13 +1,13 @@
-import { Entity, Field, Id, idKey } from 'uql-orm';
+import { Entity, Field, f, idKey } from 'uql-orm';
 
 @Entity({ name: 'regions' })
 export class Region {
   [idKey]?: 'code';
 
-  @Id({ type: 'int', autoIncrement: false })
+  @Field(f.column('int').id().autoIncrement(false))
   code!: number;
 
-  @Field({ type: 'text', nullable: false })
+  @Field(f.column('text'))
   name!: string;
 
 }

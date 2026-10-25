@@ -1,4 +1,4 @@
-import type { IndexColumnSchema, IndexSchema } from '../../type/index.js';
+import type { IndexEntry, IndexSchema } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
@@ -8,7 +8,7 @@ import { IndexDdl } from './indexDdl.js';
  * can index its metric, and a plain index on an engine with none, so an entity written for Postgres migrates.
  */
 export class SqliteIndexDdl extends IndexDdl {
-  protected override indexColumn(entry: IndexColumnSchema, index: IndexSchema): string {
+  protected override indexColumn(entry: IndexEntry<string>, index: IndexSchema): string {
     const metric = this.vectorIndexMetric(index);
     if (metric === undefined) {
       return super.indexColumn(entry, index);

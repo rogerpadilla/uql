@@ -1,6 +1,6 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { type CheckSchema, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexColumnSchema, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
+import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { sql } from '../../util/sql.js';
 import {
@@ -137,7 +137,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    *
    * The key's index and an `EXCLUDE`'s are left out. A `UNIQUE` constraint's index stays, as SQL Server
    * and the MySQL family report theirs: the diff reads one over a single column as that column's
-   * uniqueness, and one over several as the unique `@Index` it is.
+   * uniqueness, and one over several as the unique index it is.
    */
   protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
     const rows = await read<PostgresIndexRow>(
@@ -262,7 +262,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       return index;
     }
     const opsClass = index.entries.find((entry) => entry.opsClass)?.opsClass;
-    const distance = this.dialect.indexedDistance(opsClass ? /_([a-z0-9]+)_ops$/.exec(opsClass)?.[1] : 'l2');
+    const distance = this.dialect.distanceOfMetric(opsClass ? /_([a-z0-9]+)_ops$/.exec(opsClass)?.[1] : 'l2');
     const entries = index.entries.map(({ opsClass: _opsClass, ...entry }) => entry);
     return distance ? { ...index, distance, entries } : index;
   }
@@ -357,10 +357,9 @@ const TEXT_INDEX_METHODS: ReadonlySet<string> = new Set(['gin', 'inverted']);
  * non-default operator class is named. The diff defaults the entity side to match, so an option
  * omitted there and one written out are not read as two different indexes.
  */
-function mapIndexEntry(row: PostgresIndexRow): IndexColumnSchema {
+function mapIndexEntry(row: PostgresIndexRow): IndexEntry<string> {
   return {
-    column: row.entry,
-    ...(row.is_expression && { expression: true }),
+    ...(row.is_expression ? { expression: row.entry } : { column: row.entry }),
     order: row.descending ? 'desc' : 'asc',
     ...(row.nulls_first !== null && { nulls: row.nulls_first ? 'first' : 'last' }),
     ...(row.ops_class && { opsClass: row.ops_class }),

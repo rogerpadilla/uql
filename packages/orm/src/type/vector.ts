@@ -50,7 +50,7 @@ export function unsupportedVectorMetric(
 }
 
 /**
- * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
+ * Vector-specific tuning options shared by an entity's `indexes`, its metadata, and the migration schema.
  */
 export type VectorIndexOptions = {
   /** Distance metric for vector indexes - maps to operator class. */

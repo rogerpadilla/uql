@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index, Trigger } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { runMongoCommand, serializeMongoCommand } from '../mongodb/mongoCommand.js';
 import type { MongoQuerier } from '../mongodb/mongoQuerier.js';
 import { MongoSchemaGenerator } from '../mongodb/mongoSchemaGenerator.js';
@@ -168,11 +168,10 @@ describe('Migrator on MongoDB (integration)', () => {
   });
 
   it('should refuse to sync an entity indexing a SQL expression', async () => {
-    @Index((row) => [sql`lower(${row.title})`])
-    @Entity()
+    @Entity({ indexes: (expressionMongoIndex, index) => [index([sql`lower(${expressionMongoIndex.title})`])] })
     class ExpressionMongoIndex {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String }) title?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable()) title?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [ExpressionMongoIndex] });
 
@@ -180,11 +179,14 @@ describe('Migrator on MongoDB (integration)', () => {
   });
 
   it('should plan nothing for the trigger an entity declares, which MongoDB has none to run', async () => {
-    @Trigger({ on: 'afterInsert', run: (row) => sql`PERFORM ${row.id};` })
-    @Entity()
+    @Entity({
+      triggers: (triggeredMongoNote, trigger) => [
+        trigger({ on: 'afterInsert', run: (row) => sql`PERFORM ${row.id};` }),
+      ],
+    })
     class TriggeredMongoNote {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable()) body?: string | null;
     }
     await pool.withQuerier(({ db }) => db.createCollection('TriggeredMongoNote'));
     const migrator = new Migrator(pool, { entities: [TriggeredMongoNote] });
@@ -194,17 +196,16 @@ describe('Migrator on MongoDB (integration)', () => {
 
   it('should create the partial index an entity declares, unique only among the documents its filter covers', async () => {
     const partialFilterExpression = { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] };
-    @Index((ticket) => [ticket.assignee], {
-      name: 'urgent_assignee_idx',
-      unique: true,
-      where: partialFilterExpression,
+    @Entity({
+      indexes: (urgentTicket, index) => [
+        index([urgentTicket.assignee], { name: 'urgent_assignee_idx', unique: true, where: partialFilterExpression }),
+      ],
     })
-    @Entity()
     class UrgentTicket {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String }) assignee?: string | null;
-      @Field({ type: String }) status?: string | null;
-      @Field({ type: Number }) priority?: number | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable()) assignee?: string | null;
+      @Field(f.string().nullable()) status?: string | null;
+      @Field(f.number().nullable()) priority?: number | null;
     }
 
     await pool.withQuerier(async (querier) => {
@@ -230,13 +231,13 @@ describe('Migrator on MongoDB (integration)', () => {
   it('should sync one entity, or every one, to a collection with the indexes it declares', async () => {
     @Entity()
     class SyncMongoUser {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) name?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable().index()) name?: string | null;
     }
     @Entity()
     class SyncMongoTag {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) label?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable().index()) label?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [SyncMongoUser, SyncMongoTag] });
 
@@ -251,12 +252,11 @@ describe('Migrator on MongoDB (integration)', () => {
   });
 
   it('should drop the index an entity replaced, only outside safe mode, and keep one named by hand', async () => {
-    @Index((row) => [row.kind, row.status])
-    @Entity()
+    @Entity({ indexes: (syncMongoReindex, index) => [index([syncMongoReindex.kind, syncMongoReindex.status])] })
     class SyncMongoReindex {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String }) kind?: string | null;
-      @Field({ type: String }) status?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable()) kind?: string | null;
+      @Field(f.string().nullable()) status?: string | null;
     }
     await pool.withQuerier(async ({ db }) => {
       await db.collection('SyncMongoReindex').createIndex({ status: 1 }, { name: 'SyncMongoReindex__status_idx' });
@@ -283,17 +283,17 @@ describe('Migrator on MongoDB (integration)', () => {
 
   /** A check is a filter every document matches, so one lacking the field it compares fails, unlike SQL's NULL. */
   it('should enforce the checks and enums an entity declares, and see an enum change as drift', async () => {
-    @Entity({ name: 'ValidatedMongoTask', checks: [{ where: { priority: { $gte: 0 } } }] })
+    @Entity({ name: 'ValidatedMongoTask', checks: (validatedMongoTask, check) => [check({ priority: { $gte: 0 } })] })
     class ValidatedMongoTask {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, enum: ['open', 'closed'] as const }) status?: 'open' | 'closed' | null;
-      @Field({ type: Number }) priority?: number | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.enum(['open', 'closed']).nullable()) status?: 'open' | 'closed' | null;
+      @Field(f.number().nullable()) priority?: number | null;
     }
-    @Entity({ name: 'ValidatedMongoTask', checks: [{ where: { priority: { $gte: 0 } } }] })
+    @Entity({ name: 'ValidatedMongoTask', checks: (reopenedMongoTask, check) => [check({ priority: { $gte: 0 } })] })
     class ReopenedMongoTask {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, enum: ['open', 'closed', 'held'] as const }) status?: 'open' | 'closed' | 'held' | null;
-      @Field({ type: Number }) priority?: number | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.enum(['open', 'closed', 'held']).nullable()) status?: 'open' | 'closed' | 'held' | null;
+      @Field(f.number().nullable()) priority?: number | null;
     }
     const insert = (...tasks: { status?: string | null; priority?: number }[]) =>
       pool.withQuerier(({ db }) => db.collection('ValidatedMongoTask').insertMany(tasks));
@@ -318,8 +318,8 @@ describe('Migrator on MongoDB (integration)', () => {
   it('should generate a migration from the entities as MongoDB driver calls', async () => {
     @Entity()
     class DraftMongoUser {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) name?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable().index()) name?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [DraftMongoUser], migrationsPath: await migrationsDir() });
 

@@ -2,7 +2,7 @@
 // back: what fills a row, what introspection reads, what drift compares and what a `down` puts back.
 
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { SqlExpression } from '../schema/sqlExpression.js';
 import { linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
@@ -13,26 +13,44 @@ import { Migrator } from './migrator.js';
 
 @Entity({ name: 'DefaultNote' })
 class DefaultNote {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
   /** Text that spells the clock, which is text all the same. */
-  @Field({ type: String, defaultValue: 'CURRENT_TIMESTAMP' }) spelled?: string | null;
-  @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
-  @Field({ type: String, defaultValue: sql`coalesce(NULL, 'a')` }) derived?: string | null;
-  @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
+  @Field(f.string().nullable().default('CURRENT_TIMESTAMP')) spelled?: string | null;
+  @Field(f.date().nullable().default(currentTimestamp)) createdAt?: Date | null;
+  @Field(
+    f
+      .string()
+      .nullable()
+      .default(sql`coalesce(NULL, 'a')`),
+  )
+  derived?: string | null;
+  @Field(f.jsonb().nullable().default([])) tags?: Json<string[]> | null;
   /** Keys in another order, and spacing, than Postgres keeps them. */
-  @Field({ type: 'jsonb', defaultValue: { b: 1, a: [1, 2] } }) settings?: Json<{ a: number[]; b: number }> | null;
+  @Field(
+    f
+      .jsonb()
+      .nullable()
+      .default({ b: 1, a: [1, 2] }),
+  )
+  settings?: Json<{ a: number[]; b: number }> | null;
   /** The same, as the text the column stores. */
-  @Field({ type: 'jsonb', defaultValue: '{"b":1,"a":2}' }) written?: Json<{ a: number; b: number }> | null;
+  @Field(f.jsonb().nullable().default('{"b":1,"a":2}')) written?: Json<{ a: number; b: number }> | null;
 }
 
 /** The SQL defaults alone, on a table a test drops them from. */
 @Entity({ name: 'DefaultDown' })
 class DefaultDown {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
-  @Field({ type: String, defaultValue: sql`coalesce(NULL, 'a')` }) derived?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Field(f.date().nullable().default(currentTimestamp)) createdAt?: Date | null;
+  @Field(
+    f
+      .string()
+      .nullable()
+      .default(sql`coalesce(NULL, 'a')`),
+  )
+  derived?: string | null;
 }
 
 describe.each(sqlPools('test_default'))('a column default on %s', (_name, connect) => {
@@ -55,8 +73,8 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
     const defaultOf = (name: string) => schema?.columns.find((column) => column.name === name)?.defaultValue;
 
     expect(defaultOf('spelled')).toBe('CURRENT_TIMESTAMP');
-    expect(defaultOf('createdAt')).toEqual(new SqlExpression('currentTimestamp'));
-    expect(defaultOf('derived')).toBeInstanceOf(SqlExpression);
+    expect(defaultOf('createdAt')).toEqual(SqlExpression.named('currentTimestamp'));
+    expect(SqlExpression.isExpression(defaultOf('derived'))).toBe(true);
     // Unsafe, which is what plans an alter: a safe plan holds every one, a changed default included.
     expect(await new Migrator(pool(), { entities: [DefaultNote] }).planSync({ safe: false })).toEqual([]);
   });
@@ -65,8 +83,8 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
   it("should put an SQL default back as SQL through a generated migration's down", async () => {
     @Entity({ name: 'DefaultDown' })
     class Slim {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) body?: string | null;
     }
     const migrator = new Migrator(pool(), { entities: [Slim], migrationsPath: await migrationsDir() });
 

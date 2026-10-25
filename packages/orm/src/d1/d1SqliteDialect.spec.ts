@@ -1,6 +1,6 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getEntities, Id } from '../entity/index.js';
+import { Entity, f, Field, getEntities } from '../entity/index.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerier } from '../sqlite/sqliteQuerier.js';
@@ -11,13 +11,13 @@ import { D1SqliteDialect } from './d1SqliteDialect.js';
 /** A document with open keys, so one update can touch more of them than a D1 call takes. */
 @Entity()
 class Preferences {
-  @Id({ type: String })
+  @Field(f.string().id())
   id?: string;
 
-  @Field({ type: 'json' })
+  @Field(f.json().nullable())
   values?: Json<Record<string, number>> | null;
 
-  @Field({ type: 'json' })
+  @Field(f.json().nullable())
   lists?: Json<Record<string, number[]>> | null;
 }
 

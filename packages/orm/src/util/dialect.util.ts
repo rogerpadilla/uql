@@ -18,7 +18,6 @@ import {
   type OnFieldCallback,
   type QueryAggMap,
   type QueryConflictPaths,
-  type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
   QuerySql,
@@ -227,47 +226,32 @@ export function isSelectList<E>(select: QuerySelectValue<E> | undefined): select
   return Array.isArray(select);
 }
 
-export function normalizeScalarFieldSelection<E>(
-  meta: EntityMeta<E>,
-  select?: QuerySelect<E>,
-  exclude?: QueryExclude<E>,
-): FieldKey<E>[] {
-  // A positive `$select` (the common case) wins outright and returns
-  // before `$exclude` is ever scanned.
-  const positiveFields: FieldKey<E>[] = [];
-  let excludedFields: Set<FieldKey<E>> | undefined;
-  if (select) {
-    for (const key of getKeys(select)) {
-      if (!(key in meta.fields)) continue;
-      if (select[key]) {
-        positiveFields.push(key);
-      } else {
-        excludedFields ??= new Set<FieldKey<E>>();
-        excludedFields.add(key);
-      }
+/**
+ * The fields a `$select` map reads: its positive entries alone where it has one, else every field it leaves in,
+ * a falsy entry leaving its field out.
+ */
+export function normalizeScalarFieldSelection<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): readonly FieldKey<E>[] {
+  const positive: FieldKey<E>[] = [];
+  let excluded: Set<FieldKey<E>> | undefined;
+  for (const key of getKeys(select)) {
+    if (!(key in meta.fields)) {
+      continue;
     }
-    if (positiveFields.length) {
-      return positiveFields;
+    if (select?.[key]) {
+      positive.push(key);
+    } else {
+      excluded ??= new Set<FieldKey<E>>();
+      excluded.add(key);
     }
   }
-
-  // No positive selection: every field minus the ones excluded by a falsy `$select` entry or a
-  // truthy `$exclude` entry.
-  if (exclude) {
-    for (const key of getKeys(exclude)) {
-      if (exclude[key] && key in meta.fields) {
-        excludedFields ??= new Set<FieldKey<E>>();
-        excludedFields.add(key);
-      }
-    }
+  if (positive.length) {
+    return positive;
   }
-
   const allFields = defaultReadKeys(meta);
-  if (!excludedFields) {
+  if (!excluded) {
     return allFields;
   }
-  const excluded = excludedFields;
-  return allFields.filter((it) => !excluded.has(it));
+  return allFields.filter((key) => !excluded.has(key));
 }
 
 /** Type guard: checks whether a sort value is a vector similarity search. */
@@ -319,14 +303,21 @@ export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityInde
   );
 }
 
+/** The metric `key`'s vector index ranks by: its own, else its field's, else cosine. */
+export function indexedDistance<E>(
+  meta: EntityMeta<E>,
+  key: string,
+  index: EntityIndexMeta<E> | undefined,
+): VectorDistance {
+  return index?.distance ?? meta.fields[key]?.distance ?? DEFAULT_VECTOR_DISTANCE;
+}
+
 /**
- * The metric a distance to `key` measures by: the search's own, else the field's, else its index's, which
- * serves no other, else cosine. The one fallback every engine resolves, so none can rank by another.
+ * The metric a distance to `key` measures by: the search's own, else what its index ranks by. The one
+ * fallback every engine resolves, so none can rank by another.
  */
 export function vectorDistanceOf<E>(meta: EntityMeta<E>, key: string, search: QueryVectorQuery): VectorDistance {
-  return (
-    search.$distance ?? meta.fields[key]?.distance ?? findVectorIndex(meta, key)?.distance ?? DEFAULT_VECTOR_DISTANCE
-  );
+  return search.$distance ?? indexedDistance(meta, key, findVectorIndex(meta, key));
 }
 
 /**
@@ -344,7 +335,7 @@ export function hasVectorNear(where: unknown): boolean {
 }
 
 function indexCoversColumn<E>(index: EntityIndexMeta<E>, key: string): boolean {
-  return index.columns.some((entry) => entry.column === key);
+  return index.entries.some((entry) => entry.column === key);
 }
 
 /** `satisfies` ties this to {@link JsonUpdateOp}, so renaming an operator breaks it at compile time. */
@@ -864,8 +855,8 @@ export function fulltextIndexOver<E>(meta: EntityMeta<E>, fields: readonly strin
   return meta.indexes?.find(
     (index) =>
       index.type === 'fulltext' &&
-      index.columns.length === fields.length &&
-      index.columns.every((entry, at) => entry.column === fields[at]),
+      index.entries.length === fields.length &&
+      index.entries.every((entry, at) => entry.column === fields[at]),
   );
 }
 
@@ -903,7 +894,7 @@ export function textSearchFields<E>(meta: EntityMeta<E>, search: QueryTextSearch
   }
   const fulltext = (meta.indexes ?? []).filter((index) => index.type === 'fulltext');
   if (fulltext.length === 1) {
-    return fulltext[0].columns.flatMap((entry) => (typeof entry.column === 'string' ? [entry.column] : []));
+    return fulltext[0].entries.flatMap((entry) => entry.column ?? []);
   }
   const name = entityName(meta);
   const declared = fulltext.length

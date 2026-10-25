@@ -1,36 +1,36 @@
-import { Entity, Field, Id, ManyToOne, sql } from 'uql-orm';
+import { Computed, Entity, Field, ManyToOne, f, sql } from 'uql-orm';
 import { User } from './User.js';
 
 @Entity({ name: 'posts' })
 export class Post {
-  @Id({ type: 'uuid' })
+  @Field(f.column('uuid').id())
   id!: string;
 
-  @Field({ name: 'author_id', type: 'int', nullable: false })
+  @Field(f.column('int').name('author_id'))
   authorId!: number;
 
-  @Field({ name: 'editor_id', type: 'int' })
+  @Field(f.column('int').nullable().name('editor_id'))
   editorId?: number | null;
 
-  @Field({ type: 'varchar', length: 255, nullable: false })
+  @Field(f.column('varchar').length(255))
   title!: string;
 
-  @Field({ type: 'varchar', length: 10, nullable: false, defaultValue: 'draft' })
+  @Field(f.column('varchar').length(10).default('draft'))
   state?: string;
 
-  @Field({ type: 'int', nullable: false, defaultValue: 0 })
+  @Field(f.column('int').default(0))
   views?: number;
 
-  @Field({ type: 'int', nullable: false, computed: sql`views * 2`, stored: true })
+  @Computed(() => f.column('int').as(sql`views * 2`).stored())
   readonly score!: number;
 
-  @Field({ name: 'published_at', type: 'timestamp' })
+  @Field(f.column('timestamp').nullable().name('published_at'))
   publishedAt?: Date | null;
 
-  @Field({ name: 'read_at', type: 'time' })
+  @Field(f.column('time').nullable().name('read_at'))
   readAt?: string | null;
 
-  @Field({ type: 'vector', dimensions: 3 })
+  @Field(f.column('vector').dimensions(3).nullable())
   embedding?: number[] | null;
 
   @ManyToOne({ entity: () => User, references: (post) => post.authorId })

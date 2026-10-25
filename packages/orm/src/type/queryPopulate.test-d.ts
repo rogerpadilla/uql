@@ -27,7 +27,7 @@ class Story {
 declare const querier: Querier;
 
 export async function populateCardinalityShapes() {
-  // A to-one relation accepts $select/$exclude/$populate/$where and $required.
+  // A to-one relation accepts $select/$populate/$where and $required.
   await querier.findMany(Story, {
     $populate: { writer: { $select: { name: true }, $where: { id: 1 }, $required: true } },
   });
@@ -63,7 +63,7 @@ export async function populatedRelationFieldsAreChecked() {
   // @ts-expect-error 'bdoy' is not a field of Comment
   await querier.findMany(Story, { $populate: { comments: { $select: { bdoy: true } } } });
   // @ts-expect-error 'bdoy' is not a field of Comment
-  await querier.findMany(Story, { $populate: { comments: { $exclude: { bdoy: true } } } });
+  await querier.findMany(Story, { $populate: { comments: { $select: { bdoy: false } } } });
   // @ts-expect-error 'bdoy' is not a field of Comment
   await querier.findMany(Story, { $populate: { comments: { $sort: { bdoy: 1 } } } });
 
@@ -72,7 +72,7 @@ export async function populatedRelationFieldsAreChecked() {
   // @ts-expect-error 'nmae' is not a field of Writer
   await querier.findMany(Story, { $populate: { writer: { $select: { nmae: true } } } });
   // @ts-expect-error 'nmae' is not a field of Writer
-  await querier.findMany(Story, { $populate: { writer: { $exclude: { nmae: true } } } });
+  await querier.findMany(Story, { $populate: { writer: { $select: { nmae: false } } } });
   // @ts-expect-error 'bdoy' is not a field of Comment
   await querier.findMany(Story, { $populate: { drafts: { $select: { bdoy: true } } } });
 }

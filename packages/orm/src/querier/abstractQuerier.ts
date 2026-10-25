@@ -31,7 +31,6 @@ import type {
   QuerySearch,
   RelationKey,
   RelationMeta,
-  RelationQuery,
   SavepointCommand,
   TransactionOptions,
   Type,
@@ -52,7 +51,6 @@ import {
   entityName,
   fillOnFields,
   filterFieldKeys,
-  forEachRequestedRelation,
   getKeys,
   omitKeys,
   deletionOf,
@@ -70,7 +68,6 @@ import {
   pointAt,
   queryLoggerFor,
   parseRelationAtKey,
-  parseRelationQueryValue,
   rowKey,
   runHooks,
   securityConditions,
@@ -263,7 +260,10 @@ function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, 
 }
 
 /** The fields `returning` projects, read as `$select` is, or `undefined` where it names none: the write reads nothing back. */
-function returnedKeys<E>(meta: EntityMeta<E>, returning: WriteOptions<E>['returning']): FieldKey<E>[] | undefined {
+function returnedKeys<E>(
+  meta: EntityMeta<E>,
+  returning: WriteOptions<E>['returning'],
+): readonly FieldKey<E>[] | undefined {
   return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
 }
 
@@ -379,7 +379,6 @@ export abstract class AbstractQuerier implements Querier {
   /** What every read is checked for before it runs, whichever backend runs it. */
   protected validateReadQuery<E extends object>(entity: Type<E>, q: Query<E>): void {
     this.assertLockable(entity, q);
-    this.validateProjectionQueryRecursive(entity, q, entityName(getMeta(entity)));
   }
 
   /**
@@ -395,32 +394,6 @@ export abstract class AbstractQuerier implements Querier {
     if (!this.scopeHere()) {
       throw new UqlUsageError('$lock requires an open transaction');
     }
-  }
-
-  private validateProjectionQueryRecursive<E extends object>(
-    entity: Type<E>,
-    q: Query<E> | RelationQuery<E>,
-    path: string,
-  ): void {
-    const meta = getMeta(entity);
-    if (q.$select && q.$exclude) {
-      for (const [key, value] of Object.entries(q.$select)) {
-        if (key in meta.fields && value) {
-          throw new UqlUsageError(
-            `Cannot combine $select and $exclude when $select includes positive scalar fields (${key}) at ${path}. Use either $select (whitelist) or $exclude (subtractive) in a single query.`,
-          );
-        }
-      }
-    }
-    forEachRequestedRelation(meta, q.$populate, (relKey, relValue) => {
-      const relOpts = relationOf(meta, relKey);
-      type Related = InstanceType<ReturnType<typeof relOpts.entity>>;
-      const relEntity = relOpts.entity();
-      const parsed = parseRelationQueryValue<Related>(relValue);
-      if (parsed.nested) {
-        this.validateProjectionQueryRecursive(relEntity, parsed.query, `${path}.${relKey}`);
-      }
-    });
   }
 
   findOneById<E extends object, const Q extends QueryOne<E> = {}>(

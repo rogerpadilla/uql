@@ -87,14 +87,14 @@ describe('cli', () => {
     expect(stderr).not.toContain('at run (');
   }, 20_000);
 
-  it('exits 0 on a dry run and says what would change', async () => {
+  it('exits 1 on a dry run whose config needs a hand, and says what would change', async () => {
     const { project, entity } = await createProject();
 
     const { code, stdout } = await cli([`--project=${project}`, '--dry-run']);
 
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(stdout).toContain('would change: ');
-    expect(stdout).toContain('3 file(s) would change');
+    expect(stdout).toContain('2 file(s) would change');
     expect(await readFile(entity, 'utf8')).toBe(ENTITY);
   }, 20_000);
 
@@ -105,9 +105,9 @@ describe('cli', () => {
 
     expect(code).toBe(1);
     expect(stderr).toContain('needs a decision: ');
-    expect(stderr).toContain("cannot infer 'type'");
-    expect(stderr).toContain('1 item(s) need a decision');
+    expect(stderr).toContain("has no 'type'");
+    expect(stderr).toContain('4 item(s) need a decision');
     expect(stdout).toContain('file(s) changed');
-    expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string | null;');
+    expect(await readFile(entity, 'utf8')).toContain('@Field() name?: string | null;');
   }, 20_000);
 });

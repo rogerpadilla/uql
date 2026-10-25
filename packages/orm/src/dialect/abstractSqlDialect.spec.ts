@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id } from '../entity/index.js';
+import { Computed, Entity, f, Field, getMeta } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
-import { entitySql, sql, refs } from '../util/index.js';
+import { memberRefs, sql, refs } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 import { MYSQL_FEATURES } from './mysqlLikeSqlDialect.js';
 
@@ -97,15 +97,25 @@ class TestSqlDialect extends AbstractSqlDialect {
 /** A field the strategy names, one named outright, and an inlined computed one, for `refs()` to render. */
 @Entity()
 class RefLedger {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   creditLimit?: number | null;
-  @Field({ type: String, name: 'display_label' })
+  @Field(f.string().nullable().name('display_label'))
   label?: string | null;
-  @Field({ type: Number, computed: (ledger) => sql`${ledger.creditLimit} * 2` })
+  @Computed((ledger) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`${ledger.creditLimit} * 2`),
+  )
   double?: number | null;
-  @Field({ type: Boolean, computed: (ledger) => sql`${ledger.creditLimit} <= 0` })
+  @Computed((ledger) =>
+    f
+      .boolean()
+      .nullable()
+      .as(sql`${ledger.creditLimit} <= 0`),
+  )
   exhausted?: boolean | null;
 }
 
@@ -480,7 +490,7 @@ describe('AbstractSqlDialect', () => {
     });
 
     it("should refuse a definition's ref rendered outside its entity's SQL", () => {
-      const statement = entitySql<RefLedger>((ledger) => sql`${ledger.creditLimit}`);
+      const statement = sql`${memberRefs<RefLedger>().creditLimit}`;
       expect(() => dialect.getRawValue(dialect.createContext(), { value: statement })).toThrow(
         "'creditLimit' was read off a definition's refs, so it renders only inside its entity's SQL",
       );

@@ -328,7 +328,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     const tableDiff = diffTable(desired, currentTable, this.diffOptions());
-    const indexes = indexChanges(currentTable.name, desired.indexes, currentTable.indexes, currentTable.indexFacets);
+    const indexes = indexChanges(desired.indexes, currentTable);
 
     const columns = (tableDiff?.columns ?? []).map(({ from, to, isBreaking }): ColumnChange => ({
       from: from && this.columnNodeToSchema(from),

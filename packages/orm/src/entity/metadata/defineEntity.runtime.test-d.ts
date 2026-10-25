@@ -3,22 +3,40 @@
  * the runtime half. Each `@ts-expect-error` sits on the property TypeScript 7 reports, where an older
  * compiler reports the call instead. Type-checked by `bun run ts` only.
  */
-import { idKey, type Querier, type Scalar, type Type } from '../../type/index.js';
-import { defineEntity, defineField } from './definition.js';
+import { expectTypeOf } from 'vitest';
+import { type ColumnType, idKey, type Querier, type Scalar, type SchemaFields, type Type } from '../../type/index.js';
+import { f } from '../column.js';
+import { defineEntity } from './definition.js';
 
 declare const querier: Querier;
 
+declare const contentType: { name: string; fields: { name: string; type: ColumnType }[] };
+
 /**
- * A shape nobody declared: every key is a column, so every value is a scalar. The key is named even
- * so, and as an intersection, which is what gives `IdKey` a key to find; {@link brandedKey} is the
- * case where it is not called `id`.
+ * A schema built from data: its columns are a record, so the row is too. A spread into a literal would
+ * drop the record's index signature, which is why the columns are built as one.
  */
+const fields: SchemaFields = {
+  id: f.uuid().id(),
+  ...Object.fromEntries(contentType.fields.map((field) => [field.name, f.column(field.type).nullable()])),
+};
+const Content = defineEntity({ name: contentType.name, fields });
+
+export async function fromData() {
+  // Every clause naming a column takes any name - which is the point: no column name in a query written
+  // against a runtime content type can be checked.
+  const id = await querier.insertOne(Content, { headline: 'Hello' });
+  const [row] = await querier.findMany(Content, { $where: { headline: 'Hello' }, $sort: { id: 1 } });
+  expectTypeOf(row['headline']).toEqualTypeOf<unknown>();
+  await querier.findOneById(Content, 'some-id');
+  return id;
+}
+
+/** A shape nobody declared, named by a hand-written type: the key is named, which gives `IdKey` a key to find. */
 type ContentRow = { id: string } & { [column: string]: Scalar };
 declare const Dynamic: Type<ContentRow>;
 
 export async function unknownShape() {
-  // A whole-row read keeps the row type, and every clause naming a column takes any name - which is
-  // the point: no column name in a query written against a runtime content type can be checked.
   const [row] = await querier.findMany(Dynamic, { $where: { servings: 4 }, $sort: { title: 'asc' } });
   const title: Scalar = row['title'];
   await querier.findMany(Dynamic, { $populate: { author: true } });
@@ -79,31 +97,4 @@ export async function generatedShape() {
 
   const id: number | undefined = await querier.insertOne(Recipe, { title: 'Arepas' });
   return id;
-}
-
-/**
- * The third door, for a shape that arrives field by field rather than all at once: `defineField`
- * takes the column name as a plain string, where the bulk map is keyed by the entity and checks a
- * column the class does not declare.
- */
-export function registration() {
-  class Unknown {}
-  defineField(Unknown, 'whateverTheAdminNamedIt', { type: String });
-
-  defineEntity(Recipe, {
-    // @ts-expect-error a column the generated class does not have
-    fields: { id: { type: Number, isId: true }, titel: { type: String } },
-  });
-}
-
-/**
- * The audit columns a minted class has no base to extend: `extends` names one. Nothing declares that
- * class's columns, so nothing checks the base against them - where the class does declare its own,
- * `entityOptions.test-d.ts` pins that a base disagreeing about one is a compile error.
- */
-export function sharedBase() {
-  class Audited {
-    createdBy?: string;
-  }
-  defineEntity(Dynamic, { extends: Audited, fields: { id: { type: 'uuid', isId: true } } });
 }

@@ -1,29 +1,13 @@
 import type { CheckSchema, EnumValues } from '../schema/types.js';
-import {
-  ColumnRef,
-  type EntityIndexColumn,
-  type EntityIndexMeta,
-  type EntityMeta,
-  type IndexColumnInput,
-  type IndexColumnSchema,
-  QuerySql,
-} from '../type/index.js';
+import type { EntityIndexMeta, EntityMeta, IndexEntry, QuerySql } from '../type/index.js';
+import { indexEntryNamePart } from './indexEntry.util.js';
 import { definedEntries } from './object.util.js';
 import { sql } from './sql.js';
 import { derivedIndexName, ownedName } from './sql.util.js';
 
 /**
- * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
- * object reach the schema as one: a column read off the refs as its key, any other `sql` as it is.
- */
-export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn {
-  const { column, ...modifiers } = typeof entry === 'string' || entry instanceof QuerySql ? { column: entry } : entry;
-  return { ...modifiers, column: column instanceof ColumnRef ? column.key : column };
-}
-
-/**
- * Every index an entity declares: each `@Field({ index })` or `@Field({ unique })` as the one-column
- * `@Index` it is, then its `@Index`es. A unique column is a unique index, the one spelling of uniqueness
+ * Every index an entity declares: each `index()` or `unique()` column as the one-column
+ * index it is, then its `indexes`. A unique column is a unique index, the one spelling of uniqueness
  * every engine can add and drop.
  */
 export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
@@ -31,7 +15,7 @@ export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
     field.index || field.unique
       ? [
           {
-            columns: [{ column: key }],
+            entries: [{ column: key }],
             name: typeof field.index === 'string' ? field.index : undefined,
             unique: field.unique,
           },
@@ -41,18 +25,19 @@ export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
   return [...fieldIndexes, ...(meta.indexes ?? [])];
 }
 
-/** An index entry as the schema holds it, its expression rendered to text by `render`. */
-export function renderIndexColumn(
-  entry: EntityIndexColumn,
-  render: (statement: QuerySql) => string,
-): IndexColumnSchema {
-  const { column } = entry;
-  return column instanceof QuerySql ? { ...entry, column: render(column), expression: true } : { ...entry, column };
-}
-
-/** What an unnamed index's name is built from: each entry's column, or `expr<n>` for an expression, which has none. */
-export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] {
-  return entries.map((entry, at) => (typeof entry.column === 'string' ? entry.column : `expr${at}`));
+/**
+ * An index's rendered predicate and the name it is created by, settled together: `render` gets the name without the
+ * predicate's hash to label its errors, then the name takes the hash of what it rendered.
+ */
+export function namedIndex(
+  name: string | undefined,
+  table: string,
+  entries: readonly IndexEntry<unknown>[],
+  render: (label: string) => string | undefined,
+  unique?: boolean,
+): { readonly name: string; readonly where: string | undefined } {
+  const where = render(declaredIndexName(name, table, entries, { unique }));
+  return { name: declaredIndexName(name, table, entries, { unique, where }), where };
 }
 
 /**
@@ -62,10 +47,10 @@ export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] 
 export function declaredIndexName(
   name: string | undefined,
   table: string,
-  entries: readonly EntityIndexColumn[],
+  entries: readonly IndexEntry<unknown>[],
   { unique = false, where }: { readonly unique?: boolean; readonly where?: string } = {},
 ): string {
-  return name ?? derivedIndexName(table, indexNameParts(entries), unique, where);
+  return name ?? derivedIndexName(table, entries.map(indexEntryNamePart), unique, where);
 }
 
 /**

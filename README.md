@@ -33,7 +33,7 @@
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
 ```
 
-That is the whole install ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and plain classes work too, via [`defineEntity`](https://uql-orm.dev/entities/imperative).
+That is the whole install ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/imperative).
 
 <a href="https://uql-orm.dev">
   <picture>
@@ -50,14 +50,14 @@ The compiler catches each of those, with no codegen: the entity classes are the 
 
 ```ts
 // entities.ts
-import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+import { Entity, f, Field, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity()
 export class User {
-  @Id({ type: Number })
-  id!: number;
+  @Field(f.number().id())
+  id?: number;
 
-  @Field({ type: String, unique: true, nullable: false })
+  @Field(f.string().unique())
   email!: string;
 
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
@@ -66,21 +66,35 @@ export class User {
 
 @Entity()
 export class Post {
-  @Id({ type: Number })
-  id!: number;
+  @Field(f.number().id())
+  id?: number;
 
-  @Field({ type: String, nullable: false })
+  @Field(f.string())
   title!: string;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   likes?: number | null;
 
-  @Field({ references: () => User })
+  @Field(f.references(() => User).nullable())
   authorId?: number | null;
 
   @ManyToOne({ entity: () => User, references: (post) => post.authorId })
   author?: User;
 }
+```
+
+Or declare one as data, its row type derived:
+
+```ts
+export const Post = defineEntity({
+  name: 'Post',
+  fields: {
+    id: f.number().id(),
+    title: f.string(),
+    likes: f.number().nullable(),
+    authorId: f.number().nullable(),
+  },
+}).relations((rel) => ({ author: () => rel.manyToOne(User, { references: (post) => post.authorId }) }));
 ```
 
 ### 2. A pool, and the migrations it drives

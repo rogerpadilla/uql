@@ -1,42 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { added, reverseDiff } from '../migrate/schemaChange.js';
 import { createTableNode } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
 import { assertDefined } from '../test/index.js';
-import type { EntityWhere, Type } from '../type/index.js';
+import type { EntityWhereMeta, Json, Type } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { validatorCheck } from './mongoCommand.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
 class MongoUser {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String, index: true }) username?: string | null;
-  @Field({ type: String, index: 'email_idx', unique: true }) email?: string | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable().index()) username?: string | null;
+  @Field(f.string().nullable().unique().index('email_idx')) email?: string | null;
 }
 
-@Index((ticket) => [ticket.status, { column: ticket.createdAt, order: 'desc' }], { unique: true })
-@Index((ticket) => [ticket.assignee], {
-  name: 'urgent_assignee_idx',
-  where: { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] },
+@Entity({
+  indexes: (mongoTicket, index) => [
+    index([mongoTicket.assignee], {
+      name: 'urgent_assignee_idx',
+      where: { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] },
+    }),
+    index([mongoTicket.status, { column: mongoTicket.createdAt, order: 'desc' }], { unique: true }),
+  ],
 })
-@Entity()
 class MongoTicket {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) status?: string | null;
-  @Field({ type: String }) assignee?: string | null;
-  @Field({ type: Number }) priority?: number | null;
-  @Field({ type: Date }) createdAt?: Date | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) status?: string | null;
+  @Field(f.string().nullable()) assignee?: string | null;
+  @Field(f.number().nullable()) priority?: number | null;
+  @Field(f.date().nullable()) createdAt?: Date | null;
 }
 
 /** The vector first, then each field a `$vectorSearch` pre-filters on. */
-@Index((chunk) => [chunk.embedding, chunk.tenant], { type: 'vectorSearch', distance: 'l2' })
-@Entity()
+@Entity({
+  indexes: (mongoChunk, index) => [
+    index([mongoChunk.embedding, mongoChunk.tenant], { type: 'vectorSearch', distance: 'l2' }),
+  ],
+})
 class MongoChunk {
-  @Id({ type: String }) id?: string;
-  @Field({ type: String }) tenant?: string | null;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+  @Field(f.string().id()) id?: string;
+  @Field(f.string().nullable()) tenant?: string | null;
+  @Field(f.vector(3).nullable()) embedding?: number[] | null;
 }
 
 const urgentAssigneeOptions = {
@@ -49,14 +55,13 @@ const statusCreatedAtOptions = { name: 'MongoTicket__status_createdAt_idx', uniq
 
 type TicketShape = { id?: string; status?: string | null; createdAt?: Date | null; views?: bigint | null };
 
-const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
-  @Index((ticket) => [ticket.status], { name: 'ticket_idx', where })
-  @Entity()
+const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): Type<object> => {
+  @Entity({ indexes: (ticket, index) => [index([ticket.status], { name: 'ticket_idx', where })] })
   class Ticket implements TicketShape {
-    @Id({ type: String }) id?: string;
-    @Field({ type: String }) status?: string | null;
-    @Field({ type: Date }) createdAt?: Date | null;
-    @Field({ type: BigInt }) views?: bigint | null;
+    @Field(f.string().id()) id?: string;
+    @Field(f.string().nullable()) status?: string | null;
+    @Field(f.date().nullable()) createdAt?: Date | null;
+    @Field(f.bigint().nullable()) views?: bigint | null;
   }
   return Ticket;
 };
@@ -106,8 +111,8 @@ describe('MongoSchemaGenerator', () => {
   it('should build a unique field as a unique index, with no index option of its own', () => {
     @Entity()
     class MongoHandle {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String, unique: true }) handle?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable().unique()) handle?: string | null;
     }
 
     expect(
@@ -124,6 +129,17 @@ describe('MongoSchemaGenerator', () => {
         options: { name: 'MongoHandle__handle_idx', unique: true },
       },
     ]);
+  });
+
+  /** A collection keys documents by path, so an expression entry has nothing to key by, however it arrived. */
+  it('should refuse an index entry with no path to key by', () => {
+    expect(() =>
+      generator.generateCreateIndex('MongoUser', {
+        name: 'lower_idx',
+        entries: [{ expression: 'lower(email)' }],
+        unique: false,
+      }),
+    ).toThrow('MongoDB does not support expression indexes (index "lower_idx")');
   });
 
   it('should map a descending entry to -1 and a fulltext index to a text key', () => {
@@ -182,12 +198,30 @@ describe('MongoSchemaGenerator', () => {
     expect(create().options.default_language).toBe('none');
   });
 
+  /** A path inside a document is a key like any other, and an array there a multikey index. */
+  it('should key a JSON path index by its document path, as the collection reports it back', () => {
+    @Entity({
+      indexes: (mongoProfiled, index) => [
+        index([mongoProfiled.profile.theme, { column: mongoProfiled.profile.tags, type: [String] }]),
+      ],
+    })
+    class MongoProfiled {
+      @Field(f.string().id()) id?: string;
+      @Field(f.json().nullable()) profile?: Json<{ theme: string; tags: string[] }> | null;
+    }
+
+    const [, index] = generator.generateCreateSchema([MongoProfiled]).map((json) => JSON.parse(json));
+
+    expect(index.key).toEqual({ 'profile.theme': 1, 'profile.tags': 1 });
+    // Named as every other engine and the migration builder name it.
+    expect(index.options.name).toBe('MongoProfiled__profile_theme_profile_tags_idx');
+  });
+
   it('should build the text index an entity declares in the language it names', () => {
-    @Index((article) => [article.body], { type: 'fulltext', config: 'spanish' })
-    @Entity()
+    @Entity({ indexes: (mongoArticle, index) => [index([mongoArticle.body], { type: 'fulltext', config: 'spanish' })] })
     class MongoArticle {
-      @Id({ type: String }) id?: string;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().nullable()) body?: string | null;
     }
 
     const [, index] = generator.generateCreateSchema([MongoArticle]).map((json) => JSON.parse(json));
@@ -239,6 +273,19 @@ describe('MongoSchemaGenerator', () => {
       ).toThrow('an Atlas vector search index states its field\'s dimensions (index "embedding_index")');
     });
 
+    it('should refuse a predicate, naming the type, since a key-spec index takes one', () => {
+      expect(() =>
+        generator.generateCreateIndex('MongoChunk', {
+          name: 'embedding_index',
+          entries: [{ column: 'embedding' }],
+          unique: false,
+          type: 'vectorSearch',
+          dimensions: 3,
+          where: '{"tenant":"a"}',
+        }),
+      ).toThrow('MongoDB does not support partial indexes on a vectorSearch index (index "embedding_index")');
+    });
+
     it('should refuse a metric Atlas has no similarity for', () => {
       expect(() =>
         generator.generateCreateIndex('MongoChunk', {
@@ -257,18 +304,10 @@ describe('MongoSchemaGenerator', () => {
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
         name: 'expr_idx',
-        entries: [{ column: 'lower(username)', expression: true }],
+        entries: [{ expression: 'lower(username)' }],
         unique: false,
       }),
     ).toThrow('MongoDB does not support expression indexes (index "expr_idx")');
-
-    expect(() =>
-      generator.generateCreateIndex('MongoUser', {
-        name: 'path_idx',
-        entries: [{ column: 'profile', jsonPath: { path: 'theme', type: 'text' } }],
-        unique: false,
-      }),
-    ).toThrow('MongoDB does not support indexes over a path inside a JSON column (index "path_idx")');
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
@@ -318,7 +357,7 @@ describe('MongoSchemaGenerator', () => {
     expect(statements.map((statement) => statement.options)).toEqual([urgentAssigneeOptions, statusCreatedAtOptions]);
   });
 
-  const refused: [string, EntityWhere<TicketShape>][] = [
+  const refused: [string, EntityWhereMeta<TicketShape>][] = [
     ['$ne', { status: { $ne: 'closed' } }],
     ['$nin', { status: { $nin: ['closed'] } }],
     ['$not', { $not: [{ status: 'closed' }] }],
@@ -337,7 +376,7 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should refuse SQL as a partial index predicate', () => {
-    const where: EntityWhere<TicketShape> = (ticket) => sql`${ticket.status} = 'open'`;
+    const where: EntityWhereMeta<TicketShape> = sql`status = 'open'`;
     expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
       'MongoDB does not support partial indexes from a SQL predicate (index "ticket_idx")',
     );
@@ -435,11 +474,13 @@ describe('MongoSchemaGenerator', () => {
 describe('MongoSchemaGenerator validator', () => {
   const generator = new MongoSchemaGenerator();
 
-  @Entity({ checks: [{ where: { priority: { $gte: 0 } } }, { name: 'capped', where: { priority: { $lte: 9 } } }] })
+  @Entity({
+    checks: (mongoTask, check) => [check({ priority: { $gte: 0 } }), check({ priority: { $lte: 9 } }, 'capped')],
+  })
   class MongoTask {
-    @Id({ type: String }) id?: string;
-    @Field({ type: String, enum: ['open', 'closed'] as const }) status?: 'open' | 'closed' | null;
-    @Field({ type: Number }) priority?: number | null;
+    @Field(f.string().id()) id?: string;
+    @Field(f.enum(['open', 'closed']).nullable()) status?: 'open' | 'closed' | null;
+    @Field(f.number().nullable()) priority?: number | null;
   }
 
   const taskValidator = {
@@ -448,18 +489,18 @@ describe('MongoSchemaGenerator validator', () => {
 
   @Entity()
   class MongoLabel {
-    @Id({ type: String }) id?: string;
-    @Field({ type: Number, enum: [1, 2] as const }) tier?: 1 | 2 | null;
+    @Field(f.string().id()) id?: string;
+    @Field(f.enum([1, 2]).nullable()) tier?: 1 | 2 | null;
   }
 
   type TaskShape = { id?: string; dueAt?: Date | null; status?: string | null };
 
-  const taskChecking = (where: EntityWhere<TaskShape>): Type<object> => {
-    @Entity({ name: 'Task', checks: [{ where }] })
+  const taskChecking = (where: EntityWhereMeta<TaskShape>): Type<object> => {
+    @Entity({ name: 'Task', checks: (task, check) => [check(where)] })
     class Task implements TaskShape {
-      @Id({ type: String }) id?: string;
-      @Field({ type: Date }) dueAt?: Date | null;
-      @Field({ type: String }) status?: string | null;
+      @Field(f.string().id()) id?: string;
+      @Field(f.date().nullable()) dueAt?: Date | null;
+      @Field(f.string().nullable()) status?: string | null;
     }
     return Task;
   };
@@ -480,7 +521,7 @@ describe('MongoSchemaGenerator validator', () => {
   });
 
   it('should refuse a check given as SQL', () => {
-    expect(() => generator.generateCreateSchema([taskChecking((task) => sql`${task.status} <> 'x'`)])).toThrow(
+    expect(() => generator.generateCreateSchema([taskChecking(sql`status <> 'x'`)])).toThrow(
       'MongoDB does not support checks from a SQL predicate (collection "Task")',
     );
   });

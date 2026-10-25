@@ -37,7 +37,7 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
       expect(result.code).toContain('@Entity(');
       expect(result.code).toContain('class User');
-      expect(result.code).toContain("@Id({ type: 'int' })");
+      expect(result.code).toContain("@Field(f.column('int').id())");
       expect(result.code).toContain('id!: number;');
       expect(result.code).toContain('@Field(');
       expect(result.code).toContain('name?: string | null;');
@@ -140,10 +140,10 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain('unique: true');
+      expect(result.code).toContain('.unique()');
     });
 
-    it('should leave a nullable column unmarked, its property admitting null', () => {
+    it('should mark a nullable column, its property admitting null', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
@@ -155,7 +155,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).not.toContain('nullable');
+      expect(result.code).toContain('.nullable())');
       expect(result.code).toContain('bio?: string | null;');
     });
 
@@ -493,7 +493,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain("@Id({ name: 'user_id', type: 'int' })");
+      expect(result.code).toContain("@Field(f.column('int').id().name('user_id'))");
       // No conventional name to read the key by, so the entity names it.
       expect(result.code).toContain("[idKey]?: 'userId';");
     });
@@ -510,7 +510,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain("defaultValue: 'active'");
+      expect(result.code).toContain(".default('active')");
     });
 
     it('should carry a plain single-column index on the field itself', () => {
@@ -526,7 +526,7 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain("index: 'email_idx'");
+      expect(result.code).toContain(".index('email_idx')");
     });
 
     // `@Field({ index })` builds a plain index, so writing a unique one there would silently drop the
@@ -545,7 +545,7 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain("unique: true, index: 'email_idx'");
+      expect(result.code).toContain(".unique().index('email_idx')");
       expect(result.code).not.toContain('@Index');
     });
 
@@ -568,8 +568,25 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain("@Index((user) => [user.firstName, user.lastName], { name: 'name_idx' })");
-      expect(result.code).toContain('import { Entity, Field, Id, Index }');
+      expect(result.code).toContain(
+        "indexes: (user, index) => [\n    index([user.firstName, user.lastName], 'name_idx'),\n  ],",
+      );
+      expect(result.code).toContain('import { Entity, Field, f }');
+    });
+
+    it('should state a serial the database generates on a column that is no key', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('tickets', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'seq', type: { category: 'integer' }, isAutoIncrement: true, nullable: false },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('tickets');
+      assertDefined(result);
+
+      expect(result.code).toContain("@Field(f.column('int').autoIncrement())");
     });
 
     it('should handle boolean and Date types', () => {
@@ -602,7 +619,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field({ type: 'timestamp', precision: 0 })");
+      expect(result.code).toContain("@Field(f.column('timestamp').precision(0)");
     });
 
     /** Three digits is what a `Date` field declares stating none, so writing them says nothing. */
@@ -618,7 +635,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field({ type: 'timestamp' })");
+      expect(result.code).toContain("@Field(f.column('timestamp').nullable())");
     });
 
     it('should format complex default values correctly', () => {
@@ -638,12 +655,12 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain('defaultValue: {"a":1}');
-      expect(result.code).toContain('defaultValue: ["tag1"]');
-      expect(result.code).toContain('defaultValue: null');
-      expect(result.code).toContain("defaultValue: 'CURRENT_TIMESTAMP'");
-      expect(result.code).toContain('defaultValue: true');
-      expect(result.code).toContain('defaultValue: 123');
+      expect(result.code).toContain('.default({"a":1})');
+      expect(result.code).toContain('.default(["tag1"])');
+      expect(result.code).toContain('.default(null)');
+      expect(result.code).toContain(".default('CURRENT_TIMESTAMP')");
+      expect(result.code).toContain('.default(true)');
+      expect(result.code).toContain('.default(123)');
     });
 
     /** A literal is text, whatever it spells; SQL is what an entity declares SQL with, imported with it. */
@@ -653,7 +670,7 @@ describe('EntityCodeGenerator', () => {
         mockTableNode('stamped', [
           { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
           { name: 'spelled', type: { category: 'string' }, defaultValue: 'CURRENT_TIMESTAMP' },
-          { name: 'created', type: { category: 'timestamp' }, defaultValue: new SqlExpression('currentTimestamp') },
+          { name: 'created', type: { category: 'timestamp' }, defaultValue: SqlExpression.named('currentTimestamp') },
           { name: 'derived', type: { category: 'string' }, defaultValue: SqlExpression.parenthesized("lower('A')") },
         ]),
       );
@@ -661,10 +678,10 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('stamped');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field({ type: 'text', defaultValue: 'CURRENT_TIMESTAMP' })");
-      expect(result.code).toContain('defaultValue: currentTimestamp');
-      expect(result.code).toContain("defaultValue: sql`(lower('A'))`");
-      expect(result.code).toContain("import { Entity, Field, Id, currentTimestamp, sql } from 'uql-orm';");
+      expect(result.code).toContain("@Field(f.column('text').nullable().default('CURRENT_TIMESTAMP'))");
+      expect(result.code).toContain('.default(currentTimestamp)');
+      expect(result.code).toContain(".default(sql`(lower('A'))`)");
+      expect(result.code).toContain("import { Entity, Field, currentTimestamp, f, sql } from 'uql-orm';");
     });
 
     it('should handle OneToOne and ManyToMany relations', () => {
@@ -775,7 +792,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
       assertDefined(result);
 
-      expect(result.code).toContain("comment: 'headline'");
+      expect(result.code).toContain(".comment('headline')");
       expect(result.code).not.toContain('   * headline');
     });
 
@@ -784,7 +801,7 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain(
-        "@Field({ type: 'varchar', length: 255, nullable: false, comment: 'headline', index: 'posts_title_idx' })",
+        "@Field(f.column('varchar').length(255).comment('headline').index('posts_title_idx'))",
       );
       expect(result.code).toContain('title!: string;');
     });
@@ -817,8 +834,8 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain('computed: sql`qty * 2`, stored: true');
-      expect(result.code).toContain("import { Entity, Field, Id, sql } from 'uql-orm';");
+      expect(result.code).toContain('.as(sql`qty * 2`).stored()');
+      expect(result.code).toContain("import { Computed, Entity, Field, f, sql } from 'uql-orm';");
       // The database writes it, so a write payload leaves it out rather than dropping what it names.
       expect(result.code).toContain('readonly total?: number | null;');
       expect(result.code).toContain('  qty?: number | null;');
@@ -838,8 +855,8 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain("comment: 'the buyer\\'s name'");
-      expect(result.code).toContain('computed: sql`concat(\\`a\\`, \\${1})`');
+      expect(result.code).toContain(".comment('the buyer\\'s name')");
+      expect(result.code).toContain('.as(sql`concat(\\`a\\`, \\${1})`)');
     });
   });
 
@@ -860,8 +877,8 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('Column: id (BIGINTEGER UNSIGNED)');
       expect(result.code).toContain('Column: total (DECIMAL(10,2))');
       expect(result.code).toContain('Column: ratio (DECIMAL(5))');
-      expect(result.code).toContain('precision: 10');
-      expect(result.code).toContain('scale: 2');
+      expect(result.code).toContain('.precision(10)');
+      expect(result.code).toContain('.scale(2)');
     });
 
     /** A foreign key not named `<something>id` has no base name to reuse, so the target table names it. */
@@ -917,7 +934,7 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('profiles?: Profile;');
     });
 
-    it('should emit a bare @Index for a composite index with no name and no unique flag', () => {
+    it('should emit a bare index entry for a composite index with no name and no unique flag', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [
         { name: 'first_name', type: { category: 'string' } },
@@ -935,7 +952,7 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain('@Index((user) => [user.firstName, user.lastName])');
+      expect(result.code).toContain('index([user.firstName, user.lastName]),');
     });
   });
 });

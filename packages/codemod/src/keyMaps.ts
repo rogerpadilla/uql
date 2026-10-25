@@ -3,7 +3,7 @@ import { type Edit, inserted, replaced } from './edits.js';
 import { identifierText, propertyValue } from './syntax.js';
 
 // What replaced member names written as strings: a callback where a definition names them, reading refs
-// (`@Index` columns and `include`) or the key map (`mappedBy`, `references`, `hooks`), and a `{ field: true }`
+// (index columns and `include`) or the key map (`mappedBy`, `references`, `hooks`), and a `{ field: true }`
 // key where a statement does. Each builder edits only the parts that change, so a rewrite nested in one keeps
 // its own, and returns nothing where the value is not a literal it can read, which its caller reports.
 
@@ -29,18 +29,23 @@ export function memberAccess(param: string, key: string): string {
   return isIdentifierName(key) ? `${param}.${key}` : `${param}[${quoted(key)}]`;
 }
 
+/** A key as an object literal writes it: `title`, or `'first-name'` for one that is no identifier. */
+export function memberKey(key: string): string {
+  return isIdentifierName(key) ? key : quoted(key);
+}
+
 /** `'amount'` or `['title', 'body']` -> `{ amount: true }`, the key map a statement names fields by. */
 export function fieldKeysEdits(value: ts.Expression): Edits {
   const names: readonly ts.Expression[] = ts.isArrayLiteralExpression(value) ? value.elements : [value];
   if (!names.every((name): name is ts.StringLiteralLike => ts.isStringLiteralLike(name))) {
     return undefined;
   }
-  const keys = names.map(({ text }) => `${isIdentifierName(text) ? text : quoted(text)}: true`);
+  const keys = names.map(({ text }) => `${memberKey(text)}: true`);
   return [replaced(value, `{ ${keys.join(', ')} }`)];
 }
 
 /** Whether `value` is already a function, the form every rewrite here produces. */
-export function isCallback(value: ts.Expression): boolean {
+export function isCallback(value: ts.Expression): value is ts.ArrowFunction | ts.FunctionExpression {
   return ts.isArrowFunction(value) || ts.isFunctionExpression(value);
 }
 

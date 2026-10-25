@@ -1,25 +1,28 @@
-import type {
-  AggregateValue,
-  EntityAggregate,
-  EntityGetter,
-  Except,
-  FieldOptions,
-  FieldType,
-  HasCompositeKey,
-  HookEvent,
-  IdValue,
-  NamedIdKey,
-  VersionKey,
-  RejectKeys,
-  RelationManyToManyOptions,
-  RelationManyToOneOptions,
-  RelationOneToManyOptions,
-  RelationOneToOneOptions,
-  RelationOptions,
-  TsTypeOf,
-  Writable,
+import {
+  type Column,
+  COLUMN_OPTIONS,
+  type ComputedRefs,
+  type EntityGetter,
+  type FilledOptions,
+  type filledKey,
+  type HookContext,
+  type HookEvent,
+  type IsEqual,
+  type Json,
+  type JsonBrand,
+  type NamedIdKey,
+  type NullOf,
+  type QuerySql,
+  RelationAggregate,
+  type RelationManyToManyOptions,
+  type RelationManyToOneOptions,
+  type RelationOneToManyOptions,
+  type RelationOneToOneOptions,
+  type RelationOptions,
+  type VersionKey,
 } from '../../type/index.js';
-import type { RejectIncompatible } from '../../util/index.js';
+import { aggregateField } from '../../util/field.util.js';
+import { memberRefs } from '../../util/sql.js';
 import { relationRegistration } from '../metadata/definition.js';
 import { memberRegistrations } from './bag.js';
 
@@ -38,76 +41,81 @@ type MemberDecorator<V, O = unknown> = (value: undefined, context: ClassFieldDec
  * family - `jsonb`, whose document the property shapes, or `numeric`, either number kind - is meant to
  * be narrowed. A column insists on its `null`; an aggregate, whose value is exact, insists on all of it.
  */
-type AdmittingDecorator<V, M, O> = <P extends V | undefined>(
+type AdmittingDecorator<V, M, O, Filled = true, Key = false, Lock = false> = <
+  P extends V | undefined,
+  N extends PropertyKey,
+>(
   value: undefined,
-  context: ClassFieldDecoratorContext<O, P> &
-    ([Writable<M>] extends [Writable<P>] ? unknown : { readonly __propertyMustAdmit: M }),
+  context: ClassFieldDecoratorContext<O, P> & { readonly name: N } & ([M] extends [P]
+      ? unknown
+      : { readonly __propertyMustAdmit: M }) &
+    FilledIfBranded<O, N, Filled> &
+    ([Key] extends [true] ? KeyIsNamed<O> : unknown) &
+    ([Lock] extends [true] ? VersionIsBranded<O> : unknown),
 ) => void;
 
-/**
- * The property type a set of field options describes: the declared `type`, narrowed by `enum` to the
- * values that type admits (so `enum: [2]` stays off a `String`), or else the referenced key's own type,
- * which makes `@Field({ references: () => User })` on a `number` an error when `User.id` is a `uuid`.
- */
-type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
-  ? O extends { readonly enum: infer E extends readonly unknown[] }
-    ? EnumValue<Extract<E[number], TsTypeOf<T>>, TsTypeOf<T>>
-    : TsTypeOf<T>
-  : O extends { readonly references: EntityGetter<infer E> }
-    ? HasCompositeKey<E> extends true
-      ? { readonly __compositeKeyNeedsAColumnPerKey: true }
-      : IdValue<E>
-    : never;
+/** A field the `filledKey` brand lets an insert leave out, which only a default can then fill. */
+type FilledIfBranded<O, N, Filled> = [Filled] extends [true]
+  ? unknown
+  : typeof filledKey extends keyof O
+    ? N extends O[typeof filledKey]
+      ? { readonly __filledKeyNeedsADefault: true }
+      : unknown
+    : unknown;
 
 /**
- * The `null` a column reads back: every one holds it unless `nullable: false` says otherwise, so the
- * property admits it too. A key holds none, whether `@Id` or `@Field({ isId: true })` declares it, since
- * it is NOT NULL on every engine, and neither does a version, which is NOT NULL DEFAULT 0.
+ * Declares a persisted field, the property checked against the column: `@Field(f.string()) name!: string;`, and
+ * `@Field(f.string().nullable()) bio?: string | null;` for a column holding `null`. A key is `f.number().id()`.
+ * @example `@Field(f.references(() => User).nullable()) userId?: number | null;`
  */
-type NullOf<O> = O extends { readonly nullable: false } | { readonly isId: true } | { readonly version: true }
-  ? never
-  : null;
-
-/** The enum's members, or a named complaint where they widened for lack of `as const`, which would check nothing. */
-type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enumNeedsAsConst: true } : Members;
-
-/**
- * Declares a persisted field, its `type` checked against the property's.
- * @example `@Field({ type: String, nullable: false }) name!: string;`
- * @example `@Field({ references: () => User }) userId?: string | null;`
- */
-export function Field<
+export function Field<This, O, V>(
+  column: Column<O, V>,
+): AdmittingDecorator<
+  Narrowable<V> | NullOf<O>,
+  NullOf<O>,
   This,
-  O extends FieldOptions<DeclaredValue<O>, This> &
-    ({ type: FieldType } | { references: EntityGetter }) &
-    RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
-    RejectIncompatible<O>,
->(opts: O & VersionIsBranded<O, This>): AdmittingDecorator<DeclaredValue<O> | NullOf<O>, NullOf<O>, This>;
-
-/**
- * Declares a field a relation aggregate computes, `@Field({ computed: (user) => user.resources.count() })`.
- * The aggregate says what the field holds, so it takes no `type`, and only `count` and `sum` - the two a
- * row change turns into a delta - may be `stored`.
- * @example `@Field({ computed: (user) => user.resources.count() }) readonly resourceCount?: number;`
- */
-export function Field<This, O extends AggregateOptions<This> & RejectKeys<Exclude<keyof O, keyof FieldOptions>>>(
-  opts: O,
-): AdmittingDecorator<AggregateValue<O>, AggregateValue<O>, This>;
-
-export function Field(opts: FieldOptions<never, unknown>): MemberDecorator<unknown, unknown> {
+  O extends FilledOptions ? true : false,
+  IsKey<O>,
+  O extends { readonly version: true } ? true : false
+> {
   return (_value, context) => {
-    memberRegistrations(context.metadata).fields[String(context.name)] = opts;
+    memberRegistrations(context.metadata).fields[String(context.name)] = column[COLUMN_OPTIONS];
   };
 }
 
-/** A field the aggregate itself types, read on each query, never `stored`, and every other option as a column takes it. */
-type AggregateOptions<E> = Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
-  readonly computed: EntityAggregate<E>;
-  readonly stored?: false;
-};
+/**
+ * Declares a field the database computes, read off the entity's refs: SQL as a column,
+ * `@Computed((user) => f.string().as(sql`upper(${user.name})`)) readonly shout?: string;`, or a relation
+ * aggregate, `@Computed((user) => user.posts.count()) readonly postCount?: number;`, which types itself.
+ */
+export function Computed<This, C extends ComputedColumn | RelationAggregate>(
+  expression: (refs: ComputedRefs<This>) => C,
+): AdmittingDecorator<ComputedValue<C>, ComputedAdmits<C>, This> {
+  return (_value, context) => {
+    const computed: ComputedColumn | RelationAggregate = expression(memberRefs<This>());
+    memberRegistrations(context.metadata).fields[String(context.name)] =
+      computed instanceof RelationAggregate ? aggregateField(computed) : computed[COLUMN_OPTIONS];
+  };
+}
+
+/** A column the database computes, what `as()` returns. */
+type ComputedColumn = Column<{ readonly computed: QuerySql }>;
+
+/** What a computed field holds: an aggregate's exact value, or a column's, `null` where it said so. */
+type ComputedValue<C> =
+  C extends RelationAggregate<infer V> ? V : C extends Column<infer O, infer V> ? V | NullOf<O> : never;
+
+/** What the property has to admit: all of an aggregate's value, which is exact, and a column's `null`. */
+type ComputedAdmits<C> = C extends RelationAggregate<infer V> ? V : C extends Column<infer O> ? NullOf<O> : never;
+
+/** A JSON column with no shape holds any document, which the property narrows: `Json<Settings>`. */
+type Narrowable<V> = IsEqual<V, Json> extends true ? JsonBrand | readonly JsonBrand[] : V;
+
+/** Whether the column is a key, which the class has to name. */
+type IsKey<O> = O extends { readonly isId: true } ? true : false;
 
 /**
- * A key the type level cannot name, reported on each `@Id` that leaves it unnamed. Where no `idKey`
+ * A key the type level cannot name, reported on each key column that leaves it unnamed. Where no `idKey`
  * brand and no conventional name applies, `IdKey` falls back to every field, and `IdValue`,
  * `EntityId` and every by-id method are then typed against a column that is not the key.
  */
@@ -118,30 +126,9 @@ type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNee
  * time; the `versionKey` brand is what makes an update payload require it, and a lock only half
  * declared would be a guarantee nothing enforces, so the decorator asks for both.
  */
-type VersionIsBranded<O, This> = O extends { readonly version: true }
-  ? [VersionKey<This>] extends [never]
-    ? { readonly __versionNeedsVersionKeyBrand: true }
-    : unknown
+type VersionIsBranded<This> = [VersionKey<This>] extends [never]
+  ? { readonly __versionNeedsVersionKeyBrand: true }
   : unknown;
-
-/** {@link MemberDecorator} that also constrains the class, which is where a key is named. */
-type IdDecorator<V> = <This>(value: undefined, context: ClassFieldDecoratorContext<This, V> & KeyIsNamed<This>) => void;
-
-/**
- * Declares the primary key, checked like `@Field`; a key not named `id`, `_id` or `uuid` needs the `idKey` brand.
- * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id!: string;`
- */
-export function Id<
-  O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
-    RejectIncompatible<O> &
-    // A key is NOT NULL in every engine, and the `isId` that says so is stamped on below rather than
-    // authored, so this is the one contradiction the shared check cannot see from `O` alone.
-    { readonly nullable?: false },
->(opts: O): IdDecorator<DeclaredValue<O> | undefined> {
-  return (_value, context) => {
-    memberRegistrations(context.metadata).fields[String(context.name)] = { ...opts, isId: true };
-  };
-}
 
 /**
  * `E` comes from the mandatory `entity` getter, so the context can insist the property really holds that
@@ -181,14 +168,17 @@ export function ManyToMany<E extends object, O>(
   return relation<E, O, readonly E[] | undefined>({ cardinality: 'mm', ...opts });
 }
 
+/** What a hook method is called with: the row as `this`, and the querier's context. */
+type HookMethod<This> = (this: This, ctx: HookContext) => unknown;
+
 function hook(event: HookEvent) {
   return () =>
     // Generic in `This` so a hook declared with an explicit `this` parameter still matches; the default
     // on `ClassMethodDecoratorContext` pins `this` to `unknown` and would reject it.
-    <This>(_value: unknown, context: ClassMethodDecoratorContext<This>): void => {
+    <This>(_value: HookMethod<This>, context: ClassMethodDecoratorContext<This>): void => {
       const { hooks } = memberRegistrations(context.metadata);
       hooks[event] ??= [];
-      hooks[event].push(String(context.name));
+      hooks[event].push({ methodName: String(context.name) });
     };
 }
 

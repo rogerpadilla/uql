@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, idOf, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, getMeta, idOf, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { reverseDiff } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -15,21 +15,21 @@ import { sql, whereIds } from '../util/index.js';
 @Entity()
 class Enrolment {
   [idKey]?: 'studentId' | 'courseId';
-  @Id({ type: Number })
+  @Field(f.number().id())
   studentId?: number;
-  @Id({ type: String })
+  @Field(f.string().id())
   courseId?: string;
   @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolment })
   notes?: Note[];
   @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
   badges?: Badge[];
-  @Field({ type: String }) grade?: string | null;
+  @Field(f.string().nullable()) grade?: string | null;
 }
 
 @Entity()
 class Badge {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) label?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) label?: string | null;
 }
 
 /**
@@ -39,9 +39,9 @@ class Badge {
  */
 @Entity()
 class EnrolmentBadge {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) enrolmentStudentId?: number | null;
-  @Field({ type: String }) enrolmentCourseId?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) enrolmentStudentId?: number | null;
+  @Field(f.string().nullable()) enrolmentCourseId?: string | null;
   @ManyToOne({
     entity: () => Enrolment,
     references: (enrolmentBadge, enrolment) => [
@@ -50,7 +50,7 @@ class EnrolmentBadge {
     ],
   })
   enrolment?: Enrolment;
-  @Field({ type: Number }) badgeId?: number | null;
+  @Field(f.number().nullable()) badgeId?: number | null;
   @ManyToOne({ entity: () => Badge, references: (enrolmentBadge) => enrolmentBadge.badgeId }) badge?: Badge;
 }
 
@@ -61,9 +61,9 @@ class EnrolmentBadge {
  */
 @Entity()
 class Note {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) enrolmentStudentId?: number | null;
-  @Field({ type: String }) enrolmentCourseId?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) enrolmentStudentId?: number | null;
+  @Field(f.string().nullable()) enrolmentCourseId?: string | null;
   @ManyToOne({
     entity: () => Enrolment,
     references: (note, enrolment) => [
@@ -72,51 +72,63 @@ class Note {
     ],
   })
   enrolment?: Enrolment;
-  @Field({ type: String }) body?: string | null;
+  @Field(f.string().nullable()) body?: string | null;
 }
 
 /** Its own table, so the writes below cannot disturb the row counts the reads further down assert. */
 @Entity()
 class Attempt {
   [idKey]?: 'studentId' | 'task';
-  @Id({ type: Number }) studentId?: number;
-  @Id({ type: String }) task?: string;
-  @Field({ type: String }) score?: string | null;
+  @Field(f.number().id()) studentId?: number;
+  @Field(f.string().id()) task?: string;
+  @Field(f.string().nullable()) score?: string | null;
 }
 
 /** A composite whose second column the ORM mints, so only the written row carries it. */
 @Entity()
 class Ticket {
   [idKey]?: 'tenant' | 'code';
-  @Id({ type: String }) tenant?: string;
-  @Id({ type: String, onInsert: () => 'minted' }) code?: string;
-  @Field({ type: String }) title?: string | null;
+  @Field(f.string().id()) tenant?: string;
+  @Field(
+    f
+      .string()
+      .id()
+      .onInsert(() => 'minted'),
+  )
+  code?: string;
+  @Field(f.string().nullable()) title?: string | null;
 }
 
 /** A composite whose second column the ORM mints, found again by a unique column of its own. */
 @Entity()
 class Seat {
   [idKey]?: 'tenant' | 'code';
-  @Id({ type: String }) tenant?: string;
-  @Id({ type: String, onInsert: () => 'minted' }) code?: string;
-  @Field({ type: String, unique: true }) email?: string | null;
-  @Field({ type: String }) label?: string | null;
+  @Field(f.string().id()) tenant?: string;
+  @Field(
+    f
+      .string()
+      .id()
+      .onInsert(() => 'minted'),
+  )
+  code?: string;
+  @Field(f.string().nullable().unique()) email?: string | null;
+  @Field(f.string().nullable()) label?: string | null;
 }
 
 @Entity()
 class Term {
   [idKey]?: 'year' | 'season';
-  @Id({ type: Number }) year?: number;
-  @Id({ type: String }) season?: string;
+  @Field(f.number().id()) year?: number;
+  @Field(f.string().id()) season?: string;
   @OneToMany({ entity: () => Session, mappedBy: (session) => session.term, cascade: 'delete' })
   sessions?: Session[];
 }
 
 @Entity()
 class Session {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) termYear?: number | null;
-  @Field({ type: String }) termSeason?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) termYear?: number | null;
+  @Field(f.string().nullable()) termSeason?: string | null;
   @ManyToOne({
     entity: () => Term,
     references: (session, term) => [
@@ -357,15 +369,15 @@ describe('changing the primary key of an existing table', () => {
   @Entity({ name: 'Member' })
   class MemberBefore {
     [idKey]?: 'userId';
-    @Id({ type: Number }) userId?: number;
-    @Field({ type: String }) note?: string | null;
+    @Field(f.number().id()) userId?: number;
+    @Field(f.string().nullable()) note?: string | null;
   }
   @Entity({ name: 'Member' })
   class MemberAfter {
     [idKey]?: 'userId' | 'groupId';
-    @Id({ type: Number }) userId?: number;
-    @Id({ type: Number }) groupId?: number;
-    @Field({ type: String }) note?: string | null;
+    @Field(f.number().id()) userId?: number;
+    @Field(f.number().id()) groupId?: number;
+    @Field(f.string().nullable()) note?: string | null;
   }
 
   /** As introspection reports it: the columns it has, under the name the engine gave the constraint. */
@@ -437,9 +449,9 @@ describe('a composite key across a relation', () => {
 
   @Entity()
   class Attendance {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) enrolmentStudentId?: number | null;
-    @Field({ type: String }) enrolmentCourseId?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().nullable()) enrolmentStudentId?: number | null;
+    @Field(f.string().nullable()) enrolmentCourseId?: string | null;
     @ManyToOne({
       entity: () => Enrolment,
       references: (attendance, enrolment) => [

@@ -488,13 +488,12 @@ export abstract class AbstractQuerierIt<
     expect(await this.adjustmentPrices(id)).toEqual([50, 300]);
   }
 
-  /** A `$select` naming fields only to drop them subtracts as `$exclude` does, so the two combine. */
-  async shouldCombineASubtractiveSelectWithExclude() {
+  /** A `$select` naming fields only to drop them leaves every one out and reads the rest. */
+  async shouldLeaveOutEveryFieldAFalsySelectNames() {
     await this.querier.insertOne(User, { name: 'Ann', email: 'ann@subtractive.com' });
 
     const [user] = await this.querier.findMany(User, {
-      $select: { name: false },
-      $exclude: { email: true },
+      $select: { name: false, email: false },
       $where: { email: 'ann@subtractive.com' },
     });
 
@@ -688,7 +687,7 @@ export abstract class AbstractQuerierIt<
     const id = await this.querier.insertOne(Item, { name: 'item one', salePrice: 5, measureUnitId });
 
     const found = await this.querier.findOneById(Item, id, {
-      $exclude: { salePrice: true },
+      $select: { salePrice: false },
       $populate: { measureUnit: { $select: { name: true } } },
     });
 
@@ -698,19 +697,19 @@ export abstract class AbstractQuerierIt<
   }
 
   /** A joined document keeps its own key on every engine, exactly as the parent's does. */
-  async shouldKeepAJoinedRelationsIdDespite$exclude() {
+  async shouldKeepAJoinedRelationsIdDespiteAFalsySelect() {
     const measureUnitId = await this.querier.insertOne(MeasureUnit, { name: 'unit one' });
     const id = await this.querier.insertOne(Item, { name: 'item one', measureUnitId });
 
     const found = await this.querier.findOneById(Item, id, {
-      $populate: { measureUnit: { $exclude: { id: true } } },
+      $populate: { measureUnit: { $select: { id: false } } },
     });
 
     expect(found?.measureUnit).toMatchObject({ id: measureUnitId, name: 'unit one' });
   }
 
   /** A relation query names the target's columns, so a m2m one must not reach the join table. */
-  async shouldPopulateManyToManyWith$exclude() {
+  async shouldPopulateManyToManyWithAFalsySelect() {
     const id = await this.querier.insertOne(Item, {
       name: 'item one',
       createdAt: 1,
@@ -718,7 +717,7 @@ export abstract class AbstractQuerierIt<
     });
 
     const found = await this.querier.findOneById(Item, id, {
-      $populate: { tags: { $exclude: { name: true } } },
+      $populate: { tags: { $select: { name: false } } },
     });
 
     expect(found?.tags).toHaveLength(1);
@@ -4054,6 +4053,24 @@ export abstract class AbstractQuerierIt<
     });
 
     expect(docs.map((doc) => doc.name)).toEqual(['near', 'far']);
+  }
+
+  /** A populated relation's rows in the order of their distance, each answering it under its `$project`. */
+  async shouldProjectTheDistanceOfAPopulatedRelationsRows() {
+    const doc = await this.querier.insertOne(VectorDoc, { name: 'doc' });
+    await this.querier.insertMany(VectorChunk, [
+      { name: 'far', vec: [0, 0, 1], vectorDocId: doc },
+      { name: 'near', vec: [1, 0, 0], vectorDocId: doc },
+    ]);
+
+    const found = await this.querier.findOneById(VectorDoc, doc, {
+      $select: { name: true },
+      $populate: { chunks: { $select: { name: true }, $sort: { vec: { $vector: [1, 0, 0], $project: 'distance' } } } },
+    });
+
+    expect(found?.chunks.map((chunk) => chunk.name)).toEqual(['near', 'far']);
+    expect(found?.chunks[0].distance).toBeCloseTo(0, 5);
+    expect(found?.chunks[1].distance).toBeCloseTo(1, 5);
   }
 
   /** Each target once, however many links pair it, and never a column of the junction's. */

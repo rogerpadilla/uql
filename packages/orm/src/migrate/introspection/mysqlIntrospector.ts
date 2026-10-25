@@ -1,7 +1,7 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { CheckSchema } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
+import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { sql } from '../../util/sql.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
@@ -106,27 +106,34 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       sql`
       SELECT
         INDEX_NAME as index_name,
-        GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
+        COLUMN_NAME as column_name,
+        ${this.indexExpressionSql} as expression,
         NOT NON_UNIQUE as is_unique,
-        MAX(INDEX_TYPE) as method
+        INDEX_TYPE as method
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ${tableName}
         AND INDEX_NAME != 'PRIMARY'
-      GROUP BY INDEX_NAME, NON_UNIQUE
-      ORDER BY INDEX_NAME
+      ORDER BY INDEX_NAME, SEQ_IN_INDEX
     `,
     );
-    return rows.map((row) => ({
-      name: row.index_name,
-      ...(row.method === 'VECTOR' && { type: 'vector' as const }),
-      // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
-      // place in the list, and it is reported as the expression it is, which is what stops diffing
-      // from comparing an entry list the server cannot state against the entity's own.
-      entries: row.columns.split(',').map((column) => (column ? { column } : { column, expression: true })),
-      unique: Boolean(row.is_unique),
+    // One row per key part, ordered by position, so the rows of an index are its entries in order.
+    return [...Map.groupBy(rows, (row) => row.index_name)].map(([name, parts]) => ({
+      name,
+      ...(parts[0].method === 'VECTOR' && { type: 'vector' as const }),
+      // A functional or multi-valued key part has no `COLUMN_NAME`: it is reported as the expression it is, which is
+      // what stops diffing from comparing an entry list the server cannot state against the entity's own.
+      entries: parts.map(({ column_name, expression }): IndexEntry<string> =>
+        column_name === null
+          ? { expression: expression === null ? '' : mysqlSqlText(expression) }
+          : { column: column_name },
+      ),
+      unique: Boolean(parts[0].is_unique),
     }));
   }
+
+  /** A functional key part's text, which MariaDB, having none, does not report. */
+  protected readonly indexExpressionSql: QuerySql = sql`EXPRESSION`;
 
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const rows = await read<JoinedForeignKeyRow>(
@@ -187,7 +194,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (sql !== undefined) {
       // Any precision here repeats the column's own, which the column type already states.
       return /^CURRENT_TIMESTAMP(?:\(\d?\))?$/i.test(sql)
-        ? new SqlExpression('currentTimestamp')
+        ? SqlExpression.named('currentTimestamp')
         : this.sqlDefault(sql);
     }
     const literal = introduced ? unescapeMysqlString(introduced[1]) : defaultValue;
@@ -195,14 +202,9 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return quoted ? unescapeMysqlString(quoted[1]) : literal;
   }
 
-  /**
-   * A default's SQL, or `undefined` for a literal. MySQL flags a SQL default `DEFAULT_GENERATED` and prints
-   * it escaped like a literal, with charset introducers on its strings: `lower(_utf8mb4\'A\')`.
-   */
+  /** A default's SQL, or `undefined` for a literal: MySQL flags a SQL default `DEFAULT_GENERATED`. */
   protected sqlText(defaultValue: string, extra: string): string | undefined {
-    return extra.includes('DEFAULT_GENERATED')
-      ? unescapeMysqlString(defaultValue).replace(/(?<![\w'])_[a-z0-9]+(?=')/gi, '')
-      : undefined;
+    return extra.includes('DEFAULT_GENERATED') ? mysqlSqlText(defaultValue) : undefined;
   }
 }
 
@@ -255,6 +257,8 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   /** Whether an index is MariaDB's vector index, and the distance it was built for. */
   protected override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['vector', 'distance']);
 
+  protected override readonly indexExpressionSql = sql`NULL`;
+
   /**
    * A vector index's distance is kept only in the table's own definition, ``VECTOR KEY `ix` (`vec`)
    * `DISTANCE`='cosine'``, and left out there for MariaDB's default, euclidean.
@@ -275,7 +279,7 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
       }
       const line = lines.find((it) => it.includes(`VECTOR KEY \`${index.name}\``));
       const metric = line?.match(/`DISTANCE`='(\w+)'/)?.[1] ?? 'euclidean';
-      return { ...index, distance: this.dialect.indexedDistance(metric) };
+      return { ...index, distance: this.dialect.distanceOfMetric(metric) };
     });
   }
 
@@ -298,4 +302,15 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   }
 }
 
-type MysqlIndexRow = { index_name: string; columns: string; is_unique: number; method: string };
+type MysqlIndexRow = {
+  index_name: string;
+  column_name: string | null;
+  expression: string | null;
+  is_unique: number;
+  method: string;
+};
+
+/** SQL as MySQL's catalogue prints it, escaped like a literal, with charset introducers on its strings: `lower(_utf8mb4\'A\')`. */
+function mysqlSqlText(text: string): string {
+  return unescapeMysqlString(text).replace(/(?<![\w'])_[a-z0-9]+(?=')/gi, '');
+}

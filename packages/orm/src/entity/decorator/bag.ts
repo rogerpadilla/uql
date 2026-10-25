@@ -1,4 +1,4 @@
-import type { FieldOptions, HookEvent, RelationRegistration, Type } from '../../type/index.js';
+import type { FieldOptions, HookDeclaration, HookEvent, RelationRegistration, Type } from '../../type/index.js';
 
 /**
  * Polyfills `Symbol.metadata`, without which TypeScript builds no `context.metadata` and every field is
@@ -11,13 +11,13 @@ symbolCtor.metadata ??= Symbol.for('Symbol.metadata');
 const registrations = Symbol.for('uql-orm/entity/decoratorMembers');
 
 /**
- * What the member decorators record for one class, until `@Entity()` or `defineEntity` drains it: the
- * only channel from a member decorator to its class. The writable counterpart of `EntityMembers`.
+ * What the member decorators record for one class, until `@Entity()` or a subclass's registration drains it: the
+ * only channel from a member decorator to its class, and what a schema's members are registered as too.
  */
 export type MemberRegistrations = {
   readonly fields: Record<string, FieldOptions>;
   readonly relations: Record<string, RelationRegistration>;
-  readonly hooks: Partial<Record<HookEvent, string[]>>;
+  readonly hooks: Partial<Record<HookEvent, HookDeclaration[]>>;
 };
 
 /**

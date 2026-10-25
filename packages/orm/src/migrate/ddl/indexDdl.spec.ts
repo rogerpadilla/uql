@@ -112,6 +112,12 @@ describe('index features', () => {
     },
   );
 
+  it.each(['postgres', 'mysql'] as const)('should refuse a %s fulltext index over a JSON path', (dialect) => {
+    expect(() => render(dialect, { entries: [{ json: 'kind', path: 'bio' }], type: 'fulltext' })).toThrow(
+      'does not support fulltext indexes over a path inside a JSON column',
+    );
+  });
+
   it("should build a Postgres fulltext index under 'simple' where it states no config", () => {
     expect(render('postgres', { entries: [{ column: 'title' }], type: 'fulltext' })).toContain(
       `TO_TSVECTOR('simple'::regconfig, COALESCE("title", ''))`,
@@ -120,8 +126,8 @@ describe('index features', () => {
 
   // SQL Server has neither: an expression answers Msg 16216 and the JSON path's subquery Msg 1046.
   it.each([
-    ['expression', { column: 'lower("email")', expression: true }],
-    ['jsonPath', { column: 'kind', jsonPath: { path: 'theme.color', type: String } }],
+    ['expression', { expression: 'lower("email")' }],
+    ['jsonPath', { json: 'kind', path: 'theme.color', type: String }],
   ] as const)('should reject a %s index on SQL Server', (_feature, entry) => {
     expect(() => render('mssql', { entries: [entry] })).toThrow('SQL Server does not support');
   });
@@ -161,11 +167,11 @@ describe('index features', () => {
     ['mysql', 'CREATE INDEX `i` ON `t` ((lower("email")));'],
     ['sqlite', 'CREATE INDEX IF NOT EXISTS `i` ON `t` ((lower("email")));'],
   ] as const)('should index an expression on %s', (dialect, expected) => {
-    expect(render(dialect, { entries: [{ column: 'lower("email")', expression: true }] })).toBe(expected);
+    expect(render(dialect, { entries: [{ expression: 'lower("email")' }] })).toBe(expected);
   });
 
   it('should reject an expression index on MariaDB, which has no functional indexes', () => {
-    expect(() => render('mariadb', { entries: [{ column: 'lower(`email`)', expression: true }] })).toThrow(
+    expect(() => render('mariadb', { entries: [{ expression: 'lower(`email`)' }] })).toThrow(
       'MariaDB does not support expression indexes (index "i")',
     );
   });
@@ -175,11 +181,11 @@ describe('index features', () => {
     ['mysql', 'CREATE INDEX `i` ON `t` (`body`(64));'],
     ['mariadb', 'CREATE INDEX IF NOT EXISTS `i` ON `t` (`body`(64));'],
   ] as const)('should emit a prefix length on %s', (dialect, expected) => {
-    expect(render(dialect, { entries: [{ column: 'body', length: 64 }] })).toBe(expected);
+    expect(render(dialect, { entries: [{ column: 'body', prefixLength: 64 }] })).toBe(expected);
   });
 
   it.each(['postgres', 'sqlite'] as const)('should reject a prefix length on %s', (dialect) => {
-    expect(() => render(dialect, { entries: [{ column: 'body', length: 64 }] })).toThrow(
+    expect(() => render(dialect, { entries: [{ column: 'body', prefixLength: 64 }] })).toThrow(
       'does not support index prefix lengths',
     );
   });
@@ -233,9 +239,7 @@ describe('index features', () => {
     ['cockroachdb', 'CREATE INDEX IF NOT EXISTS "i" ON "t" (((("kind"->\'theme\')->>\'color\')));'],
     ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((JSON_EXTRACT(`kind`, '$.theme.color')));"],
   ] as const)('should index a JSON path on %s', (dialect, expected) => {
-    expect(render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }] })).toBe(
-      expected,
-    );
+    expect(render(dialect, { entries: [{ json: 'kind', path: 'theme.color', type: String }] })).toBe(expected);
   });
 
   /** A number is compared cast to a number, only where it is one on Postgres, so the index carries the same cast. */
@@ -246,16 +250,14 @@ describe('index features', () => {
     ],
     ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((CAST(JSON_EXTRACT(`kind`, '$.rating') AS REAL)));"],
   ] as const)('should index a numeric JSON path on %s', (dialect, expected) => {
-    expect(render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] })).toBe(
-      expected,
-    );
+    expect(render(dialect, { entries: [{ json: 'kind', path: 'rating', type: Number }] })).toBe(expected);
   });
 
   // MariaDB has no expression indexes at all.
   it('should reject a JSON path index on MariaDB', () => {
-    expect(() =>
-      render('mariadb', { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] }),
-    ).toThrow('MariaDB does not support indexes over a path inside a JSON column (index "i")');
+    expect(() => render('mariadb', { entries: [{ json: 'kind', path: 'rating', type: Number }] })).toThrow(
+      'MariaDB does not support indexes over a path inside a JSON column (index "i")',
+    );
   });
 
   /**
@@ -264,23 +266,21 @@ describe('index features', () => {
    * in `mysqlJsonPathIndex.test.ts`, on the plan for the statement `find` builds.
    */
   it('should index a JSON path on MySQL', () => {
-    expect(render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] })).toBe(
+    expect(render('mysql', { entries: [{ json: 'kind', path: 'rating', type: Number }] })).toBe(
       "CREATE INDEX `i` ON `t` ((CAST((`kind`->>'$.rating') AS DOUBLE)));",
     );
-    expect(
-      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String, length: 32 } }] }),
-    ).toBe(
+    expect(render('mysql', { entries: [{ json: 'kind', path: 'theme.color', type: String, charLength: 32 }] })).toBe(
       "CREATE INDEX `i` ON `t` ((CAST((`kind`->>'$.theme.color') AS CHAR(32) CHARACTER SET utf8mb4) COLLATE utf8mb4_bin));",
     );
   });
 
   it('should reject a MySQL JSON path index it cannot key', () => {
-    expect(() =>
-      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }] }),
-    ).toThrow("a MySQL index over the string JSON path 'theme.color' needs a length");
-    expect(() =>
-      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'isArchived', type: Boolean } }] }),
-    ).toThrow("MySQL cannot index the boolean JSON path 'isArchived', which compares as JSON");
+    expect(() => render('mysql', { entries: [{ json: 'kind', path: 'theme.color', type: String }] })).toThrow(
+      "a MySQL index over the string JSON path 'theme.color' needs a charLength",
+    );
+    expect(() => render('mysql', { entries: [{ json: 'kind', path: 'isArchived', type: Boolean }] })).toThrow(
+      "MySQL cannot index the boolean JSON path 'isArchived', which compares as JSON",
+    );
   });
 
   /**
@@ -289,33 +289,33 @@ describe('index features', () => {
    * live in `mysqlJsonArrayIndex.test.ts`, on the plan for the statement `find` builds.
    */
   it('should index a JSON array on MySQL', () => {
-    expect(render('mysql', { entries: [{ column: 'tags', jsonArray: { type: String, length: 64 } }] })).toBe(
+    expect(render('mysql', { entries: [{ json: 'tags', type: [String], charLength: 64 }] })).toBe(
       'CREATE INDEX `i` ON `t` ((CAST(`tags` AS CHAR(64) ARRAY)));',
     );
-    expect(render('mysql', { entries: [{ column: 'kind', jsonArray: { path: 'ids', type: Number } }] })).toBe(
+    expect(render('mysql', { entries: [{ json: 'kind', path: 'ids', type: [Number] }] })).toBe(
       "CREATE INDEX `i` ON `t` ((CAST(`kind`->'$.ids' AS SIGNED ARRAY)));",
     );
   });
 
   it('should reject a JSON array element type MySQL cannot cast to', () => {
-    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: String } }] })).toThrow(
-      'a multi-valued index over string elements needs a length',
+    expect(() => render('mysql', { entries: [{ json: 'tags', type: [String] }] })).toThrow(
+      'a multi-valued index over string elements needs a charLength',
     );
-    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'float' } }] })).toThrow(
+    expect(() => render('mysql', { entries: [{ json: 'tags', type: ['float'] }] })).toThrow(
       'MySQL has no array cast for float elements',
     );
-    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: Boolean } }] })).toThrow(
+    expect(() => render('mysql', { entries: [{ json: 'tags', type: [Boolean] }] })).toThrow(
       'MySQL has no array cast for Boolean elements',
     );
-    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'blob' } }] })).toThrow(
-      'a multi-valued index over binary elements needs a length',
+    expect(() => render('mysql', { entries: [{ json: 'tags', type: ['blob'] }] })).toThrow(
+      'a multi-valued index over binary elements needs a charLength',
     );
   });
 
   it.each(['postgres', 'cockroachdb', 'mariadb', 'sqlite'] as const)(
     'should reject a multi-valued index on %s',
     (dialect) => {
-      expect(() => render(dialect, { entries: [{ column: 'tags', jsonArray: { type: String, length: 64 } }] })).toThrow(
+      expect(() => render(dialect, { entries: [{ json: 'tags', type: [String], charLength: 64 }] })).toThrow(
         'does not support multi-valued indexes over a JSON array',
       );
     },

@@ -15,6 +15,7 @@ import {
 } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
 import { getKeys, hasKeys, isWhereMap, someKey } from '../util/object.util.js';
+import { escapeRegExp } from '../util/string.util.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -211,7 +212,7 @@ export function likePattern(pattern: string): string {
  */
 export function likeRegex(pattern: string): string {
   const tokens = likeTokens(pattern).map(
-    ({ char, escaped }) => (escaped ? undefined : LIKE_WILDCARDS[char]) ?? escapeRegex(char),
+    ({ char, escaped }) => (escaped ? undefined : LIKE_WILDCARDS[char]) ?? escapeRegExp(char),
   );
   const open = tokens[0] === LIKE_WILDCARDS['%'];
   const closed = tokens.at(-1) !== LIKE_WILDCARDS['%'];
@@ -229,10 +230,6 @@ function likeTokens(pattern: string): { readonly char: string; readonly escaped:
 
 /** Each `$like` wildcard as the regex matching it, across lines as SQL does. */
 const LIKE_WILDCARDS: Readonly<Record<string, string>> = { '%': String.raw`[\s\S]*`, _: String.raw`[\s\S]` };
-
-function escapeRegex(char: string): string {
-  return char.replace(/[\\^$.*+?()[\]{}|]/, '\\$&');
-}
 
 /**
  * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.

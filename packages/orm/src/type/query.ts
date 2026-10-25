@@ -2,6 +2,7 @@ import type {
   FieldKey,
   FieldKeyOf,
   JsonFieldPaths,
+  MethodKey,
   RelationKey,
   RelationTarget,
   ToManyRelationKey,
@@ -67,12 +68,6 @@ export type QuerySelect<E, F extends keyof E = FieldKey<E>, V = BooleanLike> = {
 export type QuerySelectValue<E, Sql = QuerySql> = QuerySelect<E> | readonly Sql[];
 
 /**
- * Fields to exclude from the query result - `{ name: true }` blacklists fields.
- * Mutually exclusive with positive field selections in `$select`.
- */
-export type QueryExclude<E> = QuerySelect<E>;
-
-/**
  * relation population map.
  */
 export type QueryPopulate<E, Sql = QuerySql, R extends keyof E = RelationKey<E>> = {
@@ -128,7 +123,7 @@ export type FilterWhere<E> = QueryWhere<E> | ((context: UqlContext | undefined) 
 export type FilterOnMissing = 'skip' | 'throw';
 
 /**
- * Authoring shape for `@Entity({ filters })` / `@Filter` / `defineFilter`.
+ * Authoring shape for `@Entity({ filters })` and a schema's `filters`.
  */
 export type FilterOptions<E = unknown> = {
   readonly where: FilterWhere<E>;
@@ -192,12 +187,6 @@ export type QuerySortByNearest<E> = [FieldKeyOf<E, readonly number[]>] extends [
 export type QuerySortByText = {
   $text?: QuerySortDirection | { readonly $project: string; readonly $order?: QuerySortDirection };
 };
-
-/**
- * A row with the value a `$sort` projects under the name its `$project` gives - a vector's distance, or a
- * `$text` relevance - which is not inferred: `(await querier.findMany(Post, q)) as WithProjection<Post, 'score'>[]`.
- */
-export type WithProjection<E, K extends string> = E & Record<K, number>;
 
 /**
  * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count` or nearest row, a vector
@@ -268,9 +257,10 @@ export type QuerySearch<E, Sql = QuerySql> = QueryPage<E, Sql> & {
  */
 export type Query<E, Sql = QuerySql> = {
   /**
-   * field selection - `{ name: true }` whitelists fields, or raw SQL projections
-   * (``[sql`LOG10(points)`.as('score')]``, SQL dialects only - MongoDB rejects the raw-array form).
-   * Mutually exclusive with `$exclude`.
+   * field selection - `{ name: true }` whitelists fields, `{ body: false }` leaves fields out, or raw SQL
+   * projections (``[sql`LOG10(points)`.as('score')]``, SQL dialects only - MongoDB rejects the raw-array form).
+   * A map with a positive entry selects those alone. Keys a relation is assembled from (a joined row's primary
+   * key, a to-many's foreign key) are read regardless, since leaving them out would leave the relation unfilled.
    */
   $select?: QuerySelectValue<E, Sql>;
 
@@ -283,13 +273,6 @@ export type Query<E, Sql = QuerySql> = {
    * how many rows each named relation holds, under `_count` on every row. See {@link QueryCount}.
    */
   $count?: QueryCount<E, Sql>;
-
-  /**
-   * field exclusion - `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
-   * Keys a relation is assembled from (a joined row's primary key, a to-many's foreign key) are kept
-   * regardless, since subtracting them would leave the relation unfilled.
-   */
-  $exclude?: QueryExclude<E>;
 
   /**
    * sorting options, vector similarity search included: a SELECT is the one statement with a
@@ -343,11 +326,13 @@ export type WireQuery<E> = Query<E, never>;
 
 /**
  * The type of a clause's value, and where the clause may appear: a `relation` clause is also allowed in a
- * populated relation's own query, a `sql` clause only in the statement itself.
+ * populated relation's own query, a `statement` clause only in the statement itself, and a `wire: false`
+ * clause never over HTTP.
  */
 export type QueryClause = {
   readonly value: 'object' | 'number' | 'boolean' | 'string';
   readonly scope: 'relation' | 'statement';
+  readonly wire?: false;
 };
 
 /**
@@ -357,7 +342,6 @@ export type QueryClause = {
 export const QUERY_CLAUSES = {
   $select: { value: 'object', scope: 'relation' },
   $populate: { value: 'object', scope: 'relation' },
-  $exclude: { value: 'object', scope: 'relation' },
   $where: { value: 'object', scope: 'relation' },
   $sort: { value: 'object', scope: 'relation' },
   $skip: { value: 'number', scope: 'relation' },
@@ -367,8 +351,8 @@ export const QUERY_CLAUSES = {
   $count: { value: 'object', scope: 'statement' },
   // A vector search ranks only the statement's rows, so a relation's own query has nothing for it to tune.
   $candidates: { value: 'number', scope: 'statement' },
-  // Never decoded: HTTP refuses it, because a request cannot hold a lock past its response.
-  $lock: { value: 'object', scope: 'statement' },
+  // Each request commits on its own, so a lock taken over HTTP would be released before its response.
+  $lock: { value: 'object', scope: 'statement', wire: false },
   // Statement only: keyset paging per parent of a populated relation is not supported.
   $after: { value: 'string', scope: 'statement' },
   $before: { value: 'string', scope: 'statement' },
@@ -397,7 +381,7 @@ export type QueryOne<E, Sql = QuerySql> = Except<Query<E, Sql>, '$limit'>;
 /**
  * options to get an unique record.
  */
-export type QueryUnique<E, Sql = QuerySql> = Pick<QueryOne<E, Sql>, '$select' | '$exclude' | '$populate' | '$where'>;
+export type QueryUnique<E, Sql = QuerySql> = Pick<QueryOne<E, Sql>, '$select' | '$populate' | '$where'>;
 
 /**
  * A query as a read captures it: `Q` is inferred from the literal, so the row sees every clause at every
@@ -436,32 +420,47 @@ export type CursorPage<T> = {
 
 /**
  * A find's row: the entity narrowed to what the query `Q` projected and populated, at every depth, so
- * reading anything else does not compile. The entity itself where nothing narrows it. A key union names
- * a projection by hand. `K` is internal: `Q` whole, for a key union the test on `Q` distributes over.
+ * reading anything else does not compile, plus {@link SortProjections}. The entity itself where nothing
+ * narrows it. A key union names a projection by hand.
  * @example `QueryFindResult<User, 'id' | 'name'>`, `QueryFindResult<User, typeof query>`
  */
-export type QueryFindResult<E, Q = {}, K extends Q = Q> = Q extends ShapingQuery
-  ? ShapedRow<E, Q>
-  : [K] extends [PropertyKey]
-    ? Pick<E, K & keyof E>
-    : E;
+export type QueryFindResult<E, Q = {}> = [Q] extends [PropertyKey] ? Pick<E, Q & keyof E> : FindRow<E, Q>;
+
+/** What a `$sort` projects, each a number under the name its `$project` gives. */
+type SortProjections<Q> = Q extends { readonly $sort: { readonly [key: string]: infer V } }
+  ? Projected<ProjectedName<V>>
+  : unknown;
+
+type ProjectedName<V> = V extends { readonly $project: infer N extends string } ? N : never;
+
+type Projected<N extends string> = [N] extends [never] ? unknown : { readonly [K in N]: number };
 
 /** The clauses that shape a row; a query naming none of them reads the entity as it is. */
-type ShapingQuery =
-  | { readonly $select: object }
-  | { readonly $exclude: object }
-  | { readonly $populate: object }
-  | { readonly $count: object };
+type ShapingQuery = { readonly $select: object } | { readonly $populate: object } | { readonly $count: object };
 
 /**
- * A nested relation's row, as {@link QueryFindResult} without the key-union form. Every alias layer and
- * conditional from here down is paid on each read, measured with `bun run ts.perf`.
+ * A row at any depth, as {@link QueryFindResult} without the key-union form. Every alias layer and
+ * conditional from here down is paid on each read, measured with `bun run ts.perf`: the shaping is
+ * written twice so a read with no `$sort` skips the projections, cheaper than an alias over it.
  */
-type FindRow<E, Q> = Q extends ShapingQuery ? ShapedRow<E, Q> : E;
+type FindRow<E, Q> = Q extends { readonly $sort: object }
+  ? (Q extends ShapingQuery ? ShapedRow<E, Q> : DataRow<E>) & SortProjections<Q>
+  : Q extends ShapingQuery
+    ? ShapedRow<E, Q>
+    : DataRow<E>;
+
+/**
+ * The entity as a row reads it: plain data, so a method of the class it is read through is `never` and does not
+ * compile. Still an `E`, which generic code returning or indexing its rows relies on.
+ */
+type DataRow<E> = E & MethodMask<E>;
+
+/** Each method of `E` as `never`, built once per entity and laid over any row read off it. */
+type MethodMask<E, M extends keyof E = MethodKey<E>> = [M] extends [never] ? unknown : { readonly [K in M]: never };
 
 /**
  * The row's own fields, and its relations beside them. A positive `$select` entry wins outright at runtime, so a
- * map with one selects its positive keys alone; one with none subtracts, as a truthy `$exclude` entry does. `Pick`,
+ * map with one selects its positive keys alone; one with none leaves its keys out. `Pick`,
  * not a key remap: an entity keyed by an index signature, a content type defined at runtime, has `string` for its
  * keys, which a remap drops.
  */
@@ -474,12 +473,7 @@ type ShapedRow<E, Q> = Q extends { readonly $select: infer M }
           ? Pick<E, Exclude<FieldKey<E>, keyof M> & keyof E>
           : Pick<E, OnKeys<M> & keyof E> & MaybeFields<E, M>) &
       RelatedRows<E, Q>
-  : Q extends { readonly $exclude: infer M }
-    ? (M[keyof M] extends true | 1
-        ? Pick<E, Exclude<FieldKey<E>, keyof M> & keyof E>
-        : Pick<E, Exclude<FieldKey<E>, OnKeys<M> | MaybeKeys<M>> & keyof E> & MaybeFields<E, M>) &
-        RelatedRows<E, Q>
-    : WholeRow<E, Q> & RelatedRows<E, Q>;
+  : WholeRow<E, Q> & RelatedRows<E, Q>;
 
 type Off = false | 0 | undefined;
 
@@ -495,7 +489,9 @@ type MaybeKeys<M> = {
 type MaybeFields<E, M> = [MaybeKeys<M>] extends [never] ? unknown : Partial<Pick<E, MaybeKeys<M> & keyof E>>;
 
 /** The entity, less the relations {@link RelatedRows} fills in, so none comes back as declared. */
-type WholeRow<E, Q> = Q extends { readonly $populate: infer M } ? Omit<E, keyof M & keyof E> : E;
+type WholeRow<E, Q> = Q extends { readonly $populate: infer M }
+  ? Omit<E, keyof M & keyof E> & MethodMask<E>
+  : DataRow<E>;
 
 /** The populated relations, and the `_count` a query asked for. */
 type RelatedRows<E, Q> = Q extends { readonly $populate: infer M }

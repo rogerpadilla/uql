@@ -1,18 +1,27 @@
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { transformFile } from './transform.js';
+import { type FileResult, rewriteLegacy, transformFile } from './transform.js';
 
 const FILE_NAME = '/entities.ts';
 
 /**
  * Runs the codemod over one whole in-memory file, for the cases about imports and file-level text.
  *
- * A real `ts.Program` rather than a bare parse, because every transform here depends on the checker: the
- * whole job is writing down the types `design:type` used to report at runtime. The default lib is read
+ * A real `ts.Program` rather than a bare parse, because the transforms read the types the checker resolves,
+ * such as a relation's target and the `null` arm of a property. The default lib is read
  * from disk rather than stubbed, since `Company[]` only resolves its element type when `Array` has a
  * declaration, and unwrapping arrays is exactly what the to-many relation transform depends on.
  */
-function codemodFile(text: string, files: Readonly<Record<string, string>> = {}, strictNullChecks = true) {
+function codemodFile(
+  text: string,
+  files: Readonly<Record<string, string>> = {},
+  strictNullChecks = true,
+  transform: (
+    source: ts.SourceFile,
+    checker: ts.TypeChecker,
+    options: { strictNullChecks: boolean },
+  ) => FileResult = rewriteLegacy,
+) {
   const readFile = (name: string) => (name === FILE_NAME ? text : (files[name] ?? ts.sys.readFile(name)));
   const host: ts.CompilerHost = {
     getSourceFile: (name, lang) => {
@@ -34,10 +43,10 @@ function codemodFile(text: string, files: Readonly<Record<string, string>> = {},
     moduleResolution: ts.ModuleResolutionKind.Node10,
   };
   const program = ts.createProgram([FILE_NAME], options, host);
-  return transformFile(program.getSourceFile(FILE_NAME)!, program.getTypeChecker(), { strictNullChecks });
+  return transform(program.getSourceFile(FILE_NAME)!, program.getTypeChecker(), { strictNullChecks });
 }
 
-/** What a snippet is compiled against, so the checker resolves the decorators and the `Relation` alias. */
+/** What a snippet is compiled against, so the checker resolves the decorators. */
 const STUBS = `
   type EntityGetter = () => unknown;
   type FieldOptions = { type?: unknown; references?: EntityGetter; name?: string; length?: number };
@@ -57,15 +66,78 @@ const STUBS = `
   declare function defineRelation(entity: unknown, key: string, options: unknown): void;
   declare function Entity(options?: unknown): ClassDecorator;
   declare function Filter(name: string, options: unknown): ClassDecorator;
+  declare function Trigger(...triggers: unknown[]): ClassDecorator;
   declare function defineFilter(entity: unknown, name: string, options: unknown): void;
-  type Relation<T> = T;
 `;
+
+/** The findings for a missing option and the removed `Relation`; each is matched within its `file:line: ` prefix. */
+const NO_TYPE = "has no 'type': declare its column as a builder, such as `f.string()`";
+const NO_ENTITY = "has no 'entity': name its target, `entity: () => Target`";
+const RELATION_IMPORT = "'Relation' was removed; write the property's type without it, and drop the import";
 
 /** {@link STUBS} without `Field`, for the cases where the codemod writes the `Field` import itself. */
 const STUBS_WITHOUT_FIELD = STUBS.replace(/ {2}declare function Field\(.*\n/, '');
 
 /** Runs the codemod over a snippet compiled against {@link STUBS}, for the per-property cases. */
 const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`);
+
+describe('transformFile', () => {
+  it.each([`import * as f from 'x';`, `import f from 'y';`, `function f() {}`, `class f {}`, `const f = 1;`])(
+    'should refuse a file that declares the name it writes: %s',
+    (own) => {
+      const { unresolved } = codemodFile(
+        `${own}
+@Entity()
+export class A {
+  @Field({ type: Number, isId: true }) id?: number;
+}`,
+        {},
+        true,
+        transformFile,
+      );
+      expect(unresolved).toContain(
+        "/entities.ts:1: 'f' is already named here, and the codemod writes it: rename that, then run again",
+      );
+    },
+  );
+
+  it('should report what the builder pass cannot write at its line in the file as written', () => {
+    const { unresolved } = codemodFile(
+      `import { Entity, Field, Id } from 'uql-orm';
+const shared = { type: String };
+@Entity()
+export class A {
+  @Id({ type: String }) code?: string;
+  @Field({ ...shared }) name?: string;
+}`,
+      {},
+      true,
+      transformFile,
+    );
+    expect(unresolved).toContain('/entities.ts:6: cannot write a builder because its options object spreads another');
+  });
+
+  it('should run the rewrites the checker reads types for, then write the columns as builders', () => {
+    const { text, unresolved } = codemodFile(
+      `import { Entity, Field, Id } from 'uql-orm';
+@Entity()
+export class User {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
+}`,
+      {},
+      true,
+      transformFile,
+    );
+    expect(unresolved).toEqual([]);
+    expect(text).toBe(`import { f, Entity, Field } from 'uql-orm';
+@Entity()
+export class User {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+}`);
+  });
+});
 
 /** The SQL querier as 0.99.0 typed it, its `run`/`all` taking a string, installed where `uql-orm` resolves. */
 const UQL_ORM_0_99 = {
@@ -85,8 +157,25 @@ const UQL_ORM_0_99 = {
 };
 
 describe('codemod transforms', () => {
-  it('writes the type reflection used to supply, for every scalar shape', () => {
-    const { text, changed } = codemod(`
+  /** The schema pass reads the text the first one wrote, so a line it reports is mapped back to the file's own. */
+  it('reports a schema it cannot convert at its line in the file as written', () => {
+    const { unresolved } = codemodFile(`import 'reflect-metadata';
+import { defineEntity } from 'uql-orm';
+
+class Base {}
+class Child extends Base {
+  id?: number;
+}
+defineEntity(Child, { fields: { id: { type: Number, isId: true } } });
+`);
+
+    expect(unresolved).toEqual([
+      expect.stringMatching(/:8: 'Child' extends a class: declare the base with defineEntity too/),
+    ]);
+  });
+
+  it('reports every decorator with no type, whatever its shape, and writes none', () => {
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Id() id?: number;
         @Field() name?: string;
@@ -98,26 +187,25 @@ describe('codemod transforms', () => {
     `);
 
     expect(changed).toBe(true);
-    expect(text).toContain('@Id({ type: Number }) id?: number;');
-    expect(text).toContain('@Field({ type: String }) name?: string | null;');
-    expect(text).toContain('@Field({ type: BigInt }) count?: bigint | null;');
-    expect(text).toContain('@Field({ type: Boolean }) active?: boolean | null;');
-    expect(text).toContain('@Field({ type: Date }) at?: Date | null;');
-    expect(text).toContain("@Field({ type: 'blob' }) avatar?: Uint8Array | null;");
+    expect(text).toContain('@Id() id?: number;');
+    expect(text).toContain('@Field() name?: string | null;');
+    expect(text).toContain('@Field() avatar?: Uint8Array | null;');
+    expect(unresolved).toEqual(Array.from({ length: 6 }, () => expect.stringContaining(NO_TYPE)));
   });
 
-  it('keeps existing options and puts the type first', () => {
-    const { text } = codemod(`
+  it('keeps existing options as written, and reports the type they lack', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field({ name: 'image', length: 150 }) picture?: string;
       }
     `);
 
-    expect(text).toContain("@Field({ type: String, name: 'image', length: 150 }) picture?: string | null;");
+    expect(text).toContain("@Field({ name: 'image', length: 150 }) picture?: string | null;");
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
   it('names an unconventional key with the idKey brand', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Id({ type: String }) code?: string;
         @Field({ type: String }) title?: string;
@@ -128,7 +216,7 @@ describe('codemod transforms', () => {
   });
 
   it('names both columns of a composite key', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Id({ type: Number }) studentId?: number;
         @Id({ type: String }) courseId?: string;
@@ -139,7 +227,7 @@ describe('codemod transforms', () => {
   });
 
   it('leaves a conventional key alone', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Id({ type: Number }) id?: number;
         @Field({ type: String }) name?: string;
@@ -150,7 +238,7 @@ describe('codemod transforms', () => {
   });
 
   it('leaves a key that is already branded alone', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         [idKey]?: 'pk';
         @Id({ type: Number }) pk?: number;
@@ -161,7 +249,7 @@ describe('codemod transforms', () => {
   });
 
   it('reports a key written as a computed name rather than guess its brand', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       const code = 'code';
       class Entity {
         @Id({ type: String }) [code]?: string;
@@ -212,7 +300,7 @@ class Entity {
 
   /** Options it cannot read may still hold `virtual`, so the rename is reported rather than silently skipped. */
   it('reports a virtual option it cannot reach inside options it cannot read', () => {
-    const { unresolved } = codemod(`
+    const { unresolved } = codemod(/*ts*/ `
       declare const options: { virtual: FieldOptions };
       class Entity {
         @Field(options.virtual) total?: number;
@@ -224,19 +312,295 @@ class Entity {
     );
   });
 
+  it('declares a key @Field marks with isId as the builder that names it', () => {
+    const { text } = codemodFile(
+      /*ts*/ `import { Entity, Field } from 'uql-orm';
+@Entity()
+class Post {
+  @Field({ type: Number, isId: true }) id?: number;
+  @Field({ isId: true, type: String }) slug?: string;
+}
+`,
+      {},
+      true,
+      transformFile,
+    );
+
+    expect(text).toBe(`import { f, idKey, Entity, Field } from 'uql-orm';
+@Entity()
+class Post {
+  [idKey]?: 'id' | 'slug';
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().id()) slug?: string;
+}
+`);
+  });
+
+  describe("folding the class decorators into @Entity's options", () => {
+    it('moves each into the option it registers under', () => {
+      const { text } = codemod(/*ts*/ `
+      @Index((post) => [post.slug], { unique: true })
+      @Entity()
+      @Trigger({ on: 'afterInsert', run: audit })
+      @Filter('live', { where: { live: true } })
+      class Post { id?: number; slug?: string; live?: boolean; }
+    `);
+
+      expect(text)
+        .toContain(`      @Entity({ triggers: [{ on: 'afterInsert', run: audit }], indexes: [{ columns: (post) => [post.slug], unique: true }], filters: { live: { where: { live: true } } } })
+      class Post`);
+    });
+
+    it('merges indexes and filters after the lists @Entity states, in the order written', () => {
+      const { text } = codemod(/*ts*/ `
+      @Index((post) => [post.slug])
+      @Entity({ indexes: [{ columns: (post) => [post.title] }], name: 'posts' })
+      @Index((post) => [post.live])
+      class Post { id?: number; slug?: string; title?: string; live?: boolean; }
+    `);
+
+      expect(text).toContain(
+        "@Entity({ indexes: [{ columns: (post) => [post.title] }, { columns: (post) => [post.slug] }, { columns: (post) => [post.live] }], name: 'posts' })",
+      );
+    });
+
+    it('moves a commented trigger below into a list @Entity states, its comment kept above it', () => {
+      const { text } = codemod(/*ts*/ `
+      @Entity({ triggers: [{ on: 'beforeInsert', run: other }] })
+      // audits every insert
+      @Trigger({ on: 'afterInsert', run: audit })
+      class Post { id?: number; }
+    `);
+
+      expect(text).toContain(`      @Entity({ triggers: [
+        // audits every insert
+        { on: 'afterInsert', run: audit },
+        { on: 'beforeInsert', run: other }] })
+      class Post`);
+    });
+
+    it('indents a list it writes into a file with no indented line by two spaces', () => {
+      const { text } = codemod(
+        /*ts*/ `@Index((doc) => [doc.kind]) @Entity({ name: 'docs' }) @Index((doc) => [doc.title]) class Doc { kind?: string; title?: string; }`,
+      );
+
+      expect(text).toContain(`@Entity({ name: 'docs', indexes: [
+  { columns: (doc) => [doc.kind] },
+  { columns: (doc) => [doc.title] },
+] }) class Doc`);
+    });
+
+    it('drops every named import that is folded away, the default import left on its own', () => {
+      const { text } = codemodFile(/*ts*/ `import Orm, { Index } from 'uql-orm';
+@Entity()
+@Index((doc) => [doc.kind])
+class Doc { kind?: string; }
+void Orm;
+`);
+
+      expect(text).toContain("import Orm from 'uql-orm';");
+    });
+
+    it('moves an uncommented trigger below into a list @Entity states, ahead of it', () => {
+      const { text } = codemod(/*ts*/ `
+      @Entity({ triggers: [{ on: 'beforeInsert', run: other }] })
+      @Trigger({ on: 'afterInsert', run: audit })
+      class Post { id?: number; }
+    `);
+
+      expect(text).toContain(
+        "@Entity({ triggers: [{ on: 'afterInsert', run: audit }, { on: 'beforeInsert', run: other }] })",
+      );
+    });
+
+    it('keeps a rewrite inside a decorator it moves, and drops the import with its last use', () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Index } from 'uql-orm';
+@Entity()
+@Index(['title'])
+class Post { id?: number; title?: string; }
+`);
+
+      expect(text).toBe(`import { Entity } from 'uql-orm';
+@Entity({ indexes: [{ columns: (post) => [post.title] }] })
+class Post { id?: number; title?: string; }
+`);
+    });
+
+    it('declares a base with none an abstract entity, which is never a table', () => {
+      const { text } = codemodFile(/*ts*/ `import { Index, Trigger } from 'uql-orm';
+@Index((base) => [base.tenant])
+@Trigger(first, second)
+abstract class Tenanted { tenant?: string; }
+`);
+
+      expect(text).toBe(`import { Entity } from 'uql-orm';
+@Entity({ abstract: true, triggers: [
+  first,
+  second,
+], indexes: [{ columns: (base) => [base.tenant] }] })
+abstract class Tenanted { tenant?: string; }
+`);
+    });
+
+    it("keeps each decorator's comments on the lines above its entry, and the class's doc where it is", () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Index } from 'uql-orm';
+/** A post. */
+// the lookup by slug
+@Index((post) => [post.slug])
+@Entity({ name: 'posts' })
+// @ts-expect-error a column the entity does not model
+@Index((post) => [post.nope])
+class Post { id?: number; slug?: string; }
+`);
+
+      expect(text).toBe(`import { Entity } from 'uql-orm';
+/** A post. */
+@Entity({ name: 'posts', indexes: [
+  // the lookup by slug
+  { columns: (post) => [post.slug] },
+  // @ts-expect-error a column the entity does not model
+  { columns: (post) => [post.nope] },
+] })
+class Post { id?: number; slug?: string; }
+`);
+    });
+
+    it('keeps the order triggers register in, which is the order they run in', () => {
+      const { text } = codemod(/*ts*/ `
+      @Trigger({ on: 'afterInsert', name: 'last' })
+      @Entity({ triggers: [{ on: 'afterInsert', name: 'own' }] })
+      @Trigger({ on: 'afterInsert', name: 'second' })
+      @Trigger({ on: 'afterInsert', name: 'first' })
+      class Post { id?: number; }
+    `);
+
+      expect(text).toContain(
+        "@Entity({ triggers: [{ on: 'afterInsert', name: 'first' }, { on: 'afterInsert', name: 'second' }, { on: 'afterInsert', name: 'own' }, { on: 'afterInsert', name: 'last' }] })",
+      );
+    });
+
+    it("takes along a comment closing a decorator's line", () => {
+      const { text } = codemod(/*ts*/ `
+      @Entity()
+      @Index((post) => [post.slug]) // the lookup
+      class Post { id?: number; slug?: string; }
+    `);
+
+      expect(text).toContain(`@Entity({ indexes: [
+        // the lookup
+        { columns: (post) => [post.slug] },
+      ] })
+      class Post`);
+    });
+
+    it.each([
+      [
+        'an uncalled @Entity',
+        '@Entity\n      @Index((post) => [post.id])',
+        "call '@Entity()' to move '@Index', '@Trigger' and '@Filter' into its options",
+      ],
+      [
+        'options it cannot read',
+        '@Entity(shared)\n      @Index((post) => [post.id])',
+        "move '@Index', '@Trigger' and '@Filter' into '@Entity' options this cannot read",
+      ],
+      [
+        'an index naming no columns',
+        '@Entity()\n      @Index()',
+        "move this '@Index' into '@Entity({ indexes })' by hand: it names no columns",
+      ],
+    ])('reports %s, leaving the class as written', (_, decorators, message) => {
+      const { text, unresolved } = codemod(/*ts*/ `
+      declare const shared: object;
+      ${decorators}
+      class Post { id?: number; }
+    `);
+
+      expect(text).toContain(decorators);
+      expect(unresolved).toEqual([expect.stringContaining(message)]);
+    });
+
+    it('writes options it cannot spell out as a spread, and quotes a filter name no identifier holds', () => {
+      const { text } = codemod(/*ts*/ `
+      declare const unique: { unique: true };
+      @Entity({})
+      @Index((post) => [post.id], unique)
+      @Filter('my-filter', { where: {} })
+      class Post { id?: number; }
+    `);
+
+      expect(text).toContain(
+        "@Entity({ indexes: [{ columns: (post) => [post.id], ...unique }], filters: { 'my-filter': { where: {} } } })",
+      );
+    });
+
+    it('merges commented entries into the lists @Entity states, each on its own line', () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Index, Trigger } from 'uql-orm';
+// after its own
+@Trigger(after)
+@Entity({ triggers: [own], indexes: [] })
+// the slug
+@Index((post) => [post.slug])
+// ahead of its own
+@Trigger(ahead)
+class Post { id?: number; slug?: string; }
+`);
+
+      expect(text).toBe(`import { Entity } from 'uql-orm';
+@Entity({ triggers: [
+  // ahead of its own
+  ahead,
+  own,
+  // after its own
+  after], indexes: [
+  // the slug
+  { columns: (post) => [post.slug] }] })
+class Post { id?: number; slug?: string; }
+`);
+    });
+
+    it('folds decorators sharing a line with each other or with the class', () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Index } from 'uql-orm';
+@Index((post) => [post.id]) @Entity() class Post { id?: number; }
+@Index((base) => [base.id]) abstract class Base { id?: number; }
+`);
+
+      expect(text).toBe(`import { Entity } from 'uql-orm';
+@Entity({ indexes: [{ columns: (post) => [post.id] }] }) class Post { id?: number; }
+@Entity({ abstract: true, indexes: [{ columns: (base) => [base.id] }] }) abstract class Base { id?: number; }
+`);
+    });
+
+    it('reports a filter named by no string', () => {
+      const { unresolved } = codemod(/*ts*/ `
+      declare const name: string;
+      @Entity()
+      @Filter(name, { where: {} })
+      class Post { id?: number; }
+    `);
+
+      expect(unresolved).toEqual([
+        expect.stringContaining("move this '@Filter' into '@Entity({ filters })' by hand: its name is not a string"),
+      ]);
+    });
+  });
+
   it('leaves a class decorator that is never called alone, rewriting the ones beside it', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       declare const Sealed: ClassDecorator;
       @Sealed
+      @Entity()
       @Index(['title'])
       class Post { id?: number; title?: string; }
     `);
 
-    expect(text).toContain('@Sealed\n      @Index((post) => [post.title])\n      class Post');
+    expect(text).toContain(
+      '@Sealed\n      @Entity({ indexes: [{ columns: (post) => [post.title] }] })\n      class Post',
+    );
   });
 
   it('leaves a decorator it cannot name alone', () => {
-    const { text, changed } = codemod(`
+    const { text, changed } = codemod(/*ts*/ `
       const decorators = { Field };
       class Entity {
         @decorators.Field() title?: string;
@@ -248,13 +612,13 @@ class Entity {
   });
 
   it('removes a statement from the last line of a file that has no line after it', () => {
-    const { text } = codemodFile(`class Item {}\nimport 'reflect-metadata';`);
+    const { text } = codemodFile(`class Item {}\nimport { col } from 'uql-orm';`);
 
     expect(text).toBe('class Item {}\n');
   });
 
   it('renames the virtual option to computed, leaving its expression alone', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Field({ type: Number, virtual: raw\`1 + 1\` }) score?: number;
       }
@@ -265,7 +629,7 @@ class Entity {
 
   /** A shorthand has no value to keep, so the key alone would rebind it to a local that is not there. */
   it('renames a shorthand virtual, keeping what it referred to', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       const virtual = raw\`1 + 1\`;
       class Entity {
         @Field({ type: Number, virtual }) score?: number;
@@ -277,7 +641,7 @@ class Entity {
   });
 
   it('renames a quoted virtual key', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field({ type: Number, 'virtual': raw\`1\` }) score?: number;
       }
@@ -289,7 +653,7 @@ class Entity {
 
   /** The same lookup decides whether an option is already stated, so a quoted one is not doubled. */
   it('leaves a quoted type alone rather than inserting a second one', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Field({ 'type': String }) name?: string;
       }
@@ -299,7 +663,7 @@ class Entity {
   });
 
   it('reports a field giving both names rather than choosing one', () => {
-    const { unresolved } = codemod(`
+    const { unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field({ type: Number, virtual: raw\`1\`, computed: raw\`2\` }) score?: number;
       }
@@ -308,111 +672,70 @@ class Entity {
     expect(unresolved.join('\n')).toContain("gives both 'virtual' and 'computed'");
   });
 
-  /** Both edits start at the key, and the type written before it has to stay before it once renamed. */
-  it('renames a virtual that comes first while writing the type before it', () => {
-    const { text } = codemod(`
-      class Entity {
-        @Field({ virtual: raw\`1 + 1\` }) score?: number;
-      }
-    `);
-
-    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number | null;');
-  });
-
-  /** An empty literal has no first property to insert before, so the whole object is rewritten instead. */
-  it('fills in an empty options object', () => {
-    const { text } = codemod(`
+  /** An empty literal has no option to state, so the report is the only change. */
+  it('reports an empty options object as having no type', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field({}) name?: string;
       }
     `);
 
-    expect(text).toContain('@Field({ type: String }) name?: string | null;');
+    expect(text).toContain('@Field({}) name?: string | null;');
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
-  it('treats a string-literal union as a string column', () => {
-    const { text } = codemod(`
+  it('reports a string-literal union with no type, rather than inferring a column', () => {
+    const { unresolved } = codemod(/*ts*/ `
       type Role = 'admin' | 'member';
       class Entity {
         @Field() role?: Role;
       }
     `);
 
-    expect(text).toContain('@Field({ type: String }) role?: Role | null;');
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
   it('leaves a nullable field alone once the null arm is dropped', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
-        @Field() nickname?: string | null;
+        @Field({ type: String }) nickname?: string | null;
       }
     `);
 
     expect(text).toContain('@Field({ type: String }) nickname?: string | null;');
   });
 
-  /** Arms that disagree have no single column type, and reflection reported the useless `Object` for them. */
-  it('reports a union whose arms disagree', () => {
-    const { changed, unresolved } = codemod(`
+  /** Arms that disagree have no single column type, and nothing here picks one for a missing `type`. */
+  it('reports a union whose arms disagree, and admits null all the same', () => {
+    const { changed, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field() mixed?: string | number;
       }
     `);
 
-    // Changed, since the column holds `null` whatever its type turns out to be; the `type` is what is left.
     expect(changed).toBe(true);
-    expect(unresolved[0]).toContain("cannot infer 'type'");
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
   /**
-   * Found by running this against a real project: branded id types are template literals, not plain
-   * string aliases, and were reported as unresolvable until the checker flags included them.
-   *
-   * `String` is the answer rather than `'uuid'` because reflection erased these to `String` at runtime,
-   * so that is the column the existing database already has; emitting `'uuid'` would silently change
-   * the schema (`{ category: 'string' }` becomes `{ category: 'uuid' }`). It is usually not what the
-   * author wanted, though, so the rewrite is reported for review instead of being decided quietly.
+   * A branded id is a template literal, not a plain string, so the codemod cannot tell its column type from the
+   * property alone: `String` and `'uuid'` are both plausible, and the choice changes the schema.
    */
-  it('treats a branded template-literal id type as a string column, and says so', () => {
-    const { text, notes } = codemod(`
+  it('reports a branded template-literal id with no type, rather than choosing its column', () => {
+    const { text, notes, unresolved } = codemod(/*ts*/ `
       type UUID = \`\${string}-\${string}-\${string}-\${string}-\${string}\`;
       class Entity {
         @Id() id?: UUID;
-        @Field() ref?: Uppercase<'abc'>;
       }
     `);
 
-    expect(text).toContain('@Id({ type: String }) id?: UUID;');
-    // `Uppercase<'abc'>` is evaluated eagerly to the literal `'ABC'`, so it resolves like any other
-    // string literal and needs no note; only the genuinely unresolved template literal gets one.
-    expect(text).toContain("@Field({ type: String }) ref?: Uppercase<'abc'> | null;");
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toContain("If the column should be 'uuid'");
-  });
-
-  it('notes a branded id declared as definitely assigned, whose type is no union', () => {
-    const { text, notes } = codemod(`
-      class Entity {
-        @Id() id!: \`user_\${string}\`;
-      }
-    `);
-
-    expect(text).toContain('@Id({ type: String }) id!: `user_${string}`;');
-    expect(notes).toEqual([expect.stringContaining("If the column should be 'uuid'")]);
-  });
-
-  it('treats a union of branded template literals as a string column', () => {
-    const { text } = codemod(`
-      class Entity {
-        @Id() id?: \`user_\${string}\` | \`team_\${string}\`;
-      }
-    `);
-
-    expect(text).toContain('@Id({ type: String }) id?: `user_${string}` | `team_${string}`;');
+    expect(text).toContain('@Id() id?: UUID;');
+    expect(notes).toHaveLength(0);
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
   it('says nothing about a plain string field', () => {
-    const { notes } = codemod(`
+    const { notes } = codemod(/*ts*/ `
       class Entity {
         @Field() name?: string;
       }
@@ -422,7 +745,7 @@ class Entity {
   });
 
   it('does not touch a field that already declares a type', () => {
-    const { text, changed } = codemod(`
+    const { text, changed } = codemod(/*ts*/ `
       class Entity {
         @Field({ type: 'uuid' }) id?: string;
       }
@@ -433,7 +756,7 @@ class Entity {
   });
 
   it('leaves a reference field without a type, so the column resolves from the referenced key', () => {
-    const { text, changed } = codemod(`
+    const { text, changed } = codemod(/*ts*/ `
       class Company { id?: number; }
       class Entity {
         @Field({ references: () => Company }) companyId?: number;
@@ -477,7 +800,7 @@ export async function f(q: Querier) {
   });
 
   it('leaves a computed field without a type, since its SQL decides the column', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Account {
         @Field({ computed: () => 1, eager: true }) readonly passkeyCount?: number;
       }
@@ -486,8 +809,8 @@ export async function f(q: Querier) {
     expect(text).toContain('@Field({ computed: () => 1, eager: true }) readonly passkeyCount?: number;');
   });
 
-  it('adds the entity getter relations can no longer infer, for one and for many', () => {
-    const { text } = codemod(`
+  it('reports a relation with no entity, for one and for many, and writes none', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
       class Company { id?: number; }
       class Entity {
         @ManyToOne() company?: Company;
@@ -495,14 +818,13 @@ export async function f(q: Querier) {
       }
     `);
 
-    expect(text).toContain('@ManyToOne({ entity: () => Company }) company?: Company;');
-    expect(text).toContain(
-      '@OneToMany({ entity: () => Company, mappedBy: (company) => company.entity }) peers?: Company[];',
-    );
+    expect(text).toContain('@ManyToOne() company?: Company;');
+    expect(text).toContain('@OneToMany({ mappedBy: (company) => company.entity }) peers?: Company[];');
+    expect(unresolved).toEqual([expect.stringContaining(NO_ENTITY), expect.stringContaining(NO_ENTITY)]);
   });
 
   it('rewrites a string mappedBy into the callback named after the target, leaving a callback alone', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Company { id?: number; owner?: Entity; 'owner-ref'?: Entity; dueño?: Entity; }
       class Entity {
         @OneToMany({ entity: () => Company, mappedBy: 'owner' }) owned?: Company[];
@@ -525,7 +847,7 @@ export async function f(q: Querier) {
   });
 
   it('reports a mappedBy it cannot read', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       const key = 'owner';
       class Company { id?: number; owner?: Entity; }
       class Entity {
@@ -538,7 +860,7 @@ export async function f(q: Querier) {
   });
 
   it('names the foreign key a to-one found by name, where its class declares or inherits it', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       class Company { id?: number; }
       class Owned { @Field({ type: Number }) companyId?: number; }
       class Employee extends Owned {
@@ -603,8 +925,8 @@ class Employee extends Base {
     );
   });
 
-  it("declares the foreign key of a to-one with no entity getter, typed as the key's inferred type", () => {
-    const { text } = codemodFile(`${STUBS_WITHOUT_FIELD}
+  it('declares the foreign key of a to-one with no entity getter, typed as the key it points at', () => {
+    const { text, unresolved } = codemodFile(`${STUBS_WITHOUT_FIELD}
       class Company { @Id({ type: Number }) id = 0; }
       class Employee {
         @ManyToOne({ cascade: true }) company?: Company;
@@ -613,12 +935,13 @@ class Employee extends Base {
 
     expect(text).toContain(
       '@Field({ references: () => Company }) companyId?: number | null;\n' +
-        '        @ManyToOne({ entity: () => Company, cascade: true, references: (employee) => employee.companyId }) company?: Company;',
+        '        @ManyToOne({ cascade: true, references: (employee) => employee.companyId }) company?: Company;',
     );
+    expect(unresolved).toContainEqual(expect.stringContaining(NO_ENTITY));
   });
 
   it('leaves a to-one that already says how it joins, and names the key in defineEntity and defineRelation', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       class Company { id?: number; contractor?: Contractor; }
       class Contractor {
         companyId?: number;
@@ -642,7 +965,8 @@ class Employee extends Base {
     expect(unresolved).toContainEqual(
       expect.stringContaining("declare the foreign key column 'companyId' and name it in 'references'"),
     );
-    expect(text).toContain("{ company: { cardinality: 'm1', entity: () => Company } } });");
+    expect(text).toContain('company: () => rel.manyToOne(Company),');
+    expect(unresolved).toContainEqual(expect.stringContaining("defineRelation's arguments could not be read"));
 
     expect(text).toContain(
       '@ManyToOne({ entity: () => Company, references: (contractor) => contractor.companyId }) company?: Company;',
@@ -660,8 +984,9 @@ class Employee extends Base {
   });
 
   it('rewrites @Index columns and include into callbacks named after the class', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const columns: string[];
+      @Entity()
       @Index(['title', { column: 'createdAt', order: 'desc' }, raw\`lower("title")\`], { include: ['slug'], unique: true })
       @Index(['first-name'])
       @Index((post) => [post.title])
@@ -670,29 +995,93 @@ class Employee extends Base {
     `);
 
     expect(text).toContain(
-      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
+      '{ columns: (post) => [post.title, { column: post.createdAt, order: \'desc\' }, raw`lower("title")`], include: (post) => [post.slug], unique: true }',
     );
-    expect(text).toContain("@Index((post) => [post['first-name']])");
-    expect(text).toContain('@Index((post) => [post.title])');
-    expect(text).toContain('@Index(columns)');
+    expect(text).toContain("{ columns: (post) => [post['first-name']] }");
+    expect(text).toContain('{ columns: (post) => [post.title] }');
+    expect(text).toContain('{ columns: columns }');
     expect(unresolved).toContainEqual(expect.stringContaining("write '@Index' columns as a callback"));
   });
 
+  it("rewrites a JSON index entry into the path read off the column's ref", () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      declare const path: string;
+      @Entity()
+      @Index((doc) => [{ column: doc.kind, jsonPath: { path: 'theme.color', type: String, length: 32 } }])
+      @Index((doc) => [{ column: doc.kind, jsonPath: { path: 'rating', type: Number }, order: 'desc' }])
+      @Index((doc) => [{ column: doc.tags, jsonArray: { type: String, length: 64 } }])
+      @Index((doc) => [{ column: doc.kind, jsonArray: { path: 'first-ids', type: Number } }])
+      @Index((doc) => [{ column: doc.kind, jsonPath: { path, type: String } }])
+      @Index((doc) => [{ column: doc.kind, length: 16 }, { column: doc.tags, order: 'desc' }])
+      class Doc { kind?: unknown; tags?: unknown; }
+    `);
+
+    expect(text).toContain('{ columns: (doc) => [{ column: doc.kind.theme.color, type: String, charLength: 32 }] }');
+    expect(text).toContain("{ columns: (doc) => [{ column: doc.kind.rating, type: Number, order: 'desc' }] }");
+    expect(text).toContain('{ columns: (doc) => [{ column: doc.tags, type: [String], charLength: 64 }] }');
+    expect(text).toContain("{ columns: (doc) => [{ column: doc.kind['first-ids'], type: [Number] }] }");
+    expect(text).toContain('{ columns: (doc) => [{ column: doc.kind, jsonPath: { path, type: String } }] }');
+    expect(text).toContain(
+      "{ columns: (doc) => [{ column: doc.kind, prefixLength: 16 }, { column: doc.tags, order: 'desc' }] }",
+    );
+    expect(unresolved).toContainEqual(expect.stringContaining("read the JSON path off the column's ref"));
+  });
+
+  it('rewrites a JSON entry of a column list written as strings, inside the callback it becomes', () => {
+    const { text } = codemod(/*ts*/ `
+      @Entity()
+      @Index(['tenantId', { column: 'kind', jsonPath: { path: 'theme', type: String } }])
+      class Doc { tenantId?: string; kind?: unknown; }
+    `);
+
+    expect(text).toContain('{ columns: (doc) => [doc.tenantId, { column: doc.kind.theme, type: String }] }');
+  });
+
+  it('reports a JSON read on an entry with no column, or whose read is not a literal, and leaves both as they are', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      declare const read: object;
+      @Entity()
+      @Index((doc) => [{ jsonPath: { path: 'theme', type: String } }])
+      @Index((doc) => [{ column: doc.kind, jsonPath: read }])
+      class Doc { kind?: unknown; }
+    `);
+
+    expect(text).toContain("{ columns: (doc) => [{ jsonPath: { path: 'theme', type: String } }] }");
+    expect(text).toContain('{ columns: (doc) => [{ column: doc.kind, jsonPath: read }] }');
+    expect(unresolved).toHaveLength(2);
+  });
+
+  it('leaves an entry with no JSON read as it is, and reports one whose length is stated twice', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      @Entity()
+      @Index((doc) => [{ column: doc.kind, order: 'desc' }])
+      @Index((doc) => [{ column: doc.tags, length: 8, jsonArray: { type: String, length: 64 } }])
+      class Doc { kind?: unknown; tags?: unknown; }
+    `);
+
+    expect(text).toContain("{ columns: (doc) => [{ column: doc.kind, order: 'desc' }] }");
+    expect(text).toContain(
+      '{ columns: (doc) => [{ column: doc.tags, length: 8, jsonArray: { type: String, length: 64 } }] }',
+    );
+    expect(unresolved).toEqual([expect.stringContaining("read the JSON path off the column's ref")]);
+  });
+
   it('writes a key no identifier can name as a quoted string, escaping its quotes', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       declare const querier: { findMany(entity: unknown, q: unknown): void };
+      @Entity()
       @Index(["o'clock"])
       class Post { @Id({ type: String }) "o'clock"?: string; }
       querier.findMany(Post, { $where: { $text: { $value: 'noon', $fields: ["o'clock"] } } });
     `);
 
-    expect(text).toContain("@Index((post) => [post['o\\'clock']])");
+    expect(text).toContain("{ columns: (post) => [post['o\\'clock']] }");
     expect(text).toContain("[idKey]?: 'o\\'clock';");
     expect(text).toContain("$fields: { 'o\\'clock': true }");
   });
 
   it('rewrites references into a callback over both key maps, and a self-relation into (local, foreign)', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Customer { id?: number; code?: string; }
       class Order {
         customerCode?: string;
@@ -711,7 +1100,7 @@ class Employee extends Base {
   });
 
   it('reports references it cannot read', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       class Customer { id?: number; code?: string; }
       declare const pair: { local: 'customerCode'; foreign: 'code' };
       class Order {
@@ -733,7 +1122,7 @@ class Employee extends Base {
   });
 
   it("renames $lock's wait to $wait, writing a lock that waits as true", () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const querier: { findMany(entity: unknown, q: unknown): void };
       declare const wait: 'skip';
       querier.findMany(Object, { $lock: { wait: 'nowait' } });
@@ -748,8 +1137,8 @@ class Employee extends Base {
     expect(unresolved).toEqual([]);
   });
 
-  it("rewrites defineEntity's indexes, hooks and relations into callbacks", () => {
-    const { text } = codemod(`
+  it("rewrites defineEntity's indexes, hooks and relations into a schema's callbacks", () => {
+    const { text } = codemod(/*ts*/ `
       class Tag { id?: number; posts?: Post[]; }
       class Post { id?: number; title?: string; tagId?: number; tags?: Tag[]; tag?: Tag; touch(): void {} }
       defineEntity(Post, {
@@ -765,15 +1154,15 @@ class Employee extends Base {
     expect(text).toContain(
       'indexes: [{ columns: (post) => [post.title], include: (post) => [post.tagId], unique: true }]',
     );
-    expect(text).toContain('hooks: { beforeInsert: (post) => [post.touch] }');
-    expect(text).toContain("tags: { cardinality: 'mm', entity: () => Tag, mappedBy: (tag) => tag.posts }");
+    expect(text).toContain('beforeInsert: [(post) => {}],');
+    expect(text).toContain('tags: () => rel.manyToMany(Tag, { mappedBy: (tag) => tag.posts }),');
     expect(text).toContain(
-      "tag: { cardinality: 'm1', entity: () => Tag, references: (post, tag) => [{ local: post.tagId, foreign: tag.id }] }",
+      'tag: () => rel.manyToOne(Tag, { references: (post, tag) => [{ local: post.tagId, foreign: tag.id }] }),',
     );
   });
 
   it('names the callbacks of a class written inline after the class, as a declared one', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       defineEntity(class Post { id?: number; title?: string; }, { indexes: [{ columns: ['title'] }] });
     `);
 
@@ -795,11 +1184,11 @@ class Employee extends Base {
     const { text, unresolved } = codemod(body);
 
     expect(text).toBe(`${STUBS}${body}`);
-    expect(unresolved).toEqual([]);
+    expect(unresolved).toEqual([expect.stringContaining('a relation could not be read')]);
   });
 
   it('names the callback parameter entity where a relation has no entity getter', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Comment { id?: number; post?: Post; }
       class Post { id?: number; comments?: Comment[]; }
       defineRelation(Post, 'comments', { cardinality: '1m', mappedBy: 'post' });
@@ -811,7 +1200,8 @@ class Employee extends Base {
   });
 
   it('keeps the formatting of a column list it rewrites', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
+      @Entity()
       @Index([
         'title', // the lookup
         { column: 'slug',   order: 'desc' },
@@ -819,14 +1209,14 @@ class Employee extends Base {
       class Post { id?: number; title?: string; slug?: string; }
     `);
 
-    expect(text).toContain(`@Index((post) => [
+    expect(text).toContain(`{ columns: (post) => [
         post.title, // the lookup
         { column: post.slug,   order: 'desc' },
-      ])`);
+      ] }`);
   });
 
   it('rewrites the incremental defineIndex and defineRelation the same way', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Tag { id?: number; }
       class Post { id?: number; title?: string; tagId?: number; tag?: Tag; }
       defineIndex(Post, { columns: ['title'], unique: true });
@@ -839,8 +1229,21 @@ class Employee extends Base {
     );
   });
 
+  it('reports the members and base @Entity no longer takes, saying where each goes', () => {
+    const { unresolved } = codemod(/*ts*/ `
+      class Base { id?: number; }
+      @Entity({ fields: { id: { type: Number, isId: true } }, extends: Base })
+      class Post { id?: number; }
+    `);
+
+    expect(unresolved).toEqual([
+      expect.stringContaining("@Entity takes no 'fields' now: declare each with @Field or @Id"),
+      expect.stringContaining("@Entity takes no 'extends' now: extend the base class itself"),
+    ]);
+  });
+
   it("rewrites @Entity's indexes, hooks and relations like defineEntity's", () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Tag { id?: number; }
       @Entity({
         indexes: [{ columns: ['title'], unique: true }],
@@ -856,7 +1259,7 @@ class Employee extends Base {
   });
 
   it("rewrites an aggregate's $agg into $select, naming each field as a key", () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const querier: { aggregate(entity: unknown, q: unknown): void };
       class Order { id?: number; amount?: number; 'unit-price'?: number; größe?: number; status?: string; }
       querier.aggregate(Order, {
@@ -872,7 +1275,7 @@ class Employee extends Base {
   });
 
   it('reports an $agg entry it cannot read, and an $agg beside a $select', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const querier: { aggregate(entity: unknown, q: unknown): void };
       declare const field: 'amount';
       class Order { id?: number; amount?: number; }
@@ -886,8 +1289,37 @@ class Employee extends Base {
     expect(unresolved).toContainEqual(expect.stringContaining("merge '$agg' into the '$select' beside it"));
   });
 
+  it('rewrites $exclude as a $select leaving its fields out', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      declare const querier: { findMany(entity: unknown, q: unknown): void };
+      class User { id?: number; name?: string; email?: string; }
+      querier.findMany(User, { $exclude: { name: true, email: 1 }, $populate: { posts: { $exclude: { body: true } } } });
+    `);
+
+    expect(text).toContain(
+      'querier.findMany(User, { $select: { name: false, email: false }, $populate: { posts: { $select: { body: false } } } });',
+    );
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports an $exclude it cannot read, and an $exclude beside a $select', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      declare const querier: { findMany(entity: unknown, q: unknown): void };
+      declare const hidden: { name: true };
+      class User { id?: number; name?: string; email?: string; }
+      querier.findMany(User, { $exclude: hidden });
+      querier.findMany(User, { $select: { name: false }, $exclude: { email: true } });
+    `);
+
+    expect(text).toContain('{ $exclude: hidden }');
+    expect(unresolved).toEqual([
+      expect.stringContaining("write '$exclude' as `$select: { field: false }`"),
+      expect.stringContaining("merge '$exclude' into the '$select' beside it, each field as `field: false`"),
+    ]);
+  });
+
   it("rewrites $text's $fields into a key map, reporting a list it cannot read", () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const querier: { findMany(entity: unknown, q: unknown): void };
       declare const fields: string[];
       class Post { id?: number; title?: string; 'sub-title'?: string; }
@@ -902,20 +1334,21 @@ class Employee extends Base {
     expect(unresolved).toContainEqual(expect.stringContaining("write '$fields' as { field: true }"));
   });
 
-  it('unwraps the Relation alias and resolves the entity through it', () => {
-    const { text } = codemod(`
-      class Company { id?: number; }
-      class Entity {
-        @ManyToOne() company?: Relation<Company>;
-      }
-    `);
+  it('leaves a Relation<T> property as written, and reports the import the codemod cannot drop', () => {
+    const { text, unresolved } = codemodFile(`import { ManyToOne, type Relation } from 'uql-orm';
+class Company { id?: number; }
+class Entity {
+  @ManyToOne({ entity: () => Company, references: (item) => item.companyId }) company?: Relation<Company>;
+}
+`);
 
-    expect(text).toContain('@ManyToOne({ entity: () => Company }) company?: Company;');
-    expect(text).not.toContain('company?: Relation<');
+    expect(text).toContain('company?: Relation<Company>;');
+    expect(text).toContain("import { ManyToOne, type Relation } from 'uql-orm';");
+    expect(unresolved).toEqual([expect.stringContaining(RELATION_IMPORT)]);
   });
 
   it('drops declare from a decorated field, which the standard spec cannot decorate', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Company { id?: number; }
       class Entity {
         @ManyToOne({ entity: () => Company }) declare company?: Company;
@@ -931,7 +1364,7 @@ class Employee extends Base {
    * codemod cannot read an options object it does not own, so it reports the property instead.
    */
   it('refuses to rewrite options it cannot read, rather than replacing them', () => {
-    const { text, changed, unresolved } = codemod(`
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       const shared: FieldOptions = { name: 'renamed' };
       class Entity {
         @Field(shared) title?: string;
@@ -940,12 +1373,12 @@ class Employee extends Base {
 
     expect(text).toContain('@Field(shared) title?: string;');
     expect(changed).toBe(false);
-    expect(unresolved[0]).toContain("cannot add 'type' because its options are passed as 'shared'");
+    expect(unresolved[0]).toContain("its options are passed as 'shared'");
   });
 
   /** There is no argument list to write into, and it used to be read as an empty one and crash. */
   it('refuses to rewrite a decorator that is never called', () => {
-    const { text, changed, unresolved } = codemod(`
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       class Entity {
         @Field title?: string;
       }
@@ -953,12 +1386,12 @@ class Employee extends Base {
 
     expect(text).toContain('@Field title?: string;');
     expect(changed).toBe(false);
-    expect(unresolved[0]).toContain("cannot add 'type' because it is used without being called");
+    expect(unresolved[0]).toContain('it is used without being called');
   });
 
   /** A spread may already carry the option, and would override an insertion placed before it. */
   it('refuses to rewrite an options object that spreads another', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       const base = { name: 'renamed' };
       class Entity {
         @Field({ ...base }) title?: string;
@@ -966,12 +1399,12 @@ class Employee extends Base {
     `);
 
     expect(text).toContain('@Field({ ...base }) title?: string;');
-    expect(unresolved[0]).toContain("cannot add 'type' because its options object spreads another");
+    expect(unresolved[0]).toContain('its options object spreads another');
   });
 
-  /** The polyfill only ever fed `design:type`, and nothing else in the file needs rewriting. */
-  it('drops the reflect-metadata polyfill and leaves the rest of the imports alone', () => {
-    const { text } = codemodFile(`import 'reflect-metadata';
+  /** The polyfill is harmless, so the codemod leaves it in place rather than deciding it is unused. */
+  it('keeps the reflect-metadata import, which is harmless, and the rest of the imports', () => {
+    const { text, changed } = codemodFile(`import 'reflect-metadata';
 import { Transactional, InjectQuerier, type Querier } from 'uql-orm';
 
 class Service {
@@ -982,56 +1415,35 @@ class Service {
 }
 `);
 
-    expect(text).not.toContain('reflect-metadata');
-    expect(text).toContain("import { Transactional, InjectQuerier, type Querier } from 'uql-orm';");
-    // Nothing blank left where the polyfill import was.
-    expect(text.startsWith('import {')).toBe(true);
-  });
-
-  /** Its only name went, so the statement goes with it rather than being left as `import {} from`. */
-  it('removes an import that loses every name it had', () => {
-    const { text } = codemodFile(`import { type Relation } from 'uql-orm';
-import { ManyToOne } from 'uql-orm';
-
-class Item {
-  @ManyToOne({ entity: () => Item }) parent?: Relation<Item>;
-}
-`);
-
-    expect(text).not.toContain('Relation');
-    expect(text).toContain("import { ManyToOne } from 'uql-orm';");
-  });
-
-  it('drops the Relation import once every usage is unwrapped', () => {
-    const { text } = codemodFile(`import { Field, ManyToOne, type Relation } from 'uql-orm';
-
-class Item {
-  @ManyToOne({ entity: () => Item }) parent?: Relation<Item>;
-}
-`);
-
-    expect(text).toContain('parent?: Item;');
-    expect(text).not.toContain('Relation');
-  });
-
-  /** One left where the codemod does not reach, and the import has to stay for the file to resolve. */
-  it('keeps the Relation import when a usage is left unrewritten, and every unrelated one', () => {
-    const { text, changed, unresolved } = codemodFile(`import base from './base.js';
-import * as all from './all.js';
-import { type Relation } from 'uql-orm';
-
-type ParentOf<T> = Relation<T>;
-`);
-
+    expect(text).toContain(
+      "import 'reflect-metadata';\nimport { Transactional, InjectQuerier, type Querier } from 'uql-orm';",
+    );
     expect(changed).toBe(false);
-    expect(text).toContain("import base from './base.js';");
-    expect(text).toContain("import * as all from './all.js';");
-    expect(text).toContain("import { type Relation } from 'uql-orm';");
-    expect(unresolved[0]).toContain("1 'Relation<T>' reference(s)");
+  });
+
+  /** Dropping the import alone would leave the property naming a type it no longer has, so it is reported. */
+  it('reports the Relation import and keeps it, with the rest of the file', () => {
+    const { text, unresolved } = codemodFile(`import { Field, ManyToOne, type Relation } from 'uql-orm';
+
+class Item {
+  @ManyToOne({ entity: () => Item, references: (item) => item.parentId }) parent?: Relation<Item>;
+}
+`);
+
+    expect(text).toContain("import { Field, ManyToOne, type Relation } from 'uql-orm';");
+    expect(unresolved).toEqual([expect.stringContaining(RELATION_IMPORT)]);
+  });
+
+  it('reports the Relation import even when no property uses it', () => {
+    const { unresolved } = codemodFile(`import { type Relation } from 'uql-orm';
+export const one = 1;
+`);
+
+    expect(unresolved).toEqual([expect.stringContaining(RELATION_IMPORT)]);
   });
 
   it('reports an export that no longer exists rather than rewriting the call', () => {
-    const { text, changed, unresolved } = codemod(`
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       import { setQuerierPool, getQuerier } from 'uql-orm';
       setQuerierPool(pool);
     `);
@@ -1044,7 +1456,7 @@ type ParentOf<T> = Relation<T>;
 
   /** A `$where` is one map now; the compiler points at every call site still passing an id or a list. */
   it('reports the `$where` types and helpers that no longer exist', () => {
-    const { changed, unresolved } = codemod(`
+    const { changed, unresolved } = codemod(/*ts*/ `
       import { QueryWhereFieldMap, augmentWhere, buildQueryWhereAsMap } from 'uql-orm';
     `);
 
@@ -1101,21 +1513,21 @@ const where: FilterWhere<Post> = {};
 `);
   });
 
-  /** Both rewrite the one import, so the rename has to leave out the name the other drops. */
-  it('drops Relation from an import that also renames a name', () => {
-    const { text } = codemodFile(`import { ManyToOne, QueryWhereMap, type Relation } from 'uql-orm';
+  it('renames a renamed export beside a Relation import, which it reports and keeps', () => {
+    const { text, unresolved } = codemodFile(`import { ManyToOne, QueryWhereMap, type Relation } from 'uql-orm';
 class Item {
-  @ManyToOne({ entity: () => Item }) parent?: Relation<Item>;
+  @ManyToOne({ entity: () => Item, references: (item) => item.parentId }) parent?: Relation<Item>;
 }
 const where: QueryWhereMap<Item> = {};
 `);
 
-    expect(text).toBe(`import { ManyToOne, QueryWhere } from 'uql-orm';
+    expect(text).toBe(`import { ManyToOne, QueryWhere, type Relation } from 'uql-orm';
 class Item {
-  @ManyToOne({ entity: () => Item }) parent?: Item;
+  @ManyToOne({ entity: () => Item, references: (item) => item.parentId }) parent?: Relation<Item>;
 }
 const where: QueryWhere<Item> = {};
 `);
+    expect(unresolved).toEqual([expect.stringContaining(RELATION_IMPORT)]);
   });
 
   it('renames a removed driver class to the one its entry exports', () => {
@@ -1142,7 +1554,7 @@ let a: PostgresDialect; let b: PgQuerier; let c: PostgresDialect;
   });
 
   it('reports AbstractPgQuerier, whose replacement is concrete', () => {
-    const { changed, unresolved } = codemod(`
+    const { changed, unresolved } = codemod(/*ts*/ `
       import { AbstractPgQuerier } from 'uql-orm/postgres';
     `);
 
@@ -1164,7 +1576,7 @@ let q: SqliteQuerier; let db: SqliteDatabase;
   });
 
   it('reports the SQLite bases folded into their drivers', () => {
-    const { changed, unresolved } = codemod(`
+    const { changed, unresolved } = codemod(/*ts*/ `
       import { AbstractHranaQuerierPool, PreparedSqliteQuerier, toSqliteBindValues } from 'uql-orm/sqlite';
       import { libsqlUseRemoteForMigrations } from 'uql-orm/libsql';
     `);
@@ -1447,6 +1859,18 @@ export const f = async () => [await m.pending(), await m.executed(), await m.dow
     ]);
   });
 
+  it("renames the migration builder's column types, leaving the root's to `f`", () => {
+    const { text } = codemodFile(`import type { ColumnBuilder, IColumnFactory } from 'uql-orm/migrate';
+import type { ColumnBuilder as FieldColumn } from 'uql-orm';
+let b: ColumnBuilder; let c: IColumnFactory; let f: FieldColumn<object, string, 'string'>;
+`);
+
+    expect(text).toBe(`import type { TableColumnBuilder, TableColumnFactory } from 'uql-orm/migrate';
+import type { ColumnBuilder as FieldColumn } from 'uql-orm';
+let b: TableColumnBuilder; let c: TableColumnFactory; let f: FieldColumn<object, string, 'string'>;
+`);
+  });
+
   it('renames the SQLite pool and the migration builder types', () => {
     const { text } = codemodFile(`import { Sqlite3QuerierPool } from 'uql-orm/sqlite';
 import type { IMigrationBuilder, ITableBuilder } from 'uql-orm/migrate';
@@ -1514,7 +1938,7 @@ import { MongoMigrationStorage } from 'uql-orm/mongo';
   });
 
   it('reports the dialect, pool, migrator and D1 exports that repeated another or always held', () => {
-    const { changed, unresolved } = codemod(`
+    const { changed, unresolved } = codemod(/*ts*/ `
       import { isKnownMigratorDialect, MysqlLikeSqlDialect, QuerierPoolDialect, QuerierPoolQuerier } from 'uql-orm';
       import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from 'uql-orm/postgres';
       import type { D1ExecResult, D1Meta } from 'uql-orm/d1';
@@ -1548,22 +1972,30 @@ buildMigrationModule(options);
     expect(unresolved).toEqual([]);
   });
 
-  it('reports the index types an index reading its refs no longer has', () => {
-    const { changed, unresolved } = codemod(`
-      import { IndexColumnOptions, SqlCallback } from 'uql-orm';
+  it('reports the index types an index reading its refs no longer has, and renames the ones it renamed', () => {
+    const { text, unresolved } = codemod(/*ts*/ `
+      import { IndexColumnOptions, SqlCallback, EntityIndexColumn, IndexJsonPath, IndexJsonArray } from 'uql-orm';
+      import type { IndexColumnSchema, IndexColumnModifiers } from 'uql-orm';
+      export type Entry = IndexColumnSchema & IndexColumnModifiers;
     `);
 
-    expect(changed).toBe(false);
+    expect(text).toContain("import type { IndexEntry, IndexEntryModifiers } from 'uql-orm';");
+    expect(text).toContain('export type Entry = IndexEntry & IndexEntryModifiers;');
     expect(unresolved).toEqual([
-      expect.stringContaining(
-        "'IndexColumnOptions' was removed; an entity's index entry is `EntityIndexColumnInput<E>`",
-      ),
+      expect.stringContaining("'IndexColumnOptions' was removed; an entity's index entry is `EntityIndexColumnInput`"),
       expect.stringContaining("'SqlCallback' was removed; use `EntitySql<E>`"),
+      expect.stringContaining("'EntityIndexColumn' was removed; an entity's index entry is `EntityIndexColumnInput`"),
+      expect.stringContaining(
+        "'IndexJsonPath' was removed; read the path off the column's ref: `{ column: post.meta.lang, type: Number }`",
+      ),
+      expect.stringContaining(
+        "'IndexJsonArray' was removed; give the elements' type: `{ column: post.tags, type: [String] }`",
+      ),
     ]);
   });
 
   it('reports a decorator that no longer exists rather than removing it', () => {
-    const { text, changed, unresolved } = codemod(`
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       class Service {
         @Serialized() secret?: string;
         @Log()
@@ -1583,7 +2015,7 @@ buildMigrationModule(options);
    * rewritten around a pool the codemod cannot name.
    */
   it("reports '@Transactional()' and '@InjectQuerier()' rather than rewriting them", () => {
-    const { text, changed, unresolved } = codemod(`
+    const { text, changed, unresolved } = codemod(/*ts*/ `
       class Service {
         @Transactional()
         async save(@InjectQuerier() querier?: Querier) {
@@ -1600,37 +2032,35 @@ buildMigrationModule(options);
   });
 
   it('reports rather than guesses when it cannot resolve a shape', () => {
-    const { unresolved, changed } = codemod(`
+    const { unresolved, changed } = codemod(/*ts*/ `
       class Entity {
         @Field() payload?: { nested: true };
       }
     `);
 
     expect(changed).toBe(true);
-    expect(unresolved).toHaveLength(1);
-    expect(unresolved[0]).toContain("cannot infer 'type'");
+    expect(unresolved).toEqual([expect.stringContaining(NO_TYPE)]);
   });
 
-  it('reports a relation whose target is not a class', () => {
-    const { unresolved } = codemod(`
+  it('reports a relation with no entity whatever its property holds', () => {
+    const { unresolved } = codemod(/*ts*/ `
       class Entity {
         @ManyToOne() broken?: number;
       }
     `);
 
-    expect(unresolved[0]).toContain("cannot infer 'entity'");
+    expect(unresolved).toEqual([expect.stringContaining(NO_ENTITY)]);
   });
 });
 
 describe('a nullable column admits null', () => {
   it("adds '| null' to every property whose column can hold one", () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Id({ type: Number }) id?: number;
         @Field({ type: String }) name?: string;
         @Field({ references: () => Entity }) parentId?: string;
         @Field({ type: String, nullable: false }) email?: string;
-        @Field({ type: Number, isId: true }) key?: number;
         @Field({ type: String, nullable: true }) loud?: string;
         @Field({ type: String }) already?: string | null;
         @Field({ type: Number }) tags?: number[];
@@ -1640,7 +2070,6 @@ describe('a nullable column admits null', () => {
     // A key is NOT NULL on every engine, and one that says `nullable: false` already declared it.
     expect(text).toContain('@Id({ type: Number }) id?: number;');
     expect(text).toContain('@Field({ type: String, nullable: false }) email?: string;');
-    expect(text).toContain('@Field({ type: Number, isId: true }) key?: number;');
     expect(text).toContain('@Field({ type: String }) already?: string | null;');
 
     expect(text).toContain('@Field({ type: String }) name?: string | null;');
@@ -1651,7 +2080,7 @@ describe('a nullable column admits null', () => {
   });
 
   it('reports a property it cannot read the type of, rather than guessing', () => {
-    const { text, notes } = codemod(`
+    const { text, notes } = codemod(/*ts*/ `
       class Entity {
         @Field({ type: String }) name = 'x';
       }
@@ -1661,23 +2090,8 @@ describe('a nullable column admits null', () => {
     expect(notes.join('\n')).toContain("declare 'name' as");
   });
 
-  it("adds '| null' where defineEntity names the field, on the class it takes", () => {
-    const { text } = codemod(`
-      class Line { id?: number; label?: string; qty?: number; }
-      defineEntity(Line, {
-        fields: {
-          id: { type: Number, isId: true },
-          label: { type: String },
-          qty: { type: Number, nullable: false },
-        },
-      });
-    `);
-
-    expect(text).toContain('class Line { id?: number; label?: string | null; qty?: number; }');
-  });
-
   it('leaves a relation aggregate alone, since the aggregate types it', () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Entity {
         @Field({ computed: (entity: any) => entity.children.count() }) readonly childCount?: number;
       }
@@ -1694,7 +2108,9 @@ describe('SQL in definitions', () => {
 class Post { id?: number; title?: string; }
 `);
 
-    expect(text).toContain('@Index((post) => [post.title, sql`lower("title")`, { column: sql`upper("title")` }])');
+    expect(text).toContain(
+      '@Entity({ abstract: true, indexes: [{ columns: (post) => [post.title, sql`lower("title")`, { column: sql`upper("title")` }] }] })',
+    );
   });
 
   it('writes a partial-index where given as a string as raw, importing raw', () => {
@@ -1705,11 +2121,12 @@ class Post { id?: number; title?: string; slug?: string; deletedAt?: Date; }
 defineIndex(Post, { columns: (post) => [post.title], where: "status = 'live'" });
 `);
 
-    expect(text).toContain("import { sql, Entity, Index, defineIndex } from 'uql-orm';");
-    expect(text).toContain('@Index((post) => [post.slug], { where: sql`"deletedAt" IS NULL` })');
-    expect(text).toContain('where: sql`"deletedAt" IS NULL` }] })');
+    expect(text).toContain("import { sql, Entity, defineIndex } from 'uql-orm';");
+    expect(text).toContain(
+      '@Entity({ indexes: [{ columns: (post) => [post.title], where: sql`"deletedAt" IS NULL` }, { columns: (post) => [post.slug], where: sql`"deletedAt" IS NULL` }] })',
+    );
     expect(text).toContain("defineIndex(Post, { columns: (post) => [post.title], where: sql`status = 'live'` });");
-    expect(unresolved).toEqual([]);
+    expect(unresolved).toEqual([expect.stringContaining('defineIndex was removed')]);
   });
 
   /** A template that interpolates spliced its value in as SQL, which `raw` would bind instead. */
@@ -1725,9 +2142,9 @@ declare const either: '"a" IS NULL' | '"b" IS NULL';
 class Post { id?: number; title?: string; slug?: string; stock?: number; }
 `);
 
-    expect(text).toContain('{ where: `"stock" > ${minimum}` }');
-    expect(text).toContain('{ where: predicate }');
-    expect(text).toContain('{ where: either }');
+    expect(text).toContain('where: `"stock" > ${minimum}` }');
+    expect(text).toContain('where: predicate }');
+    expect(text).toContain('where: either }');
     expect(unresolved).toEqual([
       "/entities.ts:5: write the partial-index 'where' as sql`...` or a predicate; this one could not be read",
       "/entities.ts:6: write the partial-index 'where' as sql`...` or a predicate; this one could not be read",
@@ -1736,7 +2153,8 @@ class Post { id?: number; title?: string; slug?: string; stock?: number; }
   });
 
   it('reports the raw import it cannot add', () => {
-    const { unresolved } = codemod(`
+    const { unresolved } = codemod(/*ts*/ `
+      @Entity()
       @Index((post) => [post.slug], { where: '"deletedAt" IS NULL' })
       class Post { id?: number; slug?: string; deletedAt?: Date; }
     `);
@@ -1760,6 +2178,27 @@ export default defineBuilderMigration({
 
     expect(text).toContain('t.unique([sql`lower("email")`], { where: sql`"deleted_at" IS NULL` });');
     expect(text).toContain("m.createIndex('notes', ['slug'], { where: sql`\"deleted_at\" IS NULL` });");
+  });
+
+  it("renames a migration builder index entry's length to the length it states", () => {
+    const { text } = codemodFile(`import { defineBuilderMigration } from 'uql-orm/migrate';
+
+export default defineBuilderMigration({
+  async up(m) {
+    await m.createTable('notes', (t) => {
+      t.index([{ column: 'body', length: 64 }, { column: 'meta', path: 'lang', length: 8 }]);
+    });
+    await m.createIndex('notes', [{ column: 'title', length: 32 }, { column: 'slug', order: 'desc' }]);
+  },
+});
+`);
+
+    expect(text).toContain(
+      "t.index([{ column: 'body', prefixLength: 64 }, { column: 'meta', path: 'lang', charLength: 8 }]);",
+    );
+    expect(text).toContain(
+      "m.createIndex('notes', [{ column: 'title', prefixLength: 32 }, { column: 'slug', order: 'desc' }]);",
+    );
   });
 
   it("leaves the migration builder's index options alone where they are not a literal", () => {
@@ -1874,7 +2313,7 @@ t.index([raw\`lower("email")\`], { where: 'active' });
   });
 
   it("renames a check's expression and a filter's condition to where", () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       const condition = { status: 'live' };
       @Filter('live', { condition: { status: 'live' }, default: false })
       @Filter('shorthand', { condition })
@@ -1884,20 +2323,22 @@ t.index([raw\`lower("email")\`], { where: 'active' });
       })
       class Post { id?: number; status?: string; }
       defineFilter(Post, 'draft', { condition: { status: 'draft' } });
+      defineFilter(Post, 'unwritten');
       defineEntity(Post, { checks: [{ expression: raw\`2 = 2\` }], filters: { all: { condition: {} } } });
     `);
 
-    expect(text).toContain("@Filter('live', { where: { status: 'live' }, default: false })");
-    expect(text).toContain("@Filter('shorthand', { where: condition })");
     expect(text).toContain("checks: [{ name: 'positive', where: raw`1 = 1` }],");
-    expect(text).toContain("filters: { mine: { where: () => ({ status: 'mine' }) } },");
+    expect(text).toContain(
+      "filters: { mine: { where: () => ({ status: 'mine' }) }, live: { where: { status: 'live' }, default: false }, shorthand: { where: condition } },",
+    );
     expect(text).toContain("defineFilter(Post, 'draft', { where: { status: 'draft' } });");
+    expect(text).toContain("defineFilter(Post, 'unwritten');");
     expect(text).toContain('defineEntity(Post, { checks: [{ where: raw`2 = 2` }], filters: { all: { where: {} } } });');
-    expect(unresolved).toEqual([]);
+    expect(unresolved).toEqual([expect.stringContaining("'Post' is decorated as well")]);
   });
 
   it('reports a check giving both names rather than choosing one', () => {
-    const { unresolved } = codemod(`
+    const { unresolved } = codemod(/*ts*/ `
       class Post { id?: number; }
       defineEntity(Post, { checks: [{ expression: raw\`1 = 1\`, where: raw\`2 = 2\` }] });
     `);
@@ -1906,12 +2347,12 @@ t.index([raw\`lower("email")\`], { where: 'active' });
   });
 
   it("renames virtual to computed in defineEntity's fields, as on @Field", () => {
-    const { text } = codemod(`
+    const { text } = codemod(/*ts*/ `
       class Line { id?: number; total?: number; }
       defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`1 + 1\` } } });
     `);
 
-    expect(text).toContain('fields: { total: { type: Number, computed: raw`1 + 1` } }');
+    expect(text).toContain('total: { type: Number, computed: raw`1 + 1` },');
   });
 
   /** A string literal and a word called as a function are left out: `'gone'` is a value, `count(*)` a call. */
@@ -1938,13 +2379,14 @@ ${STUBS}
   });
 
   it('reports a list of names holding an entry it cannot read', () => {
-    const { text, unresolved } = codemod(`
+    const { text, unresolved } = codemod(/*ts*/ `
       declare const slug: 'slug';
+      @Entity()
       @Index(['title', slug])
       class Post { id?: number; title?: string; slug?: string; }
     `);
 
-    expect(text).toContain("@Index(['title', slug])");
+    expect(text).toContain("{ columns: ['title', slug] }");
     expect(unresolved).toEqual([
       expect.stringContaining("write '@Index' columns as a callback; this one could not be read"),
     ]);
@@ -2101,27 +2543,12 @@ t.timestamp('at', { defaultValue: expr.now() });
   it('writes the tag it adds by the name the file imports the SQL tag as', () => {
     const { text } = codemodFile(`import { sql as q } from 'uql-orm';
 ${STUBS}
+      @Entity()
       @Index((post) => [post.slug], { where: '"deletedAt" IS NULL' })
       class Post { id?: number; slug?: string; deletedAt?: Date; }
     `);
 
-    expect(text).toContain('where: q`"deletedAt" IS NULL` })');
-  });
-
-  it('replaces an import left with nothing but the name the rewrites add', () => {
-    const { text } = codemodFile(`import { Relation } from 'uql-orm';
-declare function Id(options: { type: unknown }): PropertyDecorator;
-declare function ManyToOne(options: { entity: () => unknown }): PropertyDecorator;
-class Company { @Id({ type: Number }) id?: number; }
-class Pair {
-  @Id({ type: Number }) left?: number;
-  @Id({ type: Number }) right?: number;
-  @ManyToOne({ entity: () => Company }) company?: Relation<Company>;
-}
-`);
-
-    expect(text).toContain("import { idKey } from 'uql-orm';");
-    expect(text).not.toContain('Relation');
+    expect(text).toContain('where: q`"deletedAt" IS NULL` }] })');
   });
 
   it('leaves a sql property name alone, which binds nothing', () => {
@@ -2155,7 +2582,7 @@ defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`\${col('unit
     expect(text).toContain(
       '@Field({ type: Number, computed: (product) => sql`${product.salePrice} - ${product.cost}` }) profit?: number | null;',
     );
-    expect(text).toContain('fields: { total: { type: Number, computed: (line) => sql`${line.unitPrice} * 2` } }');
+    expect(text).toContain('total: { type: Number, computed: (line) => sql`${line.unitPrice} * 2` },');
     expect(unresolved).toEqual([]);
   });
 
@@ -2218,7 +2645,7 @@ defineEntity(models.Line, { fields: { total: { type: Number, computed: raw\`\${c
     expect(text).toContain('$where: { [key]: sql`${refs(Item).stock} > 0` }');
     expect(text).toContain('computed: (product) => sql`${product.cost} * ${settings.product}`');
     expect(text).toContain('computed: (entity) => sql`${entity.unitPrice} * 2`');
-    expect(unresolved).toEqual([]);
+    expect(unresolved).toEqual([expect.stringContaining('defineEntity takes a schema now')]);
   });
 
   it('reports a computed col() whose callback parameter would shadow a binding its SQL reads', () => {

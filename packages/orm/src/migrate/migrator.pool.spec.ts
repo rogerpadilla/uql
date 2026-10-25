@@ -123,7 +123,7 @@ describe('Migrator Shared Pool', () => {
     });
     const migration = defineBuilderMigration({
       async up(m, querier) {
-        await m.addColumn('person', (c) => c.text('slug', { nullable: true }));
+        await m.addColumn('person', (c) => c.text('slug').nullable());
         const people = await querier.all<{ id: number; name: string }>`SELECT "id", "name" FROM "person"`;
         for (const { id, name } of people) {
           await querier.run`UPDATE "person" SET "slug" = ${name.toLowerCase().replace(' ', '-')} WHERE "id" = ${id}`;

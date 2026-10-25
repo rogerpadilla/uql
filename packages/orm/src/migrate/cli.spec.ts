@@ -19,11 +19,10 @@ function configSource(
   settings = `migrationsPath: ${JSON.stringify(join(dir, 'migrations'))}, entities: [CliNote],`,
 ): string {
   return `
-import { defineEntity } from ${JSON.stringify(join(SRC, 'entity/index.ts'))};
+import { defineEntity, f } from ${JSON.stringify(join(SRC, 'entity/index.ts'))};
 import { NodeSqliteQuerierPool } from ${JSON.stringify(join(SRC, 'sqlite/nodeSqliteQuerierPool.ts'))};
 
-class CliNote {}
-defineEntity(CliNote, { fields: { id: { type: Number, isId: true }, body: { type: String } } });
+const CliNote = defineEntity({ name: 'CliNote', fields: { id: f.number().id(), body: f.string().nullable() } });
 
 export default {
   pool: new NodeSqliteQuerierPool(${JSON.stringify(join(dir, 'app.db'))}),

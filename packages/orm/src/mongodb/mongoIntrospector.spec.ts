@@ -68,6 +68,26 @@ describe('MongoSchemaIntrospector partial indexes', () => {
   });
 });
 
+describe('MongoSchemaIntrospector path indexes', () => {
+  /** Reported as the entity declares it, a field and the path inside it, so the two compare and name alike. */
+  it('should read a dotted key as its field and the path inside it', async () => {
+    vi.spyOn(MongoClient.prototype, 'connect').mockImplementation(function (this: MongoClient) {
+      return Promise.resolve(this);
+    });
+    vi.spyOn(AbstractCursor.prototype, 'toArray')
+      .mockResolvedValueOnce([{ name: 'items', options: {} }])
+      .mockResolvedValueOnce([{ name: 'items__profile_theme_idx', key: { 'profile.theme.color': 1, total: 1 } }]);
+    vi.spyOn(Collection.prototype, 'aggregate').mockImplementation(() => {
+      throw new MongoServerError({ message: 'SearchNotEnabled', code: 31082 });
+    });
+    const introspector = new MongoSchemaIntrospector(new MongodbQuerierPool('mongodb://127.0.0.1:1'));
+
+    const schema = await introspector.getTableSchema('items');
+
+    expect(schema?.indexes?.[0]?.entries).toEqual([{ json: 'profile', path: 'theme.color' }, { column: 'total' }]);
+  });
+});
+
 describe('MongoSchemaIntrospector', () => {
   it('should refuse a pool whose querier is not MongoDB', async () => {
     const other = createMockQuerierPool(new MongoDialect(), async () => createMockQuerier());

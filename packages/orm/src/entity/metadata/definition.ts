@@ -1,46 +1,64 @@
-import type {
-  BrandsNameFields,
-  EntityGetter,
-  EntityIndexInput,
-  EntityMembers,
-  EntityMeta,
-  EntityOptions,
-  FieldKey,
-  FieldMeta,
-  FieldOptions,
-  FilterName,
-  FilterOnMissing,
-  FilterOptions,
-  HookEvent,
-  IdKey,
-  KeyMap,
-  RelationKey,
-  RelationMeta,
-  RelationOptions,
-  RelationReferences,
-  RelationRegistration,
-  TriggerOptions,
-  Type,
-  WrittenId,
-} from '../../type/index.js';
-import { RelationAggregate, SOFT_DELETE_FILTER } from '../../type/index.js';
-import { fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
-  entitySql,
-  entityWhere,
+  type CheckOptions,
+  type Column,
+  COLUMN_OPTIONS,
+  type EntityGetter,
+  type EntityIndexInput,
+  type EntityIndexOptions,
+  type EntityMeta,
+  type EntityOptions,
+  type FieldMeta,
+  type FieldOptions,
+  type FilterOnMissing,
+  type FilterOptions,
+  type HookDeclaration,
+  type HookEvent,
+  type HookRegistration,
+  type HookFunction,
+  type IdKey,
+  type KeyMap,
+  type RelationKey,
+  type RelationMeta,
+  type RelationOptions,
+  type RelationReferences,
+  type RelationBuilder,
+  type RelationRegistration,
+  type SchemaClass,
+  type SchemaEntityOptions,
+  type Brands,
+  type ColumnRow,
+  type SchemaFields,
+  type SchemaKey,
+  type SchemaRelation,
+  type TriggerOptions,
+  type Type,
+  type WrittenId,
+  REF_KEY,
+  RelationAggregate,
+  SECTION_ENTRY,
+  type SectionEntry,
+  type SchemaEntity,
+  SOFT_DELETE_FILTER,
+} from '../../type/index.js';
+import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
+import {
   fieldOptionConflict,
+  findVectorIndex,
+  valueTypesOf,
   hasKeys,
   holdsForeignKey,
   isCascadable,
   isToManyRelation,
+  indexRefs,
   memberRefs,
+  relationRefs,
   fulltextWeights,
   normalizeIndexColumn,
   definedEntries,
   whereWith,
 } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
-import { ownRegistrations } from '../decorator/bag.js';
+import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
@@ -59,12 +77,10 @@ function globalMap<K, V>(key: string): Map<K, V> {
 
 const metas: Meta = globalMap('uql-orm/entity/metadata/v1');
 
-export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
-  const meta = ensureWritableMeta(entity);
-  const { computed, ...rest } = opts;
-  const sql = computed === undefined ? undefined : entitySql(computed);
+function addField<E>(meta: EntityMeta<E>, key: string, opts: FieldOptions): void {
+  const { entity } = meta;
   // The types refuse this too; an untyped caller still reaches here.
-  if (opts.stored && sql instanceof RelationAggregate) {
+  if (opts.stored && opts.computed instanceof RelationAggregate) {
     throw new UqlUsageError(
       `'${entity.name}.${key}' cannot be 'stored': a relation aggregate reads as a subquery, which no ` +
         "engine keeps in a generated column. Drop 'stored' to have it read on each query.",
@@ -74,39 +90,18 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // its expression being spliced in rather than declared.
   if (!opts.type && !opts.references && !isInlinedExpression(opts)) {
     throw new UqlUsageError(
-      `'${entity.name}.${key}' needs a 'type'. Declare it - '@Field({ type: String })' - or point the field ` +
-        "at another entity with 'references', which resolves the column type from its primary key.",
+      `'${entity.name}.${key}' needs a 'type'. Declare it - 'f.string()' - or point the field ` +
+        "at another entity with 'f.references()', which resolves the column type from its primary key.",
     );
   }
   const conflict = fieldOptionConflict(opts);
   if (conflict) {
     throw new UqlUsageError(`'${entity.name}.${key}' ${conflict}.`);
   }
-  const fieldKey = key as FieldKey<E>;
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
   // column from the referenced primary key (picking up its `columnType`, length and chained keys)
   // instead of treating whatever ends up in `type` as deliberate.
-  const resolved = rest.type ? rest : { ...rest, typeFromReference: true as const };
-  meta.fields[fieldKey] = {
-    ...meta.fields[fieldKey],
-    name: key,
-    ...resolved,
-    ...(sql && { computed: sql }),
-  };
-  return meta;
-}
-
-export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): EntityMeta<E> {
-  return defineField(entity, key, { ...opts, isId: true });
-}
-
-/** `T` is the relation's target, independent of the owner `E`. */
-export function defineRelation<E, T extends object>(
-  entity: Type<E>,
-  key: string,
-  opts: RelationOptions<T, E>,
-): EntityMeta<E> {
-  return addRelation(entity, key, relationRegistration(opts));
+  columnsOf(meta).fields[key] = { name: key, ...opts, ...(!opts.type && { typeFromReference: true }) };
 }
 
 /**
@@ -142,7 +137,8 @@ export function keyOf<E, K extends keyof E>(pick: (keys: KeyMap<E>) => K): K {
 
 const KEY_MAP = new Proxy({}, { get: (_, key) => key });
 
-function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegistration): EntityMeta<E> {
+function addRelation<E>(meta: EntityMeta<E>, key: string, registration: RelationRegistration): void {
+  const { entity } = meta;
   if (!registration.entity) {
     throw new UqlUsageError(
       `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
@@ -154,46 +150,41 @@ function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegi
         "'references' pairs the declaring entity's columns with the target's instead.",
     );
   }
-  const meta = ensureWritableMeta(entity);
   // Registration writes into a map declared as resolved: `getMeta` runs `fillRelations`, which settles
   // `references` or throws. Bridging the two shapes here is what lets every consumer read `RelationMeta`
   // without asserting.
   const relations = meta.relations as Record<string, RelationRegistration>;
-  relations[key] = { ...relations[key], ...registration };
-  return meta;
-}
-
-export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
-  const meta = ensureWritableMeta(entity);
-  ((meta.hooks ??= {})[event] ??= []).push({ methodName });
-  return meta;
+  relations[key] = registration;
 }
 
 /**
  * Declares a composite index, its columns read off the entity's refs. `unique` and the authored column
  * sugar are normalized here, which is what lets the dialects render one shape instead of re-parsing it.
  */
-export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): EntityMeta<E> {
-  const meta = ensureWritableMeta(entity);
-  const refs = memberRefs<E>();
-  const columns = index.columns(refs).map(normalizeIndexColumn);
-  fulltextWeights({ type: index.type, entries: columns });
+function addIndex<E>(
+  meta: EntityMeta<E>,
+  { columns, include, where, [SECTION_ENTRY]: _entry, ...index }: SectionEntry<EntityIndexInput<E>, 'index'>,
+): void {
+  const entries = columns.map(normalizeIndexColumn);
+  fulltextWeights({ type: index.type, entries });
   (meta.indexes ??= []).push({
     ...index,
     unique: index.unique ?? false,
-    where: index.where && entityWhere(index.where),
-    columns,
-    include: index.include?.(refs).map((ref) => ref.key),
+    where,
+    entries,
+    include: include?.map((ref) => ref[REF_KEY]),
   });
-  return meta;
 }
 
 /**
  * Registers a trigger, its watched columns read off the entity's refs so a rename reaches them and a
  * column the entity has not got does not compile. Appended, since triggers fire in the order written.
  */
-export function defineTrigger<E>(entity: Type<E>, trigger: TriggerOptions<E>): EntityMeta<E> {
-  const meta = ensureWritableMeta(entity);
+function addTrigger<E>(
+  meta: EntityMeta<E>,
+  { [SECTION_ENTRY]: _entry, ...trigger }: SectionEntry<TriggerOptions<E>, 'trigger'>,
+): void {
+  const { entity } = meta;
   // The type already refuses an empty map; this is the same answer for plain JavaScript.
   if (typeof trigger.run !== 'function' && !hasKeys(trigger.run)) {
     throw new UqlUsageError(`'${entity.name}' has a trigger whose body names at least one engine to run on`);
@@ -201,19 +192,14 @@ export function defineTrigger<E>(entity: Type<E>, trigger: TriggerOptions<E>): E
   if (trigger.name && meta.triggers?.some((it) => it.name === trigger.name)) {
     throw new UqlUsageError(`'${entity.name}' already has a trigger named '${trigger.name}'`);
   }
-  (meta.triggers ??= []).push({ ...trigger, of: trigger.of?.(memberRefs<E>()).map((ref) => ref.key) });
-  return meta;
+  (meta.triggers ??= []).push({ ...trigger, of: trigger.of?.map((ref) => ref[REF_KEY]) });
 }
 
-export function defineFilter<E, N extends string>(
-  entity: Type<E>,
-  name: FilterName<N>,
-  opts: FilterOptions<E>,
-): EntityMeta<E> {
-  const meta = ensureWritableMeta(entity);
+function addFilter<E>(meta: EntityMeta<E>, name: string, opts: FilterOptions<E>): void {
+  const { entity } = meta;
   if (name === SOFT_DELETE_FILTER) {
     throw new UqlUsageError(
-      `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; it is auto-registered from @Field({ softDelete })`,
+      `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; a 'softDelete()' column registers it`,
     );
   }
   // Widened for a caller the types did not reach, which is the only one this can refuse.
@@ -224,96 +210,343 @@ export function defineFilter<E, N extends string>(
     );
   }
   (meta.filters ??= {})[name] = opts;
-  return meta;
 }
 
-/**
- * Feeds fields, relations and hooks into the `define*` primitives, so the decorators and the imperative
- * API converge on one registration path before anything is finalized.
- */
-export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefined): void {
-  for (const [key, spec] of definedEntries(specs?.fields ?? {})) {
-    if (spec.isId) {
-      defineId(entity, key, spec);
-    } else {
-      defineField(entity, key, spec);
-    }
+/** Registers the fields, relations and hooks decorators or a schema declared, before anything is finalized. */
+function applyMembers<E>(meta: EntityMeta<E>, members: Partial<MemberRegistrations> | undefined): void {
+  for (const [key, spec] of definedEntries(members?.fields ?? {})) {
+    addField(meta, key, spec);
   }
-  for (const [key, spec] of definedEntries(specs?.relations ?? {})) {
-    addRelation(entity, key, spec);
+  for (const [key, spec] of definedEntries(members?.relations ?? {})) {
+    addRelation(meta, key, spec);
   }
-  for (const [event, methodNames] of definedEntries(specs?.hooks ?? {})) {
-    for (const methodName of methodNames) {
-      defineHook(entity, methodName, event);
-    }
+  for (const [event, hooks] of definedEntries(members?.hooks ?? {})) {
+    const runs = hooks.map((hook) => resolvedHook(meta.entity, event, hook));
+    ((meta.hooks ??= {})[event] ??= []).push(...runs);
   }
 }
 
+/** A hook method, run with the row as `this`, read off `entity` so an entity overriding it runs its own. */
+function methodHook<E>(entity: Type<E>, event: HookEvent, methodName: string): HookRegistration {
+  // A prototype is typed `any`, so what is read off it is typed here, where it enters.
+  const prototype: Record<string, unknown> = entity.prototype;
+  const method = prototype[methodName];
+  if (typeof method !== 'function') {
+    throw new UqlUsageError(`'${entity.name}' runs '${methodName}' on ${event}, but has no such method`);
+  }
+  return { methodName, run: (row, ctx) => method.call(row, ctx) };
+}
+
 /**
- * Registers a class as an entity from `opts` alone, the decorator-free counterpart of `@Entity()` with
- * `@Field`/`@ManyToOne`/...
+ * A hook naming a method, by any name, `''` included, is read off `entity` again as {@link methodHook} does, so an
+ * entity overriding it runs its own; a hook given as a function is kept as it is.
  */
-export function defineEntity<E>(entity: Type<E> & BrandsNameFields<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
-  // Ahead of any registration, so a rejected definition leaves nothing half-written in the registry.
+function resolvedHook<E>(
+  entity: Type<E>,
+  event: HookEvent,
+  hook: HookDeclaration | HookRegistration,
+): HookRegistration {
+  if (!('run' in hook)) {
+    return methodHook(entity, event, hook.methodName);
+  }
+  return 'methodName' in hook && hook.methodName !== undefined ? methodHook(entity, event, hook.methodName) : hook;
+}
+
+/** A row as the registry reads it, every key a column's. */
+type ErasedRow = Readonly<Record<string, unknown>>;
+
+/** A schema's relations as the registry reads them. */
+type ErasedRelations = Readonly<Record<string, () => SchemaRelation<ErasedRow>>>;
+
+/** What a schema's sections declared, as the registry reads them. */
+type ErasedSections = {
+  computed?: (refs: object) => Readonly<Record<string, Column>>;
+  indexes?: EntityOptions<object>['indexes'];
+  checks?: EntityOptions<object>['checks'];
+  triggers?: EntityOptions<object>['triggers'];
+  filters?: EntityOptions<object>['filters'];
+  hooks?: { readonly [E in HookEvent]?: readonly HookFunction[] };
+  references?: Readonly<Record<string, ErasedReference>>;
+  relations?: (rel: RelationBuilder<object>) => ErasedRelations;
+  aggregates?: { read(rel: Readonly<Record<string, unknown>>): unknown }['read'];
+};
+
+/**
+ * A foreign key `.references()` names, as the registry reads it. The public type takes any function, so
+ * `entityOf` checks the entity its target returns.
+ */
+type ErasedReference = EntityGetter | Readonly<Pick<FieldOptions, 'onDelete'> & { entity: EntityGetter }>;
+
+/** A schema as the registry reads it, its row erased to {@link ErasedRow}. */
+type ErasedSchema = Omit<SchemaEntityOptions<SchemaFields>, 'extends' | 'fields'> & {
+  readonly extends?: SchemaClass<object>;
+  readonly fields: Readonly<Record<string, Column>>;
+};
+
+/**
+ * What a schema declared: its sections are open while its meta is `'declared'`, and its relations are read
+ * on first lookup of it or of an entity extending it, once each target exists.
+ */
+type DeclaredSchema = { readonly schema: ErasedSchema; readonly sections: ErasedSections };
+
+const declaredSchemas = new WeakMap<object, DeclaredSchema>();
+
+/**
+ * Declares an entity by its schema and returns its class, whose row type the schema derives, so nothing is
+ * written twice: its columns now, then each section, `.indexes()` and so on, `.relations()` last. It registers on
+ * first read, with every section in, and its relations once each target exists.
+ */
+export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
+  schema: SchemaEntityOptions<F, B, BK, BC>,
+): SchemaEntity<B & ColumnRow<F> & Brands<F>, SchemaKey<F, BK>, BC & ColumnRow<F>, B>;
+export function defineEntity(schema: ErasedSchema): SchemaClass<object> {
+  const base = schema.extends ?? Object;
+  // Its rows are read by key alone, which is what the registry types an erased schema's columns by.
+  const entity = {
+    [schema.name]: class extends base {
+      [key: string]: unknown;
+    },
+  }[schema.name];
+  metas.set(entity, { ...emptyMeta(entity), stage: 'declared' });
+  declaredSchemas.set(entity, { schema, sections: {} });
+  for (const section of Object.keys(SECTIONS)) {
+    Object.defineProperty(entity, section, {
+      value(this: Type<object>, ...declared: unknown[]) {
+        declareSection(this, section, declared);
+        return this;
+      },
+    });
+  }
+  return entity;
+}
+
+/** The sections a schema declares as methods. `aggregates` is no section: `relations` takes it as an argument. */
+const SECTIONS = {
+  computed: true,
+  indexes: true,
+  checks: true,
+  triggers: true,
+  filters: true,
+  hooks: true,
+  references: true,
+  relations: true,
+} satisfies Record<Exclude<keyof ErasedSections, 'aggregates'>, true>;
+
+/** Records one section of a pending schema, refusing a second of it and one declared after the entity was read. */
+function declareSection(entity: Type<object>, section: string, declared: readonly unknown[]): void {
+  const pending = pendingSchema(entity);
+  if (!pending) {
+    throw new UqlUsageError(`'${entity.name}' was read already: declare its ${section} before its first use`);
+  }
+  if (section in pending.sections) {
+    throw new UqlUsageError(`'${entity.name}' declares its ${section} twice: declare them in one call`);
+  }
+  const [first, aggregates] = declared;
+  Object.assign(pending.sections, { [section]: first }, section === 'relations' && aggregates && { aggregates });
+}
+
+/** What `entity` declared as a schema, while it is not registered yet. */
+function pendingSchema(entity: Type<unknown>): DeclaredSchema | undefined {
+  return metas.get(entity)?.stage === 'declared' ? declaredSchemas.get(entity) : undefined;
+}
+
+/** Registers a pending schema, its base's first; a failure leaves it pending, so a later read reports it again. */
+function settleSchema(entity: Type<unknown>): void {
+  const pending = pendingSchema(entity);
+  if (!pending) {
+    return;
+  }
+  const { schema, sections } = pending;
+  const fields = {
+    ...columnOptions(schema.fields),
+    ...referencedFields(schema.name, schema.fields, sections.references),
+  };
+  for (const added of [computedFields(sections.computed), aggregateFields(schema.name, sections.aggregates)]) {
+    const taken = Object.keys(added).find((key) => key in fields);
+    if (taken) {
+      throw new UqlUsageError(`'${schema.name}.${taken}' is declared twice: name each member once`);
+    }
+    Object.assign(fields, added);
+  }
+  registerEntity(
+    entity,
+    {
+      name: schema.table,
+      schema: schema.schema,
+      abstract: schema.abstract,
+      indexes: sections.indexes,
+      checks: sections.checks,
+      triggers: sections.triggers,
+      filters: sections.filters,
+    },
+    {
+      fields,
+      hooks: Object.fromEntries(
+        definedEntries(sections.hooks ?? {}).map(([event, runs]) => [event, runs.map((run) => ({ run }))]),
+      ),
+    },
+  );
+}
+
+/** Each foreign key `.references()` names, written onto its column as `@Field`'s `references()` would. */
+function referencedFields(
+  name: string,
+  fields: ErasedSchema['fields'],
+  references: ErasedSections['references'],
+): Record<string, FieldOptions> {
+  return Object.fromEntries(
+    Object.entries(references ?? {}).map(([key, target]) => {
+      const column = fields[key]?.[COLUMN_OPTIONS];
+      if (!column) {
+        throw new UqlUsageError(`'.references()' names '${name}.${key}', which is no column of its 'fields'`);
+      }
+      const { entity, ...action } = typeof target === 'function' ? { entity: target } : target;
+      return [key, { ...column, ...action, references: () => entityOf(entity(), key) }];
+    }),
+  );
+}
+
+/** The entity a getter returned, refused where it returned anything else. */
+function entityOf(target: Type<object>, key: string): Type<object> {
+  if (!metas.has(target)) {
+    throw new UqlUsageError(`'.references()' points '${key}' at something that is not an entity`);
+  }
+  return target;
+}
+
+/** An index as a section's `index(columns, options)` writes it, a bare string its name. */
+function indexEntry<E>(
+  columns: EntityIndexInput<E>['columns'],
+  options?: string | EntityIndexOptions<E>,
+): SectionEntry<EntityIndexInput<E>, 'index'> {
+  const stated = typeof options === 'string' ? { name: options } : options;
+  return { ...stated, columns, [SECTION_ENTRY]: 'index' };
+}
+
+function checkEntry<E>(where: CheckOptions<E>['where'], name?: string): SectionEntry<CheckOptions<E>, 'check'> {
+  return { where, ...(name !== undefined && { name }), [SECTION_ENTRY]: 'check' };
+}
+
+function triggerEntry<E>(trigger: TriggerOptions<E>): SectionEntry<TriggerOptions<E>, 'trigger'> {
+  return { ...trigger, [SECTION_ENTRY]: 'trigger' };
+}
+
+/** The options each builder of `columns` wrote. */
+function columnOptions(columns: Readonly<Record<string, Column>>): Record<string, FieldOptions> {
+  return Object.fromEntries(Object.entries(columns).map(([key, column]) => [key, column[COLUMN_OPTIONS]]));
+}
+
+/** A schema's computed columns, read off its refs. */
+function computedFields(computed: ErasedSections['computed']): Record<string, FieldOptions> {
+  return columnOptions(computed?.(memberRefs()) ?? {});
+}
+
+/** A schema's aggregates as the computed fields they read as, through the refs a decorated `@Computed` reads. */
+function aggregateFields(name: string, aggregates: ErasedSections['aggregates']): Record<string, FieldOptions> {
+  return Object.fromEntries(
+    Object.entries(aggregates?.(relationRefs()) ?? {}).map(([key, read]) => {
+      const aggregate = typeof read === 'function' ? read() : undefined;
+      // The types refuse anything else; an untyped caller still reaches here.
+      if (!(aggregate instanceof RelationAggregate)) {
+        throw new UqlUsageError(
+          `'${name}.${key}' aggregates no relation: write it as \`() => agg.<relation>.count()\``,
+        );
+      }
+      return [key, aggregateField(aggregate)];
+    }),
+  );
+}
+
+const RELATION_BUILDER: RelationBuilder<object> = {
+  oneToOne: (target, options) => ({ target, cardinality: '11', options }),
+  manyToOne: (target, options) => ({ target, cardinality: 'm1', options }),
+  oneToMany: (target, options) => ({ target, cardinality: '1m', options }),
+  manyToMany: (target, options) => ({ target, cardinality: 'mm', options }),
+};
+
+/**
+ * Settles an entity's relations, once: its schema's, read now that each target exists, beside those its decorators
+ * registered, then a copy of each its base settled that it does not declare itself. The one place either form
+ * inherits a relation. Marked after, so a read after a failure reports the same mistake again.
+ */
+function settleRelations<E>(meta: EntityMeta<E>): void {
+  if (meta.stage === 'settled' || meta.stage === 'resolved') {
+    return;
+  }
+  const parent = parentOf(meta.entity);
+  const inherited: EntityMeta<object>['relations'] =
+    parent && metas.has(parent) ? registeredMeta(parent).relations : {};
+  const declared = declaredSchemas.get(meta.entity)?.sections.relations;
+  for (const [key, read] of Object.entries(declared?.(RELATION_BUILDER) ?? {})) {
+    const { target, cardinality, options } = read();
+    addRelation(meta, key, relationRegistration<ErasedRow, object>({ ...options, cardinality, entity: () => target }));
+  }
+  // A copy per entity: resolving a relation writes the columns it joins on into it, and those are the resolving
+  // entity's, so one shared object would leave every later entity without them.
+  meta.relations = {
+    ...Object.fromEntries(definedEntries(inherited).map(([key, relation]) => [key, { ...relation }])),
+    ...meta.relations,
+  };
+  meta.stage = 'settled';
+}
+
+/**
+ * The registration both forms share, a schema's `members` given as the decorators would register them. Built
+ * apart and stored once it passes, so a rejected definition leaves the registry as it was.
+ */
+export function registerEntity<E>(
+  entity: Type<E>,
+  opts: EntityOptions<E> = {},
+  members?: Partial<MemberRegistrations>,
+): EntityMeta<E> {
   // A dotted name reads like a schema and is not one: it escapes as a single identifier, so the
   // statement builds and then fails at the database. `schema` is the way to say it.
-  if (opts.name?.includes('.')) {
-    const [schema, ...rest] = opts.name.split('.');
+  const table = opts.name ?? entity.name;
+  if (table.includes('.')) {
+    const [schema, ...rest] = table.split('.');
     throw new UqlUsageError(
-      `'${entity.name}' has a dotted name '${opts.name}'. Name the schema separately as ` +
+      `'${entity.name}' has a dotted name '${table}'. Name the schema separately as ` +
         `{ schema: '${schema}', name: '${rest.join('.')}' }.`,
     );
   }
-
-  const meta = ensureWritableMeta(entity);
-  // Covers `defineEntity(Decorated)` called on a class whose members carry decorators. `@Entity()`
-  // drains `context.metadata` itself, because TypeScript only attaches `Symbol.metadata` to the class
-  // after class decorators return; draining empties the bag, so whichever runs second is a no-op.
-  applyMembers(entity, ownRegistrations(entity));
-  const keys = keyMap<E>();
-  applyMembers(entity, {
-    fields: opts.fields,
-    relations: Object.fromEntries(
-      definedEntries(opts.relations ?? {}).map(([key, spec]) => [key, relationRegistration(spec)]),
-    ),
-    hooks: Object.fromEntries(definedEntries(opts.hooks ?? {}).map(([event, methods]) => [event, methods(keys)])),
-  });
+  const meta = emptyMeta(entity);
+  applyMembers(meta, members);
   // Unnamed checks are named by the generator, as unnamed indexes are.
-  for (const check of opts.checks ?? []) {
-    (meta.checks ??= []).push({ name: check.name, where: entityWhere(check.where) });
+  for (const check of opts.checks?.(memberRefs<E>(), checkEntry) ?? []) {
+    (meta.checks ??= []).push({ name: check.name, where: check.where });
   }
-  for (const index of opts.indexes ?? []) {
-    defineIndex(entity, index);
+  for (const index of opts.indexes?.(indexRefs<E>(), indexEntry) ?? []) {
+    addIndex(meta, index);
   }
-  for (const trigger of opts.triggers ?? []) {
-    defineTrigger(entity, trigger);
+  for (const trigger of opts.triggers?.(memberRefs<E>(), triggerEntry) ?? []) {
+    addTrigger(meta, trigger);
   }
   for (const [name, filter] of definedEntries(opts.filters ?? {})) {
-    defineFilter(entity, name, filter);
+    addFilter(meta, name, filter);
   }
 
-  // A later call composes onto the entity, so a name is only ever set, and `derivedName` records that
-  // the class name stood in, which is what a naming strategy derives from.
-  if (opts.name !== undefined) {
-    meta.name = opts.name;
-    meta.derivedName = false;
-  } else if (meta.name === undefined) {
-    meta.name = entity.name;
-    meta.derivedName = true;
-  }
-  meta.schema = opts.schema ?? meta.schema;
-  // The class's real chain first: where a class both extends a base and names one, the one it extends
-  // is the nearer, and nearer wins every merge.
+  // `derivedName` records that the class name stood in, which is what a naming strategy derives from.
+  meta.name = table;
+  meta.derivedName = opts.name === undefined;
+  meta.schema = opts.schema;
+  meta.abstract = opts.abstract;
   inheritFrom(meta, parentOf(entity));
-  inheritFrom(meta, opts.extends);
 
   if (!hasKeys(meta.fields)) {
     throw new UqlUsageError(`'${entity.name}' must have fields`);
   }
+  for (const [key, field] of definedEntries(meta.fields)) {
+    const ranked = field.distance && findVectorIndex(meta, key)?.distance;
+    if (ranked && ranked !== field.distance) {
+      throw new UqlUsageError(
+        `'${entity.name}.${key}' measures by '${field.distance}', but its vector index ranks by '${ranked}': name one metric`,
+      );
+    }
+  }
 
   // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
   // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
-  // filter (a reserved name - see defineFilter - so it never clobbers a user filter).
+  // filter (a reserved name - see addFilter - so it never clobbers a user filter).
   const softDeleteKeys = fieldKeys(meta, ({ softDelete }) => softDelete !== undefined && softDelete !== false);
   if (softDeleteKeys.length > 1) {
     throw new UqlUsageError(`'${entity.name}' must have at most one field with 'softDelete'`);
@@ -333,17 +566,18 @@ export function defineEntity<E>(entity: Type<E> & BrandsNameFields<E>, opts: Ent
     // Implied rather than stated: the DDL default covers a row written around the ORM, and `onInsert`
     // covers MongoDB, which has no DDL to default. Both, so every backend starts a row at the same 0.
     const field = meta.fields[meta.version]!;
-    meta.fields[meta.version] = { ...field, nullable: false, defaultValue: 0, onInsert: 0 };
+    meta.fields[meta.version] = { ...field, defaultValue: 0, onInsert: 0 };
   }
 
   const ids = getIdKeys(meta);
-  if (!ids.length) {
+  if (!ids.length && !meta.abstract) {
     throw new UqlUsageError(
-      `'${entity.name}' must have at least one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
+      `'${entity.name}' must have at least one id field (declare one with 'id()', as in 'f.number().id()')`,
     );
   }
   meta.ids = ids;
 
+  metas.set(entity, meta);
   return meta;
 }
 
@@ -361,7 +595,7 @@ export function assertSoleId<E>(meta: EntityMeta<E>, what: string): void {
   throw new UqlUsageError(
     ids.length
       ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support.`
-      : // An entity registered with `@Field` but no `@Entity` never ran the check in `defineEntity`.
+      : // An entity registered with `@Field` but no `@Entity` never ran the check registration makes.
         `'${meta.entity.name}' has no primary key, which ${what} needs.`,
   );
 }
@@ -397,7 +631,7 @@ export function valueFieldOf(field: FieldMeta, seen?: Set<EntityGetter>): FieldM
     return field;
   }
   seen = (seen ?? new Set()).add(field.references);
-  const target = getMeta(field.references());
+  const target = registeredMeta(field.references());
   return valueFieldOf(fieldOf(target, soleIdOf(target, 'a foreign key')), seen);
 }
 
@@ -436,17 +670,16 @@ export function removeEntity<E>(entity: Type<E>): boolean {
 }
 
 export function getEntities(): Type<object>[] {
-  return [...metas.values()].filter((meta) => meta.ids.length).map((meta) => meta.entity);
+  for (const entity of metas.keys()) {
+    settleSchema(entity);
+  }
+  return [...metas.values()].filter((meta) => meta.ids.length && !meta.abstract).map((meta) => meta.entity);
 }
 
-/**
- * The metadata of `entity`, marked as changed. Every `define*` goes through this, and nothing outside
- * this file writes to a meta, so it is the one place a derived cache can be told it has gone stale.
- */
-function ensureWritableMeta<E>(entity: Type<E>): EntityMeta<E> {
-  const meta = ensureMeta(entity);
-  meta.revision++;
-  return meta;
+/** The metadata `entity` has, a pending schema registered first, without settling anything further. */
+function knownMeta<E>(entity: Type<E>): EntityMeta<E> {
+  settleSchema(entity);
+  return ensureMeta(entity);
 }
 
 function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
@@ -454,35 +687,47 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity, ids: [], fields: {}, relations: {}, revision: 0 };
+  meta = emptyMeta(entity);
   metas.set(entity, meta);
   return meta;
 }
 
+function emptyMeta<E>(entity: Type<E>): EntityMeta<E> {
+  return { entity, ids: [], fields: {}, relations: {} };
+}
+
 export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const resolved = metas.get(entity);
+  if (resolved?.stage === 'resolved') {
+    return resolved;
+  }
   const meta = registeredMeta(entity);
+  if (meta.abstract) {
+    throw new UqlUsageError(`'${entity.name}' is abstract: read an entity extending it`);
+  }
   // Stamped once finalizing succeeds, so a read after a failure reports the same mistake again. Finalizing
   // reads other entities without resolving them, so no entity is ever read half resolved.
-  if (meta.processedAt !== meta.revision) {
-    fillRelations(meta);
-    meta.processedAt = meta.revision;
-  }
+  fillRelations(meta);
+  meta.readKeys = defaultReadKeys(meta);
+  meta.stage = 'resolved';
   return meta;
 }
 
 /** The metadata `entity` registered, however much of it is resolved. */
 function registeredMeta<E>(entity: Type<E>): EntityMeta<E> {
+  settleSchema(entity);
   const meta = metas.get(entity);
   if (!meta) {
     throw new UqlUsageError(`'${entity.name}' is not an entity`);
   }
+  settleRelations(meta);
   return meta;
 }
 
 function fillRelations<E>(meta: EntityMeta<E>): void {
   for (const [relKey, relation] of definedEntries(meta.relations)) {
     const at = `'${meta.entity.name}.${relKey}'`;
-    const references = settledReferences(at, meta, relKey, relation);
+    const references = settledReferences(at, meta, relation);
     if (!references.length) {
       throw new UqlUsageError(`${at} has no columns to join on.`);
     }
@@ -506,15 +751,10 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
  * needs it. Never resolving an entity is what keeps it from recursing, and the one column a to-one names is
  * paired with its target's key only here, since registration can run before the target has one.
  */
-function settledReferences<E>(
-  at: string,
-  meta: EntityMeta<E>,
-  relKey: string,
-  relOpts: RelationRegistration,
-): RelationReferences {
+function settledReferences<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRegistration): RelationReferences {
   const { references, mappedBy, through } = relOpts;
   if (typeof references === 'string') {
-    const target = ensureMeta(relOpts.entity());
+    const target = knownMeta(relOpts.entity());
     if (mappedBy || isToManyRelation(relOpts) || target.ids.length > 1) {
       throw new UqlUsageError(
         `${at} names one column, '${references}', which only a to-one holding a foreign key to a one-column key ` +
@@ -527,6 +767,11 @@ function settledReferences<E>(
   if (references) return references;
   if (mappedBy) return fillInverseSide(at, meta, relOpts, mappedBy);
   if (through) return fillThrough(at, meta, relOpts, through);
+  const inferred = inferredJoin(at, meta, relOpts);
+  if (inferred) {
+    Object.assign(relOpts, inferred);
+    return settledReferences(at, meta, relOpts);
+  }
   throw new UqlUsageError(
     isToManyRelation(relOpts)
       ? `${at} is a to-many relation with no way to join: it needs 'mappedBy' (the member on the other side), ` +
@@ -534,6 +779,48 @@ function settledReferences<E>(
       : `${at} needs 'references', the foreign key column it joins by, or 'mappedBy', the member on the other ` +
           'side holding it.',
   );
+}
+
+/**
+ * The join a relation naming none can only mean: a many-to-one's one field referencing its target, a one-to-many's
+ * one many-to-one on the target pointing back. Nothing where there is none; refused where there are several.
+ */
+function inferredJoin<E>(
+  at: string,
+  meta: EntityMeta<E>,
+  relOpts: RelationRegistration,
+): Pick<RelationRegistration, 'references' | 'mappedBy'> | undefined {
+  const target = relOpts.entity();
+  if (relOpts.cardinality === 'm1') {
+    const columns = fieldKeys(meta, (field) => !!field.references && isA(target, field.references()));
+    const references = onlyCandidate(at, columns, 'join by', `a foreign key to '${target.name}'`, 'references');
+    return references === undefined ? undefined : { references };
+  }
+  if (relOpts.cardinality === '1m') {
+    const back = definedEntries(registeredMeta(target).relations)
+      .filter(([, relation]) => relation.cardinality === 'm1' && isA(meta.entity, relation.entity()))
+      .map(([key]) => key);
+    const mappedBy = onlyCandidate(at, back, 'be mapped by', `a relation to '${meta.entity.name}'`, 'mappedBy');
+    return mappedBy === undefined ? undefined : { mappedBy };
+  }
+  return undefined;
+}
+
+/** The one candidate, nothing for none, and a refusal naming each where there are several. */
+function onlyCandidate(
+  at: string,
+  candidates: readonly string[],
+  verb: string,
+  each: string,
+  option: string,
+): string | undefined {
+  if (candidates.length > 1) {
+    const named = candidates.map((key) => `'${key}'`);
+    throw new UqlUsageError(
+      `${at} could ${verb} ${named.slice(0, -1).join(', ')} or ${named.at(-1)}, each ${each}: name one with '${option}'.`,
+    );
+  }
+  return candidates[0];
 }
 
 /**
@@ -550,7 +837,7 @@ function fillThrough<E>(
   const junction = registeredMeta(through());
   relOpts.references = [
     ...junctionReferences(at, junction, meta),
-    ...junctionReferences(at, junction, ensureMeta(relOpts.entity())),
+    ...junctionReferences(at, junction, knownMeta(relOpts.entity())),
   ];
   return relOpts.references;
 }
@@ -592,7 +879,7 @@ function fillInverseSide<E>(
       `${at} is mapped by ${other}, a relation to '${ownerTarget.name}', not to '${meta.entity.name}'.`,
     );
   }
-  const ownerReferences = settledReferences(other, relMeta, mappedBy, owner);
+  const ownerReferences = settledReferences(other, relMeta, owner);
 
   // Two different flips: a junction's pairs are the owner's group followed by ours, so the two groups
   // swap - `toReversed` would also reverse each group, pairing a composite's columns crosswise. A
@@ -650,7 +937,7 @@ function isA(entity: Type<unknown>, base: Type<unknown>): boolean {
 }
 
 /**
- * The foreign keys an entity holds: each owning to-one's columns, and each `@Field({ references })` no
+ * The foreign keys an entity holds: each owning to-one's columns, and each `f.references()` no
  * relation joins on, as the many-to-one it describes, once its target has registered a key. What the
  * schema build constrains and a junction joins by, settling the relations holding them first.
  */
@@ -658,14 +945,15 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
   const owning = definedEntries(meta.relations)
     .filter(([, relation]) => holdsForeignKey(relation))
     .map(([relKey, relation]) => {
-      settledReferences(`'${meta.entity.name}.${relKey}'`, meta, relKey, relation);
+      settledReferences(`'${meta.entity.name}.${relKey}'`, meta, relation);
       return relation;
     });
   const joined = new Set(owning.flatMap(({ references }) => references.map(({ local }) => local)));
   const columns = definedEntries(meta.fields).flatMap(([key, field]): RelationMeta[] => {
-    if (!field.references || joined.has(key)) return [];
-    const target = ensureMeta(field.references());
-    if (!target.ids.length) return [];
+    if (!field.references) return [];
+    const target = knownMeta(field.references());
+    assertHoldsKey(`'${meta.entity.name}.${key}'`, field, target);
+    if (joined.has(key) || !target.ids.length) return [];
     if (target.ids.length > 1) {
       throw new UqlUsageError(
         `'${meta.entity.name}.${key}' cannot reference '${target.entity.name}', whose primary key is composite ` +
@@ -676,6 +964,24 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
     return [{ entity: field.references, cardinality: 'm1', references: [{ local: key, foreign: target.ids[0] }] }];
   });
   return [...owning, ...columns];
+}
+
+/** The kinds a column of `type` holds as a join compares them, as `ValueKind` does: a bigint is a number, which BIGINT widens. */
+function joinedKinds(type: FieldMeta['type']) {
+  const types = valueTypesOf(type);
+  return types && [...new Set(types.map((kind) => (kind === 'bigint' ? 'number' : kind)))];
+}
+
+/** Refuses a foreign key whose `type` holds another kind of value than the key it references, which no join matches. */
+function assertHoldsKey(at: string, field: FieldMeta, target: EntityMeta<object>): void {
+  if (field.typeFromReference || target.ids.length !== 1) return;
+  const held = joinedKinds(field.type);
+  const needed = joinedKinds(valueFieldOf(fieldOf(target, target.ids[0])).type);
+  if (held && needed && !needed.every((kind) => held.includes(kind))) {
+    throw new UqlUsageError(
+      `${at} holds a ${held.join(' or ')}, but the key of '${target.entity.name}' it references is a ${needed.join(' or ')}`,
+    );
+  }
 }
 
 /** Each key of `side`, paired with the one column of `junction` referencing it: a rename of either follows. */
@@ -690,7 +996,7 @@ function junctionReferences<S>(at: string, junction: EntityMeta<object>, side: E
       const declare =
         side.ids.length > 1
           ? `a column per key, paired in a '@ManyToOne' to '${side.entity.name}'`
-          : `'@Field({ references: () => ${side.entity.name} })'`;
+          : `'f.references(() => ${side.entity.name})'`;
       throw new UqlUsageError(
         `${at} joins through '${junction.entity.name}', which has no column referencing ${referenced}: declare ${declare}.`,
       );
@@ -718,8 +1024,8 @@ function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
 function inheritFrom<E>(meta: EntityMeta<E>, ancestor: Type<object> | undefined): void {
   for (let parent = ancestor; parent && parent !== Object; parent = parentOf(parent)) {
     const base = parent as Type<E>;
-    applyMembers(base, ownRegistrations(base));
-    extendMeta(meta, ensureMeta(base));
+    applyMembers(ensureMeta(base), ownRegistrations(base));
+    extendMeta(meta, knownMeta(base));
   }
 }
 
@@ -738,22 +1044,17 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
     }
   }
   target.fields = { ...sourceFields, ...target.fields };
-  // A copy of each relation per entity: resolving one writes the columns it joins on into it, and those
-  // columns are the resolving entity's, so one shared object left every later entity without them.
-  target.relations = {
-    ...Object.fromEntries(definedEntries(source.relations).map(([key, relation]) => [key, { ...relation }])),
-    ...target.relations,
-  };
 
   // Inherit user-defined filters from the parent (child overrides by name). The built-in soft-delete
-  // filter + `meta.softDelete` are (re)derived from the merged fields in `defineEntity`.
+  // filter + `meta.softDelete` are (re)derived from the merged fields at registration.
   if (source.filters) {
     target.filters = { ...source.filters, ...target.filters };
   }
 
   // A base's hooks fire first, as its triggers do: they are the entries written before the child's own.
   for (const [event, sourceList] of definedEntries(source.hooks ?? {})) {
-    (target.hooks ??= {})[event] = inheritedEntries(sourceList, target.hooks?.[event], (hook) => hook.methodName);
+    const rebound = sourceList.map((hook) => resolvedHook(target.entity, event, hook));
+    (target.hooks ??= {})[event] = inheritedEntries(rebound, target.hooks?.[event], (hook) => hook.methodName);
   }
   target.indexes = inheritedEntries(source.indexes, target.indexes, (index) => index.name);
   target.checks = inheritedEntries(source.checks, target.checks, (check) => check.name);

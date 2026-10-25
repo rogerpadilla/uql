@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id } from '../entity/index.js';
+import { Entity, f, Field, getMeta } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
 import { assertWhere, sortOf, whereIds, whereKeysIn } from './query.util.js';
@@ -8,9 +8,9 @@ import { sql } from './sql.js';
 @Entity()
 class Enrolled {
   [idKey]?: 'studentId' | 'courseId';
-  @Id({ type: Number }) studentId?: number;
-  @Id({ type: String }) courseId?: string;
-  @Field({ type: String }) grade?: string | null;
+  @Field(f.number().id()) studentId?: number;
+  @Field(f.string().id()) courseId?: string;
+  @Field(f.string().nullable()) grade?: string | null;
 }
 
 describe('whereIds', () => {

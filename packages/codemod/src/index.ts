@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import ts from 'typescript';
 import { type FileResult, transformFile } from './transform.js';
-import { transformTsconfig } from './tsconfig.js';
+import { checkTsconfig } from './tsconfig.js';
 
 export * from './transform.js';
 export * from './tsconfig.js';
@@ -23,10 +23,10 @@ export type RunSummary = {
 };
 
 /**
- * Rewrites a project's entities for the standard decorator spec.
+ * Rewrites a project across the breaking changes of uql-orm that can be made mechanically.
  *
- * @remarks Needs a type checker, not just a parser: the whole point is to write down the types that
- * `design:type` used to report at runtime, and only the checker knows what `role?: Role` resolves to.
+ * @remarks Needs a type checker, not just a parser: the codemod reads each property's type to name a relation's
+ * target and to admit `null`, and only the checker resolves `role?: Role` to its arms.
  */
 export async function run({ project, dryRun, include }: RunOptions): Promise<RunSummary> {
   // Absolute, because `parseJsonConfigFileContent` resolves every discovered file against the base path
@@ -57,22 +57,18 @@ export async function run({ project, dryRun, include }: RunOptions): Promise<Run
     if (result.changed || result.unresolved.length || result.notes.length) results.push(result);
   }
 
-  // The config is rewritten too: leaving `experimentalDecorators` on is what keeps a project compiling
-  // against the old spec, so a codemod that only touched the sources would leave it half-migrated.
-  const tsconfig = transformTsconfig(configPath, ts.sys.readFile(configPath) ?? '');
-
   const rewritten = results.filter((r) => r.changed);
 
   if (!dryRun) {
     await Promise.all(rewritten.map((r) => writeFile(r.fileName, r.text, 'utf8')));
-    if (tsconfig.changed) {
-      await writeFile(configPath, tsconfig.text, 'utf8');
-    }
   }
 
   return {
-    changed: [...rewritten.map((r) => r.fileName), ...(tsconfig.changed ? [configPath] : [])],
-    unresolved: [...results.flatMap((r) => r.unresolved), ...tsconfig.unresolved],
+    changed: rewritten.map((r) => r.fileName),
+    unresolved: [
+      ...results.flatMap((r) => r.unresolved),
+      ...checkTsconfig(configPath, ts.sys.readFile(configPath) ?? ''),
+    ],
     notes: results.flatMap((r) => r.notes),
   };
 }

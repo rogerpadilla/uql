@@ -17,18 +17,18 @@ One entity file per `model(name, schema)`, beside the Mongoose code, which stays
 | Mongoose                                        | Entity                                                                                     |
 | :---------------------------------------------- | :----------------------------------------------------------------------------------------- |
 | `model('User', schema)`                         | `@Entity({ name: 'users' })`, the collection Mongoose derives or the schema's `collection` |
-| `String`, `Number`, `Boolean`, `Date`, `BigInt` | the same `type`                                                                            |
-| `Decimal128`, `UUID`, `Buffer`                  | `'decimal'`, `'uuid'`, `'blob'`                                                            |
-| `_id` (an `ObjectId`)                           | `@Id({ type: String })`, the 24-hex text                                                   |
-| `{ type: ObjectId, ref: 'User' }` on `author`   | `@Field({ name: 'author', references: () => User }) authorId` and `@ManyToOne author`      |
+| `String`, `Number`, `Boolean`, `Date`, `BigInt` | `f.string()`, `f.number()`, `f.boolean()`, `f.date()`, `f.bigint()`                        |
+| `Decimal128`, `UUID`, `Buffer`                  | `f.decimal()`, `f.uuid()`, `f.column('blob')`                                              |
+| `_id` (an `ObjectId`)                           | `f.string().id()`, the 24-hex text                                                         |
+| `{ type: ObjectId, ref: 'User' }` on `author`   | `@Field(f.references(() => User).name('author')) authorId` and `@ManyToOne author`         |
 | a nested object or sub-schema, `[subSchema]`    | `Json<T>` / `Json<T>[]`, `T` written from the sub-schema                                   |
 | `[String]`, `[Number]`                          | `Json<string[]>`, `Json<number[]>`, which `$push`, `$pull` and `$addToSet` update          |
 | `Mixed`, `Map`                                  | `Json`                                                                                     |
-| `required: true`                                | `nullable: false` and a `!` property; otherwise `?` and `\| null`                          |
-| `enum`, `unique`, `index: true`                 | `enum`, `unique`, `@Index`                                                                 |
-| `default: value`, `default: Date.now`           | `defaultValue: value`, `defaultValue: currentTimestamp`                                    |
-| `default: () => ...`                            | `onInsert`                                                                                 |
-| `timestamps: true`                              | `createdAt` and `updatedAt`, `defaultValue: currentTimestamp`, the latter with `onUpdate`  |
+| `required: true`                                | the default, with a `!` property; otherwise `.nullable()`, `?` and `\| null`               |
+| `enum`, `unique`, `index: true`                 | `f.enum([...])`, `.unique()`, `.index()`                                                   |
+| `default: value`, `default: Date.now`           | `.default(value)`, `.default(currentTimestamp)`                                            |
+| `default: () => ...`                            | `.onInsert(() => ...)`                                                                     |
+| `timestamps: true`                              | `createdAt` and `updatedAt`, `.default(currentTimestamp)`, the latter with `.onUpdate()`   |
 
 The foreign key keeps Mongoose's field name as its column, so the entity reads the documents as stored; a SQL table created from it has the same column, renamed later by a migration if wanted.
 

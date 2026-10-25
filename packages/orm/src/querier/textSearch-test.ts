@@ -1,17 +1,30 @@
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { provisioningTimeout } from '../test/index.js';
-import type { MigratorDialect, Querier, QuerierPool, WithProjection } from '../type/index.js';
+import type { MigratorDialect, Querier, QuerierPool } from '../type/index.js';
 
-@Index((doc) => [{ column: doc.title, weight: 10 }, doc.bodyText], { type: 'fulltext', config: 'english' })
-@Entity({ name: 'text_search_doc' })
+@Entity({
+  name: 'text_search_doc',
+  indexes: (textDoc, index) => [
+    index([{ column: textDoc.title, weight: 10 }, textDoc.bodyText], { type: 'fulltext', config: 'english' }),
+  ],
+})
 class TextDoc {
-  @Id({ type: String, onInsert: uuidv7 }) id?: string;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) bodyText?: string | null;
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) bodyText?: string | null;
+  @Field(f.references(() => TextShelf).nullable()) shelfId?: string | null;
+  @ManyToOne({ entity: () => TextShelf, references: (doc) => doc.shelfId }) shelf?: TextShelf;
+}
+
+/** What holds the documents, for a search run inside a populated relation. */
+@Entity({ name: 'text_search_shelf' })
+class TextShelf {
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @OneToMany({ entity: () => TextDoc, mappedBy: (doc) => doc.shelf }) docs?: TextDoc[];
 }
 
 /**
@@ -19,10 +32,14 @@ class TextDoc {
  * MySQL's `FULLTEXT`, MongoDB's text index, a `GIN` one over the Postgres family's document. The same
  * entity and query everywhere, so an engine that spells either differently fails here, not in production.
  */
-export function describeTextSearch(name: string, createPool: () => QuerierPool<Querier, MigratorDialect>): void {
+export function describeTextSearch(
+  name: string,
+  createPool: () => QuerierPool<Querier, MigratorDialect>,
+  { searchesRelations = true }: { readonly searchesRelations?: boolean } = {},
+): void {
   describe(`${name} text search`, () => {
     const pool = createPool();
-    const migrator = new Migrator(pool, { entities: [TextDoc] });
+    const migrator = new Migrator(pool, { entities: [TextShelf, TextDoc] });
     const search = async (value: string) => {
       const found = await pool.findMany(TextDoc, {
         $select: { title: true },
@@ -35,7 +52,8 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
     /** Each pair less relevant first, so only the ranking puts the other ahead. */
     beforeAll(async () => {
       await migrator.sync({ force: true });
-      await pool.insertMany(TextDoc, [
+      const shelfId = await pool.insertOne(TextShelf, {});
+      const docs = [
         { title: 'zebrafish', bodyText: 'swims in the river' },
         { title: 'lighthouse', bodyText: null },
         { title: 'teapot', bodyText: 'boils water' },
@@ -45,11 +63,18 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
         { title: 'kestrel', bodyText: 'hovers' },
         { title: 'wren', bodyText: 'sings to a plover' },
         { title: 'plover', bodyText: 'plover chicks' },
-      ]);
+      ];
+      await pool.insertMany(
+        TextDoc,
+        docs.map((doc) => ({ ...doc, shelfId })),
+      );
     }, provisioningTimeout);
 
     afterAll(async () => {
-      await migrator.executeSyncStatements((await migrator.getSchemaGenerator()).generateDropSchema([TextDoc]), {});
+      await migrator.executeSyncStatements(
+        (await migrator.getSchemaGenerator()).generateDropSchema([TextDoc, TextShelf]),
+        {},
+      );
       await pool.end();
     }, provisioningTimeout);
 
@@ -64,23 +89,38 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
 
     /** The relevance each row was ranked by, under a name of the caller's, highest first. */
     it('should answer the relevance it ranks by', async () => {
-      const found = (await pool.findMany(TextDoc, {
+      const found = await pool.findMany(TextDoc, {
         $select: { title: true },
         $where: { $text: { $value: 'kestrel' } },
         $sort: { $text: { $project: 'score' } },
-      })) as WithProjection<TextDoc, 'score'>[];
+      });
       expect(found.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
       expect(found[0].score).toBeGreaterThan(found[1].score);
+    });
+
+    /** A populated relation searched and ranked inside its parent's read, each row with its relevance; MongoDB refuses it. */
+    it.skipIf(!searchesRelations)('should rank a populated relation by relevance', async () => {
+      const [shelf] = await pool.findMany(TextShelf, {
+        $populate: {
+          docs: {
+            $select: { title: true },
+            $where: { $text: { $value: 'kestrel' } },
+            $sort: { $text: { $project: 'score' } },
+          },
+        },
+      });
+      expect(shelf.docs.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
+      expect(shelf.docs[0].score).toBeGreaterThan(shelf.docs[1].score);
     });
 
     /** Least relevant first, either way it is asked for, and no field of UQL's own left on a row. */
     it('should rank the other way when asked', async () => {
       const kestrel = { $select: { title: true }, $where: { $text: { $value: 'kestrel' } } } as const;
       const plain = await pool.findMany(TextDoc, { ...kestrel, $sort: { $text: 'asc' } });
-      const projected = (await pool.findMany(TextDoc, {
+      const projected = await pool.findMany(TextDoc, {
         ...kestrel,
         $sort: { $text: { $project: 'score', $order: 'asc' } },
-      })) as WithProjection<TextDoc, 'score'>[];
+      });
       expect(plain.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);
       expect(plain[0]).not.toHaveProperty(TEXT_SCORE_ALIAS);
       expect(projected.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);

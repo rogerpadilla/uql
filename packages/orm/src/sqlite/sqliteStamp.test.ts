@@ -3,16 +3,23 @@
 // itself rather than recurse until SQLite's depth limit refuses the write.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { sql } from '../util/sql.js';
 import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
 
 @Entity({ name: 'RecursiveStamp' })
 class RecursiveStamp {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
-  @Field({ type: Number, computed: sql`1`, stored: ['update'] }) readonly touched?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`1`)
+      .stored(['update']),
+  )
+  readonly touched?: number | null;
 }
 
 describe('a stamp on SQLite with recursive triggers on', () => {

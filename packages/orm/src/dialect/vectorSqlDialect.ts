@@ -68,7 +68,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   }
 
   /** The distance a vector index built for `metric`, as {@link vectorMetrics} names it for an index, measures. */
-  indexedDistance(metric: string | undefined): VectorDistance | undefined {
+  distanceOfMetric(metric: string | undefined): VectorDistance | undefined {
     return [...this.vectorMetrics].find(([, { index }]) => index === metric)?.[0];
   }
 

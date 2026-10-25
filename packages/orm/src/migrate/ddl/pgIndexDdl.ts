@@ -1,4 +1,4 @@
-import type { IndexColumnSchema, IndexSchema } from '../../type/index.js';
+import type { IndexEntry, IndexSchema } from '../../type/index.js';
 import { indexDistance } from '../../type/vector.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
@@ -22,7 +22,7 @@ export class PgIndexDdl extends IndexDdl {
    * lacks rather than build with the default; any other entry takes the class it declares. Stated even
    * for the default distance: pgvector's own default class is L2, which a cosine search never uses.
    */
-  protected override indexColumnOpsClass(entry: IndexColumnSchema, index: IndexSchema): string {
+  protected override indexColumnOpsClass(entry: IndexEntry<string>, index: IndexSchema): string {
     if (!this.isVectorIndex(index)) {
       return entry.opsClass ? ` ${entry.opsClass}` : '';
     }

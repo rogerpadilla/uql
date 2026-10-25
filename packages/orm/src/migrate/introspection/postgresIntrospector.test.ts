@@ -45,7 +45,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
     const index = this.getIndex(schema, 'a_long_expression_idx');
-    expect(index.entries[0].column).toBe("to_tsvector('english'::regconfig, (name || ' '::text) || status::text)");
+    expect(index.entries[0].expression).toBe("to_tsvector('english'::regconfig, (name || ' '::text) || status::text)");
   }
 
   /** Reported as SQL Server and the MySQL family report theirs; the diff reads it as the column's uniqueness. */
@@ -86,7 +86,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
     const index = this.getIndex(schema, 'a_lower_name_idx');
-    expect(index.entries).toEqual([{ column: 'lower(name)', expression: true, order: 'asc', nulls: 'last' }]);
+    expect(index.entries).toEqual([{ expression: 'lower(name)', order: 'asc', nulls: 'last' }]);
     expect(index.unique).toBe(true);
     expect(index.type).toBe('btree');
   }
@@ -101,7 +101,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
       ast
         .getTable(INTROSPECT_TABLES.A)
         ?.indexes.find((index) => index.name === name)
-        ?.entries.map((entry) => entry.column);
+        ?.entries.map((entry) => entry.column ?? entry.expression);
 
     expect(columnsOf('a_live_status_idx')).toEqual(['state']);
     expect(columnsOf('a_lower_name_idx')).toEqual(['lower(name)']);
@@ -204,9 +204,9 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
       fraction: -12.5,
       truthy: true,
       blank: null,
-      stamped: new SqlExpression('sql', '(now())'),
+      stamped: SqlExpression.raw('(now())'),
       empty: '{}',
-      counter: new SqlExpression('sql', "(nextval('probe_defaults_counter_seq'))"),
+      counter: SqlExpression.raw("(nextval('probe_defaults_counter_seq'))"),
     });
     expect(this.getColumn(schema, 'counter').isAutoIncrement).toBe(true);
   }

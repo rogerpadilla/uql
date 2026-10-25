@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { MongoDialect } from '../mongodb/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { Item } from '../test/entityMock.js';
@@ -10,11 +10,11 @@ import { Item } from '../test/entityMock.js';
  */
 @Entity({ name: 'renamed_row' })
 class Renamed {
-  @Id({ type: Number, name: 'row_pk' })
+  @Field(f.number().id().name('row_pk'))
   id?: number;
-  @Field({ type: String, name: 'the_label' })
+  @Field(f.string().nullable().name('the_label'))
   label?: string | null;
-  @Field({ type: Date, name: 'deleted_at', softDelete: true })
+  @Field(f.date().nullable().softDelete().name('deleted_at'))
   deletedAt?: Date | null;
 }
 
@@ -34,7 +34,7 @@ it('should project the stored column, never the property key', () => {
 
 it('should sort by the stored column', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, { $sort: { label: 'desc' } }))).toContain('ORDER BY "the_label" DESC');
-  expect(mongo.sort(Renamed, { $sort: { label: 'desc' } })).toEqual({ the_label: -1 });
+  expect(mongo.readPlan(Renamed, { $sort: { label: 'desc' } })).toEqual({ sort: { the_label: -1 } });
 });
 
 it('should filter by the stored column', () => {
@@ -73,5 +73,5 @@ it('should address the primary key as each engine stores it', () => {
   expect(pgSql((d, ctx) => d.where(ctx, Renamed, { id: 1 }))).toContain('"row_pk" = ');
   // MongoDB always stores it as `_id`, whatever the column is named
   expect(mongo.where(Renamed, { id: 1 })).toMatchObject({ _id: 1 });
-  expect(mongo.sort(Renamed, { $sort: { id: 1 } })).toEqual({ _id: 1 });
+  expect(mongo.readPlan(Renamed, { $sort: { id: 1 } })).toEqual({ sort: { _id: 1 } });
 });

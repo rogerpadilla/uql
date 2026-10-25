@@ -78,7 +78,7 @@ describe('Dual API Pattern: $entity field support', () => {
 
       const result = await querier.findOneById(VectorItem, 1, query);
 
-      expectTypeOf(result).toEqualTypeOf<VectorItem | undefined>();
+      expectTypeOf(result).toEqualTypeOf<(VectorItem & { readonly distance: number }) | undefined>();
       expect(query).toEqual({
         $where: { name: 'north' },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },

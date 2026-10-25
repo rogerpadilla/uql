@@ -276,7 +276,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /**
    * `MATCH(cols) AGAINST(?)`, which needs a `FULLTEXT` index over exactly those columns: without one
    * the server answers "Can't find FULLTEXT index matching the column list". Declare it with
-   * `@Index((post) => [...], { type: 'fulltext' })`.
+   * `{ columns: (post) => [...], type: 'fulltext' }` in `indexes`.
    */
   protected override appendTextSearch<E>(
     ctx: QueryContext,

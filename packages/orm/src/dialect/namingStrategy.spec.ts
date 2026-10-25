@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -7,10 +7,10 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 
 @Entity()
 class UserProfileDialect {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) firstName?: string | null;
-  @Field({ type: String }) lastName?: string | null;
-  @Field({ type: String, name: 'explicit_name' }) explicitField?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) firstName?: string | null;
+  @Field(f.string().nullable()) lastName?: string | null;
+  @Field(f.string().nullable().name('explicit_name')) explicitField?: string | null;
 }
 
 describe('Naming Strategy SQL Generation', () => {

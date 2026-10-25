@@ -1,7 +1,7 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { Coupon, createSpec, Invoice, InvoiceLine, probeForeignKeys, TenantNote } from '../test/index.js';
 import { idKey } from '../type/index.js';
@@ -44,10 +44,10 @@ class TwoRowDialect extends SqliteDialect {
 @Entity()
 class TextPkNote {
   [idKey]?: 'code';
-  @Id({ type: String })
+  @Field(f.string().id())
   code?: string;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 }
 

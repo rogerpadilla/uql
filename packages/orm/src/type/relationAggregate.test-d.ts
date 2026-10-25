@@ -1,4 +1,4 @@
-import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { Computed, Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 
 /**
  * What a relation aggregate checks at compile time: the relation it reads, the target's own fields in
@@ -7,91 +7,90 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
  */
 @Entity()
 class Ticket {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Board, type: Number }) boardId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => Board),
+  )
+  boardId?: number | null;
   @ManyToOne({ entity: () => Board, references: (ticket) => ticket.boardId }) board?: Board;
-  @Field({ type: Number }) points?: number | null;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: Boolean }) open?: boolean | null;
+  @Field(f.number().nullable()) points?: number | null;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.boolean().nullable()) open?: boolean | null;
 }
 
 @Entity()
 class Board {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
 
   @OneToMany({ entity: () => Ticket, mappedBy: (ticket) => ticket.board })
   tickets?: Ticket[];
 
-  @Field({ computed: (board) => board.tickets.count() })
+  @Computed((board) => board.tickets.count())
   readonly ticketCount?: number;
 
-  @Field({ computed: (board) => board.tickets.count({ $where: { open: true } }) })
+  @Computed((board) => board.tickets.count({ $where: { open: true } }))
   readonly openCount?: number;
 
-  @Field({ computed: (board) => board.tickets.sum((ticket) => ticket.points) })
+  @Computed((board) => board.tickets.sum((ticket) => ticket.points))
   readonly totalPoints?: number;
 
-  @Field({ computed: (board) => board.tickets.max((ticket) => ticket.points) })
+  @Computed((board) => board.tickets.max((ticket) => ticket.points))
   readonly hardestTicket?: number | null;
 
-  @Field({ computed: (board) => board.tickets.avg((ticket) => ticket.points) })
+  @Computed((board) => board.tickets.avg((ticket) => ticket.points))
   readonly averagePoints?: number | null;
 
   // @ts-expect-error - 'tickest' is not a relation of Board
-  @Field({ computed: (board) => board.tickest.count() })
+  @Computed((board) => board.tickest.count())
   readonly typo?: number;
 
   // @ts-expect-error - 'opne' is not a field of Ticket
-  @Field({ computed: (board) => board.tickets.count({ $where: { opne: true } }) })
+  @Computed((board) => board.tickets.count({ $where: { opne: true } }))
   readonly filterTypo?: number;
 
   // @ts-expect-error - 'open' holds a boolean, not a number
-  @Field({ computed: (board) => board.tickets.count({ $where: { open: 3 } }) })
+  @Computed((board) => board.tickets.count({ $where: { open: 3 } }))
   readonly filterType?: number;
 
   // @ts-expect-error - only a numeric field can be summed
-  @Field({ computed: (board) => board.tickets.sum((ticket) => ticket.title) })
+  @Computed((board) => board.tickets.sum((ticket) => ticket.title))
   readonly summedTitle?: number;
 
   // @ts-expect-error - a count is a number
-  @Field({ computed: (board) => board.tickets.count() })
+  @Computed((board) => board.tickets.count())
   readonly countAsText?: string;
 
   // @ts-expect-error - a max reads null where the board has no tickets, so the property has to admit it
-  @Field({ computed: (board) => board.tickets.max((ticket) => ticket.points) })
+  @Computed((board) => board.tickets.max((ticket) => ticket.points))
   readonly maxWithoutNull?: number;
 
   // @ts-expect-error - a count is never null
-  @Field({ computed: (board) => board.tickets.count() })
+  @Computed((board) => board.tickets.count())
   readonly countWithNull?: number | null;
 
   /** A page of a value aggregate needs the order that picks it. */
-  @Field({ computed: (board) => board.tickets.sum((t) => t.points, { $sort: { points: -1 }, $limit: 5 }) })
+  @Computed((board) => board.tickets.sum((t) => t.points, { $sort: { points: -1 }, $limit: 5 }))
   readonly topPoints?: number;
 
-  @Field({ computed: (board) => board.tickets.count({ $limit: 500 }) })
+  @Computed((board) => board.tickets.count({ $limit: 500 }))
   readonly cappedCount?: number;
 
   // @ts-expect-error - which five rows a total covers is only defined by the order that picks them
-  @Field({ computed: (board) => board.tickets.sum((t) => t.points, { $limit: 5 }) })
+  @Computed((board) => board.tickets.sum((t) => t.points, { $limit: 5 }))
   readonly unorderedTop?: number;
 
   // @ts-expect-error - an order picks which rows a page holds, never how many, so a tally takes none
-  @Field({ computed: (board) => board.tickets.count({ $sort: { points: -1 }, $limit: 5 }) })
+  @Computed((board) => board.tickets.count({ $sort: { points: -1 }, $limit: 5 }))
   readonly sortedCount?: number;
 
-  // @ts-expect-error - a relation aggregate is read on each query, never stored
-  @Field({ computed: (board) => board.tickets.count(), stored: true })
+  // @ts-expect-error - a relation aggregate is read on each query, never stored: it is no column's SQL
+  @Computed((board) => f.number().as(board.tickets.count()).stored())
   readonly storedCount?: number;
 
   // @ts-expect-error - an event list stamps a value; an aggregate is kept by the rows it reads
-  @Field({ computed: (board) => board.tickets.count(), stored: ['update'] })
+  @Computed((board) => f.number().as(board.tickets.count()).stored(['insert']))
   readonly stampedCount?: number;
-
-  /**
-   * An aggregate is SQL like any other `computed`, so declaring its `type` still compiles; it is what
-   * the aggregate already says, which is why the fields above declare none.
-   */
-  @Field({ type: Number, computed: (board) => board.tickets.count() })
-  readonly typedCount?: number | null;
 }

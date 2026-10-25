@@ -1,7 +1,7 @@
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { Entity, Field, getMeta, Id, Index, ManyToOne, removeEntity, Trigger } from '../entity/index.js';
+import { Computed, Entity, f, Field, getMeta, ManyToOne, removeEntity } from '../entity/index.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -20,37 +20,37 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 // Test entities
 @Entity()
 class TestUser {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String, length: 100 })
+  @Field(f.string().nullable().length(100))
   name?: string | null;
 
-  @Field({ type: String, unique: true })
+  @Field(f.string().nullable().unique())
   email?: string | null;
 
-  @Field({ type: String, nullable: false })
+  @Field(f.string())
   password?: string;
 
-  @Field({ type: Number, onInsert: Date.now })
+  @Field(f.number().nullable().onInsert(Date.now))
   createdAt?: number | null;
 }
 
 @Entity({ name: 'blog_posts' })
 class TestPost {
-  @Id({ type: String, onInsert: uuidv7, length: 36 })
+  @Field(f.string().id().onInsert(uuidv7).length(36))
   id?: string;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ type: String, columnType: 'text' })
+  @Field(f.string().nullable().columnType('text'))
   content?: string | null;
 
-  @Field({ type: 'jsonb' })
+  @Field(f.jsonb().nullable())
   metadata?: Record<string, unknown> | null;
 
-  @Field({ references: () => TestUser })
+  @Field(f.references(() => TestUser).nullable())
   authorId?: number | null;
 
   @ManyToOne({ entity: () => TestUser, references: (testPost) => testPost.authorId })
@@ -59,8 +59,8 @@ class TestPost {
 
 @Entity()
 class SqliteIndexedEntity {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, index: true })
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().index())
   slug?: string | null;
 }
 
@@ -120,13 +120,16 @@ describe('SqlSchemaGenerator (Postgres)', () => {
    * serves, so a weighted index declares one per column heavier than its lightest; Postgres needs none.
    */
   it('should declare a fulltext index for each heavier column where the engine scores through one', () => {
-    @Entity()
-    @Index((doc) => [{ column: doc.title, weight: 3 }, doc.summary, doc.body], { type: 'fulltext' })
+    @Entity({
+      indexes: (weightedDoc, index) => [
+        index([{ column: weightedDoc.title, weight: 3 }, weightedDoc.summary, weightedDoc.body], { type: 'fulltext' }),
+      ],
+    })
     class WeightedDoc {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
-      @Field({ type: String }) summary?: string | null;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
+      @Field(f.string().nullable()) summary?: string | null;
+      @Field(f.string().nullable()) body?: string | null;
     }
     const indexes = (dialect: MySqlDialect | PostgresDialect) =>
       new SqlSchemaGenerator(dialect)
@@ -145,15 +148,18 @@ describe('SqlSchemaGenerator (Postgres)', () => {
 
   /** A plain index declared with its table is built with it: on CockroachDB, a `CREATE INDEX` is a schema change of its own. */
   describe('a plain index inside CREATE TABLE', () => {
-    @Entity()
-    @Index((doc) => [doc.slug])
-    @Index((doc) => [doc.code], { unique: true })
-    @Index((doc) => [doc.body], { type: 'fulltext' })
+    @Entity({
+      indexes: (inlineDoc, index) => [
+        index([inlineDoc.body], { type: 'fulltext' }),
+        index([inlineDoc.code], { unique: true }),
+        index([inlineDoc.slug]),
+      ],
+    })
     class InlineDoc {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) slug?: string | null;
-      @Field({ type: String }) code?: string | null;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) slug?: string | null;
+      @Field(f.string().nullable()) code?: string | null;
+      @Field(f.string().nullable()) body?: string | null;
     }
     const indexStatements = (dialect: CockroachDialect | MySqlDialect | PostgresDialect) =>
       new SqlSchemaGenerator(dialect)
@@ -212,11 +218,14 @@ describe('SqlSchemaGenerator (Postgres)', () => {
    * a VECTOR index must be NOT NULL". The entity's schema says so, so drift and a diff agree with it.
    */
   it('should make a MariaDB vector-indexed column NOT NULL, whatever the entity declared', () => {
-    @Index((doc) => [doc.embedding], { type: 'vector', distance: 'cosine' })
-    @Entity()
+    @Entity({
+      indexes: (nullableEmbedding, index) => [
+        index([nullableEmbedding.embedding], { type: 'vector', distance: 'cosine' }),
+      ],
+    })
     class NullableEmbedding {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     const nullable = (dialect: MariaDialect | PostgresDialect) =>
       new SqlSchemaGenerator(dialect)
@@ -794,7 +803,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         tableName: 'memberships',
         index: {
           name: 'memberships_email_uk',
-          entries: [{ column: sql`lower("email")` }],
+          entries: [{ expression: sql`lower("email")` }],
           unique: true,
           where: sql`"deletedAt" IS NULL`,
         },
@@ -810,7 +819,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         indexes: [
           {
             name: 'memberships_active_idx',
-            entries: [{ column: 'userId', order: 'desc' }, { column: sql`lower("groupId")` }],
+            entries: [{ column: 'userId', order: 'desc' }, { expression: sql`lower("groupId")` }],
             unique: true,
             where: sql`"deletedAt" IS NULL`,
             include: ['groupId'],
@@ -996,23 +1005,29 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
 
 @Entity()
 class DiffUser {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
-  @Field({ type: String, columnType: 'varchar', length: 100 }) email?: string | null;
-  @Field({ type: String, columnType: 'varchar', length: 255, index: true }) status?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
+  @Field(f.string().nullable().length(100).columnType('varchar')) email?: string | null;
+  @Field(f.string().nullable().index().length(255).columnType('varchar')) status?: string | null;
 }
 
 @Entity()
 class DefaultsEntity {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string | null;
-  @Field({ type: Number, columnType: 'int', defaultValue: 0 }) attempts?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().default('active').length(20).columnType('varchar')) status?: string | null;
+  @Field(f.number().nullable().default(0).columnType('int')) attempts?: number | null;
 }
 
 @Entity()
 class ComputedEntity {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, computed: sql`1 + 1` }) total?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`1 + 1`),
+  )
+  total?: number | null;
 }
 
 describe('SqlSchemaGenerator diffs (Postgres)', () => {
@@ -1028,12 +1043,12 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should type a foreign key as the key it points at', () => {
     @Entity()
     class RefTarget {
-      @Id({ type: String, columnType: 'uuid' }) id?: string;
+      @Field(f.string().id().columnType('uuid')) id?: string;
     }
     @Entity()
     class RefSource {
-      @Id({ type: Number }) id?: number;
-      @Field({ references: () => RefTarget }) ownerId?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.references(() => RefTarget).nullable()) ownerId?: string | null;
     }
     const { ownerId } = getMeta(RefSource).fields;
     assertDefined(ownerId);
@@ -1044,12 +1059,24 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should type a foreign key as its create statement does, its own columnType first, and a shared key never serial', () => {
     @Entity()
     class Account {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
     @Entity()
     class AccountProfile {
-      @Id({ type: Number, references: () => Account }) id?: number;
-      @Field({ references: () => Account, columnType: 'int' }) backupId?: number | null;
+      @Field(
+        f
+          .number()
+          .id()
+          .references(() => Account),
+      )
+      id?: number;
+      @Field(
+        f
+          .references(() => Account)
+          .nullable()
+          .columnType('int'),
+      )
+      backupId?: number | null;
     }
     const { id, backupId } = getMeta(AccountProfile).fields;
     assertDefined(id);
@@ -1062,8 +1089,8 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should comment a column of a table that has no comment of its own', () => {
     @Entity()
     class Commented {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String, comment: 'Shown to users' }) label?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable().comment('Shown to users')) label?: string | null;
     }
     const statements = generator.generateCreateSchema([Commented]);
     expect(statements).toContainEqual(expect.stringContaining('COMMENT ON COLUMN'));
@@ -1365,8 +1392,8 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
 
 @Entity({ name: 'users' })
 class UsersTable {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
 }
 
 /** A row per dialect, so a new dialect is a row rather than a branch in each test. */
@@ -1468,12 +1495,16 @@ describe('SqlSchemaGenerator creating a table only where it is missing', () => {
 });
 
 describe('triggers', () => {
-  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: (post) => sql`PERFORM ${post.title};` } })
-  @Entity({ name: 'GenPost' })
+  @Entity({
+    name: 'GenPost',
+    triggers: (genPost, trigger) => [
+      trigger({ on: 'afterInsert', name: 'audit', run: { postgres: (post) => sql`PERFORM ${post.title};` } }),
+    ],
+  })
   class GenPost {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string | null;
-    @Field({ type: String }) titleNote?: string | null;
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) title?: string | null;
+    @Field(f.string().nullable()) titleNote?: string | null;
   }
 
   const generator = new SqlSchemaGenerator(new PostgresDialect());

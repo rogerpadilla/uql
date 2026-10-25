@@ -62,6 +62,8 @@ export type QuerySortOptions = {
   /** Alias the queried entity's own columns are qualified by, when the statement qualifies them. */
   readonly prefix?: string;
   readonly joins?: QueryJoins;
+  /** Where the select list's aliases are out of reach, inside an aggregate: a projected term is computed again. */
+  readonly unaliased?: boolean;
 };
 
 /**

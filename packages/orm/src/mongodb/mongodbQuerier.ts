@@ -5,6 +5,7 @@ import type {
   FindCursor,
   MongoClient,
   OptionalUnlessRequiredId,
+  Sort,
   UpdateFilter,
 } from 'mongodb';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
@@ -30,21 +31,10 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import {
-  clone,
-  getKeys,
-  deletionOf,
-  hasKeys,
-  hasTriggers,
-  populatesRelations,
-  textSortOf,
-  vectorCandidates,
-  whereEach,
-  upsertKeepsOwnKey,
-} from '../util/index.js';
+import { clone, getKeys, deletionOf, hasKeys, hasTriggers, whereEach, upsertKeepsOwnKey } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
-import type { ExtractedVectorSort, MongoAggregationPipelineEntry, MongoDialect } from './mongoDialect.js';
+import type { MongoDialect } from './mongoDialect.js';
 import type { MongoQuerier } from './mongoQuerier.js';
 
 /**
@@ -127,41 +117,21 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     opts: QueryOptions | undefined,
     session: ClientSession | undefined,
   ): AggregationCursor<E> | FindCursor<E> {
-    const vectorSort = this.dialect.extractVectorSort(q.$sort);
-    const pipeline = vectorSort
-      ? this.buildVectorPipeline(entity, q, vectorSort, opts)
-      : this.readsThroughPipeline(entity, q) && this.dialect.aggregationPipeline(entity, q, opts);
-    return pipeline
-      ? this.collection(entity).aggregate<E>(pipeline, { session })
-      : this.buildFindCursor(entity, q, opts, session);
-  }
-
-  /**
-   * Whether a read needs stages a `find` cursor cannot express: a lookup to populate, count, filter or
-   * order by a relation, one to build a relation aggregate, and the grouping `$distinct` is.
-   */
-  private readsThroughPipeline<E extends Document>(entity: Type<E>, q: Query<E>): boolean {
-    return (
-      !!q.$distinct ||
-      hasKeys(q.$count) ||
-      populatesRelations(getMeta(entity), q.$populate) ||
-      this.dialect.constrainsRelations(entity, q.$where) ||
-      this.dialect.sortsRelations(entity, q.$sort) ||
-      this.dialect.readsAggregates(entity, q) ||
-      // A placement is a field the pipeline adds and orders by; a `find` cursor can add none.
-      hasKeys(this.dialect.sortPlan(entity, q).fields) ||
-      textSortOf(q.$sort) !== undefined
-    );
+    const read = this.dialect.readPlan(entity, q, opts);
+    return 'pipeline' in read
+      ? this.collection(entity).aggregate<E>(read.pipeline, { session })
+      : this.buildFindCursor(entity, q, read.sort, opts, session);
   }
 
   private buildScalarProjection<E extends Document>(entity: Type<E>, q: Query<E>) {
-    return this.dialect.select(entity, q.$select, q.$exclude);
+    return this.dialect.select(entity, q.$select);
   }
 
-  /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
+  /** Build a MongoDB FindCursor with filter, projection, skip, and limit from the query, ordered by `sort`. */
   private buildFindCursor<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
+    sort: Sort,
     opts: QueryOptions | undefined,
     session: ClientSession | undefined,
   ) {
@@ -175,7 +145,6 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     if (hasKeys(select)) {
       cursor.project(select);
     }
-    const sort = this.dialect.sort(entity, q);
     if (hasKeys(sort)) {
       cursor.sort(sort);
     }
@@ -188,35 +157,6 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     }
 
     return cursor;
-  }
-
-  /**
-   * Build an aggregation pipeline for vector similarity search.
-   * `$vectorSearch` is always the first stage; `$where` is merged into its `filter`.
-   */
-  private buildVectorPipeline<E extends Document>(
-    entity: Type<E>,
-    q: Query<E>,
-    vectorSort: ExtractedVectorSort<E>,
-    opts?: QueryOptions,
-  ): MongoAggregationPipelineEntry<Document>[] {
-    const scoreAlias = vectorSort.vectorSearch.$project;
-    return [
-      this.dialect.buildVectorSearchStage(
-        entity,
-        vectorSort.vectorKey,
-        vectorSort.vectorSearch,
-        q.$where,
-        q.$limit ?? 10,
-        opts,
-        vectorCandidates(q),
-      ),
-      // `$vectorSearch` has already applied `$limit`, so the pager is its own.
-      ...this.dialect.readStages(entity, q, {
-        sort: this.dialect.sortPlan(entity, { ...q, $sort: vectorSort.regularSort }),
-        score: scoreAlias ? { field: scoreAlias, meta: 'vectorSearchScore' } : undefined,
-      }),
-    ];
   }
 
   protected override async internalAggregate<E extends Document>(
@@ -422,7 +362,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       );
       return deletedCount;
     }
-    // The mapped column, which reads filter on: a `@Field({ name })` mismatch would leave the row visible.
+    // The mapped column, which reads filter on: a `.name()` mismatch would leave the row visible.
     const column = this.dialect.resolveColumnName(stamp.key, stamp.field);
     const update = { $set: { [column]: stamp.value() } } as UpdateFilter<E>;
     const { matchedCount } = await this.execute('internalDeleteMany', (session) =>

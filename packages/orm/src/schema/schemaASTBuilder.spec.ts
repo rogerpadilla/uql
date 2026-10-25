@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { Computed, Entity, f, Field, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
@@ -9,13 +9,13 @@ import { buildSchemaAST } from './schemaASTBuilder.js';
 // Test entities
 @Entity()
 class User {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   name?: string | null;
 
-  @Field({ type: String, nullable: true })
+  @Field(f.string().nullable())
   email?: string | null;
 
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
@@ -24,31 +24,31 @@ class User {
 
 @Entity()
 class Post {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String })
+  @Field(f.string().nullable())
   title?: string | null;
 
-  @Field({ type: 'text' })
+  @Field(f.text().nullable())
   content?: string | null;
 
   @ManyToOne({ entity: () => User, references: (post) => post.authorId })
   author?: User;
 
-  @Field({ type: Number, name: 'author_id' })
+  @Field(f.number().nullable().name('author_id'))
   authorId?: number | null;
 }
 
 @Entity({ name: 'categories' })
 class Category {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String, unique: true })
+  @Field(f.string().nullable().unique())
   slug?: string | null;
 
-  @Field({ type: String, length: 100 })
+  @Field(f.string().nullable().length(100))
   name?: string | null;
 }
 
@@ -87,16 +87,16 @@ describe('SchemaASTBuilder', () => {
     it('should infer a FK field type from its referenced entity primary key when no type is given', () => {
       @Entity()
       class Account {
-        @Id({ type: 'uuid' })
+        @Field(f.uuid().id())
         id?: string;
       }
       @Entity()
       class Item {
-        @Id({ type: 'uuid' })
+        @Field(f.uuid().id())
         id?: string;
         // No explicit type/columnType - should inherit 'uuid' from Account.id,
         // not fall back to the generic TypeScript-inferred 'string' (TEXT).
-        @Field({ references: () => Account })
+        @Field(f.references(() => Account).nullable())
         accountId?: string | null;
       }
 
@@ -111,13 +111,18 @@ describe('SchemaASTBuilder', () => {
     it('should still respect an explicit type on a FK field over the referenced entity', () => {
       @Entity()
       class Parent2 {
-        @Id({ type: 'uuid' })
+        @Field(f.uuid().id())
         id?: string;
       }
       @Entity()
       class Child2 {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => Parent2, type: 'text' })
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .text()
+            .nullable()
+            .references(() => Parent2),
+        )
         parentRef?: string | null;
       }
 
@@ -132,13 +137,19 @@ describe('SchemaASTBuilder', () => {
     it("should emit a relation's own onDelete/onUpdate over the global default", () => {
       @Entity()
       class FkParent {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
         @OneToMany({ entity: () => FkChild, mappedBy: (fkChild) => fkChild.parent }) children?: FkChild[];
       }
       @Entity()
       class FkChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkParent }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .number()
+            .nullable()
+            .references(() => FkParent),
+        )
+        parentId?: number | null;
         // The action lives on the owning side, which is the side that holds the key.
         @ManyToOne({
           entity: () => FkParent,
@@ -150,8 +161,14 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class PlainChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkParent }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .number()
+            .nullable()
+            .references(() => FkParent),
+        )
+        parentId?: number | null;
         @ManyToOne({ entity: () => FkParent, references: (plainChild) => plainChild.parentId }) parent?: FkParent;
       }
 
@@ -171,26 +188,47 @@ describe('SchemaASTBuilder', () => {
     it("should fall back to the FK field's own onDelete when no relation sets one", () => {
       @Entity()
       class FkOnFieldParent {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       // No @ManyToOne at all: a bare FK field is a foreign key of its own, and still takes its cascade.
       @Entity()
       class FkOnFieldOnlyChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .number()
+            .nullable()
+            .references(() => FkOnFieldParent)
+            .onDelete('CASCADE'),
+        )
+        parentId?: number | null;
       }
       // A declared relation with no onDelete of its own inherits the field's, so the two never drift.
       @Entity()
       class FkOnFieldWithRelationChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .number()
+            .nullable()
+            .references(() => FkOnFieldParent)
+            .onDelete('CASCADE'),
+        )
+        parentId?: number | null;
         @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId }) parent?: FkOnFieldParent;
       }
       // The relation's own onDelete still wins over a disagreeing field.
       @Entity()
       class FkOnFieldOverriddenChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .number()
+            .nullable()
+            .references(() => FkOnFieldParent)
+            .onDelete('CASCADE'),
+        )
+        parentId?: number | null;
         @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId, onDelete: 'SET NULL' })
         parent?: FkOnFieldParent;
       }
@@ -210,15 +248,20 @@ describe('SchemaASTBuilder', () => {
     it('should respect an explicit constructor type (e.g. BigInt) on a FK field over the referenced entity', () => {
       @Entity()
       class Parent3 {
-        @Id({ type: 'uuid' })
-        id?: string;
+        @Field(f.column('int').id())
+        id?: number;
       }
       @Entity()
       class Child3 {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
         // An explicit `type` must win over resolving the column from `references`, which would
-        // otherwise inherit 'uuid' from Parent3.id.
-        @Field({ references: () => Parent3, type: BigInt })
+        // otherwise inherit 'int' from Parent3.id.
+        @Field(
+          f
+            .bigint()
+            .nullable()
+            .references(() => Parent3),
+        )
         parentRef?: bigint | null;
       }
 
@@ -267,17 +310,17 @@ describe('SchemaASTBuilder', () => {
     it('should handle OneToOne owning side', () => {
       @Entity()
       class Profile11 {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       @Entity()
       class User11 {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
         @OneToOne({
           entity: () => Profile11,
           references: (user11, profile11) => [{ local: user11.profileId, foreign: profile11.id }],
         })
         profile?: Profile11;
-        @Field({ type: Number }) profileId?: number | null;
+        @Field(f.number().nullable()) profileId?: number | null;
       }
 
       const ast = buildSchemaAST([Profile11, User11]);
@@ -286,12 +329,13 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should resolve include columns through the naming strategy too', () => {
-      @Index((covered) => [covered.tenantId], { include: (covered) => [covered.createdAt], name: 'cov_idx' })
-      @Entity()
+      @Entity({
+        indexes: (covered, index) => [index([covered.tenantId], { include: [covered.createdAt], name: 'cov_idx' })],
+      })
       class Covered {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, name: 'tenant_id' }) tenantId?: number | null;
-        @Field({ type: Date, name: 'created_at' }) createdAt?: Date | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable().name('tenant_id')) tenantId?: number | null;
+        @Field(f.date().nullable().name('created_at')) createdAt?: Date | null;
       }
 
       const ast = buildSchemaAST([Covered]);
@@ -315,25 +359,34 @@ describe('SchemaASTBuilder', () => {
     it('should skip inlined computed fields', () => {
       @Entity()
       class ComputedUser {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, computed: sql`TRUE` }) secret?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Computed((row) =>
+          f
+            .string()
+            .nullable()
+            .as(sql`TRUE`),
+        )
+        secret?: string | null;
       }
       const ast = buildSchemaAST([ComputedUser]);
       expect(ast.getTable('ComputedUser')?.columns.has('secret')).toBe(false);
     });
 
     it('should handle composite indexes and full metadata from decorators', () => {
-      @Entity()
-      @Index((indexedUser) => [indexedUser.firstName, indexedUser.lastName], {
-        name: 'fullname_idx',
-        unique: true,
-        where: { active: true },
+      @Entity({
+        indexes: (indexedUser, index) => [
+          index([indexedUser.firstName, indexedUser.lastName], {
+            name: 'fullname_idx',
+            unique: true,
+            where: { active: true },
+          }),
+        ],
       })
       class IndexedUser {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) firstName?: string | null;
-        @Field({ type: String }) lastName?: string | null;
-        @Field({ type: Boolean }) active?: boolean | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) firstName?: string | null;
+        @Field(f.string().nullable()) lastName?: string | null;
+        @Field(f.boolean().nullable()) active?: boolean | null;
       }
 
       const ast = buildSchemaAST([IndexedUser], {
@@ -350,20 +403,23 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should refuse SQL an entity declares when given nothing to render it with', () => {
-      @Entity({ checks: [{ where: sql`1 = 1` }] })
+      @Entity({ checks: (checked, check) => [check(sql`1 = 1`)] })
       class Checked {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       expect(() => buildSchemaAST([Checked])).toThrow(/needs a dialect/);
     });
 
     it('should ignore composite index if columns do not exist', () => {
-      @Entity()
-      // @ts-expect-error the column names are checked against the class, so this is the runtime backstop
-      // behind a compile error rather than something a user can reach by writing valid TypeScript.
-      @Index((badComposite) => [badComposite.unknown])
+      @Entity({
+        indexes: (badComposite, index) => [
+          // @ts-expect-error the column names are checked against the class, so this is the runtime backstop
+          // behind a compile error rather than something a user can reach by writing valid TypeScript.
+          index([badComposite.unknown]),
+        ],
+      })
       class BadComposite {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       const ast = buildSchemaAST([BadComposite]);
       expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
@@ -377,22 +433,22 @@ describe('SchemaASTBuilder', () => {
   describe('foreign key indexes', () => {
     @Entity()
     class FkBlog {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
 
     @Entity()
     class FkTag {
-      @Id({ type: Number }) id?: number;
+      @Field(f.number().id()) id?: number;
     }
 
     const indexedColumns = (ast: ReturnType<typeof buildSchemaAST>, table: string) =>
-      ast.getTable(table)?.indexes.map((index) => index.entries.map((entry) => entry.column));
+      ast.getTable(table)?.indexes.map((index) => index.entries.map((entry) => entry.column ?? entry.expression));
 
     it('should index a foreign key the entity does not index itself', () => {
       @Entity()
       class FkPost {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       expect(buildSchemaAST([FkBlog, FkPost]).getTable('FkPost')?.indexes).toMatchObject([
@@ -404,15 +460,15 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkRegion {
         [idKey]?: 'country' | 'area';
-        @Id({ type: String }) country?: string;
-        @Id({ type: String }) area?: string;
+        @Field(f.string().id()) country?: string;
+        @Field(f.string().id()) area?: string;
       }
 
       @Entity()
       class FkCity {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) cityCountry?: string | null;
-        @Field({ type: String }) cityArea?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) cityCountry?: string | null;
+        @Field(f.string().nullable()) cityArea?: string | null;
         @ManyToOne({
           entity: () => FkRegion,
           references: (fkCity, fkRegion) => [
@@ -427,18 +483,23 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should not index a foreign key again under an index the entity declares', () => {
-      @Entity()
-      @Index((fkLeading) => [fkLeading.fkBlogId, fkLeading.title])
+      @Entity({ indexes: (fkLeading, index) => [index([fkLeading.fkBlogId, fkLeading.title])] })
       class FkLeading {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string | null;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) title?: string | null;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       @Entity()
       class FkFieldIndexed {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, index: 'by_blog' }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .references(() => FkBlog)
+            .nullable()
+            .index('by_blog'),
+        )
+        fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkLeading, FkFieldIndexed]);
@@ -451,14 +512,32 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkBlogTag {
         [idKey]?: 'fkBlogId' | 'fkTagId';
-        @Id({ type: Number, references: () => FkBlog }) fkBlogId?: number;
-        @Id({ type: Number, references: () => FkTag }) fkTagId?: number;
+        @Field(
+          f
+            .number()
+            .id()
+            .references(() => FkBlog),
+        )
+        fkBlogId?: number;
+        @Field(
+          f
+            .number()
+            .id()
+            .references(() => FkTag),
+        )
+        fkTagId?: number;
       }
 
       @Entity()
       class FkBlogOwner {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, unique: true }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .references(() => FkBlog)
+            .nullable()
+            .unique(),
+        )
+        fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
@@ -473,11 +552,10 @@ describe('SchemaASTBuilder', () => {
 
     /** An expression is not its column, so an index over one serves no lookup by the key. */
     it('should index a foreign key an expression index only reads', () => {
-      @Entity()
-      @Index((fkExpression) => [sql`ABS(${fkExpression.fkBlogId})`])
+      @Entity({ indexes: (fkExpression, index) => [index([sql`ABS(${fkExpression.fkBlogId})`])] })
       class FkExpression {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkExpression], {
@@ -489,26 +567,23 @@ describe('SchemaASTBuilder', () => {
 
     /** An index the engine cannot look every row up by: some rows (partial), no equality (fulltext), part of the value (prefix). */
     it('should index a foreign key an index leads with but cannot look it up by', () => {
-      @Entity()
-      @Index((fkPartial) => [fkPartial.fkBlogId], { where: { live: true } })
+      @Entity({ indexes: (fkPartial, index) => [index([fkPartial.fkBlogId], { where: { live: true } })] })
       class FkPartial {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Boolean }) live?: boolean | null;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.boolean().nullable()) live?: boolean | null;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
-      @Entity()
-      @Index((fkFulltext) => [fkFulltext.fkBlogId], { type: 'fulltext' })
+      @Entity({ indexes: (fkFulltext, index) => [index([fkFulltext.fkBlogId], { type: 'fulltext' })] })
       class FkFulltext {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
-      @Entity()
-      @Index((fkPrefix) => [{ column: fkPrefix.fkBlogId, length: 4 }])
+      @Entity({ indexes: (fkPrefix, index) => [index([{ column: fkPrefix.fkBlogId, prefixLength: 4 }])] })
       class FkPrefix {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkPartial, FkFulltext, FkPrefix], {
@@ -523,8 +598,14 @@ describe('SchemaASTBuilder', () => {
     it('should leave a foreign key unindexed when its field opts out', () => {
       @Entity()
       class FkUnindexed {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, index: false }) fkBlogId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(
+          f
+            .references(() => FkBlog)
+            .nullable()
+            .index(false),
+        )
+        fkBlogId?: number | null;
       }
 
       expect(indexedColumns(buildSchemaAST([FkBlog, FkUnindexed]), 'FkUnindexed')).toEqual([]);
@@ -533,13 +614,16 @@ describe('SchemaASTBuilder', () => {
 
   describe('Edge Cases', () => {
     it('should keep an include column that names no field as written', () => {
-      @Entity()
-      // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
-      // @ts-expect-error: a column the entity does not model
-      @Index((covering) => [covering.tenantId], { include: (covering) => [covering['legacy_total']] })
+      @Entity({
+        indexes: (covering, index) => [
+          // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
+          // @ts-expect-error: a column the entity does not model
+          index([covering.tenantId], { include: [covering['legacy_total']] }),
+        ],
+      })
       class Covering {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) tenantId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) tenantId?: number | null;
       }
       const table = buildSchemaAST([Covering]).getTable('Covering');
       assertDefined(table);
@@ -551,8 +635,8 @@ describe('SchemaASTBuilder', () => {
     it('should skip an index on a column the table has not got', () => {
       @Entity()
       class RenamedColumn {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: true }) name?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable().index()) name?: string | null;
       }
 
       let callCount = 0;
@@ -564,12 +648,12 @@ describe('SchemaASTBuilder', () => {
     it('should skip a relation to an entity outside the set it builds', () => {
       @Entity()
       class OutsideParent {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       @Entity()
       class InsideChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => OutsideParent }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => OutsideParent).nullable()) parentId?: number | null;
       }
 
       const ast = buildSchemaAST([InsideChild]);
@@ -581,11 +665,11 @@ describe('SchemaASTBuilder', () => {
     it('should make an integer key auto-increment unless it says otherwise', () => {
       @Entity()
       class AutoInc {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       @Entity()
       class NoAutoInc {
-        @Id({ type: Number, autoIncrement: false }) id?: number;
+        @Field(f.number().id().autoIncrement(false)) id?: number;
       }
 
       const ast = buildSchemaAST([AutoInc, NoAutoInc]);
@@ -597,8 +681,8 @@ describe('SchemaASTBuilder', () => {
     it('should name an index declared as `true` after its table and column', () => {
       @Entity()
       class DefaultIndex {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: true }) name?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable().index()) name?: string | null;
       }
 
       expect(buildSchemaAST([DefaultIndex]).getTable('DefaultIndex')?.indexes[0].name).toBe('DefaultIndex__name_idx');
@@ -607,18 +691,18 @@ describe('SchemaASTBuilder', () => {
     it('should relate a to-one through the column its references name, to the key of its target', () => {
       @Entity()
       class Target {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       @Entity()
       class Source {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) targetId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) targetId?: number | null;
         @ManyToOne({ entity: () => Target, references: (source) => source.targetId }) target?: Target;
       }
       @Entity()
       class Member {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) groupIdKey?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) groupIdKey?: number | null;
         @ManyToOne({
           entity: () => Target,
           references: (member, target) => [{ local: member.groupIdKey, foreign: target.id }],
@@ -639,27 +723,28 @@ describe('SchemaASTBuilder', () => {
     it('should use custom index name from entity', () => {
       @Entity()
       class CustomIndex {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: 'my_custom_idx' }) name?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable().index('my_custom_idx')) name?: string | null;
       }
       const ast = buildSchemaAST([CustomIndex]);
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
 
     it('should name a partial index by its predicate, so an edited predicate is a new name', () => {
-      @Entity({ name: 'Order' })
-      @Index((order) => [order.total], { where: { live: true } })
+      @Entity({ name: 'Order', indexes: (liveOrder, index) => [index([liveOrder.total], { where: { live: true } })] })
       class LiveOrder {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) total?: number | null;
-        @Field({ type: Boolean }) live?: boolean | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) total?: number | null;
+        @Field(f.boolean().nullable()) live?: boolean | null;
       }
-      @Entity({ name: 'Order' })
-      @Index((order) => [order.total], { where: { live: false } })
+      @Entity({
+        name: 'Order',
+        indexes: (archivedOrder, index) => [index([archivedOrder.total], { where: { live: false } })],
+      })
       class ArchivedOrder {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) total?: number | null;
-        @Field({ type: Boolean }) live?: boolean | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) total?: number | null;
+        @Field(f.boolean().nullable()) live?: boolean | null;
       }
       const options: Parameters<typeof buildSchemaAST>[1] = {
         compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
@@ -674,10 +759,10 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should give each table inheriting an index its own derived name', () => {
-      @Index((shared) => [shared.region])
+      @Entity({ abstract: true, indexes: (regional, index) => [index([regional.region])] })
       class Regional {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String }) region?: string | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.string().nullable()) region?: string | null;
       }
       @Entity()
       class Depot extends Regional {}
@@ -693,12 +778,12 @@ describe('SchemaASTBuilder', () => {
     it('should drop a foreign key whose columns do not resolve to the tables it joins', () => {
       @Entity()
       class UnresolvedParent {
-        @Id({ type: Number }) id?: number;
+        @Field(f.number().id()) id?: number;
       }
       @Entity()
       class UnresolvedChild {
-        @Id({ type: Number }) id?: number;
-        @Field({ references: () => UnresolvedParent }) parentId?: number | null;
+        @Field(f.number().id()) id?: number;
+        @Field(f.references(() => UnresolvedParent).nullable()) parentId?: number | null;
       }
 
       let callCount = 0;

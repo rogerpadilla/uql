@@ -1,35 +1,34 @@
 import { describe, expect, it } from 'vitest';
+import { f } from '../column.js';
 import { getMeta } from '../metadata/definition.js';
-import { Entity, Index } from './entity.js';
-import { Field, Id } from './members.js';
+import { Entity } from './entity.js';
+import { Field } from './members.js';
 
 describe('@Index decorator', () => {
   it('should register a single-column index', () => {
-    @Entity()
-    @Index((user) => [user.email])
+    @Entity({ indexes: (user, index) => [index([user.email])] })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       email?: string | null;
     }
 
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
     expect(meta.indexes?.length).toBe(1);
-    expect(meta.indexes?.[0].columns).toEqual([{ column: 'email' }]);
+    expect(meta.indexes?.[0].entries).toEqual([{ column: 'email' }]);
     expect(meta.indexes?.[0].unique).toBe(false);
   });
 
   it('should register a unique index', () => {
-    @Entity()
-    @Index((user) => [user.email], { unique: true })
+    @Entity({ indexes: (user, index) => [index([user.email], { unique: true })] })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       email?: string | null;
     }
 
@@ -39,32 +38,30 @@ describe('@Index decorator', () => {
   });
 
   it('should register a composite index', () => {
-    @Entity()
-    @Index((user) => [user.firstName, user.lastName])
+    @Entity({ indexes: (user, index) => [index([user.firstName, user.lastName])] })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       firstName?: string | null;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       lastName?: string | null;
     }
 
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
-    expect(meta.indexes?.[0].columns).toEqual([{ column: 'firstName' }, { column: 'lastName' }]);
+    expect(meta.indexes?.[0].entries).toEqual([{ column: 'firstName' }, { column: 'lastName' }]);
   });
 
   it('should register a named index', () => {
-    @Entity()
-    @Index((user) => [user.email], { name: 'user_email_idx' })
+    @Entity({ indexes: (user, index) => [index([user.email], 'user_email_idx')] })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       email?: string | null;
     }
 
@@ -74,20 +71,20 @@ describe('@Index decorator', () => {
   });
 
   it('should register multiple indexes', () => {
-    @Entity()
-    @Index((user) => [user.email], { unique: true })
-    @Index((user) => [user.firstName, user.lastName])
+    @Entity({
+      indexes: (user, index) => [index([user.firstName, user.lastName]), index([user.email], { unique: true })],
+    })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       email?: string | null;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       firstName?: string | null;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       lastName?: string | null;
     }
 
@@ -97,16 +94,15 @@ describe('@Index decorator', () => {
   });
 
   it('should support index with where clause', () => {
-    @Entity()
-    @Index((user) => [user.email], { where: { deletedAt: null } })
+    @Entity({ indexes: (user, index) => [index([user.email], { where: { deletedAt: null } })] })
     class User {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       email?: string | null;
 
-      @Field({ type: Date, nullable: true })
+      @Field(f.date().nullable())
       deletedAt?: Date | null;
     }
 
@@ -116,13 +112,12 @@ describe('@Index decorator', () => {
   });
 
   it('should default unique to false if not specified', () => {
-    @Entity()
-    @Index((category) => [category.name])
+    @Entity({ indexes: (category, index) => [index([category.name])] })
     class Category {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       name?: string | null;
     }
 
@@ -131,15 +126,14 @@ describe('@Index decorator', () => {
   });
 
   it('should register a fulltext column weight', () => {
-    @Entity()
-    @Index((doc) => [{ column: doc.title, weight: 2 }, doc.body], { type: 'fulltext' })
+    @Entity({ indexes: (doc, index) => [index([{ column: doc.title, weight: 2 }, doc.body], { type: 'fulltext' })] })
     class Doc {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string | null;
-      @Field({ type: String }) body?: string | null;
+      @Field(f.number().id()) id?: number;
+      @Field(f.string().nullable()) title?: string | null;
+      @Field(f.string().nullable()) body?: string | null;
     }
 
-    expect(getMeta(Doc).indexes?.[0].columns).toEqual([{ column: 'title', weight: 2 }, { column: 'body' }]);
+    expect(getMeta(Doc).indexes?.[0].entries).toEqual([{ column: 'title', weight: 2 }, { column: 'body' }]);
   });
 
   /** One rule on every engine: MongoDB's, which weighs by whole numbers below 100000. */
@@ -147,12 +141,11 @@ describe('@Index decorator', () => {
     const declare =
       (weight: number, type: 'fulltext' | 'btree' = 'fulltext') =>
       () => {
-        @Entity()
-        @Index((doc) => [{ column: doc.title, weight }, doc.body], { type })
+        @Entity({ indexes: (doc, index) => [index([{ column: doc.title, weight }, doc.body], { type })] })
         class Doc {
-          @Id({ type: Number }) id?: number;
-          @Field({ type: String }) title?: string | null;
-          @Field({ type: String }) body?: string | null;
+          @Field(f.number().id()) id?: number;
+          @Field(f.string().nullable()) title?: string | null;
+          @Field(f.string().nullable()) body?: string | null;
         }
         return Doc;
       };
@@ -163,16 +156,15 @@ describe('@Index decorator', () => {
   });
 
   it('should generate index name if not provided', () => {
-    @Entity()
-    @Index((task) => [task.status, task.priority])
+    @Entity({ indexes: (task, index) => [index([task.status, task.priority])] })
     class Task {
-      @Id({ type: Number })
+      @Field(f.number().id())
       id?: number;
 
-      @Field({ type: String })
+      @Field(f.string().nullable())
       status?: string | null;
 
-      @Field({ type: Number })
+      @Field(f.number().nullable())
       priority?: number | null;
     }
 

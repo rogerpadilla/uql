@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import type { Json } from '../type/index.js';
 import { TursoDialect } from './tursoDialect.js';
 import { TursoLocalDialect } from './tursoLocalDialect.js';
@@ -7,10 +7,10 @@ import { TursoLocalDialect } from './tursoLocalDialect.js';
 /** A document with open keys, so one update can pass a call more arguments than libSQL takes. */
 @Entity()
 class TursoPreferences {
-  @Id({ type: String })
+  @Field(f.string().id())
   id?: string;
 
-  @Field({ type: 'json' })
+  @Field(f.json().nullable())
   values?: Json<Record<string, number>> | null;
 }
 

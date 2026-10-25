@@ -1,14 +1,8 @@
-/**
- * Migration Builder Types
- *
- * Type definitions for the fluent migration builder API.
- * Enables type-safe migrations without raw SQL.
- */
-
 import type { ColumnNode, EnumValues, ForeignKeyAction } from '../../schema/types.js';
 import type {
-  EntityIndexColumn,
+  IndexEntry,
   Except,
+  FieldOptions,
   IndexColumnInput,
   IndexOptions,
   IndexSchema,
@@ -16,72 +10,6 @@ import type {
 } from '../../type/index.js';
 import type { ForeignKeySchema } from '../../type/migration.js';
 
-/**
- * Foreign key reference options.
- */
-export interface ReferenceOptions {
-  /** Referenced table */
-  table: string;
-  /** Referenced column (default: 'id') */
-  column?: string;
-  /** Action on delete */
-  onDelete?: ForeignKeyAction;
-  /** Action on update */
-  onUpdate?: ForeignKeyAction;
-}
-
-/**
- * Base options for all column types.
- * Columns are NOT NULL by default (safer).
- */
-export interface BaseColumnOptions {
-  /** Whether the column is nullable (default: false) */
-  nullable?: boolean;
-  /** Whether this column has a unique constraint */
-  unique?: boolean;
-  /** Set as primary key */
-  primaryKey?: boolean;
-  /** Enable auto-increment (for integer types) */
-  autoIncrement?: boolean;
-  /** Default value or expression */
-  defaultValue?: unknown;
-  /** Add an index (true = auto-name, string = custom name) */
-  index?: boolean | string;
-  /** Column comment */
-  comment?: string;
-  /** Whether the numeric type is unsigned (MySQL/MariaDB) */
-  unsigned?: boolean;
-  /** Foreign key reference */
-  references?: ReferenceOptions;
-}
-
-/**
- * Options for string/char columns.
- */
-export interface StringColumnOptions extends BaseColumnOptions {
-  /** Maximum length (default: 255 for string, 1 for char) */
-  length?: number;
-}
-
-/**
- * Options for decimal columns.
- */
-export interface DecimalColumnOptions extends BaseColumnOptions {
-  /** Total digits */
-  precision?: number;
-  /** Digits after decimal point */
-  scale?: number;
-}
-
-/**
- * Options for vector columns (AI embeddings).
- */
-export interface VectorColumnOptions extends BaseColumnOptions {
-  /** Number of dimensions */
-  dimensions?: number;
-}
-
-/** A column as the builder describes one: a {@link ColumnNode} without its graph links. */
 export type ColumnDefinition = Except<ColumnNode, 'table'>;
 
 /**
@@ -104,13 +32,13 @@ export interface FullColumnDefinition extends ColumnDefinition {
 }
 
 /**
- * An index as the builder records it, with the entries and options `@Index` takes: its SQL kept as `raw`
+ * An index as the builder records it, with the entries and options an entity's `indexes` entry takes: its SQL kept as `raw`
  * until a generator renders it for the engine the migration runs on.
  */
 export type IndexDefinition = Except<IndexSchema, 'name' | 'entries' | 'where'> & {
   /** As declared; an unnamed index is named when it is rendered, from its predicate as written. */
   readonly name?: string;
-  readonly entries: readonly EntityIndexColumn[];
+  readonly entries: readonly IndexEntry[];
   readonly where?: QuerySql;
   /** Whether an unnamed index takes the `_uk` kind. Only `table.unique` sets it: earlier migrations installed `_uk` there, so `index` keeps `_idx`. */
   readonly uniqueName?: boolean;
@@ -155,113 +83,81 @@ export type ForeignKeyTarget = ForeignKeySchema['references'];
 /** A foreign key's constraint name and actions, each the engine's default where unstated. */
 export type ForeignKeyOptions = Pick<ForeignKeySchema, 'name' | 'onDelete' | 'onUpdate'>;
 
-/**
- * Interface for column builder (fluent API).
- */
-export interface ColumnBuilder {
-  /** Make column nullable */
-  nullable(value?: boolean): this;
-  /** Make column NOT NULL (convenience method) */
-  notNullable(): this;
-  /** Set default value */
-  defaultValue(value: unknown): this;
-  /** Set as primary key */
-  primaryKey(): this;
-  /** Enable auto-increment */
+/** A table's column, in an entity column's vocabulary: `table.string('email').length(80).nullable()`. */
+export interface TableColumnBuilder {
+  /** Lets the column hold `null`: a column is `NOT NULL` otherwise, as an entity's is. */
+  nullable(): this;
+  /** The column's DDL default: a value, or SQL the database evaluates per row (`currentTimestamp`, `sql`). */
+  default(value: FieldOptions['defaultValue']): this;
+  /** Makes it the primary key. */
+  id(): this;
   autoIncrement(): this;
-  /** Add unique constraint */
   unique(): this;
-  /** Constrain the column to these values, as a `CHECK (col IN (...))`. */
+  /** A string column's length. */
+  length(length: number): this;
+  /** A decimal's digits, or a timestamp's fractional-second digits. */
+  precision(digits: number): this;
+  scale(digits: number): this;
   enum(values: EnumValues): this;
-  /** Make the column one the database computes, as `GENERATED ALWAYS AS (<sql>) STORED`. */
-  computed(sql: string): this;
-  /** Add comment */
+  /** A column the database computes, `GENERATED ALWAYS AS (<sql>) STORED`, its SQL as text. */
+  as(sql: string): this;
   comment(text: string): this;
-  /** Add index */
   index(name?: string): this;
-  /** Set as unsigned (MySQL/MariaDB) */
   unsigned(): this;
-  /** Add foreign key reference */
   references(table: string, column?: string): ForeignKeyBuilder;
-  /** Get the built column definition */
   build(): FullColumnDefinition;
 }
 
-/**
- * Interface for foreign key builder.
- */
-export interface ForeignKeyBuilder extends ColumnBuilder {
+export interface ForeignKeyBuilder extends TableColumnBuilder {
   /** Set ON DELETE action */
   onDelete(action: ForeignKeyAction): this;
   /** Set ON UPDATE action */
   onUpdate(action: ForeignKeyAction): this;
 }
 
-/** Every column type the builder can declare, name first, handed to `addColumn`/`alterColumn` callbacks too. */
-export interface ColumnFactory {
-  /** Add an auto-incrementing primary key */
-  id(name?: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add an integer column */
-  integer(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a smallint column */
-  smallint(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a bigint column */
-  bigint(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a float column */
-  float(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a double column */
-  double(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a decimal column */
-  decimal(name: string, options?: DecimalColumnOptions): ColumnBuilder;
+/** Every column type a table declares, name first, handed to `addColumn`/`alterColumn` callbacks too. */
+export interface TableColumnFactory {
+  id(name?: string): TableColumnBuilder;
+  integer(name: string): TableColumnBuilder;
+  smallint(name: string): TableColumnBuilder;
+  bigint(name: string): TableColumnBuilder;
+  float(name: string): TableColumnBuilder;
+  double(name: string): TableColumnBuilder;
+  decimal(name: string, precision?: number, scale?: number): TableColumnBuilder;
 
-  /** Add a varchar column */
-  string(name: string, options?: StringColumnOptions): ColumnBuilder;
-  /** Add a char column */
-  char(name: string, options?: StringColumnOptions): ColumnBuilder;
-  /** Add a text column */
-  text(name: string, options?: BaseColumnOptions): ColumnBuilder;
+  /** A `VARCHAR`, 255 long unless `length()` says otherwise. */
+  string(name: string): TableColumnBuilder;
+  char(name: string): TableColumnBuilder;
+  text(name: string): TableColumnBuilder;
 
-  /** Add a boolean column */
-  boolean(name: string, options?: BaseColumnOptions): ColumnBuilder;
+  boolean(name: string): TableColumnBuilder;
 
-  /** Add a date column */
-  date(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a time column */
-  time(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a timestamp column */
-  timestamp(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a timestamptz column */
-  timestamptz(name: string, options?: BaseColumnOptions): ColumnBuilder;
+  date(name: string): TableColumnBuilder;
+  time(name: string): TableColumnBuilder;
+  timestamp(name: string): TableColumnBuilder;
+  timestamptz(name: string): TableColumnBuilder;
 
-  /** Add a JSON column */
-  json(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a JSONB column (Postgres) */
-  jsonb(name: string, options?: BaseColumnOptions): ColumnBuilder;
+  json(name: string): TableColumnBuilder;
+  jsonb(name: string): TableColumnBuilder;
 
-  /** Add a UUID column */
-  uuid(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a blob/bytea column */
-  blob(name: string, options?: BaseColumnOptions): ColumnBuilder;
-  /** Add a vector column (for embeddings) */
-  vector(name: string, options?: VectorColumnOptions): ColumnBuilder;
+  uuid(name: string): TableColumnBuilder;
+  blob(name: string): TableColumnBuilder;
+  vector(name: string, dimensions?: number): TableColumnBuilder;
 }
 
-/**
- * Interface for table builder (fluent API).
- */
-export interface TableBuilder extends ColumnFactory {
+export interface TableBuilder extends TableColumnFactory {
   /** Add createdAt timestamp column */
-  createdAt(): ColumnBuilder;
+  createdAt(): TableColumnBuilder;
   /** Add updatedAt timestamp column */
-  updatedAt(): ColumnBuilder;
+  updatedAt(): TableColumnBuilder;
   /** Add both createdAt and updatedAt columns */
   timestamps(): void;
 
   /** Add composite primary key */
   primaryKey(columns: string[]): this;
-  /** Add a composite unique index; takes the same options as `@Index`, or just its name. */
+  /** Add a composite unique index; takes the same options as an `indexes` entry, or just its name. */
   unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this;
-  /** Add a composite index; takes the same options as `@Index`, or just its name. */
+  /** Add a composite index; takes the same options as an `indexes` entry, or just its name. */
   index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this;
   /** Add table-level foreign key */
   foreignKey(columns: string[]): TableForeignKeyBuilder;
@@ -291,13 +187,13 @@ export interface TableForeignKeyBuilder {
  */
 export interface AlterTableBuilder {
   /** Add a column, declared exactly as in `createTable`: `addColumn((c) => c.timestamp('createdAt'))`. */
-  addColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this;
+  addColumn(callback: (columns: TableColumnFactory) => TableColumnBuilder): this;
   /** Drop a column from the table */
   dropColumn(name: string): this;
   /** Rename a column */
   renameColumn(oldName: string, newName: string): this;
   /** Redeclare a column, named and typed as it should end up. */
-  alterColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this;
+  alterColumn(callback: (columns: TableColumnFactory) => TableColumnBuilder): this;
   /** Add an index to the table */
   addIndex(columns: readonly IndexColumnInput[], options?: IndexOptions): this;
   /** Drop an index from the table */
@@ -321,14 +217,14 @@ export interface MigrationBuilder {
   /** Alter an existing table */
   alterTable(name: string, callback: (table: AlterTableBuilder) => void): Promise<void>;
   /** Add a column, declared exactly as in `createTable`: `addColumn('t', (c) => c.timestamp('at'))`. */
-  addColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void>;
+  addColumn(tableName: string, callback: (columns: TableColumnFactory) => TableColumnBuilder): Promise<void>;
   /** Drop a column from a table */
   dropColumn(tableName: string, columnName: string): Promise<void>;
   /** Redeclare a column, named and typed as it should end up. */
-  alterColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void>;
+  alterColumn(tableName: string, callback: (columns: TableColumnFactory) => TableColumnBuilder): Promise<void>;
   /** Rename a column */
   renameColumn(tableName: string, oldName: string, newName: string): Promise<void>;
-  /** Create an index; takes the same options as `@Index`, so a generated migration can restate them. */
+  /** Create an index; takes the same options as an `indexes` entry, so a generated migration can restate them. */
   createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void>;
   /** Drop an index */
   dropIndex(tableName: string, indexName: string): Promise<void>;

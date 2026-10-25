@@ -9,6 +9,7 @@ import {
   nullsSortField,
   sortAggregateField,
   TEXT_SCORE_ALIAS,
+  NEAREST_DISTANCE_ALIAS,
 } from '../dialect/aliases.js';
 import {
   betweenBounds,
@@ -42,7 +43,6 @@ import type {
   FieldUpdateOp,
   Query,
   QueryAggregate,
-  QueryExclude,
   QueryGroupOp,
   QueryOptions,
   QueryPager,
@@ -104,7 +104,10 @@ import {
   someKey,
   targetJoins,
   textSortOf,
+  indexedDistance,
   vectorDistanceOf,
+  vectorCandidates,
+  populatesRelations,
   cachedIn,
 } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -126,24 +129,26 @@ type MongoNativeOp = keyof Pick<
  * placement's null flags - and the ones to take back off after it. One object, so a caller cannot
  * order by a field it forgot to add, or leave one behind in the rows it answers with.
  */
-export type MongoSortPlan = {
+type MongoSortPlan = {
   readonly sort: Sort;
   readonly stages: MongoAggregationPipelineEntry<Document>[];
   readonly fields: string[];
 };
+
+/** How a read runs: its pipeline, or the ordering of the `find` cursor where one expresses it. */
+export type MongoRead = { readonly pipeline: MongoAggregationPipelineEntry<Document>[] } | { readonly sort: Sort };
 
 /** What a read pipeline contributes to {@link MongoDialect.readStages} beyond the query itself. */
 type MongoReadStages = {
   /** Ordering, which runs after the lookups when it reads one of their fields. */
   readonly sort: MongoSortPlan;
   readonly pager?: MongoAggregationPipelineEntry<Document>[];
-  /** A score the read answers as a field, a vector search's or a text search's; a temporary one leaves again. */
-  readonly score?: {
-    readonly field: string;
-    readonly meta: 'vectorSearchScore' | 'textScore';
-    readonly temporary?: boolean;
-  };
+  /** The scores the read answers as fields, a vector search's or a text search's; a temporary one leaves again. */
+  readonly scores: readonly MongoScore[];
 };
+
+/** A score as a field: `value` computes it, a `$meta` or an expression. */
+type MongoScore = { readonly field: string; readonly value: Document; readonly temporary?: boolean };
 
 /** A relation as `normalizeId` reads it: its key, the field a lookup put its rows on, and its entity. */
 type RelationRead = { readonly key: string; readonly field: string; readonly meta: EntityMeta<object> };
@@ -350,12 +355,19 @@ function regexMatch(ref: string, regex: string, insensitive = false): Record<str
   return { $cond: [{ $eq: [{ $type: ref }, 'string'] }, match, false] };
 }
 
-/** Atlas offers only a similarity threshold, on the index's own scale: converting a distance would mean guessing the metric. */
+/** Atlas filters only before it ranks, by fields its index holds, never by a distance. */
 function nearRefusal(): UqlUsageError {
   return new UqlUsageError(
-    '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
-      "Project the score with $sort's $project and filter on it instead.",
+    '$near is not supported on MongoDB: Atlas cannot filter by distance. ' +
+      "Project the distance with $sort's $project and filter on it instead.",
   );
+}
+
+/** `$text` runs only as a pipeline's first stage, which a relation's, inside its `$lookup`, never is. */
+function assertNoRelationText(path: string, query: Query<object>): void {
+  if (query.$where?.$text !== undefined || query.$sort?.$text !== undefined) {
+    throw new UqlUsageError(`cannot $text search relation '${path}' on MongoDB: $text runs only on the queried entity`);
+  }
 }
 
 /** MongoDB native operators - pass through as-is. */
@@ -724,19 +736,15 @@ export class MongoDialect extends AbstractDialect {
     );
   }
 
-  public select<E extends Document>(
-    entity: Type<E>,
-    select?: QuerySelectValue<E>,
-    exclude?: QueryExclude<E>,
-  ): Record<string, 0 | 1> {
+  public select<E extends Document>(entity: Type<E>, select?: QuerySelectValue<E>): Record<string, 0 | 1> {
     const meta = getMeta(entity);
-    if (!select && !exclude) {
+    if (!select) {
       return {};
     }
     if (isSelectList(select)) {
       throw rawRefusal('$select');
     }
-    const fields = normalizeScalarFieldSelection(meta, select, exclude);
+    const fields = normalizeScalarFieldSelection(meta, select);
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
     const projection = fields.reduce<Record<string, 0 | 1>>((acc, key) => {
       // A computed field that writes SQL has nothing in the document to project: refused when `$select`
@@ -753,7 +761,7 @@ export class MongoDialect extends AbstractDialect {
     }, {});
     // MongoDB returns `_id` unless it is explicitly excluded, so a projection without the key sets `_id: 0`,
     // the one inclusion/exclusion mix MongoDB allows. This returns the same fields a SQL engine would, and is
-    // what makes `$exclude: { id: true }` work at all.
+    // what makes `$select: { id: false }` work at all.
     if (!fields.includes(soleIdOf(meta, 'MongoDB'))) {
       projection[ID_KEY] = 0;
     }
@@ -766,21 +774,22 @@ export class MongoDialect extends AbstractDialect {
    * means a *populated* one, at every level of the path: a lookup adds a field to the result, so one
    * added for the sort alone would change what the caller gets back.
    */
-  public sort<E extends Document>(entity: Type<E>, q: Query<E>): Sort {
+  private sort<E extends Document>(entity: Type<E>, q: Query<E>): Sort {
     return this.sortPlan(entity, q).sort;
   }
 
   /**
    * The ordering, and the paths whose nulls it places. MongoDB sorts null and missing lowest and takes
    * no placement, so one is emulated: {@link nullsSortStages} flags each path and the flag is ordered
-   * by ahead of the value itself.
+   * by ahead of the value itself. `ranked` is a field holding a vector distance, ordered by first.
    */
-  public sortPlan<E extends Document>(
+  private sortPlan<E extends Document>(
     entity: Type<E>,
     { $sort: sort, $populate: populate, $where: where }: Query<E>,
+    ranked?: string,
   ): MongoSortPlan {
     const meta = getMeta(entity);
-    const nearest: Record<string, 1> = {};
+    const nearest: Record<string, 1> = ranked ? { [ranked]: 1 } : {};
     const columns: Record<string, 1 | -1> = {};
     const placed: string[] = [];
     // Refused as the SQL dialects refuse it, before MongoDB answers a missing score with its own error.
@@ -898,15 +907,10 @@ export class MongoDialect extends AbstractDialect {
     return { ...mergeLookups(lookups), fields };
   }
 
-  /** Whether a read answers with a relation aggregate, which only the pipeline can build. */
-  public readsAggregates<E extends Document>(entity: Type<E>, q: Query<E>): boolean {
-    return this.aggregateKeys(entity, q).length > 0;
-  }
-
   /** The relation aggregates a read projects or sorts by; its `$where` puts its own on the document. */
   private aggregateKeys<E extends Document>(entity: Type<E>, q: Query<E>): string[] {
     const meta = getMeta(entity);
-    const projected = normalizeScalarFieldSelection(meta, isSelectList(q.$select) ? undefined : q.$select, q.$exclude);
+    const projected = normalizeScalarFieldSelection(meta, isSelectList(q.$select) ? undefined : q.$select);
     return [...projected, ...Object.keys(q.$sort ?? {})].filter((key) => aggregateOf(meta.fields[key]));
   }
 
@@ -1011,6 +1015,7 @@ export class MongoDialect extends AbstractDialect {
     const relOpts = relationOf(meta, relKey);
     const relEntity = relOpts.entity();
     const relMeta = getMeta(relEntity);
+    assertNoRelationText(relKey, query);
     const read = this.aggregationPipeline(relEntity, query);
     const pipeline = read.length ? { pipeline: read } : {};
     const from = this.resolveTableName(relMeta);
@@ -1081,21 +1086,125 @@ export class MongoDialect extends AbstractDialect {
     return `${this.columnOf(meta, key.slice(0, dot))}.${jsonPathKeys(key.slice(dot + 1)).join('.')}`;
   }
 
+  /**
+   * How a read runs, its ordering and aggregates read once for both the routing and the run: the one place
+   * deciding how a read is scored and ranked, a root vector search through Atlas.
+   */
+  public readPlan<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): MongoRead {
+    const vector = this.extractVectorSort(q.$sort);
+    if (vector) {
+      return { pipeline: this.vectorSearchPipeline(entity, q, vector, opts) };
+    }
+    const sort = this.sortPlan(entity, q);
+    const aggregates = this.aggregateKeys(entity, q);
+    return this.readsThroughPipeline(entity, q, sort, aggregates)
+      ? { pipeline: this.scanPipeline(entity, q, opts, sort, aggregates, []) }
+      : { sort: sort.sort };
+  }
+
+  /**
+   * Whether a read needs stages a `find` cursor cannot express: a lookup to populate, count, filter or
+   * order by a relation, one to build a relation aggregate, and the grouping `$distinct` is.
+   */
+  private readsThroughPipeline<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    sort: MongoSortPlan,
+    aggregates: readonly string[],
+  ): boolean {
+    return (
+      !!q.$distinct ||
+      hasKeys(q.$count) ||
+      populatesRelations(getMeta(entity), q.$populate) ||
+      this.constrainsRelations(entity, q.$where) ||
+      this.sortsRelations(entity, q.$sort) ||
+      aggregates.length > 0 ||
+      // A placement is a field the pipeline adds and orders by; a `find` cursor can add none.
+      hasKeys(sort.fields) ||
+      textSortOf(q.$sort) !== undefined
+    );
+  }
+
+  /**
+   * Build an aggregation pipeline for vector similarity search.
+   * `$vectorSearch` is always the first stage; `$where` is merged into its `filter`.
+   */
+  private vectorSearchPipeline<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    vectorSort: ExtractedVectorSort<E>,
+    opts?: QueryOptions,
+  ): MongoAggregationPipelineEntry<Document>[] {
+    // Atlas ranks the rows already, so the exact distance is computed only where something reads it: its
+    // `$project`, or the other keys, which only break its ties.
+    const tied = hasKeys(vectorSort.regularSort);
+    const nearest = (vectorSort.vectorSearch.$project !== undefined || tied) && this.nearestScore(entity, vectorSort);
+    return [
+      this.buildVectorSearchStage(
+        entity,
+        vectorSort.vectorKey,
+        vectorSort.vectorSearch,
+        q.$where,
+        q.$limit ?? 10,
+        opts,
+        vectorCandidates(q),
+      ),
+      // `$vectorSearch` has already applied `$limit`, so the pager is its own.
+      ...this.readStages(entity, q, {
+        sort: this.sortPlan(
+          entity,
+          { ...q, $sort: vectorSort.regularSort },
+          nearest && tied ? nearest.field : undefined,
+        ),
+        scores: nearest ? [nearest] : [],
+      }),
+    ];
+  }
+
+  /** A read as a pipeline, whether or not a `find` cursor would express it. */
   public aggregationPipeline<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
-  ): MongoAggregationPipelineEntry<E>[] {
+  ): MongoAggregationPipelineEntry<Document>[] {
+    // A vector search here is one no `$vectorSearch` lifted, a relation's inside its lookup, which Atlas cannot reach.
+    const vector = this.extractVectorSort(q.$sort);
+    const nearest = vector && this.nearestScore(entity, vector);
+    const sort = this.sortPlan(entity, vector ? { ...q, $sort: vector.regularSort } : q, nearest?.field);
+    return this.scanPipeline(entity, q, opts, sort, this.aggregateKeys(entity, q), nearest ? [nearest] : []);
+  }
+
+  /** The pipeline of a read no `$vectorSearch` enters, given its ordering, aggregates and vector score. */
+  private scanPipeline<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts: QueryOptions | undefined,
+    sort: MongoSortPlan,
+    aggregates: readonly string[],
+    nearest: readonly MongoScore[],
+  ): MongoAggregationPipelineEntry<Document>[] {
     // Sorted as a field, which goes either way where a `$meta` sort only descends.
     const text = textSortOf(q.$sort);
-    return [
-      ...this.matchStages(entity, q.$where, opts, this.aggregateKeys(entity, q)),
-      ...this.readStages(entity, q, {
-        sort: this.sortPlan(entity, q),
-        pager: this.pagerStages(q),
-        score: text && { field: text.project ?? TEXT_SCORE_ALIAS, meta: 'textScore', temporary: !text.project },
-      }),
+    const scores = [
+      ...nearest,
+      ...(text
+        ? [{ field: text.project ?? TEXT_SCORE_ALIAS, value: { $meta: 'textScore' }, temporary: !text.project }]
+        : []),
     ];
+    return [
+      ...this.matchStages(entity, q.$where, opts, aggregates),
+      ...this.readStages(entity, q, { sort, pager: this.pagerStages(q), scores }),
+    ];
+  }
+
+  /** A vector search's exact distance, by its metric, as a score to rank by: its `$project`, else a temporary field. */
+  private nearestScore<E extends Document>(entity: Type<E>, vector: ExtractedVectorSort<E>): MongoScore {
+    const { vectorKey, vectorSearch } = vector;
+    const meta = getMeta(entity);
+    const metric = vectorDistanceOf(meta, vectorKey, vectorSearch);
+    const value = vectorDistanceExpr(this.columnOf(meta, vectorKey), vectorSearch.$vector, metric);
+    const field = vectorSearch.$project ?? NEAREST_DISTANCE_ALIAS;
+    return { field, value, temporary: vectorSearch.$project === undefined };
   }
 
   /** The `$skip`/`$limit` stages of a page, each checked: `/http` hands a page over untyped. */
@@ -1110,7 +1219,7 @@ export class MongoDialect extends AbstractDialect {
    * What a read runs after its entry stage, in the one order that works: the lookups, then the sort and
    * page that may read them, then the projection. Shared with the `$vectorSearch` pipeline.
    */
-  public readStages<E extends Document>(
+  private readStages<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
     extra: MongoReadStages,
@@ -1131,14 +1240,21 @@ export class MongoDialect extends AbstractDialect {
     // The score becomes a real field before anything reads it, so the lookups, the sort and the projection
     // that follow treat it like any other; merged into the query's own projection rather than standing in
     // for one, since a query that asked for no columns wants the whole document as well.
-    const { score } = extra;
-    if (score && !score.temporary) {
-      this.assertProjectable(meta, score.field);
+    const { scores } = extra;
+    for (const score of scores) {
+      if (!score.temporary) {
+        this.assertProjectable(meta, score.field);
+      }
     }
-    const scored = score ? [{ $addFields: { [score.field]: { $meta: score.meta } } }] : [];
-    const unscored = score?.temporary ? [{ $unset: [score.field] }] : [];
+    const scored = scores.length
+      ? [{ $addFields: Object.fromEntries(scores.map((score) => [score.field, score.value])) }]
+      : [];
+    const unscored = unsetOf(scores.filter((score) => score.temporary).map((score) => score.field));
     const projection = this.pipelineProjection(entity, q);
-    const projected = projection && score ? { ...projection, [score.field]: 1 as const } : projection;
+    const projected =
+      projection && scores.length
+        ? { ...projection, ...Object.fromEntries(scores.map((score) => [score.field, 1 as const])) }
+        : projection;
     const project = projected ? [{ $project: projected }] : [];
 
     // A `$lookup` the ordering asked for puts a field on the document the caller never requested,
@@ -1159,6 +1275,11 @@ export class MongoDialect extends AbstractDialect {
     if (q.$distinct && aggregated.fields.length) {
       throw new UqlUsageError(
         `cannot $sort by a relation's aggregate with $distinct: the grouping keeps only the columns it projects`,
+      );
+    }
+    if (q.$distinct && scores.some((score) => score.temporary)) {
+      throw new UqlUsageError(
+        'cannot $sort by a vector distance or text score with $distinct unless it is projected: the grouping keeps only the columns it projects',
       );
     }
     if (q.$distinct && sortOnly.length) {
@@ -1214,10 +1335,10 @@ export class MongoDialect extends AbstractDialect {
    * relation and the tallies); last, once the lookups have read the join keys.
    */
   public pipelineProjection<E extends Document>(entity: Type<E>, q: Query<E>): Record<string, 0 | 1> | undefined {
-    if (!q.$select && !q.$exclude) {
+    if (!q.$select) {
       return undefined;
     }
-    const projection = this.select(entity, q.$select, q.$exclude);
+    const projection = this.select(entity, q.$select);
     const meta = getMeta(entity);
     for (const relKey of getRelationRequestSummary(meta, q.$populate).requestedKeys) {
       projection[relationField(relKey)] = 1;
@@ -1248,6 +1369,7 @@ export class MongoDialect extends AbstractDialect {
       // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
       // filters (in particular `security: true` ones) apply even to a bare `$populate: { rel: true }`,
       // and the caller's bypass never reaches them, exactly like the SQL dialects' JOIN ON-clause filters.
+      assertNoRelationText(join.path, join.query);
       const relationFilter = this.where(join.entity, join.query.$where ?? {});
       // The relation's own projection runs inside the lookup, where its keys resolve against the
       // related entity. Left out, `$populate: { rel: { $select } }` returned all of `rel`'s columns.
@@ -1798,7 +1920,7 @@ export class MongoDialect extends AbstractDialect {
    * Separate vector sort entries from regular sort entries.
    * Returns `undefined` if no vector sort is present.
    */
-  extractVectorSort<E extends Document>(sort: QuerySortMap<E> | undefined): ExtractedVectorSort<E> | undefined {
+  private extractVectorSort<E extends Document>(sort: QuerySortMap<E> | undefined): ExtractedVectorSort<E> | undefined {
     const found = sort && findVectorSort(sort);
     if (!found) {
       return undefined;
@@ -1825,7 +1947,7 @@ export class MongoDialect extends AbstractDialect {
    * Build a `$vectorSearch` aggregation pipeline stage.
    * Merges `$where` into `$vectorSearch.filter` for optimal pre-filtering.
    */
-  buildVectorSearchStage<E extends Document>(
+  private buildVectorSearchStage<E extends Document>(
     entity: Type<E>,
     key: string,
     search: QueryVectorSearch,
@@ -1840,8 +1962,15 @@ export class MongoDialect extends AbstractDialect {
       throw new UqlUsageError(`Field '${key}' not found in entity '${meta.name}'`);
     }
     const colName = this.resolveColumnName(key, field);
+    const index = findVectorIndex(meta, key);
+    const ranked = indexedDistance(meta, key, index);
+    if (search.$distance !== undefined && search.$distance !== ranked) {
+      throw new UqlUsageError(
+        `cannot rank '${meta.entity.name}.${key}' by '${search.$distance}' on MongoDB: its Atlas index ranks by '${ranked}'`,
+      );
+    }
 
-    const indexName = this.vectorSearchIndexName(findVectorIndex(meta, key)?.name, colName);
+    const indexName = this.vectorSearchIndexName(index?.name, colName);
 
     if (!limit) {
       throw new UqlUsageError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);
@@ -1900,7 +2029,7 @@ type MongoAggregationUnwind = {
   readonly preserveNullAndEmptyArrays?: boolean;
 };
 
-export type ExtractedVectorSort<E> = {
+type ExtractedVectorSort<E> = {
   readonly vectorKey: string;
   readonly vectorSearch: QueryVectorSearch;
   readonly regularSort: QuerySortMap<E>;

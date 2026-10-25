@@ -19,22 +19,21 @@ export type WireFlags = { readonly [K in (typeof WIRE_FLAGS)[number]]?: boolean 
 export type WireCursors = Pick<QueryKeyset<unknown>, '$after' | '$before'>;
 
 /**
- * Keys that mean something locally but that this transport can never honor, so they are rejected
- * rather than dropped like the rest. Each request runs on its own auto-committing connection, so a
- * row lock taken here is released before the response is written: honoring `$lock` is impossible,
- * and ignoring it would hand the caller a read they believe is serialized and is not.
- */
-const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery<unknown>)[]);
-
-/**
  * The keys accepted from the wire, mapped to how each value is decoded: every query clause ({@link QUERY_CLAUSES})
- * plus the {@link WIRE_FLAGS}. Anything else (e.g. `filters`, `context`, `$entity`) is dropped, so a remote
- * client can't bypass a security filter or inject ambient context.
+ * HTTP carries, plus the {@link WIRE_FLAGS}. Any other `$` key is refused, since dropping a clause answers a read
+ * other than the one asked for; any other key (e.g. `filters`, `context`) is dropped, so a remote client can't
+ * bypass a security filter or inject ambient context.
  */
 const WIRE_VALUES: ReadonlyMap<string, QueryClause['value']> = new Map([
-  ...getKeys(QUERY_CLAUSES).map((key) => [key, QUERY_CLAUSES[key].value] as const),
+  ...getKeys(QUERY_CLAUSES)
+    .filter((key) => carriedOverHttp(QUERY_CLAUSES[key]))
+    .map((key) => [key, QUERY_CLAUSES[key].value] as const),
   ...WIRE_FLAGS.map((flag) => [flag, 'boolean'] as const),
 ]);
+
+function carriedOverHttp(clause: QueryClause): boolean {
+  return clause.wire !== false;
+}
 
 /**
  * Parse raw query-string entries (with JSON-stringified values), or a `QUERY` body, into a UQL query
@@ -46,10 +45,10 @@ export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E
   }
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
-    if (REJECTED_QUERY_KEYS.has(key)) {
-      throw new UqlUsageError(`'${key}' is not supported over HTTP`);
-    }
     const shape = WIRE_VALUES.get(key);
+    if (!shape && key.startsWith('$')) {
+      throw new UqlUsageError(`'${key}' is not a query key HTTP takes`);
+    }
     if (shape && params[key] !== undefined) {
       query[key] = decodeWireValue(key, shape, params[key]);
     }

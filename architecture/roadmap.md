@@ -2,23 +2,19 @@
 
 What is next, in build order: groundwork first, so the features on top stay small. One rule on every engine, emulated where an engine lacks it, refused only where it cannot be done.
 
-## Groundwork
+## Before 1.0
 
-**R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. _Unlocks views._
-
-```ts
-await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
-```
-
-**R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). Internal (`SchemaDiffResult` is not exported), so it can land after 1.0. _Unlocks views._
+**R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. A keyless entity is read-only, and a write to it is refused by name at run time. _Unlocks views._
 
 ## After 1.0
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
 
-**R2: entity capabilities.** A `readable`/`writable`/`refreshable` set on the entity's type, so a write to something with no table is a compile error. _Unlocks views, read-only queriers._
+**R2: a `writable` flag.** One optional flag on the entity's type, `writable: false`, that the write methods' signatures check once, so a write to a view is a compile error. Optional and defaulting to writable, so it adds no break. Gated on `bun run ts.perf`. A general capability set is not planned.
 
-**Views and materialized views** (R1, R2, R7).
+**Read-only queriers.** `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
+
+**Views and materialized views** (R1, R2).
 
 ```ts
 export const WorkspaceUsage = defineView({
@@ -29,7 +25,7 @@ export const WorkspaceUsage = defineView({
 });
 ```
 
-A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction.
+A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction. Its migration is a schema-level object that states the tables it reads, sorted with the existing `createOrder`; tables, columns, indexes and checks keep their per-kind diff.
 
 **Read-only queriers** (R2). `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
 
@@ -37,9 +33,11 @@ A view is a read-only entity whose definition is its migration, and its field ty
 
 - **From Mongoose.** Entities written from Mongoose schemas by the codemod, beside the copy and shadow-read recipe. [The design](from-mongoose.md).
 - **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.
-- **The maintained aggregate**, `computed: (u) => u.resources.count(), stored: true` kept by triggers on the child, once an unstored one profiles too slow. Only `count` and `sum` turn a row change into a delta, and an aggregate's filter is already row-local, so storing one would change no call site.
+- **The maintained aggregate**, `@Computed((u) => u.resources.count())` stored and kept by triggers on the child, once an unstored one profiles too slow. Only `count` and `sum` turn a row change into a delta, and an aggregate's filter is already row-local, so storing one would change no call site.
+- **Custom types.** A field's `type` may be a value type of the app's own (Money, Decimal, Point, an encrypted string), stated once as its column and its two conversions: `defineType({ column: 'numeric', precision: 12, scale: 2, read: (text) => Money.parse(text), write: (money) => money.toString() })`, then `@Field({ type: MoneyType }) price?: Money`. The field's TS type is checked against what `read` returns, as `type: Number` is against `number`. `$where`, cursors, row keys and literals write through `write`, so a `Money` compares as its column does; DDL and introspection see only `column`. Plain data, no class to extend, so the same type serves both entity forms and a query stays JSON on the wire (the client sends `write`'s output). Temporal below is then one built-in instance of it.
 - **Temporal values, opted into per field.** `type: Temporal.PlainDate` on a `date` column, `Temporal.PlainTime` on a `time` one, `Temporal.Instant` on a timestamp, as `type: BigInt` already picks a JS value over the same column: DDL and introspection stay untouched. The field's `type` is typed structurally as `{ from(text: string): T }`, so the library's types never name `Temporal` and a consumer without the lib still compiles. Reads call `type.from(text)` and writes call `value.toString()`, both on the field's own constructor, so nothing detects `Temporal` at run time and a polyfill works too. A runtime without `Temporal` fails where the class is defined, which reads `Temporal` first. Needs: `isOperatorMap` accepts only a plain object, so a `PlainDate` in `$where` is not dropped; the cursor, row-key and literal paths take Temporal values; Postgres's `date` wire rule stops short-circuiting these kinds; a `PlainTime`'s nanoseconds are truncated or refused, decided at build. Variability's `dateColumn`/`fromDateColumn` would go.
 - **Schema-scoped objects.** Extensions, functions and domains declared beside the entities (`objects: [{ kind: 'extension', name: 'pg_trgm' }]`), applied by `sync` and `up` before the tables using them; a function is named by its signature. Variability hand-rolls these in four places.
+- **Standard Schema payloads.** `f.json(schema)` takes a Standard Schema (Zod, Valibot, ArkType) and types the column by its output. Measured over a bare column, per entity: Zod +4 instantiations, Valibot +27, the shape form +190. Writes take the output, not the input: uql never parses, so an input that a transform or a default converts would store a document the read type misstates. Nothing is stored at run time, as `shape` is not read there either. A schema declaring no `types` property is refused by the weak-type check; one declaring `types: undefined` falls back to a bare `Json`. Open: validating writes through the schema's `validate`, a per-write cost, decided separately.
 
 ## Settled, not to re-litigate
 

@@ -133,7 +133,7 @@ export interface DialectFeatures {
    * (`boundedText`, the Postgres family), or always bounded, 255 by default (`varchar`).
    */
   readonly stringSizing: 'text' | 'boundedText' | 'varchar';
-  /** Whether the engine has unsigned integers, so `@Field({ unsigned: true })` reaches the column. */
+  /** Whether the engine has unsigned integers, so an unsigned column type reaches the database. */
   readonly supportsUnsigned: boolean;
   /**
    * Whether the engine has `DECLARE`/`FETCH FORWARD`/`CLOSE` cursors, which a querier with no stream of
@@ -493,6 +493,7 @@ export const INDEX_FEATURE_LABELS = {
   include: 'covering indexes (INCLUDE)',
   jsonPath: 'indexes over a path inside a JSON column',
   jsonArray: 'multi-valued indexes over a JSON array',
+  fulltextPath: 'fulltext indexes over a path inside a JSON column, which a search of whole columns never reads',
 } as const;
 
 /** Derived from the labels, so a feature cannot be added without the words an error reports it in. */

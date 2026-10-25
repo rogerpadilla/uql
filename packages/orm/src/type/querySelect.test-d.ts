@@ -1,7 +1,6 @@
 /**
  * `$select`: the field map and the raw-projection array (`sql` templates named with `.as()`).
- * `$select`/`$exclude` exclusivity is enforced at run time, so it has no negative here. Type-checked by
- * `bun run ts` only.
+ * Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { sql } from '../util/index.js';
@@ -25,7 +24,7 @@ declare const querier: Querier;
 export async function selectShapes() {
   // Field-map form.
   await querier.findMany(Story, { $select: { id: true, title: true } });
-  await querier.findMany(Story, { $exclude: { points: true } });
+  await querier.findMany(Story, { $select: { points: false } });
 
   // Raw-projection array form.
   await querier.findMany(Story, {

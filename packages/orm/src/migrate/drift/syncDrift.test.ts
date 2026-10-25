@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { Entity, Field, Id, Index } from '../../entity/index.js';
+import { Entity, f, Field } from '../../entity/index.js';
 import { driftOf, planOf, syncOf } from '../../test/drift.js';
 import { linkUqlOrmSource, provisioningTimeout } from '../../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../../test/sqlPools.js';
@@ -13,18 +13,22 @@ import { Migrator } from '../migrator.js';
 const TABLE = 'drift_sync_user';
 
 /** Uniqueness said both ways an entity can, on the field and as a one-column unique index, and defaults. */
-@Index((user) => [user.handle], { name: 'drift_sync_handle_uk', unique: true })
-@Index((user) => [user.region, user.code], { name: 'drift_sync_pair_uk', unique: true })
-@Entity({ name: TABLE })
+@Entity({
+  name: TABLE,
+  indexes: (driftUniqueUser, index) => [
+    index([driftUniqueUser.region, driftUniqueUser.code], { name: 'drift_sync_pair_uk', unique: true }),
+    index([driftUniqueUser.handle], { name: 'drift_sync_handle_uk', unique: true }),
+  ],
+})
 class DriftUniqueUser {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100, unique: true }) email?: string | null;
-  @Field({ type: String, length: 100 }) handle?: string | null;
-  @Field({ type: String, length: 20 }) region?: string | null;
-  @Field({ type: String, length: 20 }) code?: string | null;
-  @Field({ type: String, length: 20, defaultValue: 'active' }) status?: string | null;
-  @Field({ type: Number, defaultValue: 0 }) score?: number | null;
-  @Field({ type: Date }) seenAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(100)) email?: string | null;
+  @Field(f.string().nullable().length(100)) handle?: string | null;
+  @Field(f.string().nullable().length(20)) region?: string | null;
+  @Field(f.string().nullable().length(20)) code?: string | null;
+  @Field(f.string().nullable().default('active').length(20)) status?: string | null;
+  @Field(f.number().nullable().default(0)) score?: number | null;
+  @Field(f.date().nullable()) seenAt?: Date | null;
 }
 
 const DATED = 'drift_sync_dated';
@@ -32,79 +36,106 @@ const DATED = 'drift_sync_dated';
 /** A timestamp as an older schema built it: no zone, and whole seconds. */
 @Entity({ name: DATED })
 class DatedBefore {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Date, columnType: 'timestamp', precision: 0 }) at?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.date().nullable().precision(0).columnType('timestamp')) at?: Date | null;
 }
 
 @Entity({ name: DATED })
 class DatedAfter {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Date }) at?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.date().nullable()) at?: Date | null;
 }
 
 const SHAPE = 'drift_sync_shape';
 
 /** The table as built before: `email` not unique, an index under a legacy name, and one over `code` alone. */
-@Index((row) => [row.region], { name: 'legacy_region' })
-@Index((row) => [row.code], { name: 'drift_sync_shape_code_idx' })
-@Entity({ name: SHAPE })
+@Entity({
+  name: SHAPE,
+  indexes: (shapeBefore, index) => [
+    index([shapeBefore.code], 'drift_sync_shape_code_idx'),
+    index([shapeBefore.region], 'legacy_region'),
+  ],
+})
 class ShapeBefore {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) email?: string | null;
-  @Field({ type: String, length: 20 }) region?: string | null;
-  @Field({ type: String, length: 20 }) code?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(100)) email?: string | null;
+  @Field(f.string().nullable().length(20)) region?: string | null;
+  @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 /** What the entity says now: the same `region` index under uql's name, and the `code` one widened. */
-@Index((row) => [row.region])
-@Index((row) => [row.code, row.region], { name: 'drift_sync_shape_code_idx' })
-@Entity({ name: SHAPE })
+@Entity({
+  name: SHAPE,
+  indexes: (shapeAfter, index) => [
+    index([shapeAfter.code, shapeAfter.region], 'drift_sync_shape_code_idx'),
+    index([shapeAfter.region]),
+  ],
+})
 class ShapeAfter {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) email?: string | null;
-  @Field({ type: String, length: 20 }) region?: string | null;
-  @Field({ type: String, length: 20 }) code?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(100)) email?: string | null;
+  @Field(f.string().nullable().length(20)) region?: string | null;
+  @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 /** `ShapeBefore` with `email` made unique. */
-@Index((row) => [row.region], { name: 'legacy_region' })
-@Index((row) => [row.code], { name: 'drift_sync_shape_code_idx' })
-@Entity({ name: SHAPE })
+@Entity({
+  name: SHAPE,
+  indexes: (shapeUnique, index) => [
+    index([shapeUnique.code], 'drift_sync_shape_code_idx'),
+    index([shapeUnique.region], 'legacy_region'),
+  ],
+})
 class ShapeUnique {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100, unique: true }) email?: string | null;
-  @Field({ type: String, length: 20 }) region?: string | null;
-  @Field({ type: String, length: 20 }) code?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().unique().length(100)) email?: string | null;
+  @Field(f.string().nullable().length(20)) region?: string | null;
+  @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 /** `ShapeUnique` without `email`, whose drop takes its unique index with it. */
-@Index((row) => [row.region], { name: 'legacy_region' })
-@Index((row) => [row.code], { name: 'drift_sync_shape_code_idx' })
-@Entity({ name: SHAPE })
+@Entity({
+  name: SHAPE,
+  indexes: (shapeNoEmail, index) => [
+    index([shapeNoEmail.code], 'drift_sync_shape_code_idx'),
+    index([shapeNoEmail.region], 'legacy_region'),
+  ],
+})
 class ShapeNoEmail {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20 }) region?: string | null;
-  @Field({ type: String, length: 20 }) code?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(20)) region?: string | null;
+  @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 const RENAMED = 'drift_sync_renamed';
 
 /** An indexed subtitle, and a parent by foreign key, named as their fields are. */
-@Index((row) => [row.subTitle])
-@Entity({ name: RENAMED })
+@Entity({ name: RENAMED, indexes: (titledBefore, index) => [index([titledBefore.subTitle])] })
 class TitledBefore {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) subTitle?: string | null;
-  @Field({ type: Number, references: () => TitledBefore }) parentId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(100)) subTitle?: string | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .references(() => TitledBefore),
+  )
+  parentId?: number | null;
 }
 
 /** The same columns in snake case, as a naming strategy switched to it spells them. */
-@Index((row) => [row.subTitle])
-@Entity({ name: RENAMED })
+@Entity({ name: RENAMED, indexes: (titledAfter, index) => [index([titledAfter.subTitle])] })
 class TitledAfter {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100, name: 'sub_title' }) subTitle?: string | null;
-  @Field({ type: Number, references: () => TitledAfter, name: 'parent_id' }) parentId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(100).name('sub_title')) subTitle?: string | null;
+  @Field(
+    f
+      .number()
+      .nullable()
+      .name('parent_id')
+      .references(() => TitledAfter),
+  )
+  parentId?: number | null;
 }
 
 const RETYPED = 'drift_sync_retyped';
@@ -112,15 +143,15 @@ const RETYPED = 'drift_sync_retyped';
 /** A code kept as text. */
 @Entity({ name: RETYPED })
 class CodedAsText {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 20 }) code?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 /** The same code as a number. */
 @Entity({ name: RETYPED })
 class CodedAsNumber {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) code?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) code?: number | null;
 }
 
 const ARTICLES = 'drift_sync_articles';
@@ -129,15 +160,15 @@ const POSTS = 'drift_sync_posts';
 /** A table under its old name. */
 @Entity({ name: ARTICLES })
 class Article {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 77 }) summary?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(77)) summary?: string | null;
 }
 
 /** The same columns under a new name. */
 @Entity({ name: POSTS })
 class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 77 }) summary?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(77)) summary?: string | null;
 }
 
 const WIDENED = 'drift_sync_widened';
@@ -145,15 +176,15 @@ const WIDENED = 'drift_sync_widened';
 /** A short name. */
 @Entity({ name: WIDENED })
 class NamedShort {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 50 }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(50)) name?: string | null;
 }
 
 /** The same name, longer. */
 @Entity({ name: WIDENED })
 class NamedLong {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable().length(100)) name?: string | null;
 }
 
 /** A migrator writing to a directory, and recording in a table, of its own, both removed after the test. */
@@ -358,31 +389,39 @@ const INDEXED = 'drift_index_user';
  * predicate, a stored order, `INCLUDE` columns. CockroachDB also registers a `UNIQUE` constraint for a plain
  * `CREATE UNIQUE INDEX`, which a catalogue filter written for Postgres hides, and so reports missing.
  */
-@Index(() => [sql`lower("email")`], { unique: true, where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
-@Index((user) => [user.status], { unique: true, name: 'drift_status_unique_idx' })
-@Index((user) => [user.status, { column: user.createdAt, order: 'desc' }], { name: 'drift_status_recent_idx' })
-@Index((user) => [user.tenantId], { include: (user) => [user.status], name: 'drift_tenant_covering_idx' })
-@Entity({ name: INDEXED })
+@Entity({
+  name: INDEXED,
+  indexes: (indexedUser, index) => [
+    index([indexedUser.tenantId], { include: [indexedUser.status], name: 'drift_tenant_covering_idx' }),
+    index([indexedUser.status, { column: indexedUser.createdAt, order: 'desc' }], 'drift_status_recent_idx'),
+    index([indexedUser.status], { unique: true, name: 'drift_status_unique_idx' }),
+    index([sql`lower("email")`], { unique: true, where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' }),
+  ],
+})
 class IndexedUser {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) email?: string | null;
-  @Field({ type: String }) status?: string | null;
-  @Field({ type: Number }) tenantId?: number | null;
-  @Field({ type: Date }) createdAt?: Date | null;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.string().nullable()) status?: string | null;
+  @Field(f.number().nullable()) tenantId?: number | null;
+  @Field(f.date().nullable()) createdAt?: Date | null;
+  @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
 /** The same table with one index no longer unique, one covering column dropped, and the `status` ones gone. */
-@Index(() => [sql`lower("email")`], { where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
-@Index((user) => [user.tenantId], { name: 'drift_tenant_covering_idx' })
-@Entity({ name: INDEXED })
+@Entity({
+  name: INDEXED,
+  indexes: (indexedUserEdited, index) => [
+    index([indexedUserEdited.tenantId], 'drift_tenant_covering_idx'),
+    index([sql`lower("email")`], { where: sql`"deletedAt" IS NULL`, name: 'drift_email_live_idx' }),
+  ],
+})
 class IndexedUserEdited {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) email?: string | null;
-  @Field({ type: String }) status?: string | null;
-  @Field({ type: Number }) tenantId?: number | null;
-  @Field({ type: Date }) createdAt?: Date | null;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) email?: string | null;
+  @Field(f.string().nullable()) status?: string | null;
+  @Field(f.number().nullable()) tenantId?: number | null;
+  @Field(f.date().nullable()) createdAt?: Date | null;
+  @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
 /**
@@ -410,11 +449,15 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))('in
 const CLASSED = 'drift_index_classed';
 
 /** An operator class, which CockroachDB cannot state. */
-@Index((row) => [{ column: row.data, opsClass: 'jsonb_path_ops' }], { type: 'gin', name: 'drift_data_idx' })
-@Entity({ name: CLASSED })
+@Entity({
+  name: CLASSED,
+  indexes: (classedData, index) => [
+    index([{ column: classedData.data, opsClass: 'jsonb_path_ops' }], { type: 'gin', name: 'drift_data_idx' }),
+  ],
+})
 class ClassedData {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'jsonb' }) data?: object | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.jsonb().nullable()) data?: object | null;
 }
 
 describe.each(sqlPools('test_drift', 'cockroachdb', 'mysql', 'mariadb', 'sqlite', 'mssql'))(

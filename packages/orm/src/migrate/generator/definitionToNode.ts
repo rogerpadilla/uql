@@ -3,12 +3,8 @@ import type { TableNode } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QuerySql } from '../../type/querySql.js';
-import {
-  declaredIndexName,
-  enumCheck,
-  normalizeIndexColumn,
-  renderIndexColumn,
-} from '../../util/ddlExpression.util.js';
+import { namedIndex, enumCheck } from '../../util/ddlExpression.util.js';
+import { normalizeIndexColumn, renderIndexColumn } from '../../util/indexEntry.util.js';
 import { derivedIndexName, splitQualifiedName } from '../../util/sql.util.js';
 import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
@@ -56,13 +52,15 @@ export function bareColumn({
 /**
  * The index a column-level `index` or `unique` declares, or nothing: a unique column is a unique index.
  *
- * Shared with `TableDefinitionBuilder.build`, which lifts these into the table it is creating: written twice,
+ * Shared with `tableBuilder`'s `build`, which lifts these into the table it is creating: written twice,
  * `addColumn` had no lift at all and silently emitted a column with no index.
  */
 export function columnIndex(
   tableName: string,
   col: FullColumnDefinition,
-): Pick<IndexSchema, 'name' | 'entries' | 'unique'> | undefined {
+):
+  | { readonly name: string; readonly entries: readonly [{ readonly column: string }]; readonly unique: boolean }
+  | undefined {
   if (!col.index && !col.isUnique) {
     return undefined;
   }
@@ -95,11 +93,9 @@ export function renderIndexDefinition(
   { uniqueName, ...index }: IndexDefinition,
   render: (sql: QuerySql) => string,
 ): IndexSchema {
-  const where = index.where && render(index.where);
   return {
     ...index,
-    name: declaredIndexName(index.name, table, index.entries, { unique: uniqueName, where }),
-    where,
+    ...namedIndex(index.name, table, index.entries, () => index.where && render(index.where), uniqueName),
     entries: index.entries.map((entry) => renderIndexColumn(entry, render)),
   };
 }

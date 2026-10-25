@@ -1,20 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { TriggerOptions } from '../../type/index.js';
-import { sql } from '../../util/sql.js';
-import { Entity, Field, Id, removeEntity } from '../index.js';
-import { defineEntity, defineTrigger, getMeta } from './definition.js';
+import { memberRefs, sql } from '../../util/sql.js';
+import { defineEntity, Entity, f, Field, getMeta, removeEntity } from '../index.js';
 
 const body = () => sql`PERFORM 1;`;
 
 /** A throwaway entity, since a trigger is registered against a class and read back off its metadata. */
 function entityWith(...triggers: TriggerOptions<Post>[]) {
-  @Entity({ name: `Post_${triggers.length}_${Math.random().toString(36).slice(2, 8)}` })
+  @Entity({
+    name: `Post_${triggers.length}_${Math.random().toString(36).slice(2, 8)}`,
+    triggers: (_, trigger) => triggers.map(trigger),
+  })
   class Post {
-    @Id({ type: Number }) id?: number;
-    @Field({ type: String }) body?: string | null;
-  }
-  for (const trigger of triggers) {
-    defineTrigger(Post, trigger);
+    @Field(f.number().id()) id?: number;
+    @Field(f.string().nullable()) body?: string | null;
   }
   return Post;
 }
@@ -24,28 +23,24 @@ declare class Post {
   body?: string | null;
 }
 
-describe('defineTrigger', () => {
+describe('triggers', () => {
   it('should keep the triggers in the order they were written', () => {
     const entity = entityWith({ on: 'afterInsert', run: body }, { on: 'beforeUpdate', run: body });
     expect(getMeta(entity).triggers?.map((it) => it.on)).toEqual(['afterInsert', 'beforeUpdate']);
     removeEntity(entity);
   });
 
-  it('should register the triggers defineEntity lists, as defineTrigger does', () => {
-    class Note {
-      id?: number;
-      body?: string | null;
-    }
-    defineEntity(Note, {
-      fields: { id: { type: Number, isId: true }, body: { type: String } },
-      triggers: [{ on: 'beforeUpdate', of: (note) => [note.body], run: body }],
-    });
+  it('should register the triggers a schema lists, as @Trigger does', () => {
+    const Note = defineEntity({
+      name: 'Note',
+      fields: { id: f.number().id(), body: f.string().nullable() },
+    }).triggers((note, trigger) => [trigger({ on: 'beforeUpdate', of: [note.body], run: body })]);
     expect(getMeta(Note).triggers).toEqual([{ on: 'beforeUpdate', of: ['body'], run: body }]);
     removeEntity(Note);
   });
 
   it('should resolve the watched columns to their keys', () => {
-    const entity = entityWith({ on: 'beforeUpdate', of: (post) => [post.body], run: body });
+    const entity = entityWith({ on: 'beforeUpdate', of: [memberRefs<Post>().body], run: body });
     expect(getMeta(entity).triggers?.[0]?.of).toEqual(['body']);
     removeEntity(entity);
   });

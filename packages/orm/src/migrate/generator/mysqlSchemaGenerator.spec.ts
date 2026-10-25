@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Id } from '../../entity/index.js';
+import { Entity, f, Field } from '../../entity/index.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { sqlTypeOf } from '../../test/index.js';
 import { tableDdlFor } from '../ddl/index.js';
@@ -25,7 +25,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
   it('should spell a generated key from its own column type', () => {
     @Entity()
     class IntKeyed {
-      @Id({ type: Number, columnType: 'int' }) id?: number;
+      @Field(f.number().id().columnType('int')) id?: number;
     }
 
     expect(generator.generateCreateSchema([IntKeyed]).join('\n')).toContain('`id` INT AUTO_INCREMENT');

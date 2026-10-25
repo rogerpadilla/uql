@@ -3,7 +3,7 @@
 // one each.
 
 import { describe, expect, it } from 'vitest';
-import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { defineEntity, Entity, f, Field, getMeta, ManyToOne } from '../entity/index.js';
 import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MongoDialect } from '../mongodb/mongoDialect.js';
@@ -17,22 +17,22 @@ import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 @Entity({ schema: 'crm' })
 class Customer {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: String, index: true })
+  @Field(f.string().nullable().index())
   name?: string | null;
 }
 
 @Entity({ schema: 'sales' })
 class Order {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   total?: number | null;
 
-  @Field({ references: () => Customer })
+  @Field(f.references(() => Customer).nullable())
   customerId?: number | null;
 
   @ManyToOne({ entity: () => Customer, references: (order) => order.customerId })
@@ -42,10 +42,10 @@ class Order {
 /** No schema of its own, so it follows whatever the pool carries. */
 @Entity()
 class Plain {
-  @Id({ type: Number })
+  @Field(f.number().id())
   id?: number;
 
-  @Field({ type: Number })
+  @Field(f.number().nullable())
   total?: number | null;
 }
 
@@ -230,10 +230,7 @@ describe('schema', () => {
   });
 
   it('should reject a dotted name, naming the option that replaces it', () => {
-    class Dotted {
-      id?: number;
-    }
-    expect(() => defineEntity(Dotted, { name: 'sales.Dotted', fields: { id: { isId: true, type: Number } } })).toThrow(
+    expect(() => getMeta(defineEntity({ name: 'sales.Dotted', fields: { id: f.number().id() } }))).toThrow(
       /schema: 'sales'/,
     );
   });

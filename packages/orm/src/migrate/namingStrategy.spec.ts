@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { defineEntity, Entity, Field, Id } from '../entity/index.js';
+import { defineEntity, Entity, f, Field } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class UserProfileMigrate {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) firstName?: string | null;
-  @Field({ type: String }) lastName?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) firstName?: string | null;
+  @Field(f.string().nullable()) lastName?: string | null;
 }
 
 /** Named after itself: what the author wrote is the table, however much it looks like a default. */
 @Entity({ name: 'UserProfileNamed' })
 class UserProfileNamed {
-  @Id({ type: Number }) id?: number;
+  @Field(f.number().id()) id?: number;
 }
 
 describe('Schema Generator with Naming Strategy', () => {
@@ -27,28 +27,19 @@ describe('Schema Generator with Naming Strategy', () => {
     expect(sql).toContain('"last_name"');
   });
 
-  it('should keep deriving a name a later registration says nothing about', () => {
-    const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
-
-    class ComposedRow {
-      id?: number;
-      title?: string | null;
-    }
-    defineEntity(ComposedRow, { fields: { id: { type: Number, isId: true } } });
-    // Composing adds fields; it does not turn the class name it derived into a name the author wrote.
-    defineEntity(ComposedRow, { fields: { title: { type: String } } });
-
-    expect(generator.generateCreateSchema([ComposedRow]).join('\n')).toContain('CREATE TABLE "composed_row"');
-  });
-
   it('should leave a table the entity named alone, whatever it is called', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
 
     // Both of these state their table; a strategy derives a name, it does not rewrite one.
     expect(generator.generateCreateSchema([UserProfileNamed]).join('\n')).toContain('CREATE TABLE "UserProfileNamed"');
-    // A class minted at runtime, named after the table it states: the strategy leaves both alone.
-    const minted = { blogPost: class {} }.blogPost;
-    defineEntity(minted, { name: 'blogPost', fields: { id: { type: Number, isId: true } } });
+    // A schema stating its table: the strategy leaves it alone.
+    const minted = defineEntity({ name: 'BlogPost', table: 'blogPost', fields: { id: f.number().id() } });
     expect(generator.generateCreateSchema([minted]).join('\n')).toContain('CREATE TABLE "blogPost"');
+  });
+
+  it("should derive a schema's table from its name, as a decorated class's", () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
+    const derived = defineEntity({ name: 'DerivedPost', fields: { id: f.number().id() } });
+    expect(generator.generateCreateSchema([derived]).join('\n')).toContain('CREATE TABLE "derived_post"');
   });
 });

@@ -5,22 +5,22 @@ import { ok } from 'node:assert';
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HttpQuerier } from '../browser/querier/httpQuerier.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { createFetchHandler } from './fetchHandler.js';
 
 @Entity()
 class Gadget {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
 }
 
 @Entity()
 class Widget {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
 describe('the browser client against the fetch handler', () => {

@@ -1,66 +1,90 @@
 import { AbstractCursor, ClientSession, Collection, type Document, MongoClient } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
-import { Entity, Field, Id, Index, ManyToOne, Trigger } from '../entity/index.js';
+import { Computed, Entity, f, Field, ManyToOne } from '../entity/index.js';
 import { assertDefined, Item } from '../test/index.js';
 import { sql } from '../util/sql.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
+import { vectorDistanceExpr } from './vectorDistance.js';
 
-@Entity({ name: 'Article' })
-@Index((article) => [article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })
+@Entity({
+  name: 'Article',
+  indexes: (article, index) => [index([article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })],
+})
 class Article {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string | null;
-  @Field({ type: String }) category?: string | null;
-  @Field({ type: 'vector' }) embedding?: number[] | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+  @Field(f.string().nullable()) category?: string | null;
+  @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 
 @Entity({ name: 'Author' })
 class Author {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) name?: string | null;
 }
 
 @Entity({ name: 'Post' })
 class Post {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => Author }) authorId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
-  @Field({ references: () => Author }) reviewerId?: number | null;
+  @Field(f.references(() => Author).nullable()) reviewerId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.reviewerId }) reviewer?: Author;
 }
 
 /** A trigger and a stamp, neither of which MongoDB can run. */
-@Trigger({ on: 'afterInsert', run: (newRow) => sql`PERFORM ${newRow.id};` })
-@Entity({ name: 'Triggered' })
+@Entity({
+  name: 'Triggered',
+  triggers: (triggered, trigger) => [trigger({ on: 'afterInsert', run: (newRow) => sql`PERFORM ${newRow.id};` })],
+})
 class Triggered {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
 }
 
 @Entity({ name: 'Stamped' })
 class Stamped {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Date, computed: sql`CURRENT_TIMESTAMP`, stored: ['update'] }) readonly touchedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Computed((row) =>
+    f
+      .date()
+      .nullable()
+      .as(sql`CURRENT_TIMESTAMP`)
+      .stored(['update']),
+  )
+  readonly touchedAt?: Date | null;
 }
 
 /** Soft-deletable through a renamed column. */
 @Entity({ name: 'SoftDoc' })
 class SoftDoc {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Date, name: 'deleted_at', softDelete: true }) deletedAt?: Date | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.date().nullable().softDelete().name('deleted_at')) deletedAt?: Date | null;
+}
+
+/** A field under an Atlas index built for a metric other than the default. */
+@Entity({
+  name: 'RankedByInner',
+  indexes: (rankedByInner, index) => [index([rankedByInner.embedding], { type: 'vectorSearch', distance: 'inner' })],
+})
+class RankedByInner {
+  @Field(f.number().id()) id?: number;
+  @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 
 /** An entity that is both vector-searchable and has a relation, for the combined case. */
-@Entity({ name: 'Chunk' })
-@Index((chunk) => [chunk.embedding], { type: 'vectorSearch', name: 'chunk_vs' })
+@Entity({
+  name: 'Chunk',
+  indexes: (chunk, index) => [index([chunk.embedding], { type: 'vectorSearch', name: 'chunk_vs' })],
+})
 class Chunk {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String }) text?: string | null;
-  @Field({ references: () => Author }) authorId?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string().nullable()) text?: string | null;
+  @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (chunk) => chunk.authorId }) author?: Author;
-  @Field({ type: 'vector' }) embedding?: number[] | null;
+  @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 
 /**
@@ -183,7 +207,7 @@ describe('MongodbQuerier vector search', () => {
     });
   });
 
-  it('should load relations under a vector sort, capturing the score before the lookups', async () => {
+  it('should load relations under a vector sort, capturing the distance before the lookups', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Chunk, {
@@ -195,7 +219,7 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = pipelineOf(aggregate.mock.calls);
     expect(pipeline[0]).toHaveProperty('$vectorSearch');
     // `$addFields` rather than `$project`: projecting here would drop the join key and the joined doc
-    expect(pipeline[1]).toEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
+    expect(pipeline[1]).toEqual({ $addFields: { score: vectorDistanceExpr('embedding', [1, 2, 3], 'cosine') } });
     expect(pipeline[2]).toEqual({
       $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: '_uql_joined_author' },
     });
@@ -221,10 +245,10 @@ describe('MongodbQuerier vector search', () => {
   });
 
   /**
-   * The score is added to the document, not projected in place of it: a query that named no columns
-   * asked for the whole document plus a score, and `$project` would have narrowed it to the score.
+   * The distance is added to the document, not projected in place of it: a query that named no columns
+   * asked for the whole document plus a distance, and `$project` would have narrowed it to the distance.
    */
-  it('should add the score as a field, leaving a query with no projection unnarrowed', async () => {
+  it('should add the distance as a field, leaving a query with no projection unnarrowed', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
@@ -233,12 +257,14 @@ describe('MongodbQuerier vector search', () => {
     });
 
     const pipeline = pipelineOf(aggregate.mock.calls);
-    expect(pipeline).toContainEqual({ $addFields: { similarity: { $meta: 'vectorSearchScore' } } });
+    expect(pipeline).toContainEqual({
+      $addFields: { similarity: vectorDistanceExpr('embedding', [1, 2, 3], 'cosine') },
+    });
     expect(pipeline.some((stage) => '$project' in stage)).toBe(false);
   });
 
-  /** As on SQL: the score would overwrite the field of that name in every document it came back in. */
-  it('should refuse to project the score over a field', async () => {
+  /** As on SQL: the distance would overwrite the field of that name in every document it came back in. */
+  it('should refuse to project the distance over a field', async () => {
     const { querier } = createRecordingQuerier([]);
 
     await expect(
@@ -246,7 +272,7 @@ describe('MongodbQuerier vector search', () => {
     ).rejects.toThrow("$project 'title' collides with a field of 'Article'");
   });
 
-  it('should add $project with $select and score projection combined', async () => {
+  it('should add $project with $select and distance projection combined', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
@@ -256,7 +282,7 @@ describe('MongodbQuerier vector search', () => {
     });
 
     const pipeline = pipelineOf(aggregate.mock.calls);
-    expect(pipeline).toContainEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
+    expect(pipeline).toContainEqual({ $addFields: { score: vectorDistanceExpr('embedding', [1, 2, 3], 'cosine') } });
     // Already a real field by then, so the query's own projection just keeps it.
     expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1, score: 1 } });
   });
@@ -274,11 +300,11 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1 } });
   });
 
-  it('should add $project for $exclude only without score projection in vector pipeline', async () => {
+  it('should add $project for a falsy $select without score projection in vector pipeline', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
-      $exclude: { category: true },
+      $select: { category: false },
       $sort: { embedding: { $vector: [1, 2, 3] } },
       $limit: 10,
     });
@@ -287,7 +313,8 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1, embedding: 1 } });
   });
 
-  it('should add secondary $sort for regular sort fields', async () => {
+  /** As on SQL, the distance ranks first wherever it appears: the other keys only break its ties. */
+  it('should keep the distance first under the other sort keys', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
@@ -296,7 +323,37 @@ describe('MongodbQuerier vector search', () => {
     });
 
     const pipeline = pipelineOf(aggregate.mock.calls);
-    expect(pipeline).toContainEqual({ $sort: { title: -1 } });
+    expect(pipeline).toContainEqual({
+      $addFields: { _uql_nearest: vectorDistanceExpr('embedding', [1, 2, 3], 'cosine') },
+    });
+    expect(pipeline).toContainEqual({ $sort: { _uql_nearest: 1, title: -1 } });
+    expect(pipeline.at(-1)).toEqual({ $unset: ['_uql_nearest'] });
+  });
+
+  /** Atlas can rank only by its index's metric, so a search asking for another is refused, not answered by that one. */
+  it('should refuse a $distance the Atlas index does not rank by', async () => {
+    const { querier } = createRecordingQuerier([]);
+
+    await expect(
+      querier.findMany(RankedByInner, { $sort: { embedding: { $vector: [1, 2, 3], $distance: 'l2' } }, $limit: 10 }),
+    ).rejects.toThrow("cannot rank 'RankedByInner.embedding' by 'l2' on MongoDB: its Atlas index ranks by 'inner'");
+    await querier.findMany(RankedByInner, {
+      $sort: { embedding: { $vector: [1, 2, 3], $distance: 'inner' } },
+      $limit: 10,
+    });
+  });
+
+  /** The Atlas index ranks by its own metric, so the distance projected beside its ranking is by that one. */
+  it('should project the distance by the metric the Atlas index ranks by', async () => {
+    const { querier, aggregate } = createRecordingQuerier([]);
+
+    await querier.findMany(RankedByInner, {
+      $sort: { embedding: { $vector: [1, 2, 3], $project: 'distance' } },
+      $limit: 10,
+    });
+
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $addFields: { distance: vectorDistanceExpr('embedding', [1, 2, 3], 'inner') } });
   });
 
   it('should merge $where into $vectorSearch.filter for pre-filtering', async () => {

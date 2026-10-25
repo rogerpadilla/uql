@@ -1,7 +1,7 @@
 // Prints the KB each step of a lifecycle allocates, as JSON, for `pgAllocation.test.ts` to hold to a budget.
 // A program run by plain Node: coverage instruments the suite's process, which roughly doubles some steps.
 import { PerformanceObserver } from 'node:perf_hooks';
-import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
@@ -10,18 +10,18 @@ import { postgresConnection } from './connections.js';
 
 @Entity({ name: 'AllocCompany' })
 class Company {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, nullable: false }) name!: string;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string()) name!: string;
   @OneToMany({ entity: () => User, mappedBy: (user) => user.company }) users?: User[];
 }
 
 @Entity({ name: 'AllocUser' })
 class User {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, nullable: false }) name!: string;
-  @Field({ type: String, nullable: false }) email!: string;
-  @Field({ references: () => Company }) companyId?: number | null;
-  @Field({ type: Number }) createdAt?: number | null;
+  @Field(f.number().id()) id?: number;
+  @Field(f.string()) name!: string;
+  @Field(f.string()) email!: string;
+  @Field(f.references(() => Company).nullable()) companyId?: number | null;
+  @Field(f.number().nullable()) createdAt?: number | null;
   @ManyToOne({ entity: () => Company, references: (user) => user.companyId }) company?: Company;
 }
 

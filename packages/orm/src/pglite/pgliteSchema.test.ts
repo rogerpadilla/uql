@@ -2,7 +2,7 @@
 // was well-formed and the server rejected it with 42P01, which no unit test on generated text sees.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { defineEntity } from '../entity/index.js';
+import { defineEntity, f } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
@@ -11,58 +11,38 @@ import { sql } from '../util/sql.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
 import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
-class Customer {
-  id?: number;
-  name?: string | null;
-}
-
-class Order {
-  id?: number;
-  total?: number | null;
-  customerId?: number | null;
-  customer?: Customer;
-}
-
-/** No schema of its own: it follows whichever pool reads it. */
-class Ledger {
-  id?: number;
-  total?: number | null;
-  label?: string | null;
-}
-
-defineEntity(Customer, {
+const Customer = defineEntity({
+  name: 'Customer',
   schema: 'crm',
-  fields: { id: { isId: true, type: Number }, name: { type: String } },
+  fields: { id: f.number().id(), name: f.string().nullable() },
 });
-defineEntity(Order, {
+const Order = defineEntity({
+  name: 'Order',
   schema: 'sales',
   fields: {
-    id: { isId: true, type: Number },
-    total: { type: Number },
-    customerId: { type: Number, references: () => Customer },
+    id: f.number().id(),
+    total: f.number().nullable(),
+    customerId: f.number().nullable(),
   },
-  relations: {
-    customer: {
-      entity: () => Customer,
-      cardinality: 'm1',
-      references: (order, customer) => [{ local: order.customerId, foreign: customer.id }],
-    },
-  },
-});
-defineEntity(Ledger, {
-  fields: { id: { isId: true, type: Number }, total: { type: Number }, label: { type: String, index: true } },
+})
+  .references({ customerId: () => Customer })
+  .relations((rel) => ({
+    customer: () =>
+      rel.manyToOne(Customer, {
+        references: (order, customer) => [{ local: order.customerId, foreign: customer.id }],
+      }),
+  }));
+/** No schema of its own: it follows whichever pool reads it. */
+const Ledger = defineEntity({
+  name: 'Ledger',
+  fields: { id: f.number().id(), total: f.number().nullable(), label: f.string().nullable().index() },
 });
 
 /** The same `crm.Customer` table, plus a column, so the diff has something to find. */
-class Drifted {
-  id?: number;
-  name?: string | null;
-  age?: number | null;
-}
-defineEntity(Drifted, {
+const Drifted = defineEntity({
   schema: 'crm',
   name: 'Customer',
-  fields: { id: { isId: true, type: Number }, name: { type: String }, age: { type: Number } },
+  fields: { id: f.number().id(), name: f.string().nullable(), age: f.number().nullable() },
 });
 
 const TENANTS = [
