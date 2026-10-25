@@ -4,11 +4,13 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 ## Before 1.0
 
-**R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. A keyless entity is read-only, and a write to it is refused by name at run time. _Unlocks views._
+- ready.
 
 ## After 1.0
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
+
+**R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. A keyless entity is read-only, and a write to it is refused by name at run time. _Unlocks views._
 
 **R2: a `writable` flag.** One optional flag on the entity's type, `writable: false`, that the write methods' signatures check once, so a write to a view is a compile error. Optional and defaulting to writable, so it adds no break. Gated on `bun run ts.perf`. A general capability set is not planned.
 
