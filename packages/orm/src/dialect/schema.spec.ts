@@ -12,7 +12,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { mockTableNode } from '../test/schemaMock.js';
-import type { QueryContext, Type } from '../type/index.js';
+import type { QueryContext, AbstractType } from '../type/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 @Entity({ schema: 'crm' })
@@ -59,7 +59,7 @@ describe('schema', () => {
   const dialect = new PostgresDialect();
 
   /** The generated statements of one kind, so an assertion names the one it is about. */
-  const ddlOf = (entities: Type<object>[], startsWith: string) =>
+  const ddlOf = (entities: AbstractType<object>[], startsWith: string) =>
     new SqlSchemaGenerator(dialect).generateCreateSchema(entities).filter((sql) => sql.startsWith(startsWith));
 
   it('should qualify the table and alias it, so columns stay single identifiers', () => {

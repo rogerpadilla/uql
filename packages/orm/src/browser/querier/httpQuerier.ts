@@ -1,6 +1,6 @@
 import { CRUD_ROUTES, entityPath, type HttpMethod } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
-import type { EntityId, SharedQuerier, Type } from '../../type/index.js';
+import type { EntityId, SharedQuerier, AbstractType } from '../../type/index.js';
 import { isScalarId } from '../../util/object.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
@@ -23,11 +23,11 @@ export type HttpQuerierDefaults = {
    * option the server handler takes, so one map serves both. State it where the default cannot: a
    * build that minifies class names renames every route.
    */
-  readonly entityPath?: (entity: Type<unknown>) => string;
+  readonly entityPath?: (entity: AbstractType<unknown>) => string;
 };
 
 /** The id as one path segment, refusing a composite key, which has no spelling in `/:id` yet. Callers are `async`. */
-function idSegment<E>(entity: Type<E>, id: EntityId<E>): string {
+function idSegment<E>(entity: AbstractType<E>, id: EntityId<E>): string {
   if (!isScalarId(id)) {
     throw new UqlUsageError(`'${entity.name}' was addressed by an id object, which the HTTP route cannot carry.`);
   }
@@ -103,7 +103,7 @@ export class HttpQuerier implements ClientQuerier {
       this.buildOptions(opts),
     );
 
-  getBasePath<E>(entity: Type<E>) {
+  getBasePath<E>(entity: AbstractType<E>) {
     return `${this.basePath}/${(this.defaults.entityPath ?? entityPath)(entity)}`;
   }
 

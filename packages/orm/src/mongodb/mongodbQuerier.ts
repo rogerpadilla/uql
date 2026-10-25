@@ -29,6 +29,7 @@ import type {
   RawRow,
   TransactionOptions,
   Type,
+  AbstractType,
   UpdatePayload,
 } from '../type/index.js';
 import { clone, getKeys, deletionOf, hasKeys, hasTriggers, whereEach, upsertKeepsOwnKey } from '../util/index.js';
@@ -51,7 +52,7 @@ function asksForNoRows(q: QueryPager): boolean {
  * an entity declaring one - a stamp included - would skip it silently. Refused instead, as a query naming
  * SQL is.
  */
-function refuseTriggers(entity: Type<object>): void {
+function refuseTriggers(entity: AbstractType<object>): void {
   if (hasTriggers(getMeta(entity))) {
     throw new UqlUsageError(
       `'${entity.name}' declares triggers, which MongoDB cannot run within a write: a write here would skip them. ` +

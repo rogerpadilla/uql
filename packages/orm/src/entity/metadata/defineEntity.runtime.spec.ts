@@ -3,7 +3,7 @@ import { Migrator } from '../../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import type { ColumnType, SchemaClass, SchemaFields, Type } from '../../type/index.js';
+import type { ColumnType, SchemaClass, SchemaFields, AbstractType } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import { f } from '../column.js';
 import { Field } from '../decorator/members.js';
@@ -35,7 +35,7 @@ function register(contentType: ContentType, base?: SchemaClass<object>) {
 const pool = new SqliteQuerierPool(':memory:');
 
 /** Applies the entity schema to the database, the same additive diff the CLI's `sync` runs. */
-const sync = (entities: Type<object>[]) => new Migrator(pool, { entities }).sync();
+const sync = (entities: AbstractType<object>[]) => new Migrator(pool, { entities }).sync();
 
 afterAll(() => pool.end());
 

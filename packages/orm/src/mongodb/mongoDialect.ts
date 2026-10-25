@@ -57,7 +57,7 @@ import type {
   RelationKey,
   RelationMeta,
   RelationQuery,
-  Type,
+  AbstractType,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/query.js';
 import { QuerySql } from '../type/querySql.js';
@@ -421,7 +421,11 @@ export class MongoDialect extends AbstractDialect {
     return super.columnOf(meta, key);
   }
 
-  public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
+  public where<E extends Document>(
+    entity: AbstractType<E>,
+    where: QueryWhere<E> = {},
+    opts: QueryOptions = {},
+  ): Filter<E> {
     const meta = getMeta(entity);
     // Filters are applied once, here at the scope entry point; recursion uses `renderFilter`.
     return this.renderFilter(entity, this.scopedWhere(meta, where, opts));
@@ -434,7 +438,7 @@ export class MongoDialect extends AbstractDialect {
    * `lookup` keeps the temporaries used, so a later lookup neither repeats nor reuses one.
    */
   public matchStages<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     where: QueryWhere<E> = {},
     opts: QueryOptions = {},
     fields: readonly string[] = [],
@@ -453,7 +457,11 @@ export class MongoDialect extends AbstractDialect {
    * recursion). A relation, or a relation aggregate, needs `$lookup` stages, so it is only accepted
    * when `lookup` is given - a plain `find`/`updateMany` filter has nowhere to put them.
    */
-  protected renderFilter<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, lookup?: Lookup): Filter<E> {
+  protected renderFilter<E extends Document>(
+    entity: AbstractType<E>,
+    where: QueryWhere<E> = {},
+    lookup?: Lookup,
+  ): Filter<E> {
     const meta = getMeta(entity);
     const filter: Record<string, unknown> = {};
     for (const [rawKey, rawVal] of Object.entries(where)) {
@@ -513,7 +521,7 @@ export class MongoDialect extends AbstractDialect {
    */
   private appendLogicalOperator<E extends Document>(
     filter: Record<string, unknown>,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: QueryGroupOp,
     val: QueryWhereArray<E>,
     lookup?: Lookup,
@@ -611,7 +619,7 @@ export class MongoDialect extends AbstractDialect {
     meta: EntityMeta<E>,
     relOpts: RelationMeta,
     relMeta: EntityMeta<Document>,
-    through: Type<Document>,
+    through: AbstractType<Document>,
   ) {
     const throughMeta = getMeta(through);
     assertSoleId(meta, 'MongoDB');
@@ -736,7 +744,7 @@ export class MongoDialect extends AbstractDialect {
     );
   }
 
-  public select<E extends Document>(entity: Type<E>, select?: QuerySelectValue<E>): Record<string, 0 | 1> {
+  public select<E extends Document>(entity: AbstractType<E>, select?: QuerySelectValue<E>): Record<string, 0 | 1> {
     const meta = getMeta(entity);
     if (!select) {
       return {};
@@ -774,7 +782,7 @@ export class MongoDialect extends AbstractDialect {
    * means a *populated* one, at every level of the path: a lookup adds a field to the result, so one
    * added for the sort alone would change what the caller gets back.
    */
-  private sort<E extends Document>(entity: Type<E>, q: Query<E>): Sort {
+  private sort<E extends Document>(entity: AbstractType<E>, q: Query<E>): Sort {
     return this.sortPlan(entity, q).sort;
   }
 
@@ -784,7 +792,7 @@ export class MongoDialect extends AbstractDialect {
    * by ahead of the value itself. `ranked` is a field holding a vector distance, ordered by first.
    */
   private sortPlan<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     { $sort: sort, $populate: populate, $where: where }: Query<E>,
     ranked?: string,
   ): MongoSortPlan {
@@ -893,7 +901,7 @@ export class MongoDialect extends AbstractDialect {
    * field the `$sort` then orders by. A parent with no related row reads a zero tally and no distance.
    */
   public sortAggregateStages<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     sort: QuerySortMap<E> | undefined,
   ): Lookup & { readonly fields: string[] } {
     const meta = getMeta(entity);
@@ -908,7 +916,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** The relation aggregates a read projects or sorts by; its `$where` puts its own on the document. */
-  private aggregateKeys<E extends Document>(entity: Type<E>, q: Query<E>): string[] {
+  private aggregateKeys<E extends Document>(entity: AbstractType<E>, q: Query<E>): string[] {
     const meta = getMeta(entity);
     const projected = normalizeScalarFieldSelection(meta, isSelectList(q.$select) ? undefined : q.$select);
     return [...projected, ...Object.keys(q.$sort ?? {})].filter((key) => aggregateOf(meta.fields[key]));
@@ -990,7 +998,7 @@ export class MongoDialect extends AbstractDialect {
    * [The design](../../../../architecture/relations-in-one-statement.md).
    */
   private relationReadStages<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
@@ -1053,7 +1061,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
-  public sortsRelations<E extends Document>(entity: Type<E>, sort: QuerySortMap<E> | undefined): boolean {
+  public sortsRelations<E extends Document>(entity: AbstractType<E>, sort: QuerySortMap<E> | undefined): boolean {
     if (!sort) {
       return false;
     }
@@ -1090,7 +1098,7 @@ export class MongoDialect extends AbstractDialect {
    * How a read runs, its ordering and aggregates read once for both the routing and the run: the one place
    * deciding how a read is scored and ranked, a root vector search through Atlas.
    */
-  public readPlan<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): MongoRead {
+  public readPlan<E extends Document>(entity: AbstractType<E>, q: Query<E>, opts?: QueryOptions): MongoRead {
     const vector = this.extractVectorSort(q.$sort);
     if (vector) {
       return { pipeline: this.vectorSearchPipeline(entity, q, vector, opts) };
@@ -1107,7 +1115,7 @@ export class MongoDialect extends AbstractDialect {
    * order by a relation, one to build a relation aggregate, and the grouping `$distinct` is.
    */
   private readsThroughPipeline<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     sort: MongoSortPlan,
     aggregates: readonly string[],
@@ -1130,7 +1138,7 @@ export class MongoDialect extends AbstractDialect {
    * `$vectorSearch` is always the first stage; `$where` is merged into its `filter`.
    */
   private vectorSearchPipeline<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     vectorSort: ExtractedVectorSort<E>,
     opts?: QueryOptions,
@@ -1163,7 +1171,7 @@ export class MongoDialect extends AbstractDialect {
 
   /** A read as a pipeline, whether or not a `find` cursor would express it. */
   public aggregationPipeline<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
@@ -1176,7 +1184,7 @@ export class MongoDialect extends AbstractDialect {
 
   /** The pipeline of a read no `$vectorSearch` enters, given its ordering, aggregates and vector score. */
   private scanPipeline<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     opts: QueryOptions | undefined,
     sort: MongoSortPlan,
@@ -1198,7 +1206,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** A vector search's exact distance, by its metric, as a score to rank by: its `$project`, else a temporary field. */
-  private nearestScore<E extends Document>(entity: Type<E>, vector: ExtractedVectorSort<E>): MongoScore {
+  private nearestScore<E extends Document>(entity: AbstractType<E>, vector: ExtractedVectorSort<E>): MongoScore {
     const { vectorKey, vectorSearch } = vector;
     const meta = getMeta(entity);
     const metric = vectorDistanceOf(meta, vectorKey, vectorSearch);
@@ -1220,7 +1228,7 @@ export class MongoDialect extends AbstractDialect {
    * page that may read them, then the projection. Shared with the `$vectorSearch` pipeline.
    */
   private readStages<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     extra: MongoReadStages,
   ): MongoAggregationPipelineEntry<Document>[] {
@@ -1334,7 +1342,10 @@ export class MongoDialect extends AbstractDialect {
    * The projection a narrowing query asks for, widened by what the pipeline produced (each populated
    * relation and the tallies); last, once the lookups have read the join keys.
    */
-  public pipelineProjection<E extends Document>(entity: Type<E>, q: Query<E>): Record<string, 0 | 1> | undefined {
+  public pipelineProjection<E extends Document>(
+    entity: AbstractType<E>,
+    q: Query<E>,
+  ): Record<string, 0 | 1> | undefined {
     if (!q.$select) {
       return undefined;
     }
@@ -1513,7 +1524,7 @@ export class MongoDialect extends AbstractDialect {
 
   /** An aggregate's rows with each 64-bit integer decoded as a document's is: a `bigint` only where the column reads a `BigInt` field. */
   public normalizeAggregateRows<E extends Document, R extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: QueryAggregate<E>,
     rows: R[],
   ): R[] {
@@ -1648,7 +1659,7 @@ export class MongoDialect extends AbstractDialect {
    * Build MongoDB aggregation pipeline stages from a QueryAggregate.
    */
   public buildAggregateStages<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: QueryAggregate<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
@@ -1948,7 +1959,7 @@ export class MongoDialect extends AbstractDialect {
    * Merges `$where` into `$vectorSearch.filter` for optimal pre-filtering.
    */
   private buildVectorSearchStage<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: string,
     search: QueryVectorSearch,
     where: QueryWhere<E> | undefined,

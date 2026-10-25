@@ -4,7 +4,7 @@ import {
   type QuerySql,
   type TriggerWrite,
   TriggerWriteSql,
-  type Type,
+  type AbstractType,
   type UpdatePayload,
   type WritableKey,
   type WriteRow,
@@ -15,7 +15,7 @@ import {
  * Each value is a literal or SQL, a row's ref most often, and every engine renders it, SQL Server's
  * set-based trigger included, where it inserts one row for each the statement touched.
  */
-export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>): QuerySql {
+export function insertInto<E extends object>(entity: AbstractType<E>, row: WriteRow<E>): QuerySql {
   return written({ kind: 'insert', entity, row });
 }
 
@@ -24,7 +24,7 @@ export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>):
  * does: `upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, { count: { $inc: 1 } })`.
  */
 export function upsertInto<E extends object>(
-  entity: Type<E>,
+  entity: AbstractType<E>,
   conflictPaths: QueryConflictPaths<E>,
   row: WriteRow<E>,
   update?: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
@@ -34,7 +34,7 @@ export function upsertInto<E extends object>(
 
 /** The rows `q.$where` names updated by a trigger's body: `updateTable(Post, { $where: { id: newRow.postId } }, set)`. */
 export function updateTable<E extends object>(
-  entity: Type<E>,
+  entity: AbstractType<E>,
   q: { readonly $where: EntityPredicate<E> },
   set: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
 ): QuerySql {
@@ -42,7 +42,10 @@ export function updateTable<E extends object>(
 }
 
 /** The rows `q.$where` names deleted by a trigger's body, outright: a soft delete is an `updateTable`. */
-export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $where: EntityPredicate<E> }): QuerySql {
+export function deleteFrom<E extends object>(
+  entity: AbstractType<E>,
+  q: { readonly $where: EntityPredicate<E> },
+): QuerySql {
   return written({ kind: 'delete', entity, where: q.$where });
 }
 

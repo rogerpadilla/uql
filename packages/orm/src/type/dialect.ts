@@ -4,7 +4,7 @@ import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySea
 import type { QueryAggregate, QueryAggregateOp } from './queryAggregate.js';
 import type { QuerySqlRenderOptions } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { Type } from './utility.js';
+import type { AbstractType } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
 
 /** The values the database computes that uql exports by name: `currentTimestamp`, `uuid`, ... */
@@ -292,21 +292,21 @@ export type DdlRenderOptions = Pick<QueryComparisonOptions, 'escapedPrefix' | 'o
  * it. Held untyped here, past those helpers' typing, since the dialect renders it by the entity's metadata alone.
  */
 export type TriggerWrite =
-  | { readonly kind: 'insert'; readonly entity: Type<object>; readonly row: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'insert'; readonly entity: AbstractType<object>; readonly row: Readonly<Record<string, unknown>> }
   | {
       readonly kind: 'upsert';
-      readonly entity: Type<object>;
+      readonly entity: AbstractType<object>;
       readonly conflictPaths: Readonly<Record<string, unknown>>;
       readonly row: Readonly<Record<string, unknown>>;
       readonly update?: Readonly<Record<string, unknown>>;
     }
   | {
       readonly kind: 'update';
-      readonly entity: Type<object>;
+      readonly entity: AbstractType<object>;
       readonly set: Readonly<Record<string, unknown>>;
       readonly where: EntityPredicate<object>;
     }
-  | { readonly kind: 'delete'; readonly entity: Type<object>; readonly where: EntityPredicate<object> }
+  | { readonly kind: 'delete'; readonly entity: AbstractType<object>; readonly where: EntityPredicate<object> }
   | { readonly kind: 'refuse'; readonly message: string };
 
 /**
@@ -343,18 +343,24 @@ export interface SqlQueryDialect {
   readonly sqlValues: SqlValues;
 
   /** A read; with `totalAlias`, every row also carries the unpaged match count under that alias. */
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions, totalAlias?: string): void;
+  find<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: Query<E>,
+    opts?: QueryRenderOptions,
+    totalAlias?: string,
+  ): void;
 
   /** A count of the records matching the filter, or of those a page of it takes. */
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void;
+  count<E>(ctx: QueryContext, entity: AbstractType<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void;
 
   /** An insert of one record or many. */
-  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void;
+  insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryRenderOptions): void;
 
   /** An update of the records the query matches. */
   update<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: QueryRenderOptions,
@@ -363,7 +369,7 @@ export interface SqlQueryDialect {
   /** An upsert of one record or many by their conflict paths, a conflicting row taking `update` where given. */
   upsert<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
@@ -373,7 +379,7 @@ export interface SqlQueryDialect {
   triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void;
 
   /** A delete of the records the query matches, a soft delete where the entity has one. */
-  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;
+  delete<E>(ctx: QueryContext, entity: AbstractType<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;
 
   /**
    * escape an identifier.
@@ -414,7 +420,7 @@ export interface SqlQueryDialect {
   /**
    * Build an aggregate query.
    */
-  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts?: QueryRenderOptions): void;
+  aggregate<E>(ctx: QueryContext, entity: AbstractType<E>, q: QueryAggregate<E>, opts?: QueryRenderOptions): void;
 
   /**
    * Get the placeholder for a parameter at the given index (1-based).
@@ -428,7 +434,7 @@ export interface SqlQueryDialect {
    */
   appendRelationAggregate<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     aggregate: RelationAggregateSpec,
     prefix: string,
   ): void;

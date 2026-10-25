@@ -2,7 +2,7 @@ import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PG_VECTOR_METRICS, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
-import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
+import type { QueryContext, SqlDialectFeatures, AbstractType } from '../type/index.js';
 
 /** CockroachDB: the Postgres wire and SQL, with native vectors. */
 export class CockroachDialect extends PgLikeSqlDialect {
@@ -43,7 +43,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
    * instead, and `SHOW STATISTICS` is how they are read. Bracketed so it can be selected from; the
    * newest row wins, and a table never analyzed has none at all, which reads as `0`.
    */
-  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+  override estimatedCount<E>(ctx: QueryContext, entity: AbstractType<E>): void {
     const table = this.escapedTableName(getMeta(entity));
     ctx.append(
       `SELECT row_count ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM [SHOW STATISTICS FOR TABLE ${table}] ORDER BY created DESC LIMIT 1`,

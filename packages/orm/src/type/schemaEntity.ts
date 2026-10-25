@@ -22,7 +22,7 @@ import type {
   versionKey,
 } from './entity.js';
 import type { QuerySql, RelationAggregate } from './querySql.js';
-import type { Type } from './utility.js';
+import type { Type, AbstractType } from './utility.js';
 
 /**
  * A schema entity's columns, each an `f` builder. A foreign key is declared in `.references()`, once every entity
@@ -42,7 +42,7 @@ export type ReferencedKey<C> = C extends { readonly [schemaShape]?: { readonly k
     : K
   : RowKey<C>;
 
-type RowKey<C> = C extends Type<infer R> ? NonNullable<IdValue<R>> : never;
+type RowKey<C> = C extends AbstractType<infer R> ? NonNullable<IdValue<R>> : never;
 
 /** The keys of `F` whose column is a `C`. */
 type FlagKeys<F, C> = { [K in keyof F]-?: F[K] extends C ? K : never }[keyof F];
@@ -156,7 +156,7 @@ export type SchemaEntityOptions<F extends SchemaFields, B = object, BK = unknown
   /** A base that is never a table: the entities extending it take what it declares. */
   readonly abstract?: true;
   /** The entity it inherits from, which the declared class extends, so its methods and `super` work. */
-  readonly extends?: SchemaClass<B, BK, BC>;
+  readonly extends?: SchemaClass<B, BK, BC, boolean>;
   readonly fields: F;
 };
 
@@ -177,21 +177,27 @@ type LazyTarget = () => void;
 
 /**
  * What a schema declares after its columns, each section typed by the columns now fixed, so none is inferred
- * again. `relations` comes last: what follows a relation would read its target while that target is inferred.
+ * again. `relations` comes last but for `filters`, which reads the row they complete.
  */
-type SchemaSections<Row, Key, Columns, B> = {
+type SchemaSections<Row, Key, Columns, B, Abstract> = {
   /** Columns the database computes off the stored ones, `(post) => ({ slug: f.string().as(sql`...`) })`. */
   computed<const C extends SchemaComputed>(
     computed: (refs: RefMap<Columns>) => C,
-  ): SchemaEntity<Row & ComputedRow<C>, Key, Columns & ComputedRow<C>, B>;
-  indexes(indexes: IndexSection<Columns>): SchemaEntity<Row, Key, Columns, B>;
-  checks(checks: CheckSection<Columns>): SchemaEntity<Row, Key, Columns, B>;
-  triggers(triggers: TriggerSection<Columns>): SchemaEntity<Row, Key, Columns, B>;
-  filters(filters: FilterSection<Row>): SchemaEntity<Row, Key, Columns, B>;
+  ): SchemaEntity<Row & ComputedRow<C>, Key, Columns & ComputedRow<C>, B, Abstract>;
+  indexes(indexes: IndexSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
+  checks(checks: CheckSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
+  triggers(triggers: TriggerSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
+  filters(filters: FilterSection<Row>): SchemaEntity<Row, Key, Columns, B, Abstract>;
   /** Functions each lifecycle event runs on the row, in order, given the querier writing it. */
-  hooks(hooks: { readonly [E in HookEvent]?: readonly SchemaHook<Row>[] }): SchemaEntity<Row, Key, Columns, B>;
+  hooks(hooks: { readonly [E in HookEvent]?: readonly SchemaHook<Row>[] }): SchemaEntity<
+    Row,
+    Key,
+    Columns,
+    B,
+    Abstract
+  >;
   /** The foreign keys no relation joins on, each column's target: `{ authorId: () => Author }`. */
-  references(references: SchemaReferences<Columns>): SchemaEntity<Row, Key, Columns, B>;
+  references(references: SchemaReferences<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
   /**
    * The relations, each read lazily so entities pointing at each other declare in either order, and the values
    * read over the to-many ones, its base's too: `(agg) => ({ postCount: () => agg.posts.count() })`.
@@ -199,14 +205,23 @@ type SchemaSections<Row, Key, Columns, B> = {
   relations<const R, const A = {}>(
     relations: (rel: RelationBuilder<Columns>) => R,
     aggregates?: (agg: AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>) => A,
-  ): SchemaClass<Row & RelationRow<R> & AggregateRow<A>, Key, Columns>;
+  ): RelatedEntity<Row & RelationRow<R> & AggregateRow<A>, Key, Columns, Abstract>;
+};
+
+/** A schema entity's class once its relations are in: its filters may follow, and read through them. */
+export type RelatedEntity<Row, Key, Columns, Abstract = false> = SchemaClass<Row, Key, Columns, Abstract> & {
+  filters(filters: FilterSection<Row>): SchemaClass<Row, Key, Columns, Abstract>;
 };
 
 /** A schema entity's class while its sections may still be declared. */
-export type SchemaEntity<Row, Key, Columns, B> = SchemaClass<Row, Key, Columns> & SchemaSections<Row, Key, Columns, B>;
+export type SchemaEntity<Row, Key, Columns, B, Abstract = false> = SchemaClass<Row, Key, Columns, Abstract> &
+  SchemaSections<Row, Key, Columns, B, Abstract>;
 
-/** The class a schema declares, to use as it is or to extend with behaviour. */
-export type SchemaClass<Row, Key = unknown, Columns = unknown> = (new () => Row) & SchemaShape<Key, Columns>;
+/** The class a schema declares, to use as it is or to extend with behaviour; abstract for a base never a table. */
+export type SchemaClass<Row, Key = unknown, Columns = unknown, Abstract = false> = (Abstract extends true
+  ? abstract new () => Row
+  : new () => Row) &
+  SchemaShape<Key, Columns>;
 
 declare const schemaShape: unique symbol;
 

@@ -16,7 +16,7 @@ import type {
 } from './query.js';
 import type { QuerySql, SqlStatement } from './querySql.js';
 import type { EntityRead, ReadResults, ReadQueries, UniversalQuerier } from './universalQuerier.js';
-import type { BooleanLike, RawRow, Type } from './utility.js';
+import type { BooleanLike, Type, RawRow, AbstractType } from './utility.js';
 
 /**
  * Isolation levels for transactions.
@@ -182,7 +182,7 @@ export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
  * Context passed to global querier listeners.
  */
 export type ListenerContext<E extends object = object> = {
-  readonly entity: Type<E>;
+  readonly entity: AbstractType<E>;
   readonly querier: Querier;
   readonly payloads: readonly E[];
   readonly event: HookEvent;

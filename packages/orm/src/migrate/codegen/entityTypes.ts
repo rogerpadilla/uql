@@ -1,6 +1,6 @@
 import { getMeta } from '../../entity/index.js';
 import { canonicalToTypeScript, resolveColumnCanonicalType } from '../../schema/canonicalType.js';
-import type { EntityMeta, FieldMeta, RelationMeta, Type } from '../../type/index.js';
+import type { EntityMeta, FieldMeta, RelationMeta, AbstractType } from '../../type/index.js';
 import { declaresNotNull, definedEntries, isToManyRelation, upperFirst } from '../../util/index.js';
 import { isIdentifierName } from './sourceLiteral.js';
 
@@ -9,7 +9,7 @@ import { isIdentifierName } from './sourceLiteral.js';
  * compiler too. Interfaces, not the entity classes `generate:from-db` writes: those are the source of
  * a schema, these describe one already defined elsewhere.
  */
-export function entityTypesSource(entities: readonly Type<object>[]): string {
+export function entityTypesSource(entities: readonly AbstractType<object>[]): string {
   const metas = [...entities]
     .map((entity) => getMeta(entity))
     .sort((a, b) => a.entity.name.localeCompare(b.entity.name));
@@ -32,7 +32,7 @@ export function entityTypesSource(entities: readonly Type<object>[]): string {
  * from carrying a dash or colliding with another once the dashes are gone - and either would emit a
  * file that does not compile.
  */
-function interfaceNames(metas: readonly EntityMeta<object>[]): Map<Type<object>, string> {
+function interfaceNames(metas: readonly EntityMeta<object>[]): Map<AbstractType<object>, string> {
   const taken = new Set<string>();
   return new Map(
     metas.map((meta) => {
@@ -80,7 +80,7 @@ function fieldMember(key: string, field: FieldMeta): string {
  * A relation is the related interface, a list where the cardinality says so - and `unknown` where the
  * target is outside the set, since naming an interface the file does not declare would not compile.
  */
-function relationType(relation: RelationMeta, names: ReadonlyMap<Type<object>, string>): string {
+function relationType(relation: RelationMeta, names: ReadonlyMap<AbstractType<object>, string>): string {
   const target = names.get(relation.entity());
   if (!target) {
     return 'unknown';

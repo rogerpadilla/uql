@@ -5,7 +5,7 @@ import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { JsonRecord, NarrowVectorItem, VectorItem } from '../test/index.js';
-import type { Type } from '../type/index.js';
+import type { AbstractType } from '../type/index.js';
 import { columnFamily } from '../util/field.util.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { DECODERS } from './hydrateColumn.js';
@@ -63,7 +63,7 @@ class WideOwned {
 }
 
 /** Each field `dialect` decodes and as what: for a row on the wire, or with `json`, one crossing JSON in its parent's. */
-function decoded(dialect: AbstractSqlDialect, entity: Type<object>, json = false) {
+function decoded(dialect: AbstractSqlDialect, entity: AbstractType<object>, json = false) {
   return dialect
     .selectTerms(dialect.createContext(), entity, undefined, { json })
     .flatMap(({ key, kind }) => (key && kind ? [[key, kind]] : []));

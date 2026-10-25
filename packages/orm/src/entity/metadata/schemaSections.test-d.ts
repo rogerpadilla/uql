@@ -1,6 +1,6 @@
 /**
  * What a schema derives and refuses: its row from the columns, each section typed by them once fixed, and the
- * relations last, entities pointing at each other in either order. Type-checked by `bun run ts` only.
+ * relations last but for filters, entities pointing at each other in either order. Type-checked by `bun run ts` only.
  */
 import { expectTypeOf } from 'vitest';
 import { filledKey, idKey, type Json, sql, versionKey } from '../../index.js';
@@ -82,3 +82,13 @@ defineEntity({ name: 'Last', fields: { id: f.number().id() } })
   .relations(() => ({}))
   // @ts-expect-error nothing follows the relations
   .indexes(() => []);
+
+defineEntity({ name: 'HooksLast', fields: { id: f.number().id() } })
+  .relations(() => ({}))
+  // @ts-expect-error hooks are declared before the relations, only filters follow them
+  .hooks({});
+
+const AbstractHolder = defineEntity({ name: 'AbstractHolder', abstract: true, fields: { id: f.number().id() } });
+defineEntity({ name: 'HoldsAbstract', fields: { id: f.number().id(), holderId: f.number() } })
+  // @ts-expect-error a relation needs a table to join, and an abstract base is never one
+  .relations((rel) => ({ holder: () => rel.manyToOne(AbstractHolder, { references: (r) => r.holderId }) }));

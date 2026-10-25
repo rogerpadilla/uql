@@ -1,5 +1,5 @@
 import type { QueryContext, RelationAggregateSpec, SqlQueryDialect, TriggerRows } from './dialect.js';
-import type { Scalar, Type } from './utility.js';
+import type { Scalar, AbstractType } from './utility.js';
 
 /** What a `sql` callback receives. See {@link QuerySqlFn}. */
 export type QuerySqlRenderOptions = {
@@ -15,7 +15,7 @@ export type QuerySqlRenderOptions = {
    * The entity being rendered, which a ref read off a definition's map resolves its column against: a
    * computed field's own, or the one whose schema is built. Absent where a statement renders SQL.
    */
-  entity?: Type<unknown>;
+  entity?: AbstractType<unknown>;
   /**
    * The rows a set-based trigger's writes read. Absent where the body reads `NEW` and `OLD` bare, and
    * outside a trigger.

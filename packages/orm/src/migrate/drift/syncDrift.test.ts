@@ -6,7 +6,7 @@ import { Entity, f, Field } from '../../entity/index.js';
 import { driftOf, planOf, syncOf } from '../../test/drift.js';
 import { linkUqlOrmSource, provisioningTimeout } from '../../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../../test/sqlPools.js';
-import type { SqlQuerierPool, Type } from '../../type/index.js';
+import type { SqlQuerierPool, AbstractType } from '../../type/index.js';
 import { sql } from '../../util/index.js';
 import { Migrator } from '../migrator.js';
 
@@ -188,7 +188,7 @@ class NamedLong {
 }
 
 /** A migrator writing to a directory, and recording in a table, of its own, both removed after the test. */
-async function generating(pool: SqlQuerierPool, entity: Type<object>) {
+async function generating(pool: SqlQuerierPool, entity: AbstractType<object>) {
   const dir = await mkdtemp(join(tmpdir(), 'uql-sync-drift-'));
   const tableName = 'uql_migrations_sync_drift';
   onTestFinished(async () => {

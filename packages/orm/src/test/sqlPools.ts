@@ -11,7 +11,7 @@ import { PgliteQuerierPool } from '../pglite/pgliteQuerierPool.js';
 import { PgQuerierPool, PostgresDialect } from '../postgres/index.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { SqlDialectName, SqlQuerierPool, Type } from '../type/index.js';
+import type { SqlDialectName, SqlQuerierPool, AbstractType } from '../type/index.js';
 import { sql } from '../util/sql.js';
 import {
   cockroachConnection,
@@ -58,7 +58,7 @@ export async function dropTables(pool: SqlQuerierPool, ...tables: readonly strin
  * the record of any migration a test ran. List the tables a trigger writes first: they drop in reverse, and
  * CockroachDB keeps a table a trigger's function uses.
  */
-export function syncedPool(connect: () => SqlQuerierPool, entities: Type<object>[]): () => SqlQuerierPool {
+export function syncedPool(connect: () => SqlQuerierPool, entities: AbstractType<object>[]): () => SqlQuerierPool {
   let pool: SqlQuerierPool;
   const dropAll = async () => {
     for (const statement of new SqlSchemaGenerator(pool.dialect).generateDropSchema(entities, { ifExists: true })) {

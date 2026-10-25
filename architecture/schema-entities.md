@@ -45,8 +45,8 @@ The decorated form reads the same columns: `@Field(f.string().nullable()) subtit
   optional on insert and present on read; `.id()` names the key, `f.version()` makes it required on update,
   `f.enum()` gives the literal union, `.as()` makes it read-only. The row carries `[idKey]`, `[versionKey]`
   and `[filledKey]` itself, so every query and write type downstream is unchanged.
-- Each section is a method, called once, in any order but `relations`, which comes last. Sections are
-  applied on first read, so a section added after the entity was read throws.
+- Each section is a method, called once, in any order but `relations`, which comes last but for `filters`.
+  Sections are applied on first read, so a section added after the entity was read throws.
 - Behaviour on a row is a function of it (`label(author: Author)`): uql reads rows as plain objects, never
   class instances, so a method would be a type the runtime never honours.
 
@@ -62,7 +62,8 @@ Each is forced by TypeScript inferring entities that point at each other.
 | A foreign key with no relation is `.references({ col: getter })`  | a column's `references: () => Author` needs `Author` while it is declared                                              |
 | `mappedBy` names a member by key; a foreign key's type is carried | typing by kind reads the target's property types mid-inference; its key type rides on its class, a symbol-keyed marker |
 | `computed` is its own section                                     | a callback inside `fields` reads the columns being inferred, so its row is `any` (TS7006)                              |
-| `indexes`, `checks`, `filters`, `hooks` see the columns           | the full row includes relations, which cycles: a filter through a relation is decorators-only                          |
+| `indexes`, `checks`, `hooks` see the columns                      | the full row includes relations, which only exists once they are inferred                                              |
+| `filters` may follow `relations`, and then sees the full row      | the relations are inferred by then, so a filter reading through them cycles nowhere, across files too                  |
 | An entry is a helper call, `index(columns, options)`              | TypeScript checks a literal passed as an argument for excess keys, never one returned from a callback                  |
 
 ## Measured
@@ -87,6 +88,10 @@ that the foreign key's type check), then a computed column ~260 and an index ~15
 which run per field because TypeScript infers each decorator's context. The relation options take `cascade`,
 `onDelete` and `onUpdate` from their own non-generic types: picked off `RelationOptions<E, O>`, they made the first
 schema entity instantiate it whole, ~2,700.
+
+A filter through a to-many costs ~310 per schema entity and ~220 per decorated one (`ts.perf`, 200 of each), and
+offering `filters` after the relations costs a schema declaring none ~4. MikroORM's `defineEntity` types a filter's
+condition as a loose `Dictionary` to avoid this cycle (its GH #7440); Drizzle and Prisma have no entity filters.
 
 The builders cost little because an option that does not apply is not a method, so nothing checks it, and the
 flags ride on each column's type, so the row is one pass over the columns. MikroORM stays cheaper by typing less:

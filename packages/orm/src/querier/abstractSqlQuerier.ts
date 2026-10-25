@@ -24,8 +24,8 @@ import type {
   SavepointCommand,
   SqlQuerier,
   SqlStatement,
-  TransactionOptions,
   Type,
+  TransactionOptions,
   UpdatePayload,
 } from '../type/index.js';
 import {

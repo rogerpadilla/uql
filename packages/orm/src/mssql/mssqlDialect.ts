@@ -36,7 +36,7 @@ import type {
   SqlDialectFeatures,
   SqlValues,
   TriggerRows,
-  Type,
+  AbstractType,
   UpdatePayload,
   VectorDistance,
   VectorMetric,
@@ -200,7 +200,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     super.pager(ctx, opts, sorted);
   }
 
-  override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+  override insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryOptions): void {
     this.writeRows(ctx, getMeta(entity), payload, () => {
       super.insert(ctx, entity, payload, opts);
       ctx.append(';');
@@ -263,7 +263,7 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   override upsert<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
@@ -364,7 +364,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     return `IF SCHEMA_ID(${this.escape(schema)}) IS NULL EXEC(${this.escape(`CREATE SCHEMA ${this.escapeId(schema, true)}`)})`;
   }
   /** The estimate the engine already keeps per partition, live without a stats refresh. */
-  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+  override estimatedCount<E>(ctx: QueryContext, entity: AbstractType<E>): void {
     const meta = getMeta(entity);
     ctx.append(
       `SELECT SUM(p.rows) ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM sys.partitions p` +

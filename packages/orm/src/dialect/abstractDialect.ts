@@ -10,7 +10,7 @@ import type {
   Query,
   QueryOptions,
   QueryWhere,
-  Type,
+  AbstractType,
 } from '../type/index.js';
 import { ENGINE_NAMES, type EngineName, parseQueryLock } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
@@ -108,7 +108,7 @@ export abstract class AbstractDialect {
    * The SQLite family locks the database rather than its rows and MongoDB has no row lock at all;
    * {@link AbstractSqlDialect} adds what a lock over a join needs on top.
    */
-  assertLockSupported<E>(_entity: Type<E>, q: Query<E>): void {
+  assertLockSupported<E>(_entity: AbstractType<E>, q: Query<E>): void {
     if (parseQueryLock(q.$lock) && !this.features.rowLocks) {
       throw new UqlUsageError(`${this.engineName} does not support row-level locking ($lock)`);
     }
@@ -172,7 +172,7 @@ export abstract class AbstractDialect {
    * cannot host that read - a MongoDB filter, a write without {@link DialectFeatures.correlatedWrites} -
    * has the rows it names read first.
    */
-  constrainsRelations<E>(entity: Type<E>, where: QueryWhere<E> | undefined): boolean {
+  constrainsRelations<E>(entity: AbstractType<E>, where: QueryWhere<E> | undefined): boolean {
     if (!where) {
       return false;
     }

@@ -16,7 +16,7 @@ import type {
   LoggingOptions,
   Querier,
   SqlQuerier,
-  Type,
+  AbstractType,
   VectorIndexOptions,
 } from './index.js';
 
@@ -84,7 +84,7 @@ export interface MigratorOptions {
   /**
    * Entities to use for schema generation
    */
-  readonly entities?: Type<object>[];
+  readonly entities?: AbstractType<object>[];
 
   /**
    * Default action for foreign key ON DELETE and ON UPDATE clauses.
@@ -259,7 +259,7 @@ export interface SyncOptions {
   readonly drop?: boolean;
   readonly logging?: boolean;
   /** One entity instead of every registered one, for a schema that grows while the process runs. */
-  readonly entity?: Type<object>;
+  readonly entity?: AbstractType<object>;
   /** Drop every table and recreate it. Development only: it is the one option that loses data. */
   readonly force?: boolean;
 }
@@ -287,14 +287,14 @@ export interface DropSchemaOptions {
  */
 export interface SchemaGenerator {
   /** The whole schema for `entities`, tables then the foreign keys between them, which need every entity at once. */
-  generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[];
+  generateCreateSchema(entities: readonly AbstractType<object>[], options?: CreateSchemaOptions): string[];
 
   /**
    * Every `DROP TABLE` for `entities`, dependents first. The inverse of {@link generateCreateSchema},
    * and the reason it takes the whole set: dropping in any order that ignores the relation graph is
    * rejected once the foreign keys are really there.
    */
-  generateDropSchema(entities: readonly Type<object>[], options?: DropSchemaOptions): string[];
+  generateDropSchema(entities: readonly AbstractType<object>[], options?: DropSchemaOptions): string[];
 
   /** The statements taking a table through `diff`; its rollback is `rollbackDiff(diff)`. */
   generateAlterTable(diff: SchemaDiff): string[];
@@ -311,14 +311,14 @@ export interface SchemaGenerator {
    * `renamedColumns` are columns `currentTable` already holds under their new names.
    */
   diffSchema(
-    entity: Type<object>,
+    entity: AbstractType<object>,
     currentTable: TableNode | undefined,
     desiredAst?: SchemaAST,
     renamedColumns?: readonly Rename[],
   ): SchemaDiff | undefined;
 
   /** The entities as one AST, built once per run for every {@link diffSchema}. Absent on MongoDB, which diffs only indexes and a validator. */
-  buildAST?(entities: readonly Type<object>[]): SchemaAST;
+  buildAST?(entities: readonly AbstractType<object>[]): SchemaAST;
 
   /** How this engine's diff compares types and defaults. Absent where {@link buildAST} is. */
   diffOptions?(): DiffOptions;

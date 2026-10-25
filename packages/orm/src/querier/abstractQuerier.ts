@@ -1414,7 +1414,7 @@ export abstract class AbstractQuerier implements Querier {
     value: unknown,
   ): Promise<void> {
     const keyCount = getMeta(entity).ids.length;
-    const relEntity: Type<object> = relOpts.entity();
+    const relEntity = relOpts.entity();
     const relMeta = getMeta(relEntity);
     const parents = parentJoins(relOpts, keyCount);
     const keptIds = listedRows(value)
@@ -1477,7 +1477,7 @@ export abstract class AbstractQuerier implements Querier {
     relKey: RelationKey<E>,
     rows: readonly object[],
   ): Promise<WrittenId<object>[]> {
-    const relEntity: Type<object> = relationOf(getMeta(entity), relKey).entity();
+    const relEntity = relationOf(getMeta(entity), relKey).entity();
     const ids = await this.saveMany(relEntity, rows);
     if (ids.includes(undefined)) {
       throw new UqlUsageError(

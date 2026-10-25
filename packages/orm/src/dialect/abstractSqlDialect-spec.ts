@@ -21,7 +21,7 @@ import {
   User,
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
-import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
+import type { Query, QueryContext, QueryLockWait, QueryWhere, AbstractType, UpdatePayload } from '../type/index.js';
 import { sql, refs } from '../util/index.js';
 import { UqlSecurityError } from '../util/uqlError.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
@@ -154,7 +154,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /** What ends an insert that reads its generated id back from the statement; nothing where the driver reports it. */
-  protected returningClause<E>(entity: Type<E>): string {
+  protected returningClause<E>(entity: AbstractType<E>): string {
     const { insertIdSource, returningPosition } = this.dialect;
     return insertIdSource === 'returning' && returningPosition === 'suffix'
       ? ` ${this.dialect.returningId(getMeta(entity))}`

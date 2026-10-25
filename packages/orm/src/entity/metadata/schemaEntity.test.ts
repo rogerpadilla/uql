@@ -42,4 +42,17 @@ describe.each(sqlPools('test_schema'))('a schema entity on %s', (_engine, connec
       { name: 'Di', bookCount: 0, topStock: null },
     ]);
   });
+
+  /** A filter declared after the relations reads through them, as a decorated entity's does. */
+  it('should apply a filter through a relation', async () => {
+    const [ev, fy] = await pool().insertMany(Author, [{ name: 'Ev' }, { name: 'Fy' }]);
+    await pool().insertMany(Book, [
+      { title: 'Ev 1', status: 'draft', authorId: Number(ev) },
+      { title: 'Fy 1', status: 'draft', authorId: Number(fy) },
+    ]);
+
+    const books = await pool().findMany(Book, { $select: { title: true } }, { filters: { byEv: true } });
+
+    expect(books).toEqual([{ title: 'Ev 1' }]);
+  });
 });

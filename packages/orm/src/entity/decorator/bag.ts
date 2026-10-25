@@ -1,4 +1,4 @@
-import type { FieldOptions, HookDeclaration, HookEvent, RelationRegistration, Type } from '../../type/index.js';
+import type { FieldOptions, HookDeclaration, HookEvent, RelationRegistration, AbstractType } from '../../type/index.js';
 
 /**
  * Polyfills `Symbol.metadata`, without which TypeScript builds no `context.metadata` and every field is
@@ -48,7 +48,7 @@ export function drainRegistrations(metadata: DecoratorMetadata | undefined): Mem
  * The registrations a class made for itself, readable once it is fully defined: `@Entity()` reads
  * `context.metadata` instead, since the class gets `Symbol.metadata` after its decorators return.
  */
-export function ownRegistrations(entity: Type<unknown>): MemberRegistrations | undefined {
+export function ownRegistrations(entity: AbstractType<unknown>): MemberRegistrations | undefined {
   const metadata: DecoratorMetadata | undefined = Object.getOwnPropertyDescriptor(entity, Symbol.metadata)?.value;
   return drainRegistrations(metadata);
 }

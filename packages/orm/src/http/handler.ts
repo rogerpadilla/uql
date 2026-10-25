@@ -1,13 +1,14 @@
 import { withContext } from '../context/context.js';
 import { getMeta, soleIdOf } from '../entity/index.js';
 import type {
+  Type,
   EntityMeta,
   Querier,
   QuerierPool,
   Query,
   RelationMeta,
   RequestSuccessResponse,
-  Type,
+  AbstractType,
   UpdateWrite,
   UqlContext,
 } from '../type/index.js';
@@ -81,7 +82,7 @@ export type RequestHandlerOptions<Ctx = unknown> = {
    */
   include: readonly Type<object>[];
   /** The URL segment an entity is addressed by, its kebab-cased class name by default; the browser client takes the same option. */
-  entityPath?: (entity: Type<unknown>) => string;
+  entityPath?: (entity: AbstractType<unknown>) => string;
   /**
    * Allow augment any kind of request before it runs. Hooks may be async
    * and abort the request by throwing (a numeric `status` on the error is honored).
@@ -271,7 +272,12 @@ function rowsOf(body: unknown): object[] {
  * serve: `include` fences the routes, and this the rows a `$populate`, a filter, a sort, a tally or a
  * written row would otherwise reach through them. Every `$` clause holds keys of the entity it sits on.
  */
-function assertServed<E>(meta: EntityMeta<E>, sent: unknown, served: ReadonlySet<Type<object>>, path = ''): void {
+function assertServed<E>(
+  meta: EntityMeta<E>,
+  sent: unknown,
+  served: ReadonlySet<AbstractType<object>>,
+  path = '',
+): void {
   if (Array.isArray(sent)) {
     for (const item of sent) {
       assertServed(meta, item, served, path);

@@ -20,7 +20,7 @@ import type {
 } from './entity.js';
 import type { QuerySql } from './querySql.js';
 import type { ReferencedKey } from './schemaEntity.js';
-import type { Json, Type } from './utility.js';
+import type { Type, Json, AbstractType } from './utility.js';
 import type { VectorDistance } from './vector.js';
 
 /** Where a column builder holds its options, so every string key of a builder is a method. */
@@ -190,7 +190,7 @@ type JsonValue<S> = [S] extends [never]
 
 /** The key a column referencing `C` holds, or a named complaint for a composite one, which no one column holds. */
 type ReferenceValue<C> =
-  C extends Type<infer E>
+  C extends AbstractType<infer E>
     ? HasCompositeKey<E> extends true
       ? { readonly __compositeKeyNeedsAColumnPerKey: true }
       : NonNullable<IdValue<E>>

@@ -6,7 +6,7 @@ import type {
   QueryContext,
   QueryPager,
   TriggerRows,
-  Type,
+  AbstractType,
   UpdatePayload,
 } from '../type/index.js';
 import { assertNonNegativeInteger, getKeys } from '../util/index.js';
@@ -40,7 +40,7 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
    */
   override upsert<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,

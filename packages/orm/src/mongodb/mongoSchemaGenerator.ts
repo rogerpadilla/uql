@@ -18,7 +18,7 @@ import {
   QuerySql,
   type SchemaDiff,
   type SchemaGenerator,
-  type Type,
+  type AbstractType,
   type VectorDistance,
 } from '../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../type/vector.js';
@@ -49,7 +49,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    * A document store has no cross-collection constraint, so unlike the SQL generator there is nothing to
    * defer and no order to respect: this is each collection and nothing more.
    */
-  generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[] {
+  generateCreateSchema(entities: readonly AbstractType<object>[], options?: CreateSchemaOptions): string[] {
     const wanted = options?.only && new Set(options.only);
     return entities
       .map((entity) => getMeta(entity))
@@ -60,7 +60,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       });
   }
 
-  generateDropSchema(entities: readonly Type<object>[]): string[] {
+  generateDropSchema(entities: readonly AbstractType<object>[]): string[] {
     return entities.map((entity) =>
       serializeMongoCommand({ action: 'dropCollection', name: this.resolveTableName(getMeta(entity)) }),
     );
@@ -114,7 +114,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    * The JSON of the document `partialFilterExpression` takes, refused where the predicate reaches past
    * what that holds or what a migration carries as JSON.
    */
-  private indexFilter(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
+  private indexFilter(where: EntityWhereMeta<object>, entity: AbstractType<object>, indexName: string): string {
     if (where instanceof QuerySql) {
       throw new UqlUsageError(
         `${this.engineName} does not support partial indexes from a SQL predicate (index "${indexName}")`,
@@ -144,7 +144,11 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
   }
 
   /** A check's filter, refused where it is SQL or holds what a migration cannot carry as JSON. */
-  private checkFilter(where: EntityWhereMeta<object>, entity: Type<object>, collectionName: string): MongoValidator {
+  private checkFilter(
+    where: EntityWhereMeta<object>,
+    entity: AbstractType<object>,
+    collectionName: string,
+  ): MongoValidator {
     if (where instanceof QuerySql) {
       throw new UqlUsageError(
         `${this.engineName} does not support checks from a SQL predicate (collection "${collectionName}")`,
@@ -261,7 +265,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     }
   }
 
-  diffSchema(entity: Type<object>, currentTable: TableNode | undefined): SchemaDiff | undefined {
+  diffSchema(entity: AbstractType<object>, currentTable: TableNode | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(meta);
 

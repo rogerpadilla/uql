@@ -1,5 +1,5 @@
 import { queryErrorKind } from '../querier/queryError.js';
-import type { Type, UniversalQuerier } from '../type/index.js';
+import type { AbstractType, UniversalQuerier } from '../type/index.js';
 // the specific util modules, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
 import { kebabCase } from '../util/string.util.js';
@@ -55,7 +55,7 @@ const QUERY_READ_OPS: ReadonlyMap<string, CrudOperation> = new Map(
 /**
  * URL segment for an entity, e.g. `entityPath(UserProfile) === 'user-profile'`.
  */
-export function entityPath<E>(entity: Type<E>): string {
+export function entityPath<E>(entity: AbstractType<E>): string {
   return kebabCase(entity.name);
 }
 

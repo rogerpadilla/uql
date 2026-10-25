@@ -1,5 +1,12 @@
 import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
-import type { IndexEntry, EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldOptions, Type } from '../type/index.js';
+import type {
+  IndexEntry,
+  EntityIndexMeta,
+  EntityMeta,
+  EntityWhereMeta,
+  FieldOptions,
+  AbstractType,
+} from '../type/index.js';
 import { declaredIndexes, namedIndex, enumCheck, ownedCheck } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { isInlinedExpression, isSoleIdField } from '../util/field.util.js';
@@ -34,9 +41,9 @@ export interface BuildSchemaASTOptions {
    * The text of SQL an entity declares - a check, a stored computed column, an index expression or
    * predicate - which only a dialect can render. `SqlSchemaGenerator.buildAST` supplies it.
    */
-  compileDdl?: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
+  compileDdl?: (sql: EntityWhereMeta<object>, entity: AbstractType<object>) => string;
   /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. */
-  compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
+  compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: AbstractType<object>, indexName: string) => string;
   /** Whether a weighted fulltext index declares one of its own for each heavier column, as MySQL scores through one. */
   textScoreIndexes?: boolean;
   /** Whether a column a vector index covers is `NOT NULL` whatever the entity declares, as MariaDB demands. */
@@ -58,7 +65,10 @@ type BuildContext = Readonly<Required<BuildSchemaASTOptions>> & {
  * Three passes, because each needs the one before it to have finished for *every* entity: a relation
  * resolves against a table another entity declares, and an index against the columns of its own.
  */
-export function buildSchemaAST(entities: readonly Type<object>[], options: BuildSchemaASTOptions = {}): SchemaAST {
+export function buildSchemaAST(
+  entities: readonly AbstractType<object>[],
+  options: BuildSchemaASTOptions = {},
+): SchemaAST {
   const compileDdl = options.compileDdl ?? refuseDdl;
   const ctx: BuildContext = {
     ast: new SchemaAST(),

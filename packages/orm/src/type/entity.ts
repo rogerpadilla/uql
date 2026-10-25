@@ -16,6 +16,7 @@ import type {
   JsonScalar,
   Scalar,
   Type,
+  AbstractType,
   Unpacked,
   Writable,
 } from './utility.js';
@@ -956,7 +957,7 @@ export type EntityIndexMeta<E = object> = {
   IndexTypeOptions;
 
 export type EntityMeta<E> = {
-  readonly entity: Type<E>;
+  readonly entity: AbstractType<E>;
   /** The table, which is the class's own name where the entity named none - see {@link derivedName}. */
   name?: string;
   /** Whether {@link name} came from the class rather than from the author, so a naming strategy applies. */

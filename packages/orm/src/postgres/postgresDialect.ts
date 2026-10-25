@@ -1,7 +1,7 @@
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PG_SQL_VALUES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryContext, SqlDialectFeatures, SqlDialectName, SqlValues, Type } from '../type/index.js';
+import type { QueryContext, SqlDialectFeatures, SqlDialectName, SqlValues, AbstractType } from '../type/index.js';
 
 /** What Postgres has: pgvector, the only engine with `halfvec` and `sparsevec`. */
 export const POSTGRES_FEATURES: SqlDialectFeatures = { ...PG_FEATURES, narrowVectorTypes: true };
@@ -23,7 +23,7 @@ export class PostgresDialect extends PgLikeSqlDialect {
    * carries `reltuples = -1`, Postgres' "no statistic" (not `NULL`, and not `0`) since PG 14 - handed
    * back raw it would read as a negative row count.
    */
-  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+  override estimatedCount<E>(ctx: QueryContext, entity: AbstractType<E>): void {
     ctx.append(
       `SELECT GREATEST(reltuples, 0)::bigint ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM pg_class WHERE oid = to_regclass(`,
     );

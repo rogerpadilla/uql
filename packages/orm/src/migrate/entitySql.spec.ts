@@ -7,7 +7,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { EntityWhereMeta, Json, Type } from '../type/index.js';
+import type { EntityWhereMeta, Json, AbstractType } from '../type/index.js';
 import { memberRefs, sql } from '../util/index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -58,7 +58,7 @@ const Line = defineEntity({
     .stored(),
 }));
 
-const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
+const ddl = (dialect: AbstractSqlDialect, entity: AbstractType<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
 describe('SQL an entity declares', () => {
@@ -132,7 +132,7 @@ type TicketShape = {
   data?: Json<{ theme?: string }> | null;
 };
 
-const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): Type<object> => {
+const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): AbstractType<object> => {
   @Entity({ indexes: (ticket, index) => [index([ticket.status], { name: 'ticket_idx', where })] })
   class Ticket implements TicketShape {
     @Field(f.number().id()) id?: number;

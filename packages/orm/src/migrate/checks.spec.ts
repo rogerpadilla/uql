@@ -6,7 +6,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined } from '../test/index.js';
-import type { Type } from '../type/index.js';
+import type { AbstractType } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -31,7 +31,7 @@ class NoChecks {
   @Field(f.number().id()) id?: number;
 }
 
-const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
+const ddl = (dialect: AbstractSqlDialect, entity: AbstractType<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
 /** The name of every object uql installs that the DDL declares. */
@@ -204,7 +204,7 @@ class PlainBill {
 }
 
 /** `entity`'s table as the database would report it, checks included, had `installed` built it. */
-const diffOver = (dialect: AbstractSqlDialect, entity: Type<object>, installed: Type<object>) => {
+const diffOver = (dialect: AbstractSqlDialect, entity: AbstractType<object>, installed: AbstractType<object>) => {
   const generator = new SqlSchemaGenerator(dialect);
   const table = generator.buildAST([installed]).getTable('Bill');
   table?.checks.push({ name: 'Bill_status_check', expression: `"status" <> ''` });

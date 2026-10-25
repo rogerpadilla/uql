@@ -71,6 +71,28 @@ defineEntity({
   active: { where: { statuz: 'active' } },
 });
 
+// ─── a schema's filters after its relations read through them, as a decorated entity's do ───
+export const Writer = defineEntity({
+  name: 'Writer',
+  fields: { id: f.number().id(), name: f.string(), active: f.boolean() },
+})
+  .relations((rel) => ({ posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.writer }) }))
+  .filters({ published: { where: { posts: { title: { $ne: '' } } } } });
+
+export const Post = defineEntity({
+  name: 'Post',
+  fields: { id: f.number().id(), title: f.string(), writerId: f.number() },
+})
+  .relations((rel) => ({ writer: () => rel.manyToOne(Writer, { references: (post) => post.writerId }) }))
+  .filters({
+    byActiveWriter: { where: { writer: { active: true } } },
+    twoHops: { where: { writer: { posts: { title: 'x' } } } },
+    // @ts-expect-error 'actve' is not a column of Writer
+    typo: { where: { writer: { actve: true } } },
+    // @ts-expect-error 'titel' is not a column of Post, two hops away
+    deepTypo: { where: { writer: { posts: { titel: 'x' } } } },
+  });
+
 // ─── a security filter fails closed, and `softDelete` is the built-in filter's name ───
 // @ts-expect-error a security filter never skips a missing value
 export const skippingSecurityFilter: FilterOptions<Invoice> = { where: {}, security: true, onMissing: 'skip' };

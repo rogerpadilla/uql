@@ -1,4 +1,8 @@
-export type Type<T> = (new (...args: unknown[]) => T) | (abstract new (...args: unknown[]) => T);
+/** An entity's class, an abstract base included. */
+export type AbstractType<T> = abstract new (...args: unknown[]) => T;
+
+/** A concrete entity: an abstract base is never a table, so a query or write does not take one. */
+export type Type<T> = new (...args: unknown[]) => T;
 
 export type BooleanLike = boolean | 0 | 1;
 

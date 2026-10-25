@@ -2,7 +2,7 @@ import type { ForeignKeyAction } from '../schema/types.js';
 import type { MigratorDialect } from './migratorDialect.js';
 import type { Querier } from './querier.js';
 import type { QuerierPool } from './querierPool.js';
-import type { Type } from './utility.js';
+import type { AbstractType } from './utility.js';
 
 /**
  * Configuration options for the UQL ORM and Migrator.
@@ -19,7 +19,7 @@ export interface Config {
    * List of entity classes to be managed by the ORM.
    * If omitted, every registered entity (`@Entity()` or `defineEntity`) is discovered via `getEntities()`.
    */
-  entities?: Type<object>[];
+  entities?: AbstractType<object>[];
 
   /**
    * The directory where migration files are stored.

@@ -13,7 +13,7 @@ import type {
   QueryContext,
   SqlDialectFeatures,
   SqlValues,
-  Type,
+  AbstractType,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
@@ -106,7 +106,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
    * neither a transaction nor a restore, and cannot leak to the next query on this pooled connection,
    * which is why the tuning is not `vectorTuningStatements`, Postgres's `SET LOCAL` shape.
    */
-  protected override statementSettings<E>(entity: Type<E>, q: Query<E>): string[] {
+  protected override statementSettings<E>(entity: AbstractType<E>, q: Query<E>): string[] {
     // `$candidates` first: `getMeta` would otherwise be resolved on every read, to discover that
     // almost none of them tune anything.
     const tuned = q.$candidates !== undefined && this.tunedVectorIndex(getMeta(entity), q);

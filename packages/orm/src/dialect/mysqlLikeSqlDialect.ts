@@ -11,7 +11,7 @@ import type {
   SqlDialectFeatures,
   SqlDialectName,
   SqlValues,
-  Type,
+  AbstractType,
   UpdatePayload,
   TransactionOptions,
 } from '../type/index.js';
@@ -101,7 +101,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    * anything has been analyzed. `DATABASE()` where the entity names no schema, so the estimate comes
    * from the connection's own database rather than a same-named table in another one.
    */
-  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+  override estimatedCount<E>(ctx: QueryContext, entity: AbstractType<E>): void {
     const meta = getMeta(entity);
     const schema = this.resolveSchema(meta);
     ctx.append(
@@ -144,7 +144,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** `INSERT ... ON DUPLICATE KEY UPDATE`, the assignments bound after the insert, where a `?` reads them. */
   override upsert<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
@@ -215,16 +215,22 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /** A read's statement, with the settings it needs applied to it alone. */
-  override find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string) {
+  override find<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: Query<E> = {},
+    opts?: QueryOptions,
+    totalAlias?: string,
+  ) {
     return this.settled(ctx, entity, q, (statement) => super.find(statement, entity, q, opts, totalAlias));
   }
 
   /** A `$distinct` read's count, which reads the relations the read does. */
-  override countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+  override countDistinct<E>(ctx: QueryContext, entity: AbstractType<E>, q: Query<E>, opts?: QueryOptions) {
     this.settled(ctx, entity, q, (statement) => super.countDistinct(statement, entity, q, opts));
   }
 
-  private settled<E, T>(ctx: QueryContext, entity: Type<E>, q: Query<E>, build: (ctx: QueryContext) => T): T {
+  private settled<E, T>(ctx: QueryContext, entity: AbstractType<E>, q: Query<E>, build: (ctx: QueryContext) => T): T {
     const settings = this.statementSettings(entity, q);
     if (!settings.length) {
       return build(ctx);
@@ -239,7 +245,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    * `name=value` for each variable a read's statement sets for itself alone. `GROUP_CONCAT`, and
    * MariaDB's `JSON_ARRAYAGG` built on it, cut a relation's array at `group_concat_max_len`.
    */
-  protected statementSettings<E>(entity: Type<E>, q: Query<E>): string[] {
+  protected statementSettings<E>(entity: AbstractType<E>, q: Query<E>): string[] {
     return aggregatesRelations(getMeta(entity), q) ? [`group_concat_max_len=${MAX_LIMIT}`] : [];
   }
 

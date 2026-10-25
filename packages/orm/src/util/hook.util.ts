@@ -1,9 +1,9 @@
 import { getMeta } from '../entity/index.js';
-import type { HookContext, HookEvent, Type } from '../type/index.js';
+import type { HookContext, HookEvent, AbstractType } from '../type/index.js';
 
 /** Runs each hook registered for `event` on each payload, in order, awaiting each: a hook mutates the payload itself. */
 export async function runHooks<E extends object>(
-  entity: Type<E>,
+  entity: AbstractType<E>,
   event: HookEvent,
   payloads: readonly E[],
   ctx: HookContext,

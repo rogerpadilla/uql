@@ -4,7 +4,7 @@ import { Migrator } from '../migrate/migrator.js';
 import { driftOf } from '../test/drift.js';
 import type { Spec } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
-import type { Json, QueryWhere, SqlQuerierPool, Type } from '../type/index.js';
+import type { Json, QueryWhere, SqlQuerierPool, AbstractType } from '../type/index.js';
 import { sql } from '../util/sql.js';
 
 const TABLE = 'json_path_index';
@@ -27,7 +27,7 @@ class JsonPathIndexed {
 /** The engine's plan for the statement `find` builds, as text to look for an index in; `explain` is its prefix. */
 export async function queryPlanOf<E>(
   pool: SqlQuerierPool,
-  entity: Type<E>,
+  entity: AbstractType<E>,
   $where: QueryWhere<E>,
   explain = 'EXPLAIN',
 ): Promise<string> {

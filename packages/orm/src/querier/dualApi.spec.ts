@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
-import type { Query, QueryAggregate, QueryOptions, QuerySearch, RawRow, Type } from '../type/index.js';
+import type { Query, QueryAggregate, QueryOptions, QuerySearch, RawRow, AbstractType } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 /**
@@ -15,18 +15,18 @@ class MockQuerier extends AbstractQuerier {
 
   findManyStreamMock = vi.fn();
 
-  protected override internalFindMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]> {
+  protected override internalFindMany<E>(entity: AbstractType<E>, q: Query<E>): Promise<E[]> {
     this.findManyMock(entity, q);
     return Promise.resolve([]);
   }
 
-  protected override internalFindManyStream<E>(entity: Type<E>, q: Query<E>): AsyncIterable<E> {
+  protected override internalFindManyStream<E>(entity: AbstractType<E>, q: Query<E>): AsyncIterable<E> {
     this.findManyStreamMock(entity, q);
     // Return an empty async iterable
     return { async *[Symbol.asyncIterator]() {} };
   }
 
-  protected override internalCount<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
+  protected override internalCount<E>(entity: AbstractType<E>, q: QuerySearch<E>): Promise<number> {
     this.countMock(entity, q);
     return Promise.resolve(0);
   }
@@ -41,13 +41,17 @@ class MockQuerier extends AbstractQuerier {
     return [];
   }
 
-  protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
+  protected override internalDeleteMany<E>(
+    entity: AbstractType<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions,
+  ): Promise<number> {
     this.deleteManyMock(entity, q, opts);
     return Promise.resolve(0);
   }
 
   protected override async internalAggregate<E extends object>(
-    _entity: Type<E>,
+    _entity: AbstractType<E>,
     _q: QueryAggregate<E>,
   ): Promise<RawRow[]> {
     return [];

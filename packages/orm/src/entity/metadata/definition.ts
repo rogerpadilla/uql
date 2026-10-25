@@ -32,6 +32,7 @@ import {
   type SchemaRelation,
   type TriggerOptions,
   type Type,
+  type AbstractType,
   type WrittenId,
   REF_KEY,
   RelationAggregate,
@@ -61,7 +62,7 @@ import { UqlUsageError } from '../../util/uqlError.js';
 import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
-type Meta = Map<Type<unknown>, EntityMeta<any>>;
+type Meta = Map<AbstractType<unknown>, EntityMeta<any>>;
 /**
  * A map held on `globalThis` through the global symbol registry, so a single one survives multiple
  * evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading). The keys are
@@ -227,7 +228,7 @@ function applyMembers<E>(meta: EntityMeta<E>, members: Partial<MemberRegistratio
 }
 
 /** A hook method, run with the row as `this`, read off `entity` so an entity overriding it runs its own. */
-function methodHook<E>(entity: Type<E>, event: HookEvent, methodName: string): HookRegistration {
+function methodHook<E>(entity: AbstractType<E>, event: HookEvent, methodName: string): HookRegistration {
   // A prototype is typed `any`, so what is read off it is typed here, where it enters.
   const prototype: Record<string, unknown> = entity.prototype;
   const method = prototype[methodName];
@@ -242,7 +243,7 @@ function methodHook<E>(entity: Type<E>, event: HookEvent, methodName: string): H
  * entity overriding it runs its own; a hook given as a function is kept as it is.
  */
 function resolvedHook<E>(
-  entity: Type<E>,
+  entity: AbstractType<E>,
   event: HookEvent,
   hook: HookDeclaration | HookRegistration,
 ): HookRegistration {
@@ -277,9 +278,12 @@ type ErasedSections = {
  */
 type ErasedReference = EntityGetter | Readonly<Pick<FieldOptions, 'onDelete'> & { entity: EntityGetter }>;
 
+/** A schema class as the registry reads it, abstract or not. */
+type ErasedClass = SchemaClass<object, unknown, unknown, boolean>;
+
 /** A schema as the registry reads it, its row erased to {@link ErasedRow}. */
 type ErasedSchema = Omit<SchemaEntityOptions<SchemaFields>, 'extends' | 'fields'> & {
-  readonly extends?: SchemaClass<object>;
+  readonly extends?: ErasedClass;
   readonly fields: Readonly<Record<string, Column>>;
 };
 
@@ -293,13 +297,16 @@ const declaredSchemas = new WeakMap<object, DeclaredSchema>();
 
 /**
  * Declares an entity by its schema and returns its class, whose row type the schema derives, so nothing is
- * written twice: its columns now, then each section, `.indexes()` and so on, `.relations()` last. It registers on
- * first read, with every section in, and its relations once each target exists.
+ * written twice: its columns now, then each section, `.indexes()` and so on, `.relations()` last but for
+ * `.filters()`. It registers on first read, with every section in, and its relations once each target exists.
  */
+export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
+  schema: SchemaEntityOptions<F, B, BK, BC> & { readonly abstract: true },
+): SchemaEntity<B & ColumnRow<F> & Brands<F>, SchemaKey<F, BK>, BC & ColumnRow<F>, B, true>;
 export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
   schema: SchemaEntityOptions<F, B, BK, BC>,
 ): SchemaEntity<B & ColumnRow<F> & Brands<F>, SchemaKey<F, BK>, BC & ColumnRow<F>, B>;
-export function defineEntity(schema: ErasedSchema): SchemaClass<object> {
+export function defineEntity(schema: ErasedSchema): ErasedClass {
   const base = schema.extends ?? Object;
   // Its rows are read by key alone, which is what the registry types an erased schema's columns by.
   const entity = {
@@ -311,7 +318,7 @@ export function defineEntity(schema: ErasedSchema): SchemaClass<object> {
   declaredSchemas.set(entity, { schema, sections: {} });
   for (const section of Object.keys(SECTIONS)) {
     Object.defineProperty(entity, section, {
-      value(this: Type<object>, ...declared: unknown[]) {
+      value(this: AbstractType<object>, ...declared: unknown[]) {
         declareSection(this, section, declared);
         return this;
       },
@@ -333,7 +340,7 @@ const SECTIONS = {
 } satisfies Record<Exclude<keyof ErasedSections, 'aggregates'>, true>;
 
 /** Records one section of a pending schema, refusing a second of it and one declared after the entity was read. */
-function declareSection(entity: Type<object>, section: string, declared: readonly unknown[]): void {
+function declareSection(entity: AbstractType<object>, section: string, declared: readonly unknown[]): void {
   const pending = pendingSchema(entity);
   if (!pending) {
     throw new UqlUsageError(`'${entity.name}' was read already: declare its ${section} before its first use`);
@@ -346,12 +353,12 @@ function declareSection(entity: Type<object>, section: string, declared: readonl
 }
 
 /** What `entity` declared as a schema, while it is not registered yet. */
-function pendingSchema(entity: Type<unknown>): DeclaredSchema | undefined {
+function pendingSchema(entity: AbstractType<unknown>): DeclaredSchema | undefined {
   return metas.get(entity)?.stage === 'declared' ? declaredSchemas.get(entity) : undefined;
 }
 
 /** Registers a pending schema, its base's first; a failure leaves it pending, so a later read reports it again. */
-function settleSchema(entity: Type<unknown>): void {
+function settleSchema(entity: AbstractType<unknown>): void {
   const pending = pendingSchema(entity);
   if (!pending) {
     return;
@@ -407,8 +414,8 @@ function referencedFields(
 }
 
 /** The entity a getter returned, refused where it returned anything else. */
-function entityOf(target: Type<object>, key: string): Type<object> {
-  if (!metas.has(target)) {
+function entityOf(target: AbstractType<object>, key: string): Type<object> {
+  if (!metas.has(target) || !isTable(target)) {
     throw new UqlUsageError(`'.references()' points '${key}' at something that is not an entity`);
   }
   return target;
@@ -479,7 +486,11 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
   const declared = declaredSchemas.get(meta.entity)?.sections.relations;
   for (const [key, read] of Object.entries(declared?.(RELATION_BUILDER) ?? {})) {
     const { target, cardinality, options } = read();
-    addRelation(meta, key, relationRegistration<ErasedRow, object>({ ...options, cardinality, entity: () => target }));
+    addRelation(
+      meta,
+      key,
+      relationRegistration<ErasedRow, object>({ ...options, cardinality, entity: () => tableOf<ErasedRow>(target) }),
+    );
   }
   // A copy per entity: resolving a relation writes the columns it joins on into it, and those are the resolving
   // entity's, so one shared object would leave every later entity without them.
@@ -495,7 +506,7 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
  * apart and stored once it passes, so a rejected definition leaves the registry as it was.
  */
 export function registerEntity<E>(
-  entity: Type<E>,
+  entity: AbstractType<E>,
   opts: EntityOptions<E> = {},
   members?: Partial<MemberRegistrations>,
 ): EntityMeta<E> {
@@ -665,7 +676,7 @@ export function idOf<E>(meta: EntityMeta<E>, row: KeyedRow<E>): WrittenId<E> {
  * what pointed at it, and a decorated class does not come back (its decorators drained at first
  * registration). See the Runtime Schemas guide.
  */
-export function removeEntity<E>(entity: Type<E>): boolean {
+export function removeEntity<E>(entity: AbstractType<E>): boolean {
   return metas.delete(entity);
 }
 
@@ -673,16 +684,32 @@ export function getEntities(): Type<object>[] {
   for (const entity of metas.keys()) {
     settleSchema(entity);
   }
-  return [...metas.values()].filter((meta) => meta.ids.length && !meta.abstract).map((meta) => meta.entity);
+  return [...metas.values()]
+    .filter((meta) => meta.ids.length)
+    .map((meta) => meta.entity)
+    .filter(isTable);
+}
+
+/** The class a schema relation targets, refused where it is abstract: a relation needs a table to join. */
+function tableOf<E extends object>(target: AbstractType<E>): Type<E> {
+  if (!isTable(target)) {
+    throw new UqlUsageError(`'${target.name}' is abstract: a relation needs a table to join`);
+  }
+  return target;
+}
+
+/** Whether `entity` is a table: not marked abstract, so a query or write can take it. */
+function isTable<E extends object>(entity: AbstractType<E>): entity is Type<E> {
+  return !metas.get(entity)?.abstract;
 }
 
 /** The metadata `entity` has, a pending schema registered first, without settling anything further. */
-function knownMeta<E>(entity: Type<E>): EntityMeta<E> {
+function knownMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   settleSchema(entity);
   return ensureMeta(entity);
 }
 
-function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
+function ensureMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   let meta = metas.get(entity);
   if (meta) {
     return meta;
@@ -692,11 +719,11 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   return meta;
 }
 
-function emptyMeta<E>(entity: Type<E>): EntityMeta<E> {
+function emptyMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   return { entity, ids: [], fields: {}, relations: {} };
 }
 
-export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
+export function getMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   const resolved = metas.get(entity);
   if (resolved?.stage === 'resolved') {
     return resolved;
@@ -714,7 +741,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 }
 
 /** The metadata `entity` registered, however much of it is resolved. */
-function registeredMeta<E>(entity: Type<E>): EntityMeta<E> {
+function registeredMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   settleSchema(entity);
   const meta = metas.get(entity);
   if (!meta) {
@@ -927,12 +954,12 @@ function assertJoins<E>(
 }
 
 /** `meta` with its fields read by any name, as a join's columns come. */
-function columnsOf<E>(meta: EntityMeta<E>): { entity: Type<E>; fields: Record<string, FieldMeta | undefined> } {
+function columnsOf<E>(meta: EntityMeta<E>): { entity: AbstractType<E>; fields: Record<string, FieldMeta | undefined> } {
   return meta;
 }
 
 /** Whether `entity` is `base` or extends it, as an entity inheriting a relation does. */
-function isA(entity: Type<unknown>, base: Type<unknown>): boolean {
+function isA(entity: AbstractType<unknown>, base: AbstractType<unknown>): boolean {
   return entity === base || entity.prototype instanceof base;
 }
 
@@ -987,7 +1014,7 @@ function assertHoldsKey(at: string, field: FieldMeta, target: EntityMeta<object>
 /** Each key of `side`, paired with the one column of `junction` referencing it: a rename of either follows. */
 function junctionReferences<S>(at: string, junction: EntityMeta<object>, side: EntityMeta<S>): RelationReferences {
   const pairs = foreignKeysOf(junction).flatMap(({ entity, references }) =>
-    entity() === side.entity ? references : [],
+    Object.is(entity(), side.entity) ? references : [],
   );
   return side.ids.map((key) => {
     const [pair, ...others] = pairs.filter(({ foreign }) => foreign === key);
@@ -1021,16 +1048,16 @@ function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
  * Merges `ancestor` and its ancestors into `meta`, nearest first, draining an undecorated base's
  * registrations. Walks the class chain, since not every compiler chains decorator metadata.
  */
-function inheritFrom<E>(meta: EntityMeta<E>, ancestor: Type<object> | undefined): void {
+function inheritFrom<E>(meta: EntityMeta<E>, ancestor: AbstractType<object> | undefined): void {
   for (let parent = ancestor; parent && parent !== Object; parent = parentOf(parent)) {
-    const base = parent as Type<E>;
+    const base = parent as AbstractType<E>;
     applyMembers(ensureMeta(base), ownRegistrations(base));
     extendMeta(meta, knownMeta(base));
   }
 }
 
 /** The class `entity` extends, `Object` where it extends nothing. */
-function parentOf(entity: Type<unknown>): Type<object> | undefined {
+function parentOf(entity: AbstractType<unknown>): AbstractType<object> | undefined {
   return Object.getPrototypeOf(entity.prototype)?.constructor;
 }
 

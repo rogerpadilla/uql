@@ -115,9 +115,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ matrix.node }}
-      # SQL Server sometimes crashes once as it boots; `restart: always` brings it back, but `--wait` has failed by then.
+      # SQL Server sometimes crashes as it boots, and `restart: always` can repeat the crash on the same container.
+      # A fresh container gets past it, so a failed start recreates that one before waiting again.
       - name: Start services
-        run: docker compose up -d --wait || docker compose up -d --wait
+        run: docker compose up -d --wait || (docker compose rm -sf mssql && docker compose up -d --wait)
       - name: Run tests
         run: bun run test:${{ matrix.suite }}
       # A hook that times out reports only `(unnamed)`, so a database that stalled or was silently

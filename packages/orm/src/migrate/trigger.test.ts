@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { Entity, f, Field } from '../entity/index.js';
 import { assertDefined, linkUqlOrmSource, migrationsDir, provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
-import type { Column, Type } from '../type/index.js';
+import type { Column, AbstractType } from '../type/index.js';
 import { sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
@@ -49,7 +49,7 @@ const TRIGGER_POOLS = sqlPools('test_trigger');
 
 describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   const pool = syncedPool(connect, [TgAudit, TgPost]);
-  const migrator = (post: Type<object> = TgPost, migrationsPath?: string) =>
+  const migrator = (post: AbstractType<object> = TgPost, migrationsPath?: string) =>
     new Migrator(pool(), { entities: [TgAudit, post], migrationsPath });
   const audit = [expect.stringMatching(/^_uql_TgPost__audit_[0-9a-f]{6}$/)];
 

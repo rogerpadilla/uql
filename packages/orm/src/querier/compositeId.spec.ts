@@ -8,7 +8,7 @@ import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { assertDefined, Cohort } from '../test/index.js';
-import type { SchemaDiff, Type } from '../type/index.js';
+import type { SchemaDiff, AbstractType } from '../type/index.js';
 import { idKey } from '../type/index.js';
 import { sql, whereIds } from '../util/index.js';
 
@@ -650,14 +650,18 @@ describe('a composite target across a many-to-many', () => {
 });
 
 /** The table `entity` builds, failing the test where it builds none. */
-function tableOf(entity: Type<object>, name: string) {
+function tableOf(entity: AbstractType<object>, name: string) {
   const table = buildSchemaAST([entity]).getTable(name);
   assertDefined(table);
   return table;
 }
 
 /** The change `generator` plans from `table` to `entity`, failing the test where it plans none. */
-function diffOf(generator: SqlSchemaGenerator, entity: Type<object>, table: ReturnType<typeof tableOf>): SchemaDiff {
+function diffOf(
+  generator: SqlSchemaGenerator,
+  entity: AbstractType<object>,
+  table: ReturnType<typeof tableOf>,
+): SchemaDiff {
   const diff = generator.diffSchema(entity, table);
   assertDefined(diff);
   return diff;

@@ -18,8 +18,11 @@ type Message = { readonly id?: number; readonly method?: string; readonly result
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const FIXTURES = ['rename.test-d.ts', 'renameSchema.test-d.ts'];
 
-/** The options of a schema whose entries each declare a member. */
-const MEMBER_OPTIONS: ReadonlySet<string> = new Set(['fields', 'computed', 'relations']);
+/** A schema's parts whose entries each declare a member, as the language server outlines them. */
+const MEMBER_OPTIONS: ReadonlySet<string> = new Set(['fields', 'computed() callback', 'relations() callback']);
+
+/** The parts of {@link MEMBER_OPTIONS} some fixture outlined, so one the server renames fails instead of going unread. */
+const outlined = new Set<string>();
 
 /** A symbol as the language server outlines a document, with the LSP kinds this reads. */
 type DocumentSymbol = {
@@ -38,17 +41,24 @@ const MEMBER = new Set<number>([SymbolKind.Method, SymbolKind.Property]);
  * are what follows it. `id` is left out, since every entity repeats it.
  */
 function declaredMembers(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
-  return symbols
+  const classMembers = symbols
+    .filter((symbol) => symbol.kind === SymbolKind.Class)
     .flatMap((symbol) =>
-      symbol.kind === SymbolKind.Class
-        ? (symbol.children ?? []).filter(
-            (child) => MEMBER.has(child.kind) && child.selectionRange.start.line > symbol.selectionRange.start.line,
-          )
-        : (symbol.children ?? [])
-            .filter((option) => MEMBER_OPTIONS.has(option.name))
-            .flatMap((option) => option.children ?? []),
-    )
-    .filter((member) => member.name !== 'id');
+      (symbol.children ?? []).filter(
+        (child) => MEMBER.has(child.kind) && child.selectionRange.start.line > symbol.selectionRange.start.line,
+      ),
+    );
+  return [...classMembers, ...schemaOptions(symbols).flatMap((option) => option.children ?? [])].filter(
+    (member) => member.name !== 'id',
+  );
+}
+
+/** The schema options a document outlines, the `MEMBER_OPTIONS` parts of each schema, classes left out. */
+function schemaOptions(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
+  return symbols
+    .filter((symbol) => symbol.kind !== SymbolKind.Class)
+    .flatMap((symbol) => symbol.children ?? [])
+    .filter((option) => MEMBER_OPTIONS.has(option.name));
 }
 
 const key = ({ line, character }: Position) => `${line}:${character}`;
@@ -117,7 +127,11 @@ for (const file of FIXTURES) {
     params: { textDocument: { uri, languageId: 'typescript', version: 1, text: source } },
   });
   const outline = await request('textDocument/documentSymbol', { textDocument: { uri } });
-  for (const { name, selectionRange } of declaredMembers((outline.result as DocumentSymbol[] | null) ?? [])) {
+  const symbols = (outline.result as DocumentSymbol[] | null) ?? [];
+  for (const { name } of schemaOptions(symbols)) {
+    outlined.add(name);
+  }
+  for (const { name, selectionRange } of declaredMembers(symbols)) {
     const response = await request('textDocument/rename', {
       textDocument: { uri },
       position: selectionRange.start,
@@ -133,6 +147,11 @@ for (const file of FIXTURES) {
 }
 server.kill();
 
+for (const part of MEMBER_OPTIONS) {
+  if (!outlined.has(part)) {
+    failures.push(`  no fixture outlines '${part}': the language server names it otherwise now`);
+  }
+}
 if (failures.length) {
   console.error(`A rename left ${failures.length} mention(s) behind:\n${failures.join('\n')}`);
   process.exit(1);

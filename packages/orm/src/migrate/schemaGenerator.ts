@@ -30,7 +30,7 @@ import type {
   StoredDefinition,
   SchemaDiff,
   SchemaGenerator,
-  Type,
+  AbstractType,
 } from '../type/index.js';
 import { enumCheck } from '../util/ddlExpression.util.js';
 import { qualifyName } from '../util/index.js';
@@ -91,7 +91,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * The entity side as an AST, carrying this generator's default referential action. Named by the dialect's
    * resolvers rather than a naming strategy, which would also rename an explicit `@Entity({ name })`.
    */
-  buildAST(entities: readonly Type<object>[]): SchemaAST {
+  buildAST(entities: readonly AbstractType<object>[]): SchemaAST {
     const { dialect } = this;
     return buildSchemaAST(entities, {
       // The alias, not `resolveTableName`: a node holds its schema apart, so a name derived from it is one identifier.
@@ -117,7 +117,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * Every `CREATE TABLE` for `entities`, then their foreign keys, since a relation graph is routinely
    * cyclic. SQLite keeps them inline: it cannot add one later, and resolves a forward reference lazily.
    */
-  generateCreateSchema(entities: readonly Type<object>[], options: CreateSchemaOptions = {}): string[] {
+  generateCreateSchema(entities: readonly AbstractType<object>[], options: CreateSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'create', options.only);
     // Inline only where a constraint cannot be added afterwards, which is what makes the cyclic case work elsewhere.
     const inline = this.features.rebuildsTables;
@@ -153,7 +153,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * The inverse of {@link generateCreateSchema}: a table's drop takes its triggers along, so only what they
    * leave behind follows it.
    */
-  generateDropSchema(entities: readonly Type<object>[], options: DropSchemaOptions = {}): string[] {
+  generateDropSchema(entities: readonly AbstractType<object>[], options: DropSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'drop');
     const existing = dropsForeignKeysFirst(this.features, options) ? (options.existing?.getTables() ?? []) : [];
     const foreignKeyDrops = existing.flatMap((table) => {
@@ -184,7 +184,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * resolves instead of being silently dropped.
    */
   private orderedTables(
-    entities: readonly Type<object>[],
+    entities: readonly AbstractType<object>[],
     direction: 'create' | 'drop',
     only?: readonly string[],
   ): TableNode[] {
@@ -308,7 +308,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * drift detection runs, with types normalized as the engine stores them.
    */
   diffSchema(
-    entity: Type<object>,
+    entity: AbstractType<object>,
     currentTable: TableNode | undefined,
     desiredAst?: SchemaAST,
     renamedColumns?: readonly Rename[],

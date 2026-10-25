@@ -33,7 +33,7 @@ import {
   User,
   violateConstraints,
 } from '../test/index.js';
-import type { QuerySql, Type } from '../type/index.js';
+import type { Type, QuerySql } from '../type/index.js';
 import { currentTimestamp, sql, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';

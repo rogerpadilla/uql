@@ -59,7 +59,7 @@ import {
   type SqlValues,
   type TriggerRows,
   type TriggerWrite,
-  type Type,
+  type AbstractType,
   type UpdatePayload,
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
@@ -270,7 +270,7 @@ type SelectOptions = { readonly prefix?: string; readonly json?: boolean; readon
 
 /** A to-many's rows as the parent's statement reads them: an ordinary read of the related entity. */
 export type RelationRows = {
-  readonly entity: Type<object>;
+  readonly entity: AbstractType<object>;
   readonly query: Query<object>;
   readonly alias: string;
   readonly joins: QueryJoins;
@@ -497,7 +497,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** A `sql()` rendered in place, an operand or a projected term: bound, the driver would get the object. */
-  protected rawFragment(ctx: QueryContext, value: QuerySql, prefix?: string, entity?: Type<unknown>): string {
+  protected rawFragment(ctx: QueryContext, value: QuerySql, prefix?: string, entity?: AbstractType<unknown>): string {
     return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value, prefix, entity }));
   }
 
@@ -558,7 +558,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * ` RETURNING` the fields `keys` names, after an `UPDATE` or `DELETE` this context holds, projected and read as
    * a read's are: the terms its rows answer under. Only where `features.writeReturning`.
    */
-  returning<E>(ctx: QueryContext, entity: Type<E>, keys: readonly FieldKey<E>[]): readonly SelectTerm[] {
+  returning<E>(ctx: QueryContext, entity: AbstractType<E>, keys: readonly FieldKey<E>[]): readonly SelectTerm[] {
     const terms = this.selectTerms(ctx, entity, keySet(keys));
     ctx.append(` RETURNING ${this.termsSql(terms)}`);
     return terms;
@@ -577,7 +577,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   search<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E> = {},
     opts: ReadOptions = {},
     joins = NO_JOINS,
@@ -613,7 +613,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   selectTerms<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     select: QuerySelectValue<E> | undefined,
     opts: SelectOptions = {},
   ): SelectTerm[] {
@@ -741,7 +741,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   select<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     opts: ReadOptions = {},
     joins = NO_JOINS,
@@ -771,7 +771,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected projection<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     opts: SelectOptions,
     joins: QueryJoins,
@@ -940,7 +940,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
   }
 
-  where<E>(ctx: QueryContext, entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
+  where<E>(ctx: QueryContext, entity: AbstractType<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
     const meta = getMeta(entity);
     // Filters are applied once, here at the scope entry point; recursion uses `renderWhere`.
     this.renderWhere(ctx, entity, this.scopedWhere(meta, where, opts), opts);
@@ -949,7 +949,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** Renders a `$where` tree without applying entity filters (used for same-scope group-operator recursion). */
   protected renderWhere<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     where: QueryWhere<E> = {},
     opts: QueryWhereOptions = {},
   ): void {
@@ -980,7 +980,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx.append(parts.length > 1 && opts.operand ? `(${body})` : body);
   }
 
-  compare<E>(ctx: QueryContext, entity: Type<E>, key: string, val: unknown, opts: QueryComparisonOptions = {}): void {
+  compare<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    key: string,
+    val: unknown,
+    opts: QueryComparisonOptions = {},
+  ): void {
     const meta = getMeta(entity);
 
     if (val instanceof QuerySql) {
@@ -1043,7 +1049,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   protected compareLogicalOperator<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: QueryGroupOp,
     val: QueryWhereArray<E>,
     opts: QueryComparisonOptions,
@@ -1114,7 +1120,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * as text rather than appending it, so every operator gets a real operand to wrap - `LOWER(...)`,
    * `NOT (... <=> ...)` - instead of having to fall back to a form that takes none.
    */
-  protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryRenderOptions): string {
+  protected resolveOperandField<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    key: string,
+    opts: QueryRenderOptions,
+  ): string {
     const meta = getMeta(entity);
     const field = meta.fields[key];
     return this.inlinedOperand(ctx, meta, key, opts.prefix) ?? this.columnWithPrefix(key, field, opts);
@@ -1135,7 +1146,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** {@link fieldCondition}, appended. */
   compareFieldOperator<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: FieldKey<E>,
     op: QueryWhereFieldOp,
     val: unknown,
@@ -1147,7 +1158,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** One operator of a field's condition. Both come from the query as data, so neither is trusted. */
   private fieldCondition<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: FieldKey<E>,
     op: QueryWhereFieldOp,
     val: unknown,
@@ -1419,13 +1430,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** {@link resolveOperandField}, appended. */
-  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, opts: QueryRenderOptions = {}): void {
+  getComparisonKey<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    key: FieldKey<E>,
+    opts: QueryRenderOptions = {},
+  ): void {
     ctx.append(this.resolveOperandField(ctx, entity, key, opts));
   }
 
   /** Appends the `ORDER BY`, reporting whether there was one - which {@link pager} needs on the
    * engines that refuse to page an unordered statement. */
-  sort<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QuerySortOptions = {}): boolean {
+  sort<E>(ctx: QueryContext, entity: AbstractType<E>, q: Query<E>, opts: QuerySortOptions = {}): boolean {
     const terms = this.sortTerms(ctx, getMeta(entity), q, opts);
     if (terms.length) {
       ctx.append(` ORDER BY ${terms.map(({ expr, ...term }) => this.orderByTerm(expr, term)).join(', ')}`);
@@ -1599,7 +1615,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** The engine's own refusal first, then what a lock over a join needs, which is SQL's alone. */
-  override assertLockSupported<E>(entity: Type<E>, q: Query<E>, joins?: QueryJoins): void {
+  override assertLockSupported<E>(entity: AbstractType<E>, q: Query<E>, joins?: QueryJoins): void {
     super.assertLockSupported(entity, q);
     const { rowLocks } = this.features;
     if (!rowLocks || rowLocks.of || !parseQueryLock(q.$lock)) {
@@ -1627,7 +1643,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * joined: Postgres refuses a bare `FOR UPDATE` over the nullable side of an outer join outright,
    * and the other engines quietly widen the lock to the joined rows.
    */
-  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, joins = NO_JOINS, alias?: string): void {
+  protected appendLock<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: Query<E>,
+    joins = NO_JOINS,
+    alias?: string,
+  ): void {
     const wait = parseQueryLock(q.$lock);
     if (!wait) {
       return;
@@ -1648,7 +1670,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `COUNT(*)` over the filter, or over the rows a page settles. The clauses are read off `q` one by one:
    * `/http` hands it over untyped, and a smuggled `$sort` changes no count.
    */
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void {
+  count<E>(ctx: QueryContext, entity: AbstractType<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void {
     const { $where, $skip, $limit } = q;
     if ($skip === undefined && $limit === undefined) {
       this.select<E>(ctx, entity, { $select: [sql`COUNT(*)`.as(AGGREGATE_VALUE_ALIAS)] });
@@ -1663,7 +1685,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * How many rows a `$distinct` read returns: the deduplication runs after `COUNT(*)` and a window
    * alike, so the deduplicated set is counted as a derived table, never paged.
    */
-  countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions): void {
+  countDistinct<E>(ctx: QueryContext, entity: AbstractType<E>, q: Query<E>, opts?: QueryRenderOptions): void {
     const read = this.readOptions(ctx, getMeta(entity), opts);
     this.countRows(ctx, () => {
       this.select(ctx, entity, q, read);
@@ -1683,12 +1705,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * keep one; the rest throw, because falling back to `COUNT(*)` would run exactly the scan the
    * caller reached for this to avoid, and only say so by taking a long time.
    */
-  estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
+  estimatedCount<E>(_ctx: QueryContext, _entity: AbstractType<E>): void {
     throw new UqlUsageError(`${this.engineName} does not support estimatedCount`);
   }
   aggregate<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: QueryAggregate<E>,
     opts: QueryRenderOptions = {},
   ): readonly SelectTerm[] {
@@ -1756,7 +1778,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   private aggregateValue<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     entry: ParsedGroupEntry<E>,
     joins: QueryJoins,
     prefix: string | undefined,
@@ -1781,7 +1803,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** A field as an aggregate reads it: its column, or the expression an inlined one stands for. */
   private aggregateOperand<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     key: string,
     prefix: string | undefined,
   ): AggregateValue {
@@ -1869,7 +1891,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** A read, answering with the terms its rows answer under, which say how each reads back. */
   find<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E> = {},
     opts?: QueryRenderOptions,
     totalAlias?: string,
@@ -1895,7 +1917,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected read<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: Query<E>,
     opts: ReadOptions,
     joins: QueryJoins,
@@ -1925,7 +1947,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return this.insertIdSource === 'returning' ? this.returningId(meta) : '';
   }
 
-  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void {
+  insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryRenderOptions): void {
     const returning = this.insertedIdReturning(getMeta(entity));
 
     if (returning && this.returningPosition === 'afterTarget') {
@@ -1958,7 +1980,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected appendInsertValues<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     payload: E | E[],
     /** Spliced between the target and its rows; see {@link returningPosition}. */
     afterTarget = '',
@@ -1978,7 +2000,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** The columns an insert writes and the rows it writes, resolved once, and shared with a `MERGE`'s row source. */
-  protected insertShape<E>(entity: Type<E>, payload: E | E[]): InsertShape<E> {
+  protected insertShape<E>(entity: AbstractType<E>, payload: E | E[]): InsertShape<E> {
     const meta = getMeta(entity);
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = getInsertFieldKeys(meta, payloads);
@@ -2034,7 +2056,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   update<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: QueryRenderOptions,
@@ -2259,7 +2281,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   upsert<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
@@ -2280,7 +2302,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * statement beside its rows, and whether there are any, where none is `DO NOTHING`, which skips that row.
    */
   upsertAssignments<E>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     conflictPaths: QueryConflictPaths<E>,
     row: E,
     update?: UpdatePayload<E>,
@@ -2355,7 +2377,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       .join(', ');
   }
 
-  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryRenderOptions = {}): void {
+  delete<E>(ctx: QueryContext, entity: AbstractType<E>, q: QuerySearch<E>, opts: QueryRenderOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.escapedTableName(meta);
     const { stamp, opts: read } = deletionOf(meta, opts);
@@ -2662,10 +2684,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * predicate with no entity filter applied; a migration's is `sql` reading none.
    */
   compileDdl(sql: QuerySql): string;
-  compileDdl<E>(sql: EntityWhereMeta<E>, entity: Type<E>, opts?: DdlRenderOptions): string;
+  compileDdl<E>(sql: EntityWhereMeta<E>, entity: AbstractType<E>, opts?: DdlRenderOptions): string;
   compileDdl<E>(
     sql: EntityWhereMeta<E>,
-    entity?: Type<E>,
+    entity?: AbstractType<E>,
     { rows, escapedPrefix, operand }: DdlRenderOptions = {},
   ): string {
     const ctx = this.createContext({ inlineValues: true });
@@ -2829,7 +2851,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   appendRelationAggregate<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     aggregate: RelationAggregateSpec,
     prefix: string,
   ): void {
@@ -3023,7 +3045,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     meta: EntityMeta<E>,
     rel: RelationMeta,
-    junction: Type<object>,
+    junction: AbstractType<object>,
     parent: string,
   ): JunctionRows {
     const junctionMeta = getMeta(junction);
@@ -3114,7 +3136,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** Filter by relation: a parent matches when {@link appendRelationSubquery} finds one target row. */
   protected compareRelation<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     relKey: string,
     val: QueryWhere<object>,
     rel: RelationMeta,
@@ -3127,7 +3149,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */
   protected compareRelationSize<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    entity: AbstractType<E>,
     relKey: string,
     sizeVal: number | QuerySizeComparisonOps,
     rel: RelationMeta,

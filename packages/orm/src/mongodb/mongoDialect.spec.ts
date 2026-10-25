@@ -29,7 +29,14 @@ import {
   VectorDoc,
 } from '../test/index.js';
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
-import { idKey, type Query, type QueryOptions, type QuerySortMap, type QueryWhere, type Type } from '../type/index.js';
+import {
+  idKey,
+  type Query,
+  type QueryOptions,
+  type QuerySortMap,
+  type QueryWhere,
+  type AbstractType,
+} from '../type/index.js';
 import { sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
@@ -122,7 +129,7 @@ class MongoDialectSpec implements Spec {
   /** MongoDB has no root `$not`, so both negations become its `$nor`. */
   /** The `$vectorSearch` stage a read ordered by `sort` runs first. */
   vectorStage<E extends Document>(
-    entity: Type<E>,
+    entity: AbstractType<E>,
     sort: QuerySortMap<E>,
     where: QueryWhere<E> | undefined,
     limit: number,
@@ -141,7 +148,7 @@ class MongoDialectSpec implements Spec {
   }
 
   /** The ordering a read runs: its `find` sort, else the `$sort` its pipeline holds. */
-  sortOf<E extends Document>(entity: Type<E>, q: Query<E>) {
+  sortOf<E extends Document>(entity: AbstractType<E>, q: Query<E>) {
     const read = this.dialect.readPlan(entity, q);
     return 'sort' in read ? read.sort : read.pipeline.findLast((stage) => '$sort' in stage)?.$sort;
   }

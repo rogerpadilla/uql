@@ -25,7 +25,7 @@ import type {
   SchemaIntrospector,
   SqlQuerier,
   SyncOptions,
-  Type,
+  AbstractType,
 } from '../type/index.js';
 import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
 import { sql } from '../util/sql.js';
@@ -62,9 +62,9 @@ export class Migrator {
   public readonly migrationsPath: string;
 
   public readonly logger: LoggerWrapper;
-  private readonly _entities?: Type<object>[];
+  private readonly _entities?: AbstractType<object>[];
 
-  public get entities(): Type<object>[] {
+  public get entities(): AbstractType<object>[] {
     return this._entities ?? getEntities();
   }
   /** The generator given, or this dialect's once {@link getSchemaGenerator} has loaded it. */
@@ -356,13 +356,13 @@ export class Migrator {
   }
 
   /** The entities whose tables are among `created`. */
-  private createdEntities(created: readonly string[]): Type<object>[] {
+  private createdEntities(created: readonly string[]): AbstractType<object>[] {
     const fresh = new Set(created);
     return this.entities.filter((entity) => fresh.has(this.tableOf(entity)));
   }
 
   /** The table `entity` maps to, as a diff names it. */
-  private tableOf(entity: Type<object>): string {
+  private tableOf(entity: AbstractType<object>): string {
     return this.pool.dialect.resolveTableName(getMeta(entity));
   }
 
@@ -430,7 +430,7 @@ export class Migrator {
   }
 
   /** Which of the tables `entities` name exist, by qualified name: one catalogue read per schema. */
-  private async presentTables(entities: readonly Type<object>[]): Promise<Set<string>> {
+  private async presentTables(entities: readonly AbstractType<object>[]): Promise<Set<string>> {
     const present = new Set<string>();
     for (const schema of this.entitiesBySchema(entities).keys()) {
       for (const name of await this.schemaIntrospectorFor(schema).getTableNames()) {
@@ -440,7 +440,7 @@ export class Migrator {
     return present;
   }
 
-  private entitiesBySchema(entities: readonly Type<object>[]): Map<string | undefined, Type<object>[]> {
+  private entitiesBySchema(entities: readonly AbstractType<object>[]): Map<string | undefined, AbstractType<object>[]> {
     const { dialect } = this.pool;
     return Map.groupBy(new Set(entities), (entity) => dialect.resolveSchema(getMeta(entity)));
   }
@@ -449,7 +449,10 @@ export class Migrator {
    * The tables `entities` name, read a schema at a time so each is keyed as its entity spells it. Those
    * alone: nothing else is diffed, and another table can be dropped mid-scan by whatever else is running.
    */
-  private async introspectEntities(entities: readonly Type<object>[], renames?: ColumnRenames): Promise<SchemaAST> {
+  private async introspectEntities(
+    entities: readonly AbstractType<object>[],
+    renames?: ColumnRenames,
+  ): Promise<SchemaAST> {
     const { dialect } = this.pool;
     const merged = new SchemaAST();
     for (const [schema, members] of this.entitiesBySchema(entities)) {
@@ -492,7 +495,11 @@ export class Migrator {
    * existence check and is created with `IF NOT EXISTS`, so instances racing the same admin save
    * settle instead of colliding; an existing one still pays for introspection, as a diff needs columns.
    */
-  private async planEntity(generator: SchemaGenerator, entity: Type<object>, options: SyncOptions): Promise<string[]> {
+  private async planEntity(
+    generator: SchemaGenerator,
+    entity: AbstractType<object>,
+    options: SyncOptions,
+  ): Promise<string[]> {
     const meta = getMeta(entity);
     const { dialect } = this.pool;
     const introspector = this.schemaIntrospectorFor(dialect.resolveSchema(meta));
@@ -512,7 +519,7 @@ export class Migrator {
   }
 
   /** The configured entities, with `entity` among them however the migrator was built. */
-  private entitiesWith(entity: Type<object>): Type<object>[] {
+  private entitiesWith(entity: AbstractType<object>): AbstractType<object>[] {
     const entities = this.entities;
     return entities.includes(entity) ? entities : [...entities, entity];
   }
@@ -736,7 +743,7 @@ export function defineBuilderMigration<Q extends Querier = SqlQuerier>(
 }
 
 /** The entities `meta` points at, through a relation or a foreign key field. */
-function referencedEntities(meta: EntityMeta<object>): Type<object>[] {
+function referencedEntities(meta: EntityMeta<object>): AbstractType<object>[] {
   const fields = definedEntries(meta.fields).flatMap(([, field]) => field.references?.() ?? []);
   return [...fields, ...definedEntries(meta.relations).map(([, relation]) => relation.entity())];
 }

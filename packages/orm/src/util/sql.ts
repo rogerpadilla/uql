@@ -23,7 +23,7 @@ import {
   type SqlValueName,
   type TriggerRowName,
   TriggerWriteSql,
-  type Type,
+  type AbstractType,
 } from '../type/index.js';
 import { aggregateOf, isInlinedExpression } from './field.util.js';
 import { entityName, hasKeys } from './object.util.js';
@@ -135,7 +135,7 @@ export const SQL_VALUES: Readonly<Record<SqlValueName, QuerySql>> = {
  * the dialect names it, so the naming strategy and `.name()` apply, and qualified by the alias
  * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
  */
-export function refs<E>(entity: Type<E>): RefMap<E> {
+export function refs<E>(entity: AbstractType<E>): RefMap<E> {
   return refMap<RefMap<E>>((key) => columnRef(entity, key));
 }
 
@@ -225,7 +225,7 @@ function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
  * {@link refs} are, so each names its own column wherever it renders, a write to another table included.
  * Columns only: a relation's aggregate is a subquery, and a trigger fires on one row, not over a table.
  */
-export function rowRefs<E>(entity: Type<E>, qualifier: TriggerRowName): RefMap<E> {
+export function rowRefs<E>(entity: AbstractType<E>, qualifier: TriggerRowName): RefMap<E> {
   return new Proxy({}, { get: (_, key) => columnRef(entity, String(key), qualifier) }) as RefMap<E>;
 }
 
@@ -233,7 +233,7 @@ export function rowRefs<E>(entity: Type<E>, qualifier: TriggerRowName): RefMap<E
  * One field as SQL, against its own entity or, read off a definition, the entity rendering it. A
  * `qualifier` names the row it reads from, `NEW` or `OLD`, instead of the alias in scope.
  */
-export function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
+export function columnRef(entity: AbstractType<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
   return new ColumnRef(key, (opts) => {
     const owner = entity ?? opts.entity;
     if (!owner) {

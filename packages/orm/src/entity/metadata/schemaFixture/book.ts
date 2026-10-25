@@ -20,4 +20,5 @@ export const Book = defineEntity({
       .nullable()
       .as(sql`upper(${book.title})`),
   }))
-  .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }));
+  .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }))
+  .filters({ byEv: { where: { author: { name: 'Ev' } }, default: false } });

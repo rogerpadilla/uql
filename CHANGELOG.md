@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.105.1] - 2026-10-25
+
+- **Feat:** a schema's `.filters()` may follow `.relations()`, and filter through them at any depth, typed as a decorated entity's filters are.
+- An abstract base (`abstract: true` or an `abstract class`) is a compile error as the target of a query, a write or a relation. A class typed `Type<E>` is now concrete: one that may be an abstract base is `AbstractType<E>`.
+
 ## [0.105.0] - 2026-10-25
 
 Breaking changes; `uql-codemod` rewrites the code it can and reports the rest.

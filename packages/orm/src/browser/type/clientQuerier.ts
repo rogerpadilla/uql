@@ -1,4 +1,4 @@
-import type { EntityWrite, QuerierResult, QueryOptions, SharedQuerier, Type, WrittenId } from '../../type/index.js';
+import type { Type, EntityWrite, QuerierResult, QueryOptions, SharedQuerier, WrittenId } from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**

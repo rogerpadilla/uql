@@ -4,7 +4,7 @@ import { added, reverseDiff } from '../migrate/schemaChange.js';
 import { createTableNode } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
 import { assertDefined } from '../test/index.js';
-import type { EntityWhereMeta, Json, Type } from '../type/index.js';
+import type { EntityWhereMeta, Json, AbstractType } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { validatorCheck } from './mongoCommand.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
@@ -55,7 +55,7 @@ const statusCreatedAtOptions = { name: 'MongoTicket__status_createdAt_idx', uniq
 
 type TicketShape = { id?: string; status?: string | null; createdAt?: Date | null; views?: bigint | null };
 
-const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): Type<object> => {
+const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): AbstractType<object> => {
   @Entity({ indexes: (ticket, index) => [index([ticket.status], { name: 'ticket_idx', where })] })
   class Ticket implements TicketShape {
     @Field(f.string().id()) id?: string;
@@ -495,7 +495,7 @@ describe('MongoSchemaGenerator validator', () => {
 
   type TaskShape = { id?: string; dueAt?: Date | null; status?: string | null };
 
-  const taskChecking = (where: EntityWhereMeta<TaskShape>): Type<object> => {
+  const taskChecking = (where: EntityWhereMeta<TaskShape>): AbstractType<object> => {
     @Entity({ name: 'Task', checks: (task, check) => [check(where)] })
     class Task implements TaskShape {
       @Field(f.string().id()) id?: string;

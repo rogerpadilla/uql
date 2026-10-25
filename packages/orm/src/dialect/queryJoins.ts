@@ -10,7 +10,7 @@ import type {
   RelationAggregateSpec,
   RelationMeta,
   RelationQuery,
-  Type,
+  AbstractType,
 } from '../type/index.js';
 import {
   getKeys,
@@ -38,7 +38,7 @@ export type QueryJoin = {
   readonly path: string;
   /** The alias the statement reads it through: its path, unless another table of the statement took it. */
   readonly alias: string;
-  readonly entity: Type<object>;
+  readonly entity: AbstractType<object>;
   readonly meta: EntityMeta<object>;
   readonly relation: RelationMeta;
   readonly query: RelationQuery;

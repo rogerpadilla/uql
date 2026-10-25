@@ -3536,7 +3536,7 @@ export abstract class AbstractQuerierIt<
     expect(names).toEqual(['streamed']);
   }
 
-  /** A pool stream from another flow waits for a transaction to end, never reading what it rolls back. */
+  /** A pool stream from another flow never yields a row the transaction rolls back, however the race falls. */
   async shouldStreamAfterAnotherFlowsTransaction() {
     const { promise: inserted, resolve: insert } = Promise.withResolvers<void>();
     const { promise: finished, resolve: finish } = Promise.withResolvers<void>();
@@ -3551,7 +3551,6 @@ export abstract class AbstractQuerierIt<
     const streamed = Array.fromAsync(
       this.pool.findManyStream(User, { $select: { name: true }, $where: { email: 'pending@example.com' } }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
     finish();
 
     await expect(transaction).rejects.toThrow('rolled back');

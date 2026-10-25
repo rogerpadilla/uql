@@ -68,6 +68,9 @@ const indexes = /*ts*/ `(row, index) => [
     index([{ column: row.tags, type: [String], charLength: 64 }]),
   ]`;
 
+/** A filter through the to-many, so each form's filters are weighed where they read a relation. */
+const filters = /*ts*/ `{ parented: { where: { children: { parentId: { $ne: null } } }, default: false } }`;
+
 /** A read through the entity's relation and aggregate, so each form's row is weighed where a query reads it. */
 const read = (entity: string, i: number) => /*ts*/ `
 export async function read${entity}${i}(q: Querier) {
@@ -79,9 +82,9 @@ export async function read${entity}${i}(q: Querier) {
   return rows[0]?.children[0]?.parentId;
 }`;
 
-/** One decorated entity per definition site: the indexes, and a to-many with its aggregate. */
+/** One decorated entity per definition site: the indexes, the filters, and a to-many with its aggregate. */
 const definition = (i: number) => /*ts*/ `
-@Entity({ indexes: ${indexes} })
+@Entity({ indexes: ${indexes}, filters: ${filters} })
 export class Indexed${i} {
   @Field(f.number().id()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
@@ -116,7 +119,8 @@ export const Schema${i} = defineEntity({
   .relations(
     (rel) => ({ children: () => rel.oneToMany(SchemaChild${i}, { mappedBy: (child) => child.parent }) }),
     (agg) => ({ childCount: () => agg.children.count() }),
-  );
+  )
+  .filters(${filters});
 export const SchemaChild${i} = defineEntity({
   name: 'SchemaChild${i}',
   fields: { id: f.number().id(), parentId: f.number().nullable() },
