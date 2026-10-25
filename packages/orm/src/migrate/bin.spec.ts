@@ -14,6 +14,6 @@ describe('bin', () => {
 
     await import('./bin.js');
 
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage: uql-orm/migrate <command> [options]'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage: uql-migrate <command> [options]'));
   });
 });
