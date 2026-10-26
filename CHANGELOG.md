@@ -2,7 +2,7 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
-## [0.106.2] - 2026-10-26
+## [Unreleased]
 
 - The `uql-orm` skill covers JSON properties as `Json<T>`, the codemod upgrade path, `abstract` in `defineEntity`, and the decorator and schema trade-offs.
 
