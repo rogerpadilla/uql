@@ -54,13 +54,13 @@ export function unsupportedVectorMetric(
  */
 export type VectorIndexOptions = {
   /** Distance metric for vector indexes - maps to operator class. */
-  distance?: VectorDistance;
+  readonly distance?: VectorDistance;
   /** HNSW: max connections per node. */
-  m?: number;
+  readonly m?: number;
   /** HNSW: construction search depth. */
-  efConstruction?: number;
+  readonly efConstruction?: number;
   /** IVFFlat: number of inverted lists. */
-  lists?: number;
+  readonly lists?: number;
 };
 
 /** The metric a search or an index measures by where nothing names one: every engine with vectors has it. */

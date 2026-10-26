@@ -1,13 +1,5 @@
 import type { ColumnNode, EnumValues, ForeignKeyAction } from '../../schema/types.js';
-import type {
-  IndexEntry,
-  Except,
-  FieldOptions,
-  IndexColumnInput,
-  IndexOptions,
-  IndexSchema,
-  QuerySql,
-} from '../../type/index.js';
+import type { IndexEntry, Except, FieldOptions, IndexColumnInput, IndexOptions } from '../../type/index.js';
 import type { ForeignKeySchema } from '../../type/migration.js';
 
 export type ColumnDefinition = Except<ColumnNode, 'table'>;
@@ -32,14 +24,12 @@ export interface FullColumnDefinition extends ColumnDefinition {
 }
 
 /**
- * An index as the builder records it, with the entries and options an entity's `indexes` entry takes: its SQL kept as `raw`
- * until a generator renders it for the engine the migration runs on.
+ * An index as the builder records it: its options as declared, its SQL kept as `raw` until a generator renders it for
+ * the engine the migration runs on, and an unnamed one named then, from its predicate as written.
  */
-export type IndexDefinition = Except<IndexSchema, 'name' | 'entries' | 'where'> & {
-  /** As declared; an unnamed index is named when it is rendered, from its predicate as written. */
-  readonly name?: string;
+export type IndexDefinition = IndexOptions & {
   readonly entries: readonly IndexEntry[];
-  readonly where?: QuerySql;
+  readonly unique: boolean;
   /** Whether an unnamed index takes the `_uk` kind. Only `table.unique` sets it: earlier migrations installed `_uk` there, so `index` keeps `_idx`. */
   readonly uniqueName?: boolean;
 };

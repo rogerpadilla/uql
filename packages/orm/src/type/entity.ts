@@ -7,7 +7,6 @@ import type { QueryWhere } from './queryWhere.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
 import type {
   AtLeastOne,
-  Except,
   ExactlyOne,
   IsEqual,
   Merge,
@@ -788,10 +787,14 @@ export type HookFunction = { run(row: object, ctx: HookContext): unknown }['run'
  * cosine; a `fulltext` one may name the text-search `config` it parses with; and any other index neither.
  */
 export type IndexTypeOptions =
-  | { type: VectorIndexType; distance: VectorDistance; config?: never }
-  | { type: 'vectorSearch'; distance?: VectorDistance; config?: never }
-  | { type: 'fulltext'; distance?: never; config?: string }
-  | { type?: Exclude<IndexType, VectorIndexType | 'vectorSearch' | 'fulltext'>; distance?: never; config?: never };
+  | { readonly type: VectorIndexType; readonly distance: VectorDistance; readonly config?: never }
+  | { readonly type: 'vectorSearch'; readonly distance?: VectorDistance; readonly config?: never }
+  | { readonly type: 'fulltext'; readonly distance?: never; readonly config?: string }
+  | {
+      readonly type?: Exclude<IndexType, VectorIndexType | 'vectorSearch' | 'fulltext'>;
+      readonly distance?: never;
+      readonly config?: never;
+    };
 
 /** What an index entry carries besides what it indexes, at every layer. */
 export type IndexEntryModifiers = {
@@ -931,20 +934,27 @@ export type EntityIndexColumnInput =
   | JsonPathRef<UntypedJson>
   | (IndexEntryModifiers & IndexEntryTarget);
 
+/**
+ * What an index states the same at every layer. Each layer adds its own `include` and `where` beside it, so nothing
+ * maps over `IndexTypeOptions`' arms: `type` and `distance` stay a discriminated pair at no instantiation cost.
+ */
+export type IndexKnobs = {
+  /** Custom index name */
+  readonly name?: string;
+  /** Whether index is unique; omit or `false` for a non-unique index (default). */
+  readonly unique?: boolean;
+} & VectorIndexOptions &
+  IndexTypeOptions;
+
 /** An index as metadata keeps it. */
 export type EntityIndexMeta<E = object> = {
   /** The indexed entries, in order. */
-  entries: readonly IndexEntry[];
-  /** Custom index name */
-  name?: string;
-  /** Whether index is unique; omit or `false` for a non-unique index (default). */
-  unique?: boolean;
-  /** Partial index predicate, compiled when the schema is built. */
-  where?: EntityWhereMeta<E>;
+  readonly entries: readonly IndexEntry[];
   /** Columns stored in the index beyond its key, so a query reading only these needs no row. Postgres-wire only. */
-  include?: readonly string[];
-} & VectorIndexOptions &
-  IndexTypeOptions;
+  readonly include?: readonly string[];
+  /** Partial index predicate, compiled when the schema is built. */
+  readonly where?: EntityWhereMeta<E>;
+} & IndexKnobs;
 
 export type EntityMeta<E> = {
   readonly entity: AbstractType<E>;
@@ -1170,28 +1180,23 @@ export type EntityOptions<E = unknown> = {
   readonly triggers?: TriggerSection<E>;
 };
 
-/**
- * Everything an index carries beyond its columns, as the migration builder's `table.index(...)` takes it,
- * and through {@link EntityIndexOptions} an entity's `indexes`. `Except` (not plain `Omit`) keeps
- * `type`/`distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
- */
-export type IndexOptions = Except<EntityIndexMeta, 'entries' | 'where'> & {
+/** Everything an index carries beyond its columns, as the migration builder's `table.index(...)` takes it. */
+export type IndexOptions = IndexKnobs & {
+  /** Columns stored in the index beyond its key, so a query reading only these needs no row. Postgres-wire only. */
+  readonly include?: readonly string[];
   /** Partial-index predicate, as `sql` with no interpolation: the migration builder has no entity to compile one against. */
   readonly where?: QuerySql;
 };
 
 /** {@link IndexOptions} on an entity, `include` and `where` read off the section's refs as its columns are. */
-export type EntityIndexOptions<E> = Merge<
-  IndexOptions,
-  {
-    readonly include?: readonly ColumnRef<FieldKey<E>>[];
-    /**
-     * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
-     * shape, so a hand-written `sql` that means the same thing leaves the index unused.
-     */
-    readonly where?: EntityPredicate<E> | QuerySql;
-  }
->;
+export type EntityIndexOptions<E> = IndexKnobs & {
+  readonly include?: readonly ColumnRef<FieldKey<E>>[];
+  /**
+   * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
+   * shape, so a hand-written `sql` that means the same thing leaves the index unused.
+   */
+  readonly where?: EntityPredicate<E> | QuerySql;
+};
 
 /** An index as registration reads it: its columns, read off the refs, and its options. */
 export type EntityIndexInput<E> = EntityIndexOptions<E> & { readonly columns: readonly EntityIndexColumnInput[] };

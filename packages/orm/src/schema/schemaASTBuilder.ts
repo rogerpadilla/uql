@@ -7,10 +7,10 @@ import type {
   FieldOptions,
   AbstractType,
 } from '../type/index.js';
-import { declaredIndexes, namedIndex, enumCheck, ownedCheck } from '../util/ddlExpression.util.js';
+import { declaredIndexes, enumCheck, ownedCheck, renderIndex } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { isInlinedExpression, isSoleIdField } from '../util/field.util.js';
-import { entryColumn, entryColumns, renamedEntry, renderIndexColumn } from '../util/indexEntry.util.js';
+import { entryColumn, entryColumns, renamedEntry } from '../util/indexEntry.util.js';
 import { definedEntries, entityName } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -267,21 +267,14 @@ function addCompositeIndex(
   });
   if (!resolved.length) return;
 
-  const named = namedIndex(
-    options.name,
+  const index = renderIndex(
     table.name,
-    resolved,
+    // An `include` column is named like any other, so a custom naming has to reach it too.
+    { ...options, entries: resolved, include: include?.map((column) => fieldColumn(ctx, meta, column) ?? column) },
+    (sql) => ctx.compileDdl(sql, meta.entity),
     (label) => where && ctx.compileIndexPredicate(where, meta.entity, label),
   );
-  ctx.ast.addIndex({
-    ...options,
-    ...named,
-    table,
-    entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
-    // An `include` column is named like any other, so a custom naming has to reach it too.
-    include: include?.map((column) => fieldColumn(ctx, meta, column) ?? column),
-    unique: options.unique ?? false,
-  });
+  ctx.ast.addIndex({ ...index, table });
   if (ctx.textScoreIndexes) {
     addTextScoreIndexes(ctx, table, options.type, resolved);
   }

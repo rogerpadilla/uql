@@ -4,7 +4,6 @@
  * Each case is one thing `Omit` gets wrong. Not a runtime test: it is type-checked by `bun run ts`,
  * skipped by vitest, and left out of the build (excluded by the `.test-d.ts` suffix).
  */
-import type { IndexOptions } from './entity.js';
 import type { Expect } from './typeTest.test-d.js';
 import type { Except, IsEqual } from './utility.js';
 
@@ -21,13 +20,7 @@ type Union = { type: 'a'; a: number; drop: 1 } | { type: 'b'; b: string; drop: 1
 export type _union = Expect<IsEqual<Except<Union, 'drop'>, { type: 'a'; a: number } | { type: 'b'; b: string }>>;
 export type _omitCollapses = Expect<IsEqual<Omit<Union, 'drop'>, { type: 'a' | 'b' }>>;
 
-// The real case the above protects: omitting `columns` must not flatten the vector index variants.
-declare const index: IndexOptions;
-const distance: string | undefined = index.type === 'vector' ? index.distance : undefined;
-
 // An index signature does not widen the excluded key back into existence.
 type Indexed = { [k: string]: unknown; known: string };
 export type _indexed = Expect<IsEqual<Except<Indexed, 'known'>, { [k: string]: unknown }>>;
 export type _omitKeepsIt = Expect<IsEqual<Omit<Indexed, 'known'>, { [x: string]: unknown; [x: number]: unknown }>>;
-
-export { distance };

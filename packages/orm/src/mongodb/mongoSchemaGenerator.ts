@@ -22,7 +22,7 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../type/vector.js';
-import { declaredIndexes, namedIndex } from '../util/ddlExpression.util.js';
+import { declaredIndexes, renderIndex } from '../util/ddlExpression.util.js';
 import { findVectorIndex, fulltextConfig, fulltextWeights, indexedDistance } from '../util/dialect.util.js';
 import { entryKeys, entryModifiers, renamedEntry } from '../util/indexEntry.util.js';
 import { definedEntries, hasKeys } from '../util/object.util.js';
@@ -89,18 +89,15 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       const [first] = declared;
       const vectorKey = options.type === 'vectorSearch' && typeof first?.column === 'string' ? first.column : undefined;
       const vector = vectorKey === undefined ? undefined : meta.fields[vectorKey];
-      const named = namedIndex(
-        options.name,
+      const index = renderIndex(
         collectionName,
-        entries,
+        { ...options, entries },
+        refuseSql,
         (label) => where && this.indexFilter(where, meta.entity, label),
       );
       return {
-        ...options,
-        ...named,
-        name: vector ? this.vectorSearchIndexName(options.name, documentPath(entries[0])) : named.name,
-        entries,
-        unique: options.unique ?? false,
+        ...index,
+        name: vector ? this.vectorSearchIndexName(options.name, documentPath(entries[0])) : index.name,
         distance:
           vectorKey === undefined
             ? options.distance

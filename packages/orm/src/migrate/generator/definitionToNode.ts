@@ -3,8 +3,8 @@ import type { TableNode } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QuerySql } from '../../type/querySql.js';
-import { namedIndex, enumCheck } from '../../util/ddlExpression.util.js';
-import { normalizeIndexColumn, renderIndexColumn } from '../../util/indexEntry.util.js';
+import { enumCheck, renderIndex } from '../../util/ddlExpression.util.js';
+import { normalizeIndexColumn } from '../../util/indexEntry.util.js';
 import { derivedIndexName, splitQualifiedName } from '../../util/sql.util.js';
 import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
@@ -90,14 +90,10 @@ export function indexDefinition(
  */
 export function renderIndexDefinition(
   table: string,
-  { uniqueName, ...index }: IndexDefinition,
+  { uniqueName, where, ...index }: IndexDefinition,
   render: (sql: QuerySql) => string,
 ): IndexSchema {
-  return {
-    ...index,
-    ...namedIndex(index.name, table, index.entries, () => index.where && render(index.where), uniqueName),
-    entries: index.entries.map((entry) => renderIndexColumn(entry, render)),
-  };
+  return renderIndex(table, index, render, () => where && render(where), uniqueName);
 }
 
 /** The foreign key a column-level `references` declares, or nothing. Shared for the same reason. */

@@ -3,7 +3,7 @@
  * (MariaDB to euclidean, pgvector to none); MongoDB's `vectorSearch` emits no metric and is exempt.
  * Type-checked by `bun run ts` only.
  */
-import { Entity, f, Field, type IndexSection, type Json, ManyToOne } from '../index.js';
+import { Entity, f, Field, type IndexOptions, type IndexSection, type Json, ManyToOne } from '../index.js';
 import { sql } from '../util/index.js';
 
 /** One index, checked on its own: inside one `@Entity` call, an error in one entry hides another's. */
@@ -200,3 +200,10 @@ indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.title.x])]);
 indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.thema.color])]);
 // @ts-expect-error typo in the leaf segment
 indexOf<JsonIndexed>((jsonIndexed, index) => [index([jsonIndexed.kind.theme.colour])]);
+
+// The migration builder's options keep the same pair.
+export const builderVector: IndexOptions = { type: 'hnsw', distance: 'cosine', m: 16 };
+// @ts-expect-error a vector index needs a distance metric
+export const builderMissingMetric: IndexOptions = { type: 'hnsw' };
+// @ts-expect-error a non-vector index type cannot declare a distance metric
+export const builderStrayMetric: IndexOptions = { type: 'gin', distance: 'cosine' };

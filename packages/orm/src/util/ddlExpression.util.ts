@@ -1,6 +1,6 @@
 import type { CheckSchema, EnumValues } from '../schema/types.js';
-import type { EntityIndexMeta, EntityMeta, IndexEntry, QuerySql } from '../type/index.js';
-import { indexEntryNamePart } from './indexEntry.util.js';
+import type { EntityIndexMeta, EntityMeta, IndexEntry, IndexKnobs, IndexSchema, QuerySql } from '../type/index.js';
+import { indexEntryNamePart, renderIndexColumn } from './indexEntry.util.js';
 import { definedEntries } from './object.util.js';
 import { sql } from './sql.js';
 import { derivedIndexName, ownedName } from './sql.util.js';
@@ -26,18 +26,28 @@ export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
 }
 
 /**
- * An index's rendered predicate and the name it is created by, settled together: `render` gets the name without the
+ * An index as the schema holds it, its entries' SQL rendered by `renderSql`. `renderWhere` gets the name without the
  * predicate's hash to label its errors, then the name takes the hash of what it rendered.
  */
-export function namedIndex(
-  name: string | undefined,
+export function renderIndex(
   table: string,
-  entries: readonly IndexEntry<unknown>[],
-  render: (label: string) => string | undefined,
-  unique?: boolean,
-): { readonly name: string; readonly where: string | undefined } {
-  const where = render(declaredIndexName(name, table, entries, { unique }));
-  return { name: declaredIndexName(name, table, entries, { unique, where }), where };
+  {
+    entries,
+    unique = false,
+    ...index
+  }: IndexKnobs & { readonly entries: readonly IndexEntry[]; readonly include?: readonly string[] },
+  renderSql: (sql: QuerySql) => string,
+  renderWhere: (label: string) => string | undefined,
+  uniqueName?: boolean,
+): IndexSchema {
+  const where = renderWhere(declaredIndexName(index.name, table, entries, { unique: uniqueName }));
+  return {
+    ...index,
+    name: declaredIndexName(index.name, table, entries, { unique: uniqueName, where }),
+    where,
+    entries: entries.map((entry) => renderIndexColumn(entry, renderSql)),
+    unique,
+  };
 }
 
 /**

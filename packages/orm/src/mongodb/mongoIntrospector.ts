@@ -119,7 +119,7 @@ function textIndexEntry([key, weight]: [string, number]): IndexEntry<string> {
 }
 
 /** A key as the entity declares it: the field, then the path inside it, so the two compare and name alike. */
-export function documentEntry(key: string): IndexEntry<string> {
+export function documentEntry(key: string): IndexEntry<never> {
   const dot = key.indexOf('.');
   return dot < 0 ? { column: key } : { json: key.slice(0, dot), path: key.slice(dot + 1) };
 }

@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.106.1] - 2026-10-26
+
+- Entities with indexes type-check about 5% faster.
+
 ## [0.106.0] - 2026-10-26
 
 - **Breaking:** a JSON column's payload is a Standard Schema, `f.json(schema)`, typed by its output. The `shape` option is gone.
