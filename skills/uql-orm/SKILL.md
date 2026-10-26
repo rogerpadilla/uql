@@ -79,6 +79,7 @@ export class Post {
 
 - A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal()`, `f.decimal(precision)`, `f.decimal(precision, scale)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other column type, and `f.references(() => Target)` for a foreign key, which takes the target's key type. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A bound holds in either order around `.columnType('char')`, but not around a `sql` type, which carries its own.
 - A column is NOT NULL unless `.nullable()`; its property then admits `null` (`title?: string | null`).
+- A JSON column's property is `Json<T>`, where `T` is the payload: `settings?: Json<{ theme?: string }> | null`, or `Json<z.infer<typeof Settings>>` for a schema. A plain object type reads as a relation, and `$where`, `$sort` and the update operators refuse it.
 - Declare a NOT NULL column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable columns, `.eager(false)` fields, and relations. A computed field is present on a default read, so it is not optional. uql fills a single-column key and a version.
 - A NOT NULL field a default fills (`.default()`, `.onInsert()`) is `!` and listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
@@ -92,6 +93,39 @@ export class Post {
 - Indexes, checks, filters and triggers are `@Entity` options, each entry made by the helper the callback is handed. Partial index: `@Entity({ indexes: (post, index) => [index([post.authorId], { where: { archived: { $ne: true } } })] })`; a string second argument is the index's name. Write the predicate as a query, not `sql`.
 - JSON path index: read the path off the column's ref, `index([user.settings.theme])` for text, `index([{ column: user.settings.rating, type: Number }])` for any other value, `type: [String]` for an array's elements. MySQL keys a text path or element as `CHAR(n)`, `{ column: user.tags, type: [String], charLength: 64 }`, and a `TEXT` column by a prefix, `{ column: post.body, prefixLength: 64 }`.
 - Triggers run in the database: `@Entity({ triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })] })`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. A trigger's writes skip uql's fills and entity filters. MongoDB has no triggers: https://uql-orm.dev/entities/triggers.md
+
+### Choosing a form
+
+Both forms are supported, mix them per entity, and produce the same queries and types.
+
+- Decorators
+  - Pros
+    - A named class type shows on hover.
+    - A column can be a foreign key (`@Field(f.references(() => User))`), so entities may reference each other in any order.
+    - No `.relations()` ordering rules.
+    - Shared structure through base classes (`StampedEntity`, `WorkspaceScoped`) that carry fields and relations.
+    - The familiar form from TypeORM and MikroORM.
+  - Cons
+    - Each field is written twice, as a builder and as a TypeScript property (`@Field(f.string()) name!: string`).
+    - The TC39 decorator transform is required: Node needs `tsx`, and some bundlers need a Babel step.
+    - Without `@Entity({ name })`, the table name comes from the class name, which a minifier can change.
+    - Higher type-check cost on the benchmark model (9,297 vs 5,110 instantiations).
+    - Cannot be declared at run time.
+    - `uql-codemod` cannot convert it into a schema.
+- Schema
+  - Pros
+    - The row type is derived from the builders, with nothing written twice.
+    - Shorter: 19 to 30% fewer lines in the two apps this was measured on.
+    - Lower type-check cost on the benchmark model.
+    - Shared relation helpers, and derived fields declared with their relations.
+    - Plain data: no transform, and it can be built at run time (a CMS content type).
+    - The form for projects that cannot enable TC39 decorators, such as legacy-decorator NestJS and Angular.
+  - Cons
+    - Relations are thunks declared after the columns, and `.relations()` comes last (only `.filters()` may follow it).
+    - No column-level foreign keys: a shared key is a relation helper, and an eager read across two entities can create an inference cycle (TS7022).
+    - Each entity needs a `type X = InstanceType<typeof X>` alias for its name.
+    - No class to annotate or extend: inheritance uses `extends` on a base schema.
+    - Newer and less used.
 
 ### Schema entities
 
@@ -146,7 +180,7 @@ export const Book = defineEntity({
 ```
 
 - Each field is a column builder, as in the decorated form. The row follows from them: a key, a version and a NOT NULL column are always present, a `.nullable()` one reads `| null`; a default (`.default()`, `.onInsert()`, `.autoIncrement()`) makes it optional on insert; `f.enum()` gives the literal union. No `!`, `?` or brands to write.
-- The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `relations` comes last, but for a `filters` that reads through them: `.relations(...).filters({ byActiveAuthor: { where: { author: { active: true } } } })`. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends` and `fields`.
+- The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `relations` comes last, but for a `filters` that reads through them: `.relations(...).filters({ byActiveAuthor: { where: { author: { active: true } } } })`. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends`, `abstract` and `fields`.
 - Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. A schema's foreign key is a relation: `manyToOne` names its `references` column, whose type is checked against the target's key; the column itself stays a plain field. `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
 - `relations`' second callback declares the derived fields: each value is a thunk, read lazily, of an aggregate over a to-many (`() => author.books.count()`) or a column expression. The callback's refs are the entity's own columns and its relations, so one expression can combine them.
 - A hook is a function of the row and `{ querier, onCommit }`.
@@ -231,6 +265,8 @@ The callback commits when it returns and rolls back when it throws. Inside it, `
 A `findManyStream` holds its querier until the loop ends, and other statements on it are refused meanwhile. Run them after the loop, or on another connection.
 
 ## Migrations
+
+Upgrading an existing project: `npx uql-codemod --dry-run`, then `npx uql-codemod`, which rewrites what it can and reports the rest. What changed by version: https://uql-orm.dev/upgrade-guide.md
 
 `npx uql-migrate` reads `uql.config.ts` (`bun --bun uql-migrate` on Bun):
 
