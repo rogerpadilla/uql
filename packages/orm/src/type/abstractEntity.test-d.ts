@@ -5,6 +5,7 @@
 import type { ClientQuerier } from '../browser/type/clientQuerier.js';
 import { defineEntity, Entity, f, Field, getEntities, ManyToOne } from '../entity/index.js';
 import type { Querier } from '../index.js';
+import { currentTimestamp } from '../util/index.js';
 
 @Entity({ abstract: true })
 export abstract class StampedBase {
@@ -72,4 +73,21 @@ export async function aBrowserClientRefusesAnAbstractBase() {
   await client.insertOne(StampedBase, {});
   // @ts-expect-error an abstract base is not a table, so it cannot be queried
   await client.count(StampedBase);
+}
+
+export const StampedRecord = defineEntity({
+  name: 'StampedRecord',
+  abstract: true,
+  fields: { id: f.number().id(), createdAt: f.date().default(currentTimestamp) },
+});
+
+export const Stocked = defineEntity({
+  name: 'Stocked',
+  extends: StampedRecord,
+  fields: { label: f.string(), stock: f.number().default(0) },
+});
+
+/** The base's filled fields and the subtype's own default are both left out of an insert. */
+export async function anInheritedInsertLeavesItsFilledFieldsOut() {
+  await querier.insertOne(Stocked, { label: 'x' });
 }

@@ -24,7 +24,10 @@ it('should register each relation kind the builder declares, and an async hook o
       parentId: f.number(),
       dogId: f.number(),
     },
-  }).references({ parentId: () => Parent, dogId: () => Dog });
+  }).relations((rel) => ({
+    parent: () => rel.manyToOne(Parent, { references: (junction) => junction.parentId }),
+    dog: () => rel.manyToOne(Dog, { references: (junction) => junction.dogId }),
+  }));
 
   const Parent = defineEntity({
     name: 'Parent',
@@ -59,9 +62,7 @@ it("should inherit a schema base's relations, read before or after the base", ()
   const Pet = defineEntity({
     name: 'Pet',
     fields: { id: f.number().id(), ownerId: f.number().nullable() },
-  })
-    .references({ ownerId: () => Owner })
-    .relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
   const Cat = defineEntity({ name: 'Cat', extends: Pet, fields: { lives: f.number().nullable() } });
   @Entity()
   class Hound extends Pet {
@@ -92,16 +93,12 @@ it("should keep an entity's own relation over its schema base's", () => {
   const Pet = defineEntity({
     name: 'Pet',
     fields: { id: f.number().id(), ownerId: f.number().nullable() },
-  })
-    .references({ ownerId: () => Owner })
-    .relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
   const Foster = defineEntity({
     name: 'Foster',
     extends: Pet,
     fields: { fosterId: f.number().nullable() },
-  })
-    .references({ fosterId: () => Owner })
-    .relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (foster) => foster.fosterId }) }));
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (foster) => foster.fosterId }) }));
 
   expect(getMeta(Foster).relations.owner?.references).toEqual([{ local: 'fosterId', foreign: 'id' }]);
 });
@@ -115,9 +112,9 @@ it("should keep a schema's own relation over its decorated base's", () => {
     @Field(f.references(() => Keeper).nullable()) keeperId?: number | null;
     @ManyToOne({ entity: () => Keeper, references: (stall) => stall.keeperId }) keeper?: Keeper;
   }
-  const Pen = defineEntity({ name: 'Pen', extends: Stall, fields: { minderId: f.number().nullable() } })
-    .references({ minderId: () => Keeper })
-    .relations((rel) => ({ keeper: () => rel.manyToOne(Keeper, { references: (pen) => pen.minderId }) }));
+  const Pen = defineEntity({ name: 'Pen', extends: Stall, fields: { minderId: f.number().nullable() } }).relations(
+    (rel) => ({ keeper: () => rel.manyToOne(Keeper, { references: (pen) => pen.minderId }) }),
+  );
 
   expect(getMeta(Pen).relations['keeper']?.references).toEqual([{ local: 'minderId', foreign: 'id' }]);
   expect(getMeta(Stall).relations.keeper?.references).toEqual([{ local: 'keeperId', foreign: 'id' }]);
@@ -145,10 +142,13 @@ it('should refuse a foreign key whose type holds another kind of value than the 
   const Wearer = defineEntity({
     name: 'Wearer',
     fields: { id: f.number().id(), badgeId: f.number().nullable() },
-  }).references({ badgeId: () => Badge });
+  }).relations((rel) => ({
+    // @ts-expect-error a number column cannot hold the text key of the badge it points at
+    badge: () => rel.manyToOne(Badge, { references: (wearer) => wearer.badgeId }),
+  }));
 
   expect(() => getMeta(Wearer)).toThrow(
-    "'Wearer.badgeId' holds a number, but the key of 'Badge' it references is a string",
+    "'Wearer.badge' holds a number, but the key of 'Badge' it references is a string",
   );
 });
 
@@ -157,7 +157,9 @@ it('should take a BigInt foreign key over a numeric key, which it widens', () =>
   const Entry = defineEntity({
     name: 'Entry',
     fields: { id: f.number().id(), ledgerId: f.bigint().nullable() },
-  }).references({ ledgerId: () => Ledger });
+  }).relations((rel) => ({
+    ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
+  }));
 
   expect(getMeta(Entry).fields.ledgerId?.type).toBe(BigInt);
 });
@@ -169,7 +171,7 @@ it("should keep an entity's own aggregate over its schema base's", () => {
     fields: { id: f.number().id() },
   }).relations(
     (rel) => ({ pups: () => rel.oneToMany(Pup, { mappedBy: (pup) => pup.kennel }) }),
-    (rel) => ({ pupStat: () => rel.pups.count() }),
+    (kennel) => ({ pupStat: () => kennel.pups.count() }),
   );
   const Pup = defineEntity({
     name: 'Pup',
@@ -181,24 +183,30 @@ it("should keep an entity's own aggregate over its schema base's", () => {
     fields: {},
   }).relations(
     () => ({}),
-    (agg) => ({ pupStat: () => agg.pups.max((pup) => pup.age) }),
+    (shelter) => ({ pupStat: () => shelter.pups.max((pup) => pup.age) }),
   );
 
   expect(getMeta(Shelter).fields.pupStat?.computed).toMatchObject({ spec: { op: '$max', field: 'age' } });
   expect(getMeta(Kennel).fields.pupStat?.computed).toMatchObject({ spec: { op: '$count' } });
 });
 
-/** Checking what an aggregate returns would read it while the row is inferred, so the registry refuses it instead. */
-it.each([
-  ['a function reading no relation', () => 1],
-  ['no function at all', 1],
-])('should refuse an aggregate that reads no relation, on first read: %s', (_, total) => {
+/** A derived field the registry cannot read as a column or an aggregate is refused on first read, not stored. */
+it('should refuse a derived field that is neither a column nor an aggregate, on first read', () => {
   const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
     () => ({}),
-    () => ({ total }),
+    // @ts-expect-error a derived field is a thunk of a column or an aggregate, never a plain value
+    () => ({ total: () => 1 }),
   );
-  expect(() => getMeta(Tally)).toThrow(
-    "'Tally.total' aggregates no relation: write it as `() => agg.<relation>.count()`",
+  expect(() => getMeta(Tally)).toThrow("'Tally.total' is neither a column nor an aggregate: declare it as one");
+  removeEntity(Tally);
+});
+
+it('should refuse a derived field that is no thunk, on first read', () => {
+  const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
+    () => ({}),
+    // @ts-expect-error a derived field is a thunk, read lazily, never a plain value
+    () => ({ total: 1 }),
   );
+  expect(() => getMeta(Tally)).toThrow("'Tally.total' is neither a column nor an aggregate: declare it as one");
   removeEntity(Tally);
 });

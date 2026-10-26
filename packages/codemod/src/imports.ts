@@ -482,12 +482,34 @@ export function deadImports(
   return elements.filter((it) => candidates.has(it.name.text) && !spelled.has(it.name.text));
 }
 
-/** The edits dropping each `uql-orm` import name in `candidates` that the file no longer spells. */
-export function unusedImportEdits(source: ts.SourceFile, candidates: ReadonlySet<string>): readonly Edit[] {
+/**
+ * The file's `uql-orm` imports with `added` joined to the first, a new import where there is none, and each name in
+ * `candidates` the file no longer spells dropped.
+ */
+export function importEdits(
+  source: ts.SourceFile,
+  added: ReadonlySet<string>,
+  candidates: ReadonlySet<string | undefined>,
+): readonly Edit[] {
+  const declarations = uqlImportDeclarations(source, true);
+  const bound = new Set(declarations.flatMap(({ elements }) => elements.map((it) => it.name.text)));
+  const joined = [...added].filter((name) => !bound.has(name)).toSorted();
+  const [home] = declarations;
+  if (!home) {
+    return joined.length ? [{ start: 0, end: 0, text: `${importText('import', joined, 'uql-orm')}\n` }] : [];
+  }
   const spelled = spelledNames(source);
-  return uqlImportDeclarations(source, true).flatMap(({ declaration, elements }) => {
+  return declarations.flatMap(({ declaration, elements }) => {
     const dead = deadImports(elements, candidates, spelled);
-    return dead.length ? importRemovalEdits(declaration, elements, dead) : [];
+    const join = declaration === home.declaration ? joined : [];
+    const removals = dead.length ? importRemovalEdits(declaration, elements, dead) : [];
+    const first = elements.find((it) => !dead.includes(it));
+    if (!join.length) {
+      return removals;
+    }
+    return first
+      ? [...removals, inserted(first, `${join.join(', ')}, `)]
+      : [replaced(declaration, importText('import', join, 'uql-orm'))];
   });
 }
 

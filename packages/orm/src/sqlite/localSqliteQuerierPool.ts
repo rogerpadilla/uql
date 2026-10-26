@@ -1,4 +1,5 @@
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
+import type { Except, Merge } from '../type/index.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 import { type SqliteDatabase, type SqlitePreparedStatement, SqliteQuerier } from './sqliteQuerier.js';
 
@@ -28,8 +29,8 @@ export type LocalSqliteDatabase = {
  * A `node:sqlite` or `bun:sqlite` handle as a {@link LocalSqliteDatabase}. Neither says whether a statement
  * reads, so `reads` does: taken by `run()`, a RETURNING statement's rows would be lost, and its ids with them.
  */
-export function adaptSqlite<S extends Omit<SqlitePreparedStatement, 'reader'>>(
-  db: Omit<LocalSqliteDatabase, 'prepare'> & { prepare(sql: string): S },
+export function adaptSqlite<S extends Except<SqlitePreparedStatement, 'reader'>>(
+  db: Merge<LocalSqliteDatabase, { prepare(sql: string): S }>,
   reads: (stmt: S) => boolean,
 ): LocalSqliteDatabase {
   return {

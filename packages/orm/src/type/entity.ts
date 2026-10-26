@@ -4,11 +4,13 @@ import type { Querier } from './querier.js';
 import type { FilterOptions, RelationQuery } from './query.js';
 import type { ColumnRef, JsonPathRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
+import type { StandardSchemaV1 } from './standardSchema.js';
 import type {
   AtLeastOne,
   Except,
   ExactlyOne,
   IsEqual,
+  Merge,
   IsJson,
   JsonBrand,
   IsMany,
@@ -35,10 +37,10 @@ export const versionKey = Symbol('versionKey');
 /** Brands the fields an insert may leave out, which a default fills, `[filledKey]?: 'units' | 'createdAt'`; each stays present on every read. */
 export const filledKey = Symbol('filledKey');
 
-type EntityBrand = typeof idKey | typeof versionKey | typeof filledKey;
+export type EntityBrand = typeof idKey | typeof versionKey | typeof filledKey;
 
 /** The names an entity's brand `B` lists, `never` where it declares none. */
-type BrandNames<E, B extends EntityBrand> = E extends { readonly [K in B]?: infer N } ? N : never;
+export type BrandNames<E, B extends EntityBrand> = B extends keyof E ? NonNullable<E[B]> : never;
 
 /**
  * A brand naming a key that is no field, which each reader would drop silently: refused where an entity
@@ -386,26 +388,6 @@ type TimeColumnType = 'time';
 type DecimalColumnType = 'decimal' | 'numeric';
 export type JsonColumnType = ColumnTypeOf<'json'>;
 
-/**
- * A JSON column's payload described as data, in a field's vocabulary: a value's type (`String`), an object of
- * shapes, a key ending in `?` for an optional member, and `[shape]` for an array of it.
- * @example `{ theme: String, 'nickname?': String, tags: [String], billing: { plan: String } }`
- */
-export type JsonShape = JsonLeaf | readonly [JsonShape] | { readonly [key: string]: JsonShape };
-
-/** The values a JSON document holds at a leaf. */
-type JsonLeaf = StringConstructor | NumberConstructor | BooleanConstructor;
-
-/** The payload a {@link JsonShape} describes. */
-export type ShapeValue<S> = S extends readonly [infer E]
-  ? ShapeValue<E>[]
-  : S extends JsonLeaf
-    ? TsTypeOf<S>
-    : [Extract<keyof S, `${string}?`>] extends [never]
-      ? { -readonly [K in keyof S]: ShapeValue<S[K]> }
-      : { -readonly [K in keyof S as K extends `${string}?` ? never : K]: ShapeValue<S[K]> } & {
-          -readonly [K in keyof S as K extends `${infer N}?` ? N : never]?: ShapeValue<S[K]>;
-        };
 export type BlobColumnType = ColumnTypeOf<'blob'>;
 export type BooleanColumnType = ColumnTypeOf<'boolean'>;
 export type VectorColumnType = ColumnTypeOf<'vector'>;
@@ -449,8 +431,8 @@ export type FieldOptions<V = unknown> = {
   readonly onDelete?: ForeignKeyAction;
   /** The values the column accepts, `f.enum(['draft', 'paid'])`: a `CHECK (col IN (...))` on every SQL engine. */
   readonly enum?: EnumValues;
-  /** A JSON column's payload, which a schema entity's row reads it as: `shape: { theme: String, tags: [String] }`. */
-  readonly shape?: JsonShape;
+  /** A JSON column's payload as a Standard Schema, `f.json(schema)`, typed by its output and never read at run time. */
+  readonly schema?: StandardSchemaV1;
   /**
    * An expression the database computes, never written: spliced into each read, or with `stored` a generated
    * column, `.as(sql`${user.first} || ' ' || ${user.last}`)`. A relation aggregate, `user.resources.count()`,
@@ -588,11 +570,11 @@ type RelationCascade = { readonly cascade?: boolean | CascadeType };
 type RelationActions = { readonly onDelete?: ForeignKeyAction; readonly onUpdate?: ForeignKeyAction };
 
 /** The one column of `O` that can be a foreign key to `E`: a field holding `E`'s key, which has to be a single one. */
-type ForeignKey<O, E> = HasCompositeKey<E> extends true ? never : FieldKeyHolding<O, IdValue<E>>;
+type ForeignKey<O, E> = HasCompositeKey<E> extends true ? never : KeyHolding<O, IdValue<E>>;
 
 /** One pair of join columns, each a field read off its entity's key map, the local one holding the foreign's value. */
 export type RelationReference<O, E> = {
-  readonly [F in keyof E]-?: { readonly local: FieldKeyHolding<O, E[F]>; readonly foreign: F };
+  readonly [F in keyof E]-?: { readonly local: KeyHolding<O, E[F]>; readonly foreign: F };
 }[FieldKey<E>];
 
 /** The fields of `E` whose value is a `T`, however optional: `FieldKeyOf<E, number | bigint>` are the ones a sum adds up. */
@@ -600,22 +582,30 @@ export type FieldKeyOf<E, T> = {
   readonly [K in FieldKey<E>]-?: [NonNullable<E[K]>] extends [T] ? K : never;
 }[FieldKey<E>];
 
-/** The fields of `O` that can hold any value `V` takes. */
-type FieldKeyHolding<O, V> = {
-  readonly [K in keyof O]-?: [NonNullable<V>] extends [NonNullable<O[K]>] ? K : never;
-}[FieldKey<O>];
+/** A value's kind as a join compares it: a number and a bigint are one kind, which BIGINT widens. */
+export type JoinKind<T> = T extends number | bigint ? number : T;
+
+/** The fields of `O` that can hold a key of `V`'s kind, compared as a join compares it at run time. */
+export type KeyHolding<O, V> = [V] extends [never]
+  ? never
+  : {
+      readonly [K in keyof O]-?: [JoinKind<NonNullable<V>>] extends [JoinKind<NonNullable<O[K]>>] ? K : never;
+    }[FieldKey<O>];
 
 /** A relation once `getMeta` resolved it: `references` settled into pairs and `mappedBy` a name. */
-export type RelationMeta = Omit<RelationRegistration, 'references'> & { references: RelationReferences };
+export type RelationMeta = Merge<RelationRegistration, { references: RelationReferences }>;
 
 /**
  * A relation as the registry takes it: `mappedBy` and `references` read down to names, `references` a
  * single column until `getMeta` pairs it with the target's key.
  */
-export type RelationRegistration = Omit<RelationOptions<object>, 'mappedBy' | 'references'> & {
-  mappedBy?: string;
-  references?: RelationReferences | string;
-};
+export type RelationRegistration = Merge<
+  RelationOptions<object>,
+  {
+    mappedBy?: string;
+    references?: RelationReferences | string;
+  }
+>;
 
 /**
  * What a relation's join callbacks answer, `E` its target and `O` the entity declaring it: one foreign key, pairs of
@@ -1101,11 +1091,14 @@ export type TriggerOptions<E = unknown> = {
  * A trigger as entity metadata keeps it: the column callback resolved to keys, and a body widened to
  * take both rows, which the renderer passes whatever the event, each body reading only its own.
  */
-export type EntityTriggerMeta<E = object> = Except<TriggerOptions<E>, 'of' | 'where' | 'run'> & {
-  readonly of?: readonly string[];
-  readonly where?: TriggerPredicate<E, TriggerUpdateEvent> | TriggerMetaBody<E>;
-  readonly run: TriggerMetaBody<E> | Readonly<Partial<Record<SqlDialectName, TriggerMetaBody<E>>>>;
-};
+export type EntityTriggerMeta<E = object> = Merge<
+  TriggerOptions<E>,
+  {
+    readonly of?: readonly string[];
+    readonly where?: TriggerPredicate<E, TriggerUpdateEvent> | TriggerMetaBody<E>;
+    readonly run: TriggerMetaBody<E> | Readonly<Partial<Record<SqlDialectName, TriggerMetaBody<E>>>>;
+  }
+>;
 
 /**
  * A body as the renderer calls it, with both rows whatever the event. Bivariant,
@@ -1188,14 +1181,17 @@ export type IndexOptions = Except<EntityIndexMeta, 'entries' | 'where'> & {
 };
 
 /** {@link IndexOptions} on an entity, `include` and `where` read off the section's refs as its columns are. */
-export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & {
-  readonly include?: readonly ColumnRef<FieldKey<E>>[];
-  /**
-   * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
-   * shape, so a hand-written `sql` that means the same thing leaves the index unused.
-   */
-  readonly where?: EntityPredicate<E> | QuerySql;
-};
+export type EntityIndexOptions<E> = Merge<
+  IndexOptions,
+  {
+    readonly include?: readonly ColumnRef<FieldKey<E>>[];
+    /**
+     * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
+     * shape, so a hand-written `sql` that means the same thing leaves the index unused.
+     */
+    readonly where?: EntityPredicate<E> | QuerySql;
+  }
+>;
 
 /** An index as registration reads it: its columns, read off the refs, and its options. */
 export type EntityIndexInput<E> = EntityIndexOptions<E> & { readonly columns: readonly EntityIndexColumnInput[] };

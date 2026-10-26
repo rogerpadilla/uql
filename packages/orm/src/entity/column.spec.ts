@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { unvalidatedSchema } from '../test/unvalidatedSchema.js';
 import { COLUMN_OPTIONS } from '../type/index.js';
 import { sql } from '../util/sql.js';
 import { f } from './column.js';
@@ -33,7 +34,9 @@ describe('f', () => {
     expect(optionsOf(f.decimal(12, 2))).toEqual({ type: 'decimal', precision: 12, scale: 2 });
     expect(optionsOf(f.decimal())).toEqual({ type: 'decimal' });
     expect(optionsOf(f.json())).toEqual({ type: 'json' });
-    expect(optionsOf(f.jsonb({ theme: String }))).toEqual({ type: 'jsonb', shape: { theme: String } });
+    const payload = unvalidatedSchema<{ theme: string }>();
+    expect(optionsOf(f.json(payload))).toEqual({ type: 'json', schema: payload });
+    expect(optionsOf(f.jsonb(payload))).toEqual({ type: 'jsonb', schema: payload });
     expect(optionsOf(f.vector(3).distance('l2'))).toEqual({
       type: 'vector',
       dimensions: 3,

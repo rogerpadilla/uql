@@ -167,6 +167,16 @@ export function wirePassThrough<E extends object>(entity: new () => E, q: WireQu
   return querier.findMany(entity, q);
 }
 
+/** A populate chosen at run time narrows its relations as each choice does, never to the whole relation. */
+export async function chosenPopulate(withWriter: boolean) {
+  const [row] = await querier.findMany(Story, {
+    $populate: withWriter ? { writer: { $select: { name: true } } } : {},
+  });
+  row.writer?.name;
+  // @ts-expect-error left out by the populate's projection, whichever choice ran
+  row.writer?.age;
+}
+
 export async function namedRows() {
   // A query declared apart names its row, and a find with it returns that row.
   const card = {

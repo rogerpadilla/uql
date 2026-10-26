@@ -7,6 +7,11 @@ uql's real types, against MikroORM 7.2.5, Drizzle 1.0.0-rc.5 and Prisma 8.0.0-rc
 ## The API
 
 ```ts
+import { z } from 'zod';
+
+// Any Standard Schema types the payload.
+const Meta = z.object({ lang: z.string(), tags: z.array(z.string()).optional() });
+
 export const Book = defineEntity({
   name: 'Book',
   fields: {
@@ -15,7 +20,7 @@ export const Book = defineEntity({
     subtitle: f.string().nullable(),
     stock: f.number().default(0),
     status: f.enum(['draft', 'published']),
-    meta: f.json({ lang: String, 'tags?': [String] }),
+    meta: f.json(Meta),
     version: f.version(),
     authorId: f.number(),
     editorId: f.number().nullable(),
@@ -25,13 +30,13 @@ export const Book = defineEntity({
   .indexes((book, index) => [index([book.title], { include: [book.stock] })])
   .checks((book, check) => [check(sql`${book.stock} >= 0`, 'stocked')])
   .hooks({ beforeInsert: [(book) => void (book.stock ??= 0)] })
-  .references({ editorId: { entity: () => Author, onDelete: 'SET NULL' } })
   .relations(
     (rel) => ({
       author: () => rel.manyToOne(Author, { references: (book) => book.authorId }),
+      editor: () => rel.manyToOne(Author, { references: (book) => book.editorId, onDelete: 'SET NULL' }),
       tags: () => rel.manyToMany(Tag, { through: () => BookTag }),
     }),
-    (agg) => ({ tagCount: () => agg.tags.count() }),
+    (book) => ({ tagCount: () => book.tags.count() }),
   );
 export type Book = InstanceType<typeof Book>;
 ```
@@ -54,17 +59,17 @@ The decorated form reads the same columns: `@Field(f.string().nullable()) subtit
 
 Each is forced by TypeScript inferring entities that point at each other.
 
-| Shape                                                             | Why                                                                                                                    |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Each relation is a thunk, `author: () => rel.manyToOne(...)`      | its target is read lazily; a thunked target alone (`entity: () => Author`) is TS2506                                   |
-| `relations` is last, the aggregates its second callback           | a section after it would read a target while that target is inferred; aggregates read the relations just inferred      |
-| Sections are methods, after `fields`                              | the columns are fixed before any callback is checked, so no section infers the call again                              |
-| A foreign key with no relation is `.references({ col: getter })`  | a column's `references: () => Author` needs `Author` while it is declared                                              |
-| `mappedBy` names a member by key; a foreign key's type is carried | typing by kind reads the target's property types mid-inference; its key type rides on its class, a symbol-keyed marker |
-| `computed` is its own section                                     | a callback inside `fields` reads the columns being inferred, so its row is `any` (TS7006)                              |
-| `indexes`, `checks`, `hooks` see the columns                      | the full row includes relations, which only exists once they are inferred                                              |
-| `filters` may follow `relations`, and then sees the full row      | the relations are inferred by then, so a filter reading through them cycles nowhere, across files too                  |
-| An entry is a helper call, `index(columns, options)`              | TypeScript checks a literal passed as an argument for excess keys, never one returned from a callback                  |
+| Shape                                                                | Why                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Each relation is a thunk, `author: () => rel.manyToOne(...)`         | its target is read lazily; a thunked target alone (`entity: () => Author`) is TS2506                                                                                                                                                                                                                                                               |
+| `relations` is last; its second callback's derived fields are thunks | a section after it would read a target while that target is inferred; a derived field reads the relations just inferred, lazily                                                                                                                                                                                                                    |
+| Sections are methods, after `fields`                                 | the columns are fixed before any callback is checked, so no section infers the call again                                                                                                                                                                                                                                                          |
+| A foreign key is a relation, never a column's target                 | A column naming its target reads that target while it is inferred, a cycle (TS7022, TS2615) for entities pointing at each other. A key shared by several entities is one relation helper typed by the key's shape, `(rel: RelationBuilder<{ workspaceId: string }>) => ({ workspace: () => rel.manyToOne(Workspace, ...) })`, which does not cycle |
+| `mappedBy` names a member by key; a foreign key's type is carried    | typing by kind reads the target's property types mid-inference; its key type rides on its class, a symbol-keyed marker                                                                                                                                                                                                                             |
+| `computed` is its own section                                        | a callback inside `fields` reads the columns being inferred, so its row is `any` (TS7006)                                                                                                                                                                                                                                                          |
+| `indexes`, `checks`, `hooks` see the columns                         | the full row includes relations, which only exists once they are inferred                                                                                                                                                                                                                                                                          |
+| `filters` may follow `relations`, and then sees the full row         | the relations are inferred by then, so a filter reading through them cycles nowhere, across files too                                                                                                                                                                                                                                              |
+| An entry is a helper call, `index(columns, options)`                 | TypeScript checks a literal passed as an argument for excess keys, never one returned from a callback                                                                                                                                                                                                                                              |
 
 ## Measured
 
@@ -118,15 +123,16 @@ load. Prisma lets a Book with no author compile, and a populated required author
 1. Done. Columns are `f.*` builders in both forms, the schema's options are chained sections, entries are
    helper calls, and a migration builder column is the same builder, named. `RelationRef` is `in out`.
 2. Done. The schema form sharing `registerEntity` with `@Entity`, relations settled
-   lazily in `getMeta`, hooks as functions, a JSON column's payload as `shape`; pins, a suite on every engine,
+   lazily in `getMeta`, hooks as functions, a JSON column's payload as a Standard Schema; pins, a suite on every engine,
    `ts.rename` over both fixtures and a `ts.perf` row, and aggregates over the relations.
 3. Done. `defineEntity(Class, opts)`, the string-keyed definers, `defineIndex`/`defineTrigger`/`defineFilter`
    and `@Entity`'s `fields`, `relations`, `hooks` and `extends` are gone; the schema form took `schema`,
    `filters` and `triggers`, and `uql-codemod` rewrites a registered class into its schema.
 4. Done. A read row types its methods `never`, for decorated entities too: still an `E`, so generic code
    returning its rows compiles.
-5. Done for `references`: its column is checked against the target's key type, carried on the target's class.
-   Each cardinality takes only the options it joins by. `mappedBy` stays checked by kind on first read, by
-   decision: its kind is the target's relation, and reading the target's relations while they are inferred is
-   the cycle the marker exists to avoid; carrying them on it too would cost every schema for a mistake the
-   first read names.
+5. Done. Every schema foreign key is a relation: a column never names its target, the relation's `references`
+   is checked against the target's key type at compile time, and at run time by the kinds the join compares (a
+   bigint and a number are one kind). Each cardinality takes only the options it joins by. `mappedBy` is checked
+   by kind on first read, by decision: its kind is the target's relation, and reading the target's relations while
+   they are inferred is the cycle the marker exists to avoid; carrying them on it too would cost every schema for a
+   mistake the first read names.

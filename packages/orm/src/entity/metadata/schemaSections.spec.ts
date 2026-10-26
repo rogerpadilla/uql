@@ -7,7 +7,14 @@ describe('a schema entity', () => {
   it('should register its columns and every section on first read', () => {
     const Author = defineEntity({ name: 'Author', fields: { id: f.number().id(), name: f.string() } }).relations(
       (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
-      (agg) => ({ bookCount: () => agg.books.count() }),
+      (author) => ({
+        bookCount: () => author.books.count(),
+        stockGap: () =>
+          f
+            .number()
+            .nullable()
+            .as(sql`${author.books.count()} - ${author.id}`),
+      }),
     );
     const Book = defineEntity({
       name: 'Book',
@@ -23,16 +30,21 @@ describe('a schema entity', () => {
       .indexes((book, index) => [index([book.title], { include: [book.authorId], unique: true })])
       .checks((book, check) => [check(sql`${book.title} <> ''`, 'titled')])
       .hooks({ beforeInsert: [() => undefined] })
-      .references({ editorId: { entity: () => Author, onDelete: 'SET NULL' } })
-      .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }));
+      .relations((rel) => ({
+        author: () => rel.manyToOne(Author, { references: (book) => book.authorId }),
+        editor: () => rel.manyToOne(Author, { references: (book) => book.editorId, onDelete: 'SET NULL' }),
+      }));
 
     const meta = getMeta(Book);
     expect(meta.name).toBe('books');
     expect(meta.ids).toEqual(['id']);
     expect(meta.fields.title).toMatchObject({ type: String });
     expect(meta.fields.shout?.computed).toBeDefined();
-    expect(meta.fields.editorId).toMatchObject({ nullable: true, onDelete: 'SET NULL' });
-    expect(meta.fields.editorId?.references?.()).toBe(Author);
+    expect(meta.fields.editorId).toMatchObject({ nullable: true });
+    expect(meta.relations.editor).toMatchObject({
+      onDelete: 'SET NULL',
+      references: [{ local: 'editorId', foreign: 'id' }],
+    });
     expect(meta.indexes).toMatchObject([{ entries: [{ column: 'title' }], include: ['authorId'], unique: true }]);
     expect(meta.checks).toMatchObject([{ name: 'titled' }]);
     expect(meta.hooks?.beforeInsert).toHaveLength(1);
@@ -41,9 +53,22 @@ describe('a schema entity', () => {
       references: [{ local: 'authorId', foreign: 'id' }],
     });
     expect(getMeta(Author).fields.bookCount?.computed).toBeDefined();
+    expect(getMeta(Author).fields.stockGap?.computed).toBeDefined();
     expect(getMeta(Author).relations.books).toMatchObject({ cardinality: '1m', mappedBy: 'author' });
     removeEntity(Book);
     removeEntity(Author);
+  });
+
+  it('should refuse a relation to an abstract base at run time, which a schema built from data reaches', () => {
+    const Base = defineEntity({ name: 'Base', abstract: true, fields: { id: f.number().id() } });
+    const Holder = defineEntity({ name: 'Holder', fields: { id: f.number().id(), baseId: f.number() } }).relations(
+      (rel) => ({
+        // @ts-expect-error an abstract base is never a table
+        base: () => rel.manyToOne(Base, { references: (holder) => holder.baseId }),
+      }),
+    );
+    expect(() => getMeta(Holder)).toThrow("'Base' is abstract: a relation needs a table to join");
+    removeEntity(Holder);
   });
 
   it('should refuse a section declared twice, or after its first read', () => {
@@ -75,14 +100,6 @@ describe('a schema entity', () => {
     expect(() => getMeta(Unkeyed)).toThrow("'Unkeyed' must have at least one id field");
     expect(() => getMeta(Unkeyed)).toThrow("'Unkeyed' must have at least one id field");
     removeEntity(Unkeyed);
-  });
-
-  it('should refuse a foreign key at something that is no entity', () => {
-    const Stray = defineEntity({ name: 'Stray', fields: { id: f.number().id(), otherId: f.number() } }).references({
-      otherId: () => 'Other',
-    });
-    expect(() => getMeta(Stray)).toThrow("'.references()' points 'otherId' at something that is not an entity");
-    removeEntity(Stray);
   });
 
   it('should inherit its base sections, the base read first', () => {
@@ -119,14 +136,5 @@ describe('a schema entity', () => {
     }));
     expect(() => getMeta(Twice)).toThrow("'Twice.title' is declared twice: name each member once");
     removeEntity(Twice);
-  });
-
-  it('should refuse a foreign key on a member that is no column of its fields', () => {
-    const Target = defineEntity({ name: 'Target', fields: { id: f.number().id() } });
-    const Pointer = defineEntity({ name: 'Pointer', fields: { id: f.number().id() } })
-      .computed(() => ({ shout: f.number().as(sql`1`) }))
-      .references({ shout: () => Target });
-    expect(() => getMeta(Pointer)).toThrow("'.references()' names 'Pointer.shout', which is no column of its 'fields'");
-    removeEntity(Pointer);
   });
 });

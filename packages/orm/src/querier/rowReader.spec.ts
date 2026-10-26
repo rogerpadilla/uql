@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
-import type { RawRow } from '../type/index.js';
+import type { Except, RawRow } from '../type/index.js';
 import { rowReader } from './rowReader.js';
 
 /** Terms as a projection writes them, by key alone: the SQL is not what reading looks at. */
-const terms = (...keys: (string | Omit<SelectTerm, 'sql'>)[]): SelectTerm[] =>
+const terms = (...keys: (string | Except<SelectTerm, 'sql'>)[]): SelectTerm[] =>
   keys.map((key) => (typeof key === 'string' ? { sql: '', key } : { sql: '', ...key }));
 
 const read = (projection: readonly SelectTerm[], row: RawRow) => rowReader<RawRow>(projection)(row);

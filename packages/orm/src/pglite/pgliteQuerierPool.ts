@@ -2,12 +2,12 @@ import type { PGliteOptions } from '@electric-sql/pglite';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { PG_DECODERS } from '../postgres/pgWireTypes.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
-import type { ExtraOptions } from '../type/index.js';
+import type { Except, ExtraOptions } from '../type/index.js';
 import { PgliteDialect } from './pgliteDialect.js';
 import { type PgliteDatabase, PgliteQuerier } from './pgliteQuerier.js';
 
 /** PGlite's own options but `dataDir`, the pool's first argument; `extensions: { vector }` enables pgvector. Type-only. */
-export type PglitePoolOptions = Omit<PGliteOptions, 'dataDir'>;
+export type PglitePoolOptions = Except<PGliteOptions, 'dataDir'>;
 
 /**
  * A pool for PGlite, Postgres in WASM in this process, on one connection. A second `BEGIN` silently joins

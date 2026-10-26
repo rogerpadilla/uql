@@ -24,14 +24,12 @@ const Order = defineEntity({
     total: f.number().nullable(),
     customerId: f.number().nullable(),
   },
-})
-  .references({ customerId: () => Customer })
-  .relations((rel) => ({
-    customer: () =>
-      rel.manyToOne(Customer, {
-        references: (order, customer) => [{ local: order.customerId, foreign: customer.id }],
-      }),
-  }));
+}).relations((rel) => ({
+  customer: () =>
+    rel.manyToOne(Customer, {
+      references: (order, customer) => [{ local: order.customerId, foreign: customer.id }],
+    }),
+}));
 /** No schema of its own: it follows whichever pool reads it. */
 const Ledger = defineEntity({
   name: 'Ledger',

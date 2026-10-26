@@ -21,9 +21,9 @@ export const Author = defineEntity({
   })
   .relations(
     (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
-    (rel) => ({
-      bookCount: () => rel.books.count(),
-      topStock: () => rel.books.max((book) => book.stock),
+    (author) => ({
+      bookCount: () => author.books.count(),
+      topStock: () => author.books.max((book) => book.stock),
     }),
   );
 export type Author = InstanceType<typeof Author>;

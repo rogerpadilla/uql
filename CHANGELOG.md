@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.106.0] - 2026-10-26
+
+- **Breaking:** a JSON column's payload is a Standard Schema, `f.json(schema)`, typed by its output. The `shape` option is gone.
+- **Breaking:** `defineEntity` has no `.references()` section. A foreign key is a relation in `.relations()`, checked against its key's type at compile time.
+- **Feat:** `.relations()`' second callback reads the entity's own columns and relations, so a derived field may combine both. A computed or derived field is present on a default read; `.eager(false)` leaves it optional.
+- A foreign key is checked by the kind a join compares: a bigint and a number are one kind, and a text column may reference an enum's literal key.
+- `uql-codemod` converts a class registered with `defineEntity(Class, options)` into a schema, or leaves it as written with the reason. It moves a schema column's foreign key into its relation.
+- **Fixed:** a schema entity extending a base takes the base's insert-optional fields as optional, and keeps its own `.default()` fields optional.
+
 ## [0.105.1] - 2026-10-25
 
 - **Feat:** a schema's `.filters()` may follow `.relations()`, and filter through them at any depth, typed as a decorated entity's filters are.

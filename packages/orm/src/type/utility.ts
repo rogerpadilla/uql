@@ -30,9 +30,8 @@ export type QueryComparableScalar = string | number | bigint | Date;
 export type PrimaryKey = string | number | bigint;
 
 /**
- * Brands a JSON field, `settings?: Json<{ isArchived?: boolean }>`, so it reads as a field rather than a
- * relation; `Json<T>[]` is a list of documents, and a bare `Json` holds any JSON value, under any path. A
- * `null` in `T` stays `null`, so a `JsonValue` type that includes it is a field that may be `null`.
+ * Brands a JSON field so it reads as a field rather than a relation: `settings?: Json<{ isArchived?: boolean }>`.
+ * A bare `Json` holds any JSON value. A `null` in `T` stays `null`, so `Json<X | null>` may be `null`.
  */
 export type Json<T extends object | string | number | boolean | null = JsonDocument> = T extends null
   ? null
@@ -48,7 +47,9 @@ export interface JsonBrand {
   readonly [json]?: never;
 }
 
-/** Whether `T` carries the {@link Json} brand: a primitive matches `Json<infer P>` too, so the key is what tells. */
+/**
+ * Whether `T` carries the {@link Json} brand. A primitive matches `Json<infer P>` too, so the key tells.
+ */
 export type IsJson<T> = typeof json extends keyof T ? true : false;
 
 export type ExpandScalar<T> = T extends Date ? Date | string : T;
@@ -69,36 +70,34 @@ export type IsEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T ex
 
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
-/**
- * `Omit` whose key has to exist, which distributes over a union rather than flattening it, and removes
- * a key from a type with an index signature.
- *
- * `Omit<T, K>` is `Pick<T, Exclude<keyof T, K>>`; its `K extends keyof any` admits any string, so a typo
- * (`Omit<Post, 'titl'>`) compiles and silently drops nothing. `Except` requires `K extends keyof T`, so a
- * misspelled key is a compile error the instant it is written.
- *
- * Beyond the key check, the two differ structurally. `Omit` computes `keyof (A | B)` (the common keys),
- * then `Pick`s from that flat set, so `Omit<A | B, 'x'>` loses every key unique to one arm. `Except` is a
- * homomorphic mapped type over `T`, which TypeScript distributes over unions: `Except<A | B, 'x'>` is
- * `Except<A, 'x'> | Except<B, 'x'>`, each arm keeping its own keys. It also preserves index signatures
- * and property modifiers that `Pick` over a computed key set drops.
- */
+/** `Omit` whose key must exist and that distributes over unions. See architecture/type-helpers.md. */
 export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? never : P]: T[P] };
+
+/** `T` with each key of `B` replaced by `B`'s: `Except` on the keys both share, then `B` added. */
+export type Merge<A, B> = Except<A, keyof A & keyof B> & B;
+
+/** Every key any member of a union has, where `keyof` keeps only the ones they share. */
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
 
 /**
  * Exactly one key of `T` with its value; every other key is forbidden (`never`). `Pick`, not `Record`,
- * so the chosen key stays linked to `T`'s own property and renames follow it through.
+ * so the chosen key stays linked to `T`'s own property and renames follow it through. Distributes over a
+ * union, so each arm keeps its own keys and forbids the others'.
  */
-export type ExactlyOne<T> = {
-  [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
-}[keyof T];
+export type ExactlyOne<T> = ExactlyOneOf<T, KeysOfUnion<T>>;
+
+type ExactlyOneOf<T, Keys extends PropertyKey> = T extends unknown
+  ? { [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<Keys, K>, never>>> }[keyof T]
+  : never;
 
 /**
  * At least one key of `T` with its value, the rest optional: the looser sibling of {@link ExactlyOne},
  * for options that combine but cannot all be left out. `Pick`, so every key stays linked to `T`'s own
- * property and renames follow it through.
+ * property and renames follow it through. Distributes over a union for the same reason.
  */
-export type AtLeastOne<T> = Partial<T> & { [K in keyof T]: Pick<T, K> }[keyof T];
+export type AtLeastOne<T> = T extends unknown
+  ? { [K in keyof T]-?: Required<Pick<T, K>> }[keyof T] & Partial<T>
+  : never;
 
 export type Unpacked<T> = T extends readonly (infer U)[]
   ? U
@@ -108,10 +107,5 @@ export type Unpacked<T> = T extends readonly (infer U)[]
       ? U
       : T;
 
-/**
- * Whether the value a property holds is many rather than one: a to-many relation, a scalar array, a
- * vector. Every array test in the type layer goes through this, because writing one by hand gets some
- * part of it wrong in ways nothing reports. `isMany.test-d.ts` has one case per part, and says what
- * each is load-bearing for.
- */
+/** Whether a property holds many values, not one. See architecture/type-helpers.md. */
 export type IsMany<V> = [NonNullable<V>] extends [readonly unknown[]] ? true : false;

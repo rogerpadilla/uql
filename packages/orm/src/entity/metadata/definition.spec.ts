@@ -136,7 +136,7 @@ it('should check a chained foreign key without resolving the entity at its end',
   const Leaf = defineEntity({
     name: 'Leaf',
     fields: { id: f.number().id(), sharedId: f.number().nullable() },
-  }).references({ sharedId: () => Shared });
+  }).relations((rel) => ({ shared: () => rel.manyToOne(Shared, { references: (leaf) => leaf.sharedId }) }));
 
   expect(getMeta(Leaf).fields.sharedId?.type).toBe(Number);
   expect(() => getMeta(Root)).toThrow("'Root.owner' holds the key");
@@ -149,7 +149,7 @@ it('should keep the fields a read answers with by default, a relation aggregate 
     fields: { id: f.number().id(), label: f.string().nullable() },
   }).relations(
     (rel) => ({ books: () => rel.oneToMany(Volume, { mappedBy: (volume) => volume.shelf }) }),
-    (rel) => ({ bookCount: () => rel.books.count() }),
+    (shelf) => ({ bookCount: () => shelf.books.count() }),
   );
   const Volume = defineEntity({
     name: 'Volume',

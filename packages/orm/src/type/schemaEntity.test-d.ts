@@ -5,7 +5,7 @@
 import { expectTypeOf } from 'vitest';
 import { f } from '../entity/column.js';
 import { defineEntity } from '../entity/metadata/definition.js';
-import { Entity, Field, type Json, type Querier } from '../index.js';
+import { Entity, Field, type Json, type Querier, type StandardSchemaV1 } from '../index.js';
 import { currentTimestamp, sql } from '../util/index.js';
 
 export const Author = defineEntity({
@@ -31,11 +31,17 @@ export const Author = defineEntity({
       mentor: () => rel.manyToOne(Author, { references: (author) => author.mentorId }),
       books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }),
     }),
-    (rel) => ({
-      bookCount: () => rel.books.count(),
-      topStock: () => rel.books.max((book) => book.stock),
+    (author) => ({
+      bookCount: () => author.books.count(),
+      topStock: () => author.books.max((book) => book.stock),
       // @ts-expect-error a sum reads a numeric column, and a title is text
-      titleSum: () => rel.books.sum((book) => book.title),
+      titleSum: () => author.books.sum((book) => book.title),
+      // A derived field may combine an own column with an aggregate, as a `dueBy` does.
+      stockGap: () =>
+        f
+          .number()
+          .nullable()
+          .as(sql`${author.books.max((book) => book.stock)} - ${author.id}`),
     }),
   );
 export type Author = InstanceType<typeof Author>;
@@ -170,21 +176,27 @@ export function definitionsAreChecked() {
   });
 }
 
-/** An untyped `json` column reads any path, as a bare `Json` does; `shape` types the payload, as data. */
+declare const settingsSchema: StandardSchemaV1<
+  unknown,
+  { theme: string; rating: number; nickname?: string; billing: { plan: string } }
+>;
+declare const tagsSchema: StandardSchemaV1<unknown, string[]>;
+
+/** An untyped `json` column reads any path, as a bare `Json` does; a Standard Schema types the payload. */
 export const Profiled = defineEntity({
   name: 'Profiled',
   fields: {
     id: f.number().id(),
     loose: f.json().nullable(),
-    settings: f.json({ theme: String, rating: Number, 'nickname?': String, billing: { plan: String } }).nullable(),
-    tags: f.jsonb([String]).nullable(),
+    settings: f.json(settingsSchema).nullable(),
+    tags: f.jsonb(tagsSchema).nullable(),
   },
 }).indexes((profiled, index) => [
   index([profiled.loose['anything']['deep']]),
   index([profiled.settings.theme, profiled.settings.billing.plan, profiled.settings.nickname]),
   index([{ column: profiled.settings.rating, type: Number }]),
   index([{ column: profiled.tags, type: [String], charLength: 64 }]),
-  // @ts-expect-error a shaped payload checks its paths
+  // @ts-expect-error a payload typed by its schema checks its paths
   index([profiled.settings.them]),
 ]);
 
@@ -240,12 +252,17 @@ export const Anthology = defineEntity({
   fields: {},
 }).relations(
   () => ({}),
-  (agg) => ({
-    lowStock: () => agg.books.min((book) => book.stock),
+  (anthology) => ({
+    lowStock: () => anthology.books.min((book) => book.stock),
     // @ts-expect-error `title` is no number to add up
-    titleSum: () => agg.books.sum((book) => book.title),
+    titleSum: () => anthology.books.sum((book) => book.title),
   }),
 );
+
+defineEntity({ name: 'EarlyCount', fields: { id: f.number().id() } }).computed((early) => ({
+  // @ts-expect-error a computed field reads its own columns, never a relation
+  n: early.books.count(),
+}));
 
 export async function inheritedRelationsAggregate() {
   const [anthology] = await querier.findMany(Anthology, { $select: { lowStock: true, bookCount: true } });
@@ -366,7 +383,9 @@ export const Pointing = defineEntity({
     id: f.number().id(),
     pointedId: f.string().nullable(),
   },
-}).references({ pointedId: () => Pointed });
+}).relations((rel) => ({
+  pointed: () => rel.manyToOne(Pointed, { references: (pointing) => pointing.pointedId }),
+}));
 
 export const Shouting = defineEntity({
   name: 'Shouting',
@@ -376,3 +395,40 @@ export const Shouting = defineEntity({
     shout: f.string().as(sql`'x'`),
   },
 });
+
+/** A foreign key is a relation: a column never names its target, and a schema section names none. */
+export const RelationOnlyNode = defineEntity({
+  name: 'RelationOnlyNode',
+  fields: { id: f.number().id(), parentId: f.number().nullable() },
+}).relations((rel) => ({
+  parent: () => rel.manyToOne(RelationOnlyNode, { references: (node) => node.parentId }),
+}));
+
+export const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().id() } });
+/** A bigint foreign key over a number key: the runtime holds both as numbers, so the type takes either way. */
+export const BigintEntry = defineEntity({
+  name: 'BigintEntry',
+  fields: { id: f.number().id(), ledgerId: f.bigint().nullable() },
+}).relations((rel) => ({
+  ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
+}));
+export const NumberEntry = defineEntity({
+  name: 'NumberEntry',
+  fields: { id: f.bigint().id(), ledgerId: f.number().nullable() },
+}).relations((rel) => ({
+  ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
+}));
+
+/** A join holds the kind a key is, so a text column joins on an enum's literal key: the runtime compares kinds. */
+export const LiteralKey = defineEntity({ name: 'LiteralKey', fields: { code: f.enum(['a', 'b']).id() } });
+export const TextHolder = defineEntity({
+  name: 'TextHolder',
+  fields: { id: f.number().id(), codeId: f.string().nullable() },
+}).relations((rel) => ({
+  literal: () => rel.manyToOne(LiteralKey, { references: (holder) => holder.codeId }),
+}));
+
+const AbstractHolder = defineEntity({ name: 'AbstractHolder', abstract: true, fields: { id: f.number().id() } });
+defineEntity({ name: 'HoldsAbstract', fields: { id: f.number().id(), holderId: f.number() } })
+  // @ts-expect-error a relation needs a table to join, and an abstract base is never one
+  .relations((rel) => ({ holder: () => rel.manyToOne(AbstractHolder, { references: (r) => r.holderId }) }));

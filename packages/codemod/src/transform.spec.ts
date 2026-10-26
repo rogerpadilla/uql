@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { type FileResult, rewriteLegacy, transformFile } from './transform.js';
@@ -155,6 +156,113 @@ const UQL_ORM_0_99 = {
     down(options?: { to?: string; step?: number }): Promise<unknown>;
   }`,
 };
+
+/** The repo's own config, whose paths resolve `uql-orm` to its source, so a rewritten file is checked against today's API. */
+const REPO_CONFIG = ts.getParsedCommandLineOfConfigFile(
+  fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
+  {},
+  { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} },
+)!;
+
+/** The errors TypeScript reports for `text` as a module of the repo, compiled against uql-orm's source. */
+function compileErrors(text: string): string[] {
+  const fileName = fileURLToPath(new URL('./codemodOutput.ts', import.meta.url));
+  const host = ts.createCompilerHost(REPO_CONFIG.options);
+  const getSourceFile = host.getSourceFile;
+  host.getSourceFile = (name, lang, ...rest) =>
+    name === fileName ? ts.createSourceFile(name, text, lang, true) : getSourceFile(name, lang, ...rest);
+  const fileExists = host.fileExists;
+  host.fileExists = (name) => name === fileName || fileExists(name);
+  const program = ts.createProgram([fileName], { ...REPO_CONFIG.options, noEmit: true, incremental: false }, host);
+  return ts
+    .getPreEmitDiagnostics(program, program.getSourceFile(fileName))
+    .map((it) => ts.flattenDiagnosticMessageText(it.messageText, '\n'));
+}
+
+describe('a registered class rewritten end to end', () => {
+  const written = codemodFile(
+    `import { defineEntity, raw } from 'uql-orm';
+
+export class Company {
+  id?: number;
+  name?: string;
+}
+defineEntity(Company, {
+  fields: { id: { type: Number, isId: true }, name: { type: String, nullable: false } },
+  relations: { posts: { cardinality: '1m', entity: () => Post, mappedBy: 'company' } },
+});
+
+export class Post {
+  id?: number;
+  title?: string;
+  companyId?: number;
+  editorId?: number | null;
+  company?: Company;
+  stamp() {
+    this.title = this.title?.trim();
+  }
+}
+defineEntity(Post, {
+  name: 'posts',
+  fields: {
+    id: { type: Number, isId: true },
+    title: { type: String, nullable: false, length: 100 },
+    companyId: { type: Number, nullable: false, references: () => Company, onDelete: 'CASCADE' },
+    editorId: { references: () => Company },
+  },
+  relations: { company: { cardinality: 'm1', entity: () => Company, references: [{ local: 'companyId', foreign: 'id' }] } },
+  indexes: [{ columns: ['title'], unique: true }],
+  checks: [{ where: raw\`length(title) > 0\` }],
+  hooks: { beforeInsert: ['stamp'] },
+});
+`,
+    {},
+    true,
+    transformFile,
+  );
+
+  it('should write the schema form whole, every foreign key a relation', () => {
+    expect(written.unresolved).toEqual([]);
+    expect(written.text).toBe(`import { f, defineEntity, sql } from 'uql-orm';
+
+export const Company = defineEntity({
+  name: 'Company',
+  fields: { id: f.number().id(), name: f.string() },
+})
+  .relations((rel) => ({
+    posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.company }),
+  }));
+export type Company = InstanceType<typeof Company>;
+
+export const Post = defineEntity({
+  name: 'Post',
+  table: 'posts',
+  fields: {
+    id: f.number().id(),
+    title: f.string().length(100),
+    companyId: f.number(),
+    editorId: f.number().nullable(),
+  },
+})
+  .indexes((post, index) => [index([post.title], { unique: true })])
+  .checks((post, check) => [check(sql\`length(title) > 0\`)])
+  .hooks({
+    beforeInsert: [(post) => {
+    post.title = post.title?.trim();
+  }],
+  })
+  .relations((rel) => ({
+    company: () => rel.manyToOne(Company, { references: (post, company) => [{ local: post.companyId, foreign: company.id }], onDelete: 'CASCADE' }),
+    editor: () => rel.manyToOne(Company, { references: (post) => post.editorId }),
+  }));
+export type Post = InstanceType<typeof Post>;
+`);
+  });
+
+  it("should compile against today's uql-orm", () => {
+    expect(compileErrors(written.text)).toEqual([]);
+  });
+});
 
 describe('codemod transforms', () => {
   /** The schema pass reads the text the first one wrote, so a line it reports is mapped back to the file's own. */
@@ -557,6 +665,27 @@ class Post { id?: number; slug?: string; }
   { columns: (post) => [post.slug] }] })
 class Post { id?: number; slug?: string; }
 `);
+    });
+
+    it('writes an uncommented decorator above @Entity after the list it states', () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Trigger } from 'uql-orm';
+@Trigger(ahead)
+@Entity({ triggers: [own] })
+class Post { id?: number; }
+`);
+
+      expect(text).toContain('@Entity({ triggers: [own, ahead] })');
+    });
+
+    it('refuses a relation typed as two entities, which no one target fits', () => {
+      const { unresolved } = codemod(/*ts*/ `
+      @Entity()
+      class Post { @Id() id?: number; @ManyToOne() company?: Company | Other; }
+      class Company { id?: number; }
+      class Other { id?: number; }
+    `);
+
+      expect(unresolved).toContainEqual(expect.stringContaining(NO_ENTITY));
     });
 
     it('folds decorators sharing a line with each other or with the class', () => {
@@ -1151,9 +1280,7 @@ class Employee extends Base {
       });
     `);
 
-    expect(text).toContain(
-      'indexes: [{ columns: (post) => [post.title], include: (post) => [post.tagId], unique: true }]',
-    );
+    expect(text).toContain('.indexes((post, index) => [index([post.title], { include: [post.tagId], unique: true })])');
     expect(text).toContain('beforeInsert: [(post) => {}],');
     expect(text).toContain('tags: () => rel.manyToMany(Tag, { mappedBy: (tag) => tag.posts }),');
     expect(text).toContain(
@@ -2343,7 +2470,10 @@ t.index([raw\`lower("email")\`], { where: 'active' });
       defineEntity(Post, { checks: [{ expression: raw\`1 = 1\`, where: raw\`2 = 2\` }] });
     `);
 
-    expect(unresolved).toEqual([expect.stringContaining("gives both 'expression' and 'where'; keep 'where'")]);
+    expect(unresolved).toEqual([
+      expect.stringContaining("gives both 'expression' and 'where'; keep 'where'"),
+      expect.stringContaining("'Post' is left as written: cannot write 'checks' as a section"),
+    ]);
   });
 
   it("renames virtual to computed in defineEntity's fields, as on @Field", () => {
@@ -2352,7 +2482,7 @@ t.index([raw\`lower("email")\`], { where: 'active' });
       defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`1 + 1\` } } });
     `);
 
-    expect(text).toContain('total: { type: Number, computed: raw`1 + 1` },');
+    expect(text).toContain('.computed((line) => ({ total: f.number().nullable().as(raw`1 + 1`) }));');
   });
 
   /** A string literal and a word called as a function are left out: `'gone'` is a value, `count(*)` a call. */
@@ -2578,11 +2708,11 @@ class Line { id?: number; unitPrice?: number; total?: number; }
 defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`\${col('unitPrice')} * 2\` } } });
 `);
 
-    expect(text).toContain("import { Entity, Field, Id, sql } from 'uql-orm';");
+    expect(text).toContain("import { f, Entity, Field, Id, sql } from 'uql-orm';");
     expect(text).toContain(
       '@Field({ type: Number, computed: (product) => sql`${product.salePrice} - ${product.cost}` }) profit?: number | null;',
     );
-    expect(text).toContain('total: { type: Number, computed: (line) => sql`${line.unitPrice} * 2` },');
+    expect(text).toContain('.computed((line) => ({ total: f.number().nullable().as(sql`${line.unitPrice} * 2`) }));');
     expect(unresolved).toEqual([]);
   });
 

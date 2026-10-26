@@ -77,9 +77,9 @@ export class Post {
 }
 ```
 
-- A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal()`, `f.decimal(precision)`, `f.decimal(precision, scale)`, `f.boolean()`, `f.date()`, `f.json(shape?)`, `f.jsonb(shape?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other column type, and `f.references(() => Target)` for a foreign key, which takes the target's key type. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A bound holds in either order around `.columnType('char')`, but not around a `sql` type, which carries its own.
+- A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal()`, `f.decimal(precision)`, `f.decimal(precision, scale)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other column type, and `f.references(() => Target)` for a foreign key, which takes the target's key type. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A bound holds in either order around `.columnType('char')`, but not around a `sql` type, which carries its own.
 - A column is NOT NULL unless `.nullable()`; its property then admits `null` (`title?: string | null`).
-- Declare a NOT NULL column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable, `.eager(false)`, computed fields and relations. uql fills a single-column key and a version.
+- Declare a NOT NULL column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable columns, `.eager(false)` fields, and relations. A computed field is present on a default read, so it is not optional. uql fills a single-column key and a version.
 - A NOT NULL field a default fills (`.default()`, `.onInsert()`) is `!` and listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
 - A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring indexes, filters, checks or triggers but no table is `@Entity({ abstract: true, ... }) abstract class`, or a schema's `abstract: true`. A query or write on one does not compile: query the entities extending it.
@@ -99,17 +99,30 @@ The same entities declared as data, the row type derived:
 
 ```ts
 import { defineEntity, f, sql } from 'uql-orm';
+import { z } from 'zod';
+
+// Any Standard Schema types the payload: a Zod schema here.
+const Settings = z.object({ theme: z.string(), bio: z.string().optional() });
 
 export const Author = defineEntity({
   name: 'Author',
   fields: {
     id: f.number().id(),
     name: f.string(),
-    settings: f.json({ theme: String, 'bio?': String }).nullable(),
+    settings: f.json(Settings).nullable(),
   },
 }).relations(
   (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
-  (agg) => ({ bookCount: () => agg.books.count(), topStock: () => agg.books.max((book) => book.stock) }),
+  (author) => ({
+    bookCount: () => author.books.count(),
+    topStock: () => author.books.max((book) => book.stock),
+    // A derived field may also combine its own columns with an aggregate in one expression.
+    stockGap: () =>
+      f
+        .number()
+        .nullable()
+        .as(sql`${author.books.max((book) => book.stock)} - ${author.id}`),
+  }),
 );
 export type Author = InstanceType<typeof Author>;
 
@@ -126,16 +139,18 @@ export const Book = defineEntity({
   .computed((book) => ({ shout: f.string().as(sql`upper(${book.title})`) }))
   .indexes((book, index) => [index([book.title])])
   .hooks({ beforeInsert: [(book) => void (book.stock ??= 0)] })
-  .references({ editorId: { entity: () => Author, onDelete: 'SET NULL' } })
-  .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }));
+  .relations((rel) => ({
+    author: () => rel.manyToOne(Author, { references: (book) => book.authorId }),
+    editor: () => rel.manyToOne(Author, { references: (book) => book.editorId, onDelete: 'SET NULL' }),
+  }));
 ```
 
 - Each field is a column builder, as in the decorated form. The row follows from them: a key, a version and a NOT NULL column are always present, a `.nullable()` one reads `| null`; a default (`.default()`, `.onInsert()`, `.autoIncrement()`) makes it optional on insert; `f.enum()` gives the literal union. No `!`, `?` or brands to write.
-- The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `references` points a foreign key with no relation at its target; `relations` comes last, but for a `filters` that reads through them: `.relations(...).filters({ byActiveAuthor: { where: { author: { active: true } } } })`. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends` and `fields`.
-- Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. `manyToOne` names its `references`; `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
-- `relations`' second callback reads values over a to-many as columns: `(agg) => ({ bookCount: () => agg.books.count() })`.
+- The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `relations` comes last, but for a `filters` that reads through them: `.relations(...).filters({ byActiveAuthor: { where: { author: { active: true } } } })`. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends` and `fields`.
+- Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. A schema's foreign key is a relation: `manyToOne` names its `references` column, whose type is checked against the target's key; the column itself stays a plain field. `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
+- `relations`' second callback declares the derived fields: each value is a thunk, read lazily, of an aggregate over a to-many (`() => author.books.count()`) or a column expression. The callback's refs are the entity's own columns and its relations, so one expression can combine them.
 - A hook is a function of the row and `{ querier, onCommit }`.
-- A JSON column's payload is its shape, `f.json(shape)`: `String`, `Number` or `Boolean`, an object of shapes, `[shape]` for an array, `'key?'` for an optional member. Without one, any path reads.
+- A JSON column's payload is a Standard Schema, `f.json(schema)`, typed by its output: any library's schema (Zod, Valibot, ArkType), or a hand-written `StandardSchemaV1`. Without one, any path reads. The schema types the column; uql never runs it, so a write is not validated.
 - Behaviour is a function of the row, `label(author: Author)`: a row reads back as a plain object, so a method would never be there.
 
 ## Queries

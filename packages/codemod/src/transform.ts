@@ -54,6 +54,7 @@ import {
 import { toMigrationBuilders } from './migrationBuilders.js';
 import { relationTargetFor } from './relationTarget.js';
 import { toSchemaEntities } from './schemaEntity.js';
+import { nameClash } from './schemaMessages.js';
 import { statementTemplate } from './statementSql.js';
 import {
   arrayElements,
@@ -862,9 +863,9 @@ export function transformFile(
   checker: ts.TypeChecker,
   options: { readonly strictNullChecks: boolean } = { strictNullChecks: true },
 ): FileResult {
-  const legacy = rewriteLegacy(source, checker, options);
-  const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
   const taken = foreignNames(source, BUILDER_NAMES, checker);
+  const legacy = rewriteLegacy(source, checker, options, taken);
+  const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
   const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
   const { text, unresolved } = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
   return {
@@ -885,6 +886,7 @@ export function rewriteLegacy(
   source: ts.SourceFile,
   checker: ts.TypeChecker,
   options: { readonly strictNullChecks: boolean },
+  taken: ReadonlySet<string> = foreignNames(source, BUILDER_NAMES, checker),
 ): FileResult & Pass {
   const ctx = createContext(source, checker, options.strictNullChecks);
   const importsUql = uqlImportDeclarations(source, true).length > 0;
@@ -926,7 +928,7 @@ export function rewriteLegacy(
   visit(source);
   const clash = clashingName(ctx);
   if (clash) {
-    ctx.report(clash, `'${clash.text}' is already named here, and the codemod writes it: rename that, then run again`);
+    ctx.report(clash, `${nameClash(clash.text)}: rename that, then run again`);
     return { ...fileResult(ctx, source.getFullText()), ...unedited(source.getFullText()) };
   }
   const dead = new Set([...deadImportNames(ctx), ...rewriteColumnRefs(ctx)]);
@@ -934,7 +936,10 @@ export function rewriteLegacy(
   reportRemovedExports(ctx);
 
   const edited = editedText(source.getFullText(), ctx.edits);
-  const schema = toSchemaEntities(source.fileName, edited.text, (at) => locationAt(source, edited.sourceOffset(at)));
+  const schema = toSchemaEntities(source.fileName, edited.text, {
+    locate: (at) => locationAt(source, edited.sourceOffset(at)),
+    taken,
+  });
   ctx.unresolved.push(...schema.unresolved);
   ctx.notes.push(...schema.notes);
   return { ...fileResult(ctx, schema.text), sourceOffset: followed(edited, schema).sourceOffset };

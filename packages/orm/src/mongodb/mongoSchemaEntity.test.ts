@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { defineEntity, f } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mongoUri, provisioningTimeout } from '../test/index.js';
+import { unvalidatedSchema } from '../test/unvalidatedSchema.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
 const Shelf = defineEntity({
@@ -10,7 +11,7 @@ const Shelf = defineEntity({
   fields: { id: f.string().id().onInsert(randomUUID), label: f.string() },
 }).relations(
   (rel) => ({ notes: () => rel.oneToMany(Note, { mappedBy: (note) => note.shelf }) }),
-  (rel) => ({ noteCount: () => rel.notes.count(), topStars: () => rel.notes.max((note) => note.stars) }),
+  (shelf) => ({ noteCount: () => shelf.notes.count(), topStars: () => shelf.notes.max((note) => note.stars) }),
 );
 
 const Note = defineEntity({
@@ -19,7 +20,7 @@ const Note = defineEntity({
     id: f.string().id().onInsert(randomUUID),
     body: f.string(),
     stars: f.number().onInsert(0),
-    settings: f.json({ theme: String }).nullable(),
+    settings: f.json(unvalidatedSchema<{ theme: string }>()).nullable(),
     shelfId: f.string(),
   },
 })

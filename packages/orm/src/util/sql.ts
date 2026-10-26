@@ -17,7 +17,6 @@ import {
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
-  type RelationRef,
   type SqlArg,
   type SqlStatement,
   type SqlValueName,
@@ -150,11 +149,6 @@ function refMap<T>(ref: (key: string) => unknown): T {
  */
 export function memberRefs<E>(): ComputedRefs<E> {
   return refMap<ComputedRefs<E>>(memberRef);
-}
-
-/** Each to-many as a schema's aggregates read it, by key: the same refs {@link memberRefs} gives a decorated entity. */
-export function relationRefs(): Readonly<Record<string, RelationRef<object>>> {
-  return refMap<Readonly<Record<string, RelationRef<object>>>>(memberRef);
 }
 
 /**

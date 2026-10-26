@@ -490,7 +490,7 @@ type MaybeFields<E, M> = [MaybeKeys<M>] extends [never] ? unknown : Partial<Pick
 
 /** The entity, less the relations {@link RelatedRows} fills in, so none comes back as declared. */
 type WholeRow<E, Q> = Q extends { readonly $populate: infer M }
-  ? Omit<E, keyof M & keyof E> & MethodMask<E>
+  ? Except<E, keyof M & keyof E> & MethodMask<E>
   : DataRow<E>;
 
 /** The populated relations, and the `_count` a query asked for. */

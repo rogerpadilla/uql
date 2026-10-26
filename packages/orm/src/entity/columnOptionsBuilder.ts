@@ -3,10 +3,10 @@ import {
   COLUMN_OPTIONS,
   type ColumnType,
   type FieldOptions,
-  type JsonShape,
   type OnFieldCallback,
   type QuerySql,
   type StampEvent,
+  type StandardSchemaV1,
   type Type,
   type VectorDistance,
 } from '../type/index.js';
@@ -127,9 +127,8 @@ export class ColumnOptionsBuilder {
 
 const column = (options: FieldOptions) => new ColumnOptionsBuilder(options);
 
-function json(type: 'json' | 'jsonb', shape?: JsonShape) {
-  return column({ type, ...(shape && { shape }) });
-}
+const jsonColumn = (type: 'json' | 'jsonb') => (schema?: StandardSchemaV1) =>
+  column({ type, ...(schema && { schema }) });
 
 /** The column constructors at run time, which `f` types and the migration builder names. */
 export const columns = {
@@ -142,8 +141,8 @@ export const columns = {
     column({ type: 'decimal', ...(precision !== undefined && { precision }), ...(scale !== undefined && { scale }) }),
   boolean: () => column({ type: Boolean }),
   date: () => column({ type: Date }),
-  json: (shape?: JsonShape) => json('json', shape),
-  jsonb: (shape?: JsonShape) => json('jsonb', shape),
+  json: jsonColumn('json'),
+  jsonb: jsonColumn('jsonb'),
   vector: (dimensions: number) => column({ type: 'vector', dimensions }),
   enum: (members: readonly string[] | readonly number[]) =>
     column({ type: typeof members[0] === 'number' ? Number : String, enum: members }),

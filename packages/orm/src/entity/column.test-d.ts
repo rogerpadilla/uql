@@ -5,7 +5,11 @@
  */
 import { expectTypeOf } from 'vitest';
 import { type ColumnOptionsOf, type ColumnValueOf, type Json, sql } from '../index.js';
+import type { StandardSchemaV1 } from '../type/index.js';
 import { f } from './column.js';
+
+declare const settingsSchema: StandardSchemaV1<unknown, { theme: string; tags?: string[] }>;
+declare const schemaWithoutTypes: StandardSchemaV1 & { readonly '~standard': { readonly types: undefined } };
 
 type UserId = string & { readonly __brand: 'UserId' };
 
@@ -16,10 +20,12 @@ export function values() {
   expectTypeOf<ColumnValueOf<ReturnType<typeof f.date>>>().toEqualTypeOf<Date>();
   const status = f.enum(['draft', 'published']).default('draft');
   expectTypeOf<ColumnValueOf<typeof status>>().toEqualTypeOf<'draft' | 'published'>();
-  const settings = f.json({ theme: String, 'tags?': [String] });
+  const settings = f.json(settingsSchema);
   expectTypeOf<ColumnValueOf<typeof settings>>().toMatchTypeOf<{ theme: string; tags?: string[] }>();
   const document = f.json();
   expectTypeOf<ColumnValueOf<typeof document>>().toEqualTypeOf<Json>();
+  const untyped = f.json(schemaWithoutTypes);
+  expectTypeOf<ColumnValueOf<typeof untyped>>().toEqualTypeOf<Json>();
   const owner = f.uuid().narrow<UserId>();
   expectTypeOf<ColumnValueOf<typeof owner>>().toEqualTypeOf<UserId>();
   const lock = f.version();

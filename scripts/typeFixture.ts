@@ -8,6 +8,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const entities = /*ts*/ `import { Entity, f, Field, idKey, ManyToOne, OneToMany } from 'uql-orm';
+import { Settings, Tags } from './payloads.js';
 
 @Entity() export class Company {
   @Field(f.number().id()) id?: number;
@@ -90,8 +91,8 @@ export class Indexed${i} {
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.date().nullable()) createdAt?: Date | null;
-  @Field(f.json({ theme: String, rating: Number }).nullable()) settings?: Json<{ theme: string; rating: number }> | null;
-  @Field(f.json([String]).nullable()) tags?: Json<string[]> | null;
+  @Field(f.json(Settings).nullable()) settings?: Json<{ theme: string; rating: number }> | null;
+  @Field(f.json(Tags).nullable()) tags?: Json<string[]> | null;
   @OneToMany({ entity: () => Child${i}, mappedBy: (child) => child.parent }) children?: Child${i}[];
   @Computed((row) => row.children.count()) readonly childCount?: number;
 }
@@ -111,8 +112,8 @@ export const Schema${i} = defineEntity({
     name: f.string().nullable(),
     email: f.string().nullable(),
     createdAt: f.date().nullable(),
-    settings: f.json({ theme: String, rating: Number }).nullable(),
-    tags: f.json([String]).nullable(),
+    settings: f.json(Settings).nullable(),
+    tags: f.json(Tags).nullable(),
   },
 })
   .indexes(${indexes})
@@ -136,6 +137,10 @@ const times = (count: number, write: (i: number) => string) => Array.from({ leng
 function sources({ queries, definitions, schemas }: FixtureSize): Record<string, string> {
   return {
     'entities.ts': entities,
+    'payloads.ts': /*ts*/ `import type { StandardSchemaV1 } from 'uql-orm';
+export declare const Settings: StandardSchemaV1<unknown, { theme: string; rating: number }>;
+export declare const Tags: StandardSchemaV1<unknown, string[]>;
+`,
     'calls.ts': [
       /*ts*/ `import type { Querier } from 'uql-orm';`,
       /*ts*/ `import { Company, User } from './entities.js';`,
@@ -144,10 +149,12 @@ function sources({ queries, definitions, schemas }: FixtureSize): Record<string,
     ].join('\n'),
     'definitions.ts': [
       /*ts*/ `import { Computed, Entity, f, Field, ManyToOne, OneToMany, sql, type Json, type Querier } from 'uql-orm';`,
+      /*ts*/ `import { Settings, Tags } from './payloads.js';`,
       ...times(definitions, definition),
     ].join('\n'),
     'schemas.ts': [
       /*ts*/ `import { defineEntity, f, sql, type Querier } from 'uql-orm';`,
+      /*ts*/ `import { Settings, Tags } from './payloads.js';`,
       ...times(schemas, schema),
     ].join('\n'),
   };

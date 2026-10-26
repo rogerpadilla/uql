@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toBuilders } from './builders.js';
+import { FOREIGN_KEY_IN_SCHEMA as FOREIGN_KEY, NO_KEY_TYPE, ON_DELETE_ON_RELATION } from './schemaMessages.js';
 
 const build = (text: string) => {
   const { text: written, unresolved } = toBuilders('/entities.ts', text, { taken: new Set() });
@@ -17,7 +18,7 @@ export class User {
   @Field({ type: Number, nullable: false, defaultValue: 0 }) score!: number;
   @Field({ type: String, enum: ['a', 'b'] as const, nullable: false }) kind!: 'a' | 'b';
   @Field({ type: 'uuid', isId: true }) uuid?: string;
-  @Field({ type: 'jsonb', shape: { lang: String } }) meta?: unknown;
+  @Field({ type: 'jsonb' }) meta?: unknown;
   @Field({ type: 'decimal', precision: 12, scale: 2 }) price?: string | null;
   @Field({ type: 'timestamptz', onInsert: currentTimestamp, updatable: false }) createdAt?: Date | null;
   @Field({ type: Number, version: true }) revision?: number;
@@ -34,7 +35,7 @@ export class User {
   @Field(f.number().default(0)) score!: number;
   @Field(f.enum(['a', 'b'])) kind!: 'a' | 'b';
   @Field(f.uuid().id()) uuid?: string;
-  @Field(f.jsonb({ lang: String }).nullable()) meta?: unknown;
+  @Field(f.jsonb().nullable()) meta?: unknown;
   @Field(f.decimal(12, 2).nullable()) price?: string | null;
   @Field(f.column('timestamptz').nullable().onInsert(currentTimestamp).updatable(false)) createdAt?: Date | null;
   @Field(f.version()) revision?: number;
@@ -117,13 +118,13 @@ export const Book = defineEntity({
   .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }), (rel) => ({ n: () => rel.tags.count() }));`);
   });
 
-  it("should move a schema column's foreign key into `.references()`", () => {
+  it("should write the relation a schema column's foreign key needs, and move its onDelete there", () => {
     const { text, unresolved } = build(`export const Order = defineEntity({
   name: 'Order',
   fields: {
     id: { type: Number, isId: true },
     customerId: { type: Number, references: () => Customer, onDelete: 'CASCADE' },
-    parentId: { type: Number, nullable: false, references: () => Order },
+    parent_id: { type: Number, nullable: false, references: () => Order },
   },
 });`);
     expect(unresolved).toEqual([]);
@@ -133,10 +134,194 @@ export const Order = defineEntity({
   fields: {
     id: f.number().id(),
     customerId: f.number().nullable(),
-    parentId: f.number(),
+    parent_id: f.number(),
   },
 })
-  .references({ customerId: { entity: () => Customer, onDelete: 'CASCADE' }, parentId: () => Order });`);
+  .relations((rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }),
+    parent: () => rel.manyToOne(Order, { references: (order) => order.parent_id }),
+  }));`);
+  });
+
+  it('should refuse a foreign key whose relation it cannot name, or with no type of its own', () => {
+    const input = `export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    owner: { type: Number, references: () => User },
+    payerId: { type: Number, references: () => User },
+    payer: { type: String },
+    editorId: { references: () => User },
+  },
+});`;
+    const { text, unresolved } = build(input);
+    expect(text).toBe(input);
+    expect(unresolved).toEqual([
+      `/entities.ts:5: 'owner' ${FOREIGN_KEY}`,
+      `/entities.ts:6: 'payerId' ${FOREIGN_KEY}`,
+      `/entities.ts:8: 'editorId' ${NO_KEY_TYPE}`,
+    ]);
+  });
+
+  it("should drop a schema column's foreign key where its relation already joins on it", () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }) }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain('customerId: f.number().nullable(),');
+    expect(text).not.toContain('references: () => Customer');
+    expect(text).toContain('customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId })');
+  });
+
+  it("should move a joined column's onDelete into its relation, and refuse one the relation contradicts", () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer, onDelete: 'CASCADE' },
+    payerId: { type: Number, references: () => Customer, onDelete: 'SET NULL' },
+  },
+  relations: (rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }),
+    payer: () => rel.manyToOne(Customer, { references: (order) => order.payerId, onDelete: 'SET NULL' }),
+  }),
+});
+export const Line = defineEntity({
+  name: 'Line',
+  fields: { id: f.number().id(), orderId: f.number().references(() => Order).onDelete('CASCADE') },
+  relations: (rel) => ({ order: () => rel.manyToOne(Order, { references: (line) => line.orderId, onDelete: 'NO ACTION' }) }),
+});`);
+    expect(unresolved).toEqual([`/entities.ts:15: 'orderId' ${ON_DELETE_ON_RELATION}`]);
+    expect(text).toContain(
+      "customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }),",
+    );
+    expect(text).toContain(
+      "payer: () => rel.manyToOne(Customer, { references: (order) => order.payerId, onDelete: 'SET NULL' }),",
+    );
+    expect(text).toContain('payerId: f.number().nullable(),');
+  });
+
+  it("should drop a builder's foreign key where a relation joins on it", () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: f.number().id(),
+    customerId: f.number().nullable().references(() => Customer),
+  },
+  relations: (rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }),
+  }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain('customerId: f.number().nullable(),');
+    expect(text).not.toContain('.references(() => Customer)');
+  });
+
+  it('should join on a relation written as a call naming its column, alone or in pairs', () => {
+    const { text, unresolved } = build(`export const Block = defineEntity({
+  name: 'Block',
+  fields: { id: f.number().id(), customerId: f.number().nullable().references(() => Customer) },
+  relations: (rel) => ({
+    customer: () => { return rel.manyToOne(Customer, { references: (block) => block.customerId }); },
+  }),
+});
+export const Shared = defineEntity({
+  name: 'Shared',
+  fields: { id: f.number().id(), customerId: f.number().nullable().references(() => Customer) },
+  relations: sharedRelations,
+});
+export const Many = defineEntity({
+  name: 'Many',
+  fields: { id: f.number().id(), customerId: f.number().nullable().references(() => Customer) },
+  relations: (rel) => ({
+    customer: () => rel.manyToMany(Customer, { through: () => Link }),
+    other: () => rel.manyToOne(Customer, { references: [{ local: 'customerId', foreign: 'id' }] }),
+  }),
+});
+export const Paired = defineEntity({
+  name: 'Paired',
+  fields: { id: f.number().id(), customerId: f.number().nullable().references(() => Customer) },
+  relations: (rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (paired, customer) => [{ local: paired.customerId, foreign: customer.id }] }),
+  }),
+});`);
+    expect(unresolved).toEqual([
+      `/entities.ts:3: 'customerId' ${FOREIGN_KEY}`,
+      `/entities.ts:10: 'customerId' ${FOREIGN_KEY}`,
+      `/entities.ts:15: 'customerId' ${FOREIGN_KEY}`,
+    ]);
+    expect(text).toContain('fields: { id: f.number().id(), customerId: f.number().nullable() },');
+  });
+
+  it('should write the join of a relation that names none, as the ORM infers it, so its column drops its references', () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer) }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain('customerId: f.number().nullable(),');
+    expect(text).toContain('customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId })');
+  });
+
+  it('should refuse a column whose to-one takes options it cannot write a join into', () => {
+    const input = `export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer, sharedOptions) }),
+});`;
+    const { text, unresolved } = build(input);
+    expect(text).toBe(input);
+    expect(unresolved).toEqual([`/entities.ts:5: 'customerId' ${FOREIGN_KEY}`]);
+  });
+
+  it('should refuse a column no relation joins by whose relation is named already, where the ORM would infer none', () => {
+    const { unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+    payerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer) }),
+});`);
+    expect(unresolved).toEqual([`/entities.ts:5: 'customerId' ${FOREIGN_KEY}`]);
+  });
+
+  it("should move a builder's onDelete into its relation, add the relations it lacks, and refuse a key with no type", () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: f.number().id(),
+    parentId: f.number().references(() => Order).onDelete('CASCADE'),
+    replyId: f.number().nullable().references(() => Order),
+  },
+  relations: (rel) => ({
+    parent: () => rel.manyToOne(Order, { references: (order) => order.parentId }),
+  }),
+});
+export const Owned = defineEntity({
+  name: 'Owned',
+  fields: { id: f.number().id(), ownerId: f.references(() => Order) },
+  relations: (rel) => ({ owner: () => rel.manyToOne(Order, { references: (owned) => owned.ownerId }) }),
+});`);
+    expect(unresolved).toEqual([`/entities.ts:14: 'ownerId' ${NO_KEY_TYPE}`]);
+    expect(text).toContain(`  .relations((rel) => ({
+    parent: () => rel.manyToOne(Order, { references: (order) => order.parentId, onDelete: 'CASCADE' }),
+    reply: () => rel.manyToOne(Order, { references: (order) => order.replyId }),
+  }));`);
+    expect(text).toContain('replyId: f.number().nullable(),');
   });
 
   it('should leave what it cannot write as it is, and say why', () => {
@@ -155,16 +340,14 @@ export class User {
     ]);
   });
 
-  it('should report a shape on a column that is no JSON, and chain a schema with no columns of its own', () => {
+  it('should refuse a shape, which no builder writes, and chain a schema with no columns of its own', () => {
     const { text, unresolved } = build(`defineEntity({
   name: 'Anthology',
   extends: Author,
-  fields: { title: { type: String, shape: { lang: String } } },
+  fields: { title: { type: 'jsonb', shape: { lang: String } } },
 });
 defineEntity({ name: 'Child', extends: Base, fields: {}, hooks: { beforeInsert: [] } });`);
-    expect(unresolved).toEqual([
-      "/entities.ts:4: 'title' has a 'shape' on a column that is no JSON: only a JSON column holds a payload",
-    ]);
+    expect(unresolved).toEqual(["/entities.ts:4: 'title' has options no builder writes: shape"]);
     expect(text).toContain(`defineEntity({ name: 'Child', extends: Base, fields: {} })
   .hooks({ beforeInsert: [] });`);
   });
@@ -220,8 +403,8 @@ export class Wrong {
       "/entities.ts:4: has an enum on a 'Date' column: declare it f.enum([...]).columnType(Date)",
       "/entities.ts:5: has no 'type': state it, f.string() and so on",
       "/entities.ts:6: has a type written as 'Kind': write its builder, f.string() and so on",
-      "/entities.ts:7: has a 'shape' on a column that is no JSON: only a JSON column holds a payload",
-      "/entities.ts:8: has a 'shape' on a column that is no JSON: only a JSON column holds a payload",
+      '/entities.ts:7: has options no builder writes: shape',
+      '/entities.ts:8: has options no builder writes: shape',
       '/entities.ts:9: has options no builder writes: frob',
       '/entities.ts:10: cannot write a builder because its options name one by a computed key',
     ]);
@@ -241,7 +424,7 @@ export const Bare = defineEntity({ name: 'Bare', fields: { id: f.number().id(), 
 export const Odd = defineEntity({ name: 'Odd', fields: { id: f.number().id() }, frobnicate: true });
 export const Plain = defineEntity({ name: 'Plain', fields: { id: f.number().id() } });`);
     expect(unresolved).toEqual([
-      "/entities.ts:10: 'ownerId' references another entity but states no type: write its builder, as its key's",
+      `/entities.ts:10: 'ownerId' ${NO_KEY_TYPE}`,
       '/entities.ts:11: cannot write a chain: it states frobnicate: true',
     ]);
     expect(text).toContain(`  fields: {
@@ -250,7 +433,10 @@ export const Plain = defineEntity({ name: 'Plain', fields: { id: f.number().id()
     parentId: f.number(),
   },
 })
-  .references({ customerId: { entity: () => Customer, onDelete: 'CASCADE' }, parentId: () => Order });`);
+  .relations((rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }),
+    parent: () => rel.manyToOne(Order, { references: (order) => order.parentId }),
+  }));`);
     expect(text).toContain(`export const Plain = defineEntity({ name: 'Plain', fields: { id: f.number().id() } });`);
   });
 
@@ -269,7 +455,7 @@ export const Listed = defineEntity({
 export class Spread {}
 const Chained = defineEntity({ name, fields: { id: f.number().id() }, indexes: [{ columns: (c) => { return [c.id]; } }] });`);
     expect(unresolved).toEqual([
-      "/entities.ts:3: 'customerId' references another entity but states no 'type': state the column's, as its key's",
+      `/entities.ts:3: 'customerId' ${NO_KEY_TYPE}`,
       "/entities.ts:8: cannot write 'indexes' as a section: write each entry as index(...) over its refs",
       "/entities.ts:9: cannot write 'computed' as a section: inline each callback",
       "/entities.ts:11: cannot write 'indexes' as a section: write each entry as index(...) over its refs",
@@ -386,5 +572,139 @@ export class User {
 }`);
     expect(unresolved).toEqual([]);
     expect(text).toContain('f.number().nullable().autoIncrement(auto)');
+  });
+});
+
+describe('foreign keys moved into their relations', () => {
+  it('should refuse a foreign key whose target is no arrow, or a name it cannot read off the column', () => {
+    const input = `export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: shared },
+    'owner-ref': { type: Number, nullable: true, references: () => User },
+    payer: f.number().references(shared),
+  },
+});`;
+    const { text, unresolved } = build(input);
+    expect(text).toBe(input);
+    expect(unresolved).toEqual([
+      `/entities.ts:5: 'customerId' ${FOREIGN_KEY}`,
+      `/entities.ts:6: 'owner-ref' ${FOREIGN_KEY}`,
+      `/entities.ts:7: 'payer' ${FOREIGN_KEY}`,
+    ]);
+  });
+
+  it('should write a column onDelete into an inferred join, which takes no options of its own', () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer, onDelete: 'CASCADE' },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer) }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain(
+      ".relations((rel) => ({ customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }) }));",
+    );
+  });
+
+  it('should keep the relations it does not touch, a relation not written as a call among them', () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer, onDelete: 'CASCADE' },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer), loose: sharedRelation }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain('loose: sharedRelation');
+    expect(text).toContain(
+      "customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }),",
+    );
+  });
+
+  it('should move a column onDelete into the first relation joining on it, and leave a second one as written', () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: f.number().id(),
+    customerId: f.number().nullable().references(() => Customer).onDelete('CASCADE'),
+  },
+  relations: (rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }),
+    buyer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }),
+  }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain(
+      "customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId, onDelete: 'CASCADE' }),",
+    );
+    expect(text).toContain('buyer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }),');
+  });
+
+  it('should refuse a column its relations join on by pairs naming no local column of the entity', () => {
+    const input = `export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({
+    customer: () => rel.manyToOne(Customer, { references: (order) => [{ foreign: 'id' }] }),
+    buyer: () => rel.manyToOne(Customer, { references: (order) => [{ local: other.customerId, foreign: 'id' }] }),
+  }),
+});`;
+    const { text, unresolved } = build(input);
+    expect(text).toBe(input);
+    expect(unresolved).toEqual([`/entities.ts:5: 'customerId' ${FOREIGN_KEY}`]);
+  });
+
+  it('should write a relation options literal left empty as the options a join needs', () => {
+    const { text, unresolved } = build(`export const Order = defineEntity({
+  name: 'Order',
+  fields: {
+    id: { type: Number, isId: true },
+    customerId: { type: Number, nullable: true, references: () => Customer },
+  },
+  relations: (rel) => ({ customer: () => rel.manyToOne(Customer, {}) }),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain(
+      '.relations((rel) => ({ customer: () => rel.manyToOne(Customer, { references: (order) => order.customerId }) }));',
+    );
+  });
+
+  it('should add the relation a foreign key needs to a schema whose relations are empty', () => {
+    const { text, unresolved } = build(`export const Line = defineEntity({
+  name: 'Line',
+  fields: { id: { type: Number, isId: true }, ownerId: { type: Number, references: () => Order } },
+  relations: (rel) => ({}),
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain(
+      '.relations((rel) => ({ owner: () => rel.manyToOne(Order, { references: (line) => line.ownerId }) }));',
+    );
+  });
+
+  it('should add the relation a foreign key needs to a schema with no relations, laid out as its fields are', () => {
+    const { text, unresolved } =
+      build(`export const Line = defineEntity({ name: 'Line', fields: { id: { type: Number, isId: true }, ownerId: { type: Number, references: () => Order } } });
+export const Tab = defineEntity({
+  name: 'Tab',
+  fields: {
+    id: { type: Number, isId: true },
+    ownerId: { type: Number, references: () => Order },
+  },
+});`);
+    expect(unresolved).toEqual([]);
+    expect(text).toContain(
+      '.relations((rel) => ({ owner: () => rel.manyToOne(Order, { references: (line) => line.ownerId }) }));',
+    );
+    expect(text).toContain(
+      '  .relations((rel) => ({\n    owner: () => rel.manyToOne(Order, { references: (tab) => tab.ownerId }),\n  }));',
+    );
   });
 });

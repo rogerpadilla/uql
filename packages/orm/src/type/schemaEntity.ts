@@ -1,6 +1,6 @@
-import type { ForeignKeyAction } from '../schema/types.js';
 import type { Column, ColumnOptionsOf, ColumnValueOf, FilledOptions, NullOf } from './column.js';
 import type {
+  BrandNames,
   CheckSection,
   FilterSection,
   filledKey,
@@ -10,6 +10,7 @@ import type {
   IdValue,
   IndexSection,
   IsUnion,
+  KeyHolding,
   RefMap,
   RelationCardinality,
   RelationInverseOptions,
@@ -25,9 +26,9 @@ import type { QuerySql, RelationAggregate } from './querySql.js';
 import type { Type, AbstractType } from './utility.js';
 
 /**
- * A schema entity's columns, each an `f` builder. A foreign key is declared in `.references()`, once every entity
- * exists: one written here would read its target while that target's own type is still being inferred. A computed
- * column is declared in `.computed()`, where its row is read-only.
+ * A schema entity's columns, each an `f` builder. A foreign key's target is a relation in `.relations()`, read lazily:
+ * a column naming its target here would read it while it is still being inferred. A computed column is declared in
+ * `.computed()`, where its row is read-only.
  */
 export type SchemaFields = {
   readonly [key: string]: Column<
@@ -57,10 +58,17 @@ export type ColumnRow<
   Present extends keyof F = Exclude<keyof F, Nullable>,
 > = { -readonly [K in Present]-?: ColumnValueOf<F[K]> } & { -readonly [K in Nullable]?: ColumnValueOf<F[K]> | null };
 
-/** The computed columns as a row reads them, never written. */
-type ComputedRow<C> = {
-  readonly [K in keyof C]?: ColumnValueOf<C[K]> | NullOf<ColumnOptionsOf<C[K]>>;
+/** A map of fields as a row reads them, never written: required, except an `eager(false)` column, which may be absent. */
+type ReadRow<M> = {
+  readonly [K in keyof M as IsEager<M[K]> extends true ? K : never]-?: FieldValue<M[K]>;
+} & {
+  readonly [K in keyof M as IsEager<M[K]> extends true ? never : K]?: FieldValue<M[K]>;
 };
+
+type FieldValue<F> = F extends RelationAggregate<infer V> ? V : ColumnValueOf<F> | NullOf<ColumnOptionsOf<F>>;
+
+type IsEager<F> =
+  F extends RelationAggregate<unknown> ? true : ColumnOptionsOf<F> extends { readonly eager: false } ? false : true;
 
 /** What `.computed()` returns: columns the database computes, `f.string().as(sql`...`)`. */
 type SchemaComputed = { readonly [key: string]: Column<{ readonly computed: QuerySql }> };
@@ -82,26 +90,39 @@ type AggregateRefs<R> = {
     : never;
 };
 
-/** The aggregates as a row reads them, each a computed column typed by the value it reads, never written. */
-export type AggregateRow<A> = {
-  readonly [K in keyof A]?: A[K] extends () => RelationAggregate<infer V> ? V : never;
-};
-
 type RelationValue<P> = P extends () => SchemaRelation<infer T, infer C, unknown>
   ? C extends '1m' | 'mm'
     ? T[]
     : T
   : never;
 
+/** A relation's derived field as its callback declares it: a thunk, so it is read lazily like a relation is. */
+export type DerivedFields = {
+  readonly [key: string]: () => RelationAggregate<unknown> | Column<{ readonly computed: QuerySql }>;
+};
+
+/** The derived fields a `relations` callback declares, as a row reads them, never written. */
+export type DerivedRow<A> = {
+  readonly [K in keyof A]-?: A[K] extends () => infer F ? FieldValue<F> : never;
+};
+
 /** The relations as a row reads them; exported, as a schema's emitted declaration names it. */
 export type RelationRow<R> = { -readonly [K in keyof R]?: RelationValue<R[K]> };
 
-/** The brands the type level reads keys off, derived from the columns rather than written by hand. */
-export type Brands<F> = {
-  readonly [idKey]?: FlagKeys<F, Column<{ readonly isId: true }>>;
-  readonly [versionKey]?: FlagKeys<F, Column<{ readonly version: true }>>;
-  readonly [filledKey]?: Exclude<FlagKeys<F, Column<FilledOptions>>, FlagKeys<F, Column<{ readonly isId: true }>>>;
+/**
+ * The brands the type level reads keys off, derived from the columns rather than written by hand. A subtype's
+ * brands add to its base's, since an intersection with them would narrow each to what the subtype declares.
+ */
+export type Brands<F, B = object> = {
+  readonly [idKey]?: IdKeyOf<F> | BrandNames<B, typeof idKey>;
+  readonly [versionKey]?: VersionKeyOf<F> | BrandNames<B, typeof versionKey>;
+  readonly [filledKey]?: FilledKeyOf<F> | BrandNames<B, typeof filledKey>;
 };
+
+/** The keys of `F` a brand marks, read off its columns: the id, the version, and the fields a default fills. */
+type IdKeyOf<F> = FlagKeys<F, Column<{ readonly isId: true }>>;
+type VersionKeyOf<F> = FlagKeys<F, Column<{ readonly version: true }>>;
+type FilledKeyOf<F> = Exclude<FlagKeys<F, Column<FilledOptions>>, IdKeyOf<F>>;
 
 /** The relation constructors a schema's `relations` receives, typed by the columns of the entity declaring them. */
 export type RelationBuilder<O> = {
@@ -164,18 +185,6 @@ export type SchemaEntityOptions<F extends SchemaFields, B = object, BK = unknown
 type SchemaHook<Row> = (row: Row, ctx: HookContext) => unknown;
 
 /**
- * Each foreign key column's target, `{ authorId: () => Author }`, or with its delete action. The getter is typed as
- * returning nothing: typing its target would read an entity referencing itself while it is inferred, so the key's
- * kind is checked on first read.
- */
-type SchemaReferences<Columns> = {
-  readonly [K in keyof Columns]?: LazyTarget | { readonly entity: LazyTarget; readonly onDelete?: ForeignKeyAction };
-};
-
-/** The entity a foreign key points at, read once every entity exists. */
-type LazyTarget = () => void;
-
-/**
  * What a schema declares after its columns, each section typed by the columns now fixed, so none is inferred
  * again. `relations` comes last but for `filters`, which reads the row they complete.
  */
@@ -183,7 +192,7 @@ type SchemaSections<Row, Key, Columns, B, Abstract> = {
   /** Columns the database computes off the stored ones, `(post) => ({ slug: f.string().as(sql`...`) })`. */
   computed<const C extends SchemaComputed>(
     computed: (refs: RefMap<Columns>) => C,
-  ): SchemaEntity<Row & ComputedRow<C>, Key, Columns & ComputedRow<C>, B, Abstract>;
+  ): SchemaEntity<Row & ReadRow<C>, Key, Columns & ReadRow<C>, B, Abstract>;
   indexes(indexes: IndexSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
   checks(checks: CheckSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
   triggers(triggers: TriggerSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
@@ -196,16 +205,14 @@ type SchemaSections<Row, Key, Columns, B, Abstract> = {
     B,
     Abstract
   >;
-  /** The foreign keys no relation joins on, each column's target: `{ authorId: () => Author }`. */
-  references(references: SchemaReferences<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
   /**
    * The relations, each read lazily so entities pointing at each other declare in either order, and the values
-   * read over the to-many ones, its base's too: `(agg) => ({ postCount: () => agg.posts.count() })`.
+   * read over the to-many ones, its base's too: `(author) => ({ postCount: () => author.posts.count() })`.
    */
-  relations<const R, const A = {}>(
+  relations<const R, const A extends DerivedFields = {}>(
     relations: (rel: RelationBuilder<Columns>) => R,
-    aggregates?: (agg: AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>) => A,
-  ): RelatedEntity<Row & RelationRow<R> & AggregateRow<A>, Key, Columns, Abstract>;
+    derived?: (refs: RefMap<Columns> & AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>) => A,
+  ): RelatedEntity<Row & RelationRow<R> & DerivedRow<A>, Key, Columns, Abstract>;
 };
 
 /** A schema entity's class once its relations are in: its filters may follow, and read through them. */
@@ -246,6 +253,3 @@ export type SchemaKey<F, Inherited = unknown> = string extends keyof F
         ? never
         : ColumnValueOf<F[K]>
     : never;
-
-/** The columns of `O` holding a `V`: a foreign key to a key of that type. */
-type KeyHolding<O, V> = { [K in keyof O]-?: NonNullable<O[K]> extends V ? K : never }[keyof O];

@@ -25,7 +25,7 @@ const FIELD_OPTION_FAMILY = {
   references: '*',
   onDelete: '*',
   enum: '*',
-  shape: 'json',
+  schema: 'json',
   computed: '*',
   stored: '*',
   updatable: '*',

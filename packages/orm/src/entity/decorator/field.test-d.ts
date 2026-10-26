@@ -2,9 +2,12 @@
  * What `@Field` and `@Computed` check of the property they sit on. Type-checked by `bun run ts` only.
  */
 import { filledKey, idKey, type Json, sql, versionKey } from '../../index.js';
+import type { StandardSchemaV1 } from '../../type/index.js';
 import { f } from '../column.js';
 import { Entity } from './entity.js';
 import { Computed, Field, OneToMany } from './members.js';
+
+declare const langSchema: StandardSchemaV1<unknown, { lang: string }>;
 
 @Entity()
 export class Post {
@@ -17,7 +20,7 @@ export class Post {
   @Field(f.enum(['draft', 'published']).default('draft')) status!: 'draft' | 'published';
   @Field(f.number().default(0)) views!: number;
   @Field(f.version()) revision?: number;
-  @Field(f.json({ lang: String }).nullable()) meta?: Json<{ lang: string }> | null;
+  @Field(f.json(langSchema).nullable()) meta?: Json<{ lang: string }> | null;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @Computed((post) => f.string().as(sql`upper(${post.title})`)) readonly shout?: string;
   @Computed((post) =>

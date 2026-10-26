@@ -108,7 +108,7 @@ type ComputedValue<C> =
 /** What the property has to admit: all of an aggregate's value, which is exact, and a column's `null`. */
 type ComputedAdmits<C> = C extends RelationAggregate<infer V> ? V : C extends Column<infer O> ? NullOf<O> : never;
 
-/** A JSON column with no shape holds any document, which the property narrows: `Json<Settings>`. */
+/** A JSON column with no schema holds any document, which the property narrows: `Json<Settings>`. */
 type Narrowable<V> = IsEqual<V, Json> extends true ? JsonBrand | readonly JsonBrand[] : V;
 
 /** Whether the column is a key, which the class has to name. */

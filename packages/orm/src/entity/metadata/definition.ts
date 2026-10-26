@@ -7,7 +7,9 @@ import {
   type EntityIndexOptions,
   type EntityMeta,
   type EntityOptions,
+  type Except,
   type FieldMeta,
+  type Merge,
   type FieldOptions,
   type FilterOnMissing,
   type FilterOptions,
@@ -26,6 +28,7 @@ import {
   type SchemaClass,
   type SchemaEntityOptions,
   type Brands,
+  type EntityBrand,
   type ColumnRow,
   type SchemaFields,
   type SchemaKey,
@@ -38,6 +41,7 @@ import {
   RelationAggregate,
   SECTION_ENTRY,
   type SectionEntry,
+  type DerivedFields,
   type SchemaEntity,
   SOFT_DELETE_FILTER,
 } from '../../type/index.js';
@@ -52,10 +56,10 @@ import {
   isToManyRelation,
   indexRefs,
   memberRefs,
-  relationRefs,
   fulltextWeights,
   normalizeIndexColumn,
   definedEntries,
+  isRecord,
   whereWith,
 } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
@@ -102,7 +106,12 @@ function addField<E>(meta: EntityMeta<E>, key: string, opts: FieldOptions): void
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
   // column from the referenced primary key (picking up its `columnType`, length and chained keys)
   // instead of treating whatever ends up in `type` as deliberate.
-  columnsOf(meta).fields[key] = { name: key, ...opts, ...(!opts.type && { typeFromReference: true }) };
+  fieldStore(meta)[key] = { name: key, ...opts, ...(!opts.type && { typeFromReference: true }) };
+}
+
+/** `meta`'s fields as a store a key is written into: a generic entity's fields are read-only by type. */
+function fieldStore<E>(meta: EntityMeta<E>): Record<string, FieldMeta | undefined> {
+  return meta.fields;
 }
 
 /**
@@ -267,25 +276,21 @@ type ErasedSections = {
   triggers?: EntityOptions<object>['triggers'];
   filters?: EntityOptions<object>['filters'];
   hooks?: { readonly [E in HookEvent]?: readonly HookFunction[] };
-  references?: Readonly<Record<string, ErasedReference>>;
   relations?: (rel: RelationBuilder<object>) => ErasedRelations;
-  aggregates?: { read(rel: Readonly<Record<string, unknown>>): unknown }['read'];
+  derived?: (refs: object) => DerivedFields;
 };
-
-/**
- * A foreign key `.references()` names, as the registry reads it. The public type takes any function, so
- * `entityOf` checks the entity its target returns.
- */
-type ErasedReference = EntityGetter | Readonly<Pick<FieldOptions, 'onDelete'> & { entity: EntityGetter }>;
 
 /** A schema class as the registry reads it, abstract or not. */
 type ErasedClass = SchemaClass<object, unknown, unknown, boolean>;
 
 /** A schema as the registry reads it, its row erased to {@link ErasedRow}. */
-type ErasedSchema = Omit<SchemaEntityOptions<SchemaFields>, 'extends' | 'fields'> & {
-  readonly extends?: ErasedClass;
-  readonly fields: Readonly<Record<string, Column>>;
-};
+type ErasedSchema = Merge<
+  SchemaEntityOptions<SchemaFields>,
+  {
+    readonly extends?: ErasedClass;
+    readonly fields: Readonly<Record<string, Column>>;
+  }
+>;
 
 /**
  * What a schema declared: its sections are open while its meta is `'declared'`, and its relations are read
@@ -295,6 +300,8 @@ type DeclaredSchema = { readonly schema: ErasedSchema; readonly sections: Erased
 
 const declaredSchemas = new WeakMap<object, DeclaredSchema>();
 
+type DeclaredRow<F extends SchemaFields, B> = Except<B, EntityBrand & keyof B> & ColumnRow<F> & Brands<F, B>;
+
 /**
  * Declares an entity by its schema and returns its class, whose row type the schema derives, so nothing is
  * written twice: its columns now, then each section, `.indexes()` and so on, `.relations()` last but for
@@ -302,10 +309,10 @@ const declaredSchemas = new WeakMap<object, DeclaredSchema>();
  */
 export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
   schema: SchemaEntityOptions<F, B, BK, BC> & { readonly abstract: true },
-): SchemaEntity<B & ColumnRow<F> & Brands<F>, SchemaKey<F, BK>, BC & ColumnRow<F>, B, true>;
+): SchemaEntity<DeclaredRow<F, B>, SchemaKey<F, BK>, BC & ColumnRow<F>, B, true>;
 export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
   schema: SchemaEntityOptions<F, B, BK, BC>,
-): SchemaEntity<B & ColumnRow<F> & Brands<F>, SchemaKey<F, BK>, BC & ColumnRow<F>, B>;
+): SchemaEntity<DeclaredRow<F, B>, SchemaKey<F, BK>, BC & ColumnRow<F>, B>;
 export function defineEntity(schema: ErasedSchema): ErasedClass {
   const base = schema.extends ?? Object;
   // Its rows are read by key alone, which is what the registry types an erased schema's columns by.
@@ -316,10 +323,13 @@ export function defineEntity(schema: ErasedSchema): ErasedClass {
   }[schema.name];
   metas.set(entity, { ...emptyMeta(entity), stage: 'declared' });
   declaredSchemas.set(entity, { schema, sections: {} });
-  for (const section of Object.keys(SECTIONS)) {
+  for (const section of SECTIONS) {
     Object.defineProperty(entity, section, {
-      value(this: AbstractType<object>, ...declared: unknown[]) {
+      value(this: AbstractType<object>, declared: unknown, derived?: unknown) {
         declareSection(this, section, declared);
+        if (section === 'relations' && derived) {
+          declareSection(this, 'derived', derived);
+        }
         return this;
       },
     });
@@ -327,20 +337,11 @@ export function defineEntity(schema: ErasedSchema): ErasedClass {
   return entity;
 }
 
-/** The sections a schema declares as methods. `aggregates` is no section: `relations` takes it as an argument. */
-const SECTIONS = {
-  computed: true,
-  indexes: true,
-  checks: true,
-  triggers: true,
-  filters: true,
-  hooks: true,
-  references: true,
-  relations: true,
-} satisfies Record<Exclude<keyof ErasedSections, 'aggregates'>, true>;
+/** The sections a schema declares as methods. `derived` is no method: `relations` takes it as its second argument. */
+const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'hooks', 'relations'] as const;
 
 /** Records one section of a pending schema, refusing a second of it and one declared after the entity was read. */
-function declareSection(entity: AbstractType<object>, section: string, declared: readonly unknown[]): void {
+function declareSection(entity: AbstractType<object>, section: string, declared: unknown): void {
   const pending = pendingSchema(entity);
   if (!pending) {
     throw new UqlUsageError(`'${entity.name}' was read already: declare its ${section} before its first use`);
@@ -348,8 +349,7 @@ function declareSection(entity: AbstractType<object>, section: string, declared:
   if (section in pending.sections) {
     throw new UqlUsageError(`'${entity.name}' declares its ${section} twice: declare them in one call`);
   }
-  const [first, aggregates] = declared;
-  Object.assign(pending.sections, { [section]: first }, section === 'relations' && aggregates && { aggregates });
+  Object.assign(pending.sections, { [section]: declared });
 }
 
 /** What `entity` declared as a schema, while it is not registered yet. */
@@ -364,11 +364,12 @@ function settleSchema(entity: AbstractType<unknown>): void {
     return;
   }
   const { schema, sections } = pending;
-  const fields = {
-    ...columnOptions(schema.fields),
-    ...referencedFields(schema.name, schema.fields, sections.references),
-  };
-  for (const added of [computedFields(sections.computed), aggregateFields(schema.name, sections.aggregates)]) {
+  const fields = fieldsOf(schema.name, schema.fields);
+  const refs = memberRefs();
+  for (const added of [
+    fieldsOf(schema.name, sections.computed?.(refs) ?? {}),
+    fieldsOf(schema.name, readDerived(sections.derived, refs)),
+  ]) {
     const taken = Object.keys(added).find((key) => key in fields);
     if (taken) {
       throw new UqlUsageError(`'${schema.name}.${taken}' is declared twice: name each member once`);
@@ -395,32 +396,6 @@ function settleSchema(entity: AbstractType<unknown>): void {
   );
 }
 
-/** Each foreign key `.references()` names, written onto its column as `@Field`'s `references()` would. */
-function referencedFields(
-  name: string,
-  fields: ErasedSchema['fields'],
-  references: ErasedSections['references'],
-): Record<string, FieldOptions> {
-  return Object.fromEntries(
-    Object.entries(references ?? {}).map(([key, target]) => {
-      const column = fields[key]?.[COLUMN_OPTIONS];
-      if (!column) {
-        throw new UqlUsageError(`'.references()' names '${name}.${key}', which is no column of its 'fields'`);
-      }
-      const { entity, ...action } = typeof target === 'function' ? { entity: target } : target;
-      return [key, { ...column, ...action, references: () => entityOf(entity(), key) }];
-    }),
-  );
-}
-
-/** The entity a getter returned, refused where it returned anything else. */
-function entityOf(target: AbstractType<object>, key: string): Type<object> {
-  if (!metas.has(target) || !isTable(target)) {
-    throw new UqlUsageError(`'.references()' points '${key}' at something that is not an entity`);
-  }
-  return target;
-}
-
 /** An index as a section's `index(columns, options)` writes it, a bare string its name. */
 function indexEntry<E>(
   columns: EntityIndexInput<E>['columns'],
@@ -438,29 +413,30 @@ function triggerEntry<E>(trigger: TriggerOptions<E>): SectionEntry<TriggerOption
   return { ...trigger, [SECTION_ENTRY]: 'trigger' };
 }
 
-/** The options each builder of `columns` wrote. */
-function columnOptions(columns: Readonly<Record<string, Column>>): Record<string, FieldOptions> {
-  return Object.fromEntries(Object.entries(columns).map(([key, column]) => [key, column[COLUMN_OPTIONS]]));
-}
-
-/** A schema's computed columns, read off its refs. */
-function computedFields(computed: ErasedSections['computed']): Record<string, FieldOptions> {
-  return columnOptions(computed?.(memberRefs()) ?? {});
-}
-
-/** A schema's aggregates as the computed fields they read as, through the refs a decorated `@Computed` reads. */
-function aggregateFields(name: string, aggregates: ErasedSections['aggregates']): Record<string, FieldOptions> {
+/** The fields a section's values define: a column's options, or an aggregate, which reads as a computed column. */
+function fieldsOf(name: string, values: Readonly<Record<string, unknown>>): Record<string, FieldOptions> {
   return Object.fromEntries(
-    Object.entries(aggregates?.(relationRefs()) ?? {}).map(([key, read]) => {
-      const aggregate = typeof read === 'function' ? read() : undefined;
-      // The types refuse anything else; an untyped caller still reaches here.
-      if (!(aggregate instanceof RelationAggregate)) {
-        throw new UqlUsageError(
-          `'${name}.${key}' aggregates no relation: write it as \`() => agg.<relation>.count()\``,
-        );
+    Object.entries(values).map(([key, field]): [string, FieldOptions] => {
+      if (field instanceof RelationAggregate) {
+        return [key, aggregateField(field)];
       }
-      return [key, aggregateField(aggregate)];
+      // The types refuse anything else; an untyped caller still reaches here.
+      if (!isColumn(field)) {
+        throw new UqlUsageError(`'${name}.${key}' is neither a column nor an aggregate: declare it as one`);
+      }
+      return [key, field[COLUMN_OPTIONS]];
     }),
+  );
+}
+
+function isColumn(field: unknown): field is Column {
+  return isRecord(field) && COLUMN_OPTIONS in field;
+}
+
+/** A relation's derived fields, each a thunk read lazily; a value that is no thunk is passed on to be refused. */
+function readDerived(derived: ErasedSections['derived'], refs: object): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(derived?.(refs) ?? {}).map(([key, read]) => [key, typeof read === 'function' ? read() : read]),
   );
 }
 
@@ -920,8 +896,8 @@ function fillInverseSide<E>(
 }
 
 /**
- * Refuses a join on a column either entity does not store, and a one-column join whose foreign key, on
- * whichever side holds it, points at another entity: it would match unrelated rows by their keys.
+ * Refuses a join on a column either entity does not store, a one-column join whose foreign key, on whichever
+ * side holds it, points at another entity, and a join whose column holds another kind of value than its key.
  */
 function assertJoins<E>(
   at: string,
@@ -932,30 +908,37 @@ function assertJoins<E>(
   const target = registeredMeta(relOpts.entity());
   // Only the owning side of a to-one holds its foreign key; an inverse side and a to-many join on the target's.
   const holdsLocally = holdsForeignKey(relOpts);
-  const sides = [
-    { meta: columnsOf(meta), keys: pairs.map(({ local }) => local), joins: target.entity, holds: holdsLocally },
-    { meta: columnsOf(target), keys: pairs.map(({ foreign }) => foreign), joins: meta.entity, holds: !holdsLocally },
-  ];
-  for (const side of sides) {
-    for (const key of side.keys) {
-      const column = `'${side.meta.entity.name}.${key}'`;
-      const field = side.meta.fields[key];
-      if (!field || isInlinedExpression(field)) {
-        throw new UqlUsageError(`${at} joins ${column}, which is not a column: declare it with '@Field'.`);
-      }
-      const referenced = side.holds && pairs.length === 1 ? field.references?.() : undefined;
-      if (referenced && !isA(side.joins, referenced)) {
-        throw new UqlUsageError(
-          `${at} joins ${column}, a foreign key to '${referenced.name}', not to '${side.joins.name}'.`,
-        );
-      }
+  const single = pairs.length === 1;
+  for (const { local, foreign } of pairs) {
+    assertJoinColumn(at, { meta, key: local, joins: target.entity, holds: holdsLocally && single });
+    assertJoinColumn(at, { meta: target, key: foreign, joins: meta.entity, holds: !holdsLocally && single });
+    if (holdsLocally) {
+      assertKindsJoin(at, fieldOf(meta, local), valueFieldOf(fieldOf(target, foreign)), target.entity.name);
     }
   }
 }
 
-/** `meta` with its fields read by any name, as a join's columns come. */
-function columnsOf<E>(meta: EntityMeta<E>): { entity: AbstractType<E>; fields: Record<string, FieldMeta | undefined> } {
-  return meta;
+/** Refuses a join column that is no column, or a foreign key to another entity than the one it joins. */
+function assertJoinColumn(
+  at: string,
+  side: {
+    meta: { entity: AbstractType<unknown>; fields: Record<string, FieldMeta | undefined> };
+    key: string;
+    joins: AbstractType<unknown>;
+    holds: boolean;
+  },
+): void {
+  const column = `'${side.meta.entity.name}.${side.key}'`;
+  const field = side.meta.fields[side.key];
+  if (!field || isInlinedExpression(field)) {
+    throw new UqlUsageError(`${at} joins ${column}, which is not a column: declare it with '@Field'.`);
+  }
+  const referenced = side.holds ? field.references?.() : undefined;
+  if (referenced && !isA(side.joins, referenced)) {
+    throw new UqlUsageError(
+      `${at} joins ${column}, a foreign key to '${referenced.name}', not to '${side.joins.name}'.`,
+    );
+  }
 }
 
 /** Whether `entity` is `base` or extends it, as an entity inheriting a relation does. */
@@ -979,8 +962,16 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
   const columns = definedEntries(meta.fields).flatMap(([key, field]): RelationMeta[] => {
     if (!field.references) return [];
     const target = knownMeta(field.references());
-    assertHoldsKey(`'${meta.entity.name}.${key}'`, field, target);
+    // A joined column's kinds were checked when its relation settled.
     if (joined.has(key) || !target.ids.length) return [];
+    if (!field.typeFromReference && target.ids.length === 1) {
+      assertKindsJoin(
+        `'${meta.entity.name}.${key}'`,
+        field,
+        valueFieldOf(fieldOf(target, target.ids[0])),
+        target.entity.name,
+      );
+    }
     if (target.ids.length > 1) {
       throw new UqlUsageError(
         `'${meta.entity.name}.${key}' cannot reference '${target.entity.name}', whose primary key is composite ` +
@@ -993,20 +984,20 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
   return [...owning, ...columns];
 }
 
-/** The kinds a column of `type` holds as a join compares them, as `ValueKind` does: a bigint is a number, which BIGINT widens. */
+/** The kinds a column of `type` holds as a join compares them, as `JoinKind` does: a bigint is a number, which BIGINT widens. */
 function joinedKinds(type: FieldMeta['type']) {
   const types = valueTypesOf(type);
   return types && [...new Set(types.map((kind) => (kind === 'bigint' ? 'number' : kind)))];
 }
 
-/** Refuses a foreign key whose `type` holds another kind of value than the key it references, which no join matches. */
-function assertHoldsKey(at: string, field: FieldMeta, target: EntityMeta<object>): void {
-  if (field.typeFromReference || target.ids.length !== 1) return;
-  const held = joinedKinds(field.type);
-  const needed = joinedKinds(valueFieldOf(fieldOf(target, target.ids[0])).type);
-  if (held && needed && !needed.every((kind) => held.includes(kind))) {
+/** Refuses a join whose column holds another kind of value than the key it joins to, which no join matches. */
+function assertKindsJoin(at: string, held: FieldMeta, key: FieldMeta, target: string): void {
+  const heldKinds = joinedKinds(held.type);
+  if (!heldKinds) return;
+  const neededKinds = joinedKinds(key.type);
+  if (neededKinds && !neededKinds.every((kind) => heldKinds.includes(kind))) {
     throw new UqlUsageError(
-      `${at} holds a ${held.join(' or ')}, but the key of '${target.entity.name}' it references is a ${needed.join(' or ')}`,
+      `${at} holds a ${heldKinds.join(' or ')}, but the key of '${target}' it references is a ${neededKinds.join(' or ')}`,
     );
   }
 }

@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { toSchemaEntities } from './schemaEntity.js';
 
 const convert = (text: string) => {
-  const { text: written, unresolved, notes } = toSchemaEntities('/entities.ts', text);
+  const { text: written, unresolved, notes } = toSchemaEntities('/entities.ts', text, { taken: new Set() });
   return { text: written, unresolved, notes };
 };
 
 describe('toSchemaEntities', () => {
-  it('declares a class defineEntity registers as a schema, its fields, relations and options kept', () => {
+  it('declares a class defineEntity registers as a schema and its chain, a column typed as the class declares it', () => {
     const { text, unresolved } = convert(`import { defineEntity } from 'uql-orm';
 
 export class Post {
@@ -30,21 +30,21 @@ defineEntity(Post, {
 `);
 
     expect(unresolved).toEqual([]);
-    expect(text).toBe(`import { defineEntity } from 'uql-orm';
+    expect(text).toBe(`import { f, defineEntity } from 'uql-orm';
 
 export const Post = defineEntity({
   name: 'Post',
   table: 'posts',
   fields: {
-    id: { type: Number, isId: true },
-    title: { type: String },
-    authorId: { references: () => User },
+    id: f.number().id(),
+    title: f.string().nullable(),
+    authorId: f.number().nullable(),
   },
-  relations: (rel) => ({
+})
+  .indexes((post, index) => [index([post.title], { unique: true })])
+  .relations((rel) => ({
     author: () => rel.manyToOne(User, { references: (post) => post.authorId }),
-  }),
-  indexes: [{ columns: (post) => [post.title], unique: true }],
-});
+  }));
 export type Post = InstanceType<typeof Post>;
 `);
   });
@@ -67,21 +67,20 @@ defineEntity(Line, {
 });
 `);
 
-    expect(text).toBe(`const Line = defineEntity({
+    expect(text).toBe(`import { f } from 'uql-orm';
+const Line = defineEntity({
   name: 'Line',
   fields: {
-    id: { type: Number, isId: true },
-    qty: { type: Number },
+    id: f.number().id(),
+    qty: f.number().nullable(),
   },
-  computed: {
-    double: { type: Number, computed: (line) => sql\`\${line.qty} * 2\` },
-  },
-  relations: (rel) => ({
+})
+  .computed((line) => ({ double: f.number().nullable().as(sql\`\${line.qty} * 2\`) }))
+  .relations((rel) => ({
     order: () => rel.oneToOne(Order, { mappedBy: (order) => order.line }),
     parts: () => rel.oneToMany(Part, { mappedBy: (part) => part.line }),
     tags: () => rel.manyToMany(Tag, { through: () => LineTag }),
-  }),
-});
+  }));
 type Line = InstanceType<typeof Line>;
 `);
   });
@@ -108,28 +107,28 @@ defineIndex(Article, { columns: (article) => [article.title] });
 defineEntity(Article, { name: 'articles', hooks: { afterLoad: (article) => [article.stamp] } });
 `);
 
-    expect(text).toBe(`import { defineEntity, type HookContext } from 'uql-orm';
+    expect(text).toBe(`import { f, defineEntity, type HookContext } from 'uql-orm';
 
 const Article = defineEntity({
   name: 'Article',
   table: 'articles',
   fields: {
-    id: { isId: true, type: 'uuid' },
-    title: { type: String, nullable: false },
+    id: f.uuid().id(),
+    title: f.string(),
   },
-  relations: (rel) => ({
-    author: () => rel.manyToOne(User, { references: (article) => article.authorId }),
-  }),
-  indexes: [{ columns: (article) => [article.title] }],
-  hooks: {
+})
+  .indexes((article, index) => [index([article.title])])
+  .hooks({
     beforeInsert: [async (article, ctx: HookContext) => {
     article.createdAt = await ctx.querier.now();
   }],
     afterLoad: [async (article, ctx: HookContext) => {
     article.createdAt = await ctx.querier.now();
   }],
-  },
-});
+  })
+  .relations((rel) => ({
+    author: () => rel.manyToOne(User, { references: (article) => article.authorId }),
+  }));
 type Article = InstanceType<typeof Article>;
 `);
     expect(notes).toEqual([
@@ -145,9 +144,10 @@ type Article = InstanceType<typeof Article>;
 defineEntity(Seat, { fields: { code: { type: String, isId: true } } });
 `);
 
-    expect(text).toBe(`const Seat = defineEntity({
+    expect(text).toBe(`import { f } from 'uql-orm';
+const Seat = defineEntity({
   name: 'Seat',
-  fields: { code: { type: String, isId: true } },
+  fields: { code: f.string().id() },
 });
 type Seat = InstanceType<typeof Seat>;
 `);
@@ -163,7 +163,7 @@ defineEntity(Doc, { fields: { id: { type: Number, isId: true }, meta: { type: 'j
 `);
 
     expect(notes).toEqual([
-      "/entities.ts:3: 'meta' was declared Json<{ lang: string }>: describe its payload with 'shape' to keep it typed",
+      "/entities.ts:3: 'meta' was declared Json<{ lang: string }>: describe its payload with a Standard Schema, 'f.json(schema)', to keep it typed",
       "/entities.ts:4: 'status' was declared 'draft' | 'live': list its values in 'enum' to keep them typed",
     ]);
   });
@@ -219,19 +219,19 @@ defineEntity(Counted, {
 `);
 
     expect(unresolved).toEqual([]);
-    expect(text).toBe(`const Counted = defineEntity({
+    expect(text).toBe(`import { f } from 'uql-orm';
+const Counted = defineEntity({
   name: 'Counted',
   fields: {
-    id: { type: Number, isId: true },
+    id: f.number().id(),
   },
-  relations: (rel) => ({
+})
+  .relations((rel) => ({
     items: () => rel.oneToMany(Item, { mappedBy: (item) => item.counted }),
-  }),
-  aggregates: (rel) => ({
-    total: () => rel.items.count(),
-    top: () => rel.items.max((item) => item.amount),
-  }),
-});
+  }), (counted) => ({
+    total: () => counted.items.count(),
+    top: () => counted.items.max((item) => item.amount),
+  }));
 type Counted = InstanceType<typeof Counted>;
 `);
   });
@@ -279,7 +279,7 @@ defineEntity(Counted, {
 `);
 
     expect(unresolved).toEqual([]);
-    expect(text).toContain('aggregates: (rel) => ({\n    total: () => rel.items.count(),\n  }),');
+    expect(text).toContain('}), (counted) => ({\n    total: () => counted.items.count(),\n  }));');
     expect(reported.unresolved).toEqual([
       "/entities.ts:4: 'Counted.total' aggregates a relation with options an aggregate takes none of: move it by hand",
     ]);
@@ -301,15 +301,16 @@ defineEntity(Task, {
 });
 `);
 
-    expect(text).toBe(`const Task = defineEntity({
+    expect(text).toBe(`import { f } from 'uql-orm';
+const Task = defineEntity({
   name: 'Task',
   table: 'tasks',
   schema: 'work',
   extends: Audited,
-  fields: { id: { type: Number, isId: true } },
-  filters: { open: { where: { done: false } }, mine: { where: { owner: 'me' } } },
-  triggers: [{ on: 'afterInsert', run: audit }, { on: 'beforeUpdate', run: stamp }],
-});
+  fields: { id: f.number().id() },
+})
+  .triggers((task, trigger) => [trigger({ on: 'afterInsert', run: audit }), trigger({ on: 'beforeUpdate', run: stamp })])
+  .filters({ open: { where: { done: false } }, mine: { where: { owner: 'me' } } });
 type Task = InstanceType<typeof Task>;
 `);
   });
@@ -323,17 +324,15 @@ defineField(Page, 'hero-image', { type: String });
 defineField(Page, 'total', { type: Number, computed: sql\`1\` });
 defineEntity(Page);`);
 
-    expect(text).toBe(`import { defineEntity } from 'uql-orm';
+    expect(text).toBe(`import { f, defineEntity } from 'uql-orm';
 const Page = defineEntity({
   name: 'Page',
   fields: {
-    id: { isId: true },
-    'hero-image': { type: String },
+    id: f.number().id(),
+    'hero-image': f.string().nullable(),
   },
-  computed: {
-    total: { type: Number, computed: sql\`1\` },
-  },
-});
+})
+  .computed((page) => ({ total: f.number().nullable().as(sql\`1\`) }));
 type Page = InstanceType<typeof Page>;`);
   });
 
@@ -456,11 +455,12 @@ uql.defineEntity; defineEntity(Tag, { fields: { id: { type: Number, isId: true }
 `);
 
     expect(text).toBe(`import * as uql from 'uql-orm';
+import { f } from 'uql-orm';
 uql.defineEntity; const Tag = defineEntity({
   name: 'Tag',
-  fields: { id: { type: Number, isId: true } },
-  indexes: [{ columns: (tag) => [tag.id] }],
-});
+  fields: { id: f.number().id() },
+})
+  .indexes((tag, index) => [index([tag.id])]);
 type Tag = InstanceType<typeof Tag>;
 `);
   });
@@ -503,9 +503,31 @@ defineEntity(Log, {
     log2.at = log.at;
   }],`);
     expect(text).toContain(
-      'relations: (rel2) => ({\n    items: () => rel2.oneToMany(rel.Item, { mappedBy: (item) => item.log }),',
+      '.relations((rel2) => ({\n    items: () => rel2.oneToMany(rel.Item, { mappedBy: (item) => item.log }),',
     );
-    expect(text).toContain('aggregates: (rel2) => ({\n    total: () => rel2.items.count(),');
+    expect(text).toContain('}), (log) => ({\n    total: () => log.items.count(),');
+  });
+
+  it('leaves a class as written where its schema cannot be chained, or would write a builder the file names', () => {
+    const source = `class Odd {
+  id?: number;
+}
+defineEntity(Odd, { fields: { id: { type: Number, isId: true }, b: { type: String, frob: true } } });
+`;
+    const { text, unresolved } = convert(source);
+    const named = toSchemaEntities(
+      '/entities.ts',
+      'class Post {}\ndefineEntity(Post, { fields: { id: { type: Number, isId: true } } });',
+      {
+        taken: new Set(['f']),
+      },
+    );
+
+    expect(text).toBe(source);
+    expect(unresolved).toEqual(["/entities.ts:4: 'Odd' is left as written: 'b' has options no builder writes: frob"]);
+    expect(named.unresolved).toEqual([
+      "/entities.ts:2: 'Post' is left as written: 'f' is already named here, and the codemod writes it",
+    ]);
   });
 
   it('leaves an entity extending a base declared below it as written, which its const would read too early', () => {
@@ -524,6 +546,36 @@ defineEntity(Base, { fields: { id: { type: Number, isId: true } } });
     );
   });
 
+  it("names a computed field's callback after the entity's own name, whatever it calls its row", () => {
+    const { text, unresolved } = convert(`class Counted {
+  id?: number;
+}
+defineEntity(Counted, {
+  fields: { id: { type: Number, isId: true }, total: { computed: (row) => row.items.count() } },
+  relations: { items: { cardinality: '1m', entity: () => Item, mappedBy: (item) => item.counted } },
+});
+`);
+
+    expect(unresolved).toEqual([]);
+    expect(text).toContain('}), (counted) => ({\n    total: () => counted.items.count(),\n  }));');
+  });
+
+  it("lays the chain out by the file's shallowest indent, not its first", () => {
+    const { text } = convert(`import { defineEntity } from 'uql-orm';
+function deep() {
+    return 1;
+}
+function shallow() {
+  return 2;
+}
+class Post {}
+defineEntity(Post, { fields: { id: { type: Number, isId: true } }, indexes: [{ columns: ['id'] }] });
+`);
+
+    expect(text).toContain("\n  .indexes((post, index) => [index(['id'])]);");
+    expect(text).not.toContain('\n    .indexes');
+  });
+
   it('changes nothing in a file with no class-form registration', () => {
     const source = `export const Post = defineEntity({ name: 'Post', fields: { id: { type: Number, isId: true } } });\n`;
     expect(convert(source)).toEqual({ text: source, unresolved: [], notes: [] });
@@ -539,17 +591,19 @@ defineEntity(Post, {
         id: { type: Number, isId: true },
         title: { type: String },
     },
+    indexes: [{ columns: (post) => [post.title] }],
 });
 `);
 
-    expect(text).toBe(`import { defineEntity } from 'uql-orm';
+    expect(text).toBe(`import { f, defineEntity } from 'uql-orm';
 const Post = defineEntity({
     name: 'Post',
     fields: {
-        id: { type: Number, isId: true },
-        title: { type: String },
+        id: f.number().id(),
+        title: f.string().nullable(),
     },
-});
+})
+    .indexes((post, index) => [index([post.title])]);
 type Post = InstanceType<typeof Post>;
 `);
   });

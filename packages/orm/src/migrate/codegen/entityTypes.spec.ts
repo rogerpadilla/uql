@@ -50,9 +50,7 @@ it('should emit names a generated file can carry, whatever a content type was ca
       'hero-image': f.string().nullable(),
       outsideId: f.number().nullable(),
     },
-  })
-    .references({ outsideId: () => Outside })
-    .relations((rel) => ({ outside: () => rel.manyToOne(Outside, { references: (post) => post.outsideId }) }));
+  }).relations((rel) => ({ outside: () => rel.manyToOne(Outside, { references: (post) => post.outsideId }) }));
   const collides = defineEntity({ name: 'blogpost', fields: { id: f.number().id() } });
   // A slug can also start with what an identifier cannot.
   const numeric = defineEntity({ name: '2fa', fields: { id: f.number().id() } });

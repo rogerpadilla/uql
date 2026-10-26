@@ -13,13 +13,13 @@ import type {
   FieldOptions,
   HasCompositeKey,
   IdValue,
-  JsonShape,
+  JoinKind,
   OnFieldCallback,
-  ShapeValue,
   StampEvent,
 } from './entity.js';
 import type { QuerySql } from './querySql.js';
 import type { ReferencedKey } from './schemaEntity.js';
+import type { StandardSchemaV1 } from './standardSchema.js';
 import type { Type, Json, AbstractType } from './utility.js';
 import type { VectorDistance } from './vector.js';
 
@@ -170,23 +170,34 @@ export interface VersionColumn<in out O, in out V> extends Column<O, V> {
   comment(text: string): VersionColumn<O & { readonly comment: string }, V>;
 }
 
-/** A key's kind as a join compares it: a number and a bigint both integers, so a BIGINT column holds either key. */
-type ValueKind<T> = T extends number | bigint ? number | bigint : T;
-
 /** Refuses a target whose key is another kind of value than the column holds, which no join matches. */
-type HoldsKey<C, V> = [ValueKind<NonNullable<ReferencedKey<C>>>] extends [ValueKind<V>]
+type HoldsKey<C, V> = [JoinKind<NonNullable<ReferencedKey<C>>>] extends [JoinKind<V>]
   ? unknown
   : { readonly __columnMustHoldReferencedKey: ReferencedKey<C> };
 
 /** The column types holding an exact decimal, read as its text: a JS number would round it. */
 type DecimalType = 'decimal' | 'numeric';
 
-/** What a JSON column holds: its shape's payload, or any document. */
-type JsonValue<S> = [S] extends [never]
-  ? Json
-  : ShapeValue<S> extends infer P extends object | string | number | boolean
-    ? Json<P>
-    : Json;
+/** A JSON column of `T`, typed by the payload its schema validates to, or any document with none. */
+type JsonColumn<T extends 'json' | 'jsonb'> = {
+  (): ColumnBuilder<{ readonly type: T }, Json, 'json'>;
+  <S extends StandardSchemaV1>(
+    schema: S,
+  ): ColumnBuilder<{ readonly type: T; readonly schema: S }, JsonOutput<PayloadOf<S['~standard']['types']>>, 'json'>;
+};
+
+/** A schema's output as a JSON column holds it: a document, or the primitive a payload may be. */
+type JsonOutput<O> = O extends object | string | number | boolean | null ? Json<O> : Json;
+
+/** The output a schema's `types` states, `unknown` where it states none: `never` would type the column as nothing. */
+type PayloadOf<T> =
+  NonNullable<T> extends infer N
+    ? [N] extends [never]
+      ? unknown
+      : N extends { readonly output: infer O }
+        ? O
+        : unknown
+    : never;
 
 /** The key a column referencing `C` holds, or a named complaint for a composite one, which no one column holds. */
 type ReferenceValue<C> =
@@ -212,14 +223,8 @@ export type ColumnFactory = {
   ): NumericColumn<{ readonly type: 'decimal'; readonly precision: number; readonly scale: number }, string>;
   boolean(): ColumnBuilder<{ readonly type: BooleanConstructor }, boolean, 'boolean'>;
   date(): DateColumn<{ readonly type: DateConstructor }, Date>;
-  json(): ColumnBuilder<{ readonly type: 'json' }, Json, 'json'>;
-  json<const S extends JsonShape>(
-    shape: S,
-  ): ColumnBuilder<{ readonly type: 'json'; readonly shape: S }, JsonValue<S>, 'json'>;
-  jsonb(): ColumnBuilder<{ readonly type: 'jsonb' }, Json, 'json'>;
-  jsonb<const S extends JsonShape>(
-    shape: S,
-  ): ColumnBuilder<{ readonly type: 'jsonb'; readonly shape: S }, JsonValue<S>, 'json'>;
+  json: JsonColumn<'json'>;
+  jsonb: JsonColumn<'jsonb'>;
   vector(dimensions: number): VectorColumn<{ readonly type: 'vector'; readonly dimensions: number }, readonly number[]>;
   /** The values the column accepts, a `CHECK (col IN (...))` on every SQL engine, and the row's literal union. */
   enum<const M extends readonly string[]>(

@@ -5,15 +5,15 @@ import {
   applyEdits,
   type Edit,
   editedText,
-  inserted,
   type Pass,
   replaced,
   replacingUses,
   reparsedAgain,
   unedited,
 } from './edits.js';
-import { deadImports, importRemovalEdits, importText, spelledNames, uqlImportDeclarations } from './imports.js';
+import { importEdits } from './imports.js';
 import { isCallback, paramFor } from './keyMaps.js';
+import { FOREIGN_KEY_IN_SCHEMA, NO_KEY_TYPE, nameClash, ON_DELETE_ON_RELATION } from './schemaMessages.js';
 import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS } from './schemaOptions.js';
 import {
   type ChainMethod,
@@ -27,9 +27,11 @@ import {
   indentUnit,
   keyOf,
   objectLiteral,
+  objectProperties,
   optionsOf,
   propertiesByKey,
   propertyAssignment,
+  propertyKey,
   propertyValue,
 } from './syntax.js';
 
@@ -77,9 +79,9 @@ const METHODS: readonly OptionMethod<string | undefined>[] = [
 ];
 
 /** What a constructor or `nullable()`/`id()` already said, so no method repeats it. */
-const SAID_BY_SHAPE = new Set(['type', 'nullable', 'isId', 'enum', 'shape', 'version', 'computed', 'stored']);
+const SAID_BY_CONSTRUCTOR = new Set(['type', 'nullable', 'isId', 'enum', 'version', 'computed', 'stored']);
 
-const KNOWN = new Set([...SAID_BY_SHAPE, ...METHODS.map(([option]) => option)]);
+const KNOWN = new Set([...SAID_BY_CONSTRUCTOR, ...METHODS.map(([option]) => option)]);
 
 /** The options a literal states, each by its key, or why it cannot be read. */
 function optionsByKey(node: ts.Expression): Map<string, ts.Expression> | string {
@@ -143,9 +145,6 @@ function constructorOf(
 ): string | { readonly message: string } {
   const type = text('type');
   const members = text('enum');
-  if (options.has('shape') && type !== "'json'" && type !== "'jsonb'") {
-    return { message: "has a 'shape' on a column that is no JSON: only a JSON column holds a payload" };
-  }
   if (options.has('version')) {
     text('version');
     if (type === undefined || type === 'Number') return 'f.version()';
@@ -176,8 +175,7 @@ function constructorOf(
     return NAMED_TYPES[literal];
   }
   if (literal === 'json' || literal === 'jsonb') {
-    const shape = text('shape');
-    return `f.${literal}(${shape ?? ''})`;
+    return `f.${literal}()`;
   }
   if (literal === 'vector') {
     const dimensions = text('dimensions');
@@ -320,36 +318,67 @@ function schemaEdits(call: ts.CallExpression, findings: Finding[], used: Set<str
     });
     return [];
   }
-  const references: string[] = [];
   const field = propertyAssignment(options, 'fields');
-  const columns = fields.properties.map((prop) => {
-    if (!ts.isPropertyAssignment(prop)) {
+  const relations = propertyValue(options, 'relations');
+  const aggregates = propertyValue(options, 'aggregates');
+  const read = fields.properties.map((prop) => ({
+    prop,
+    column: ts.isPropertyAssignment(prop) ? schemaColumn(prop.initializer) : undefined,
+  }));
+  const { joins, inferred } = joinsOf(relations, targetsOf(read), param);
+  const targets: Targets = {
+    param,
+    rel: (relations && ts.isArrowFunction(relations) && identifierText(relations.parameters[0]?.name)) || 'rel',
+    joins,
+    insertable: !relations || returnedLiteral(relations) !== undefined,
+  };
+  const start: Claims = {
+    named: new Set(
+      [
+        fields,
+        objectLiteral(propertyValue(options, 'computed')),
+        returnedLiteral(relations),
+        returnedLiteral(aggregates),
+      ]
+        .flatMap((literal) => objectProperties(literal))
+        .map((prop) => propertyKey(prop.name)),
+    ),
+    added: [],
+    options: new Map([...inferred].map(([relation, reference]) => [relation, [reference]])),
+  };
+  const claimed = claimColumns(read, start, targets);
+  const columns = read.map(({ prop, column }) => {
+    if (!ts.isPropertyAssignment(prop) || !column) {
       findings.push({ node: prop, message: `cannot write '${prop.getText()}' as a column: write its options inline` });
       return undefined;
     }
-    const key = prop.name.getText();
-    const built = isBuilder(prop.initializer)
-      ? builtSchemaColumn(prop.initializer, key, references)
-      : schemaColumnOf(prop.initializer, key, references);
-    if (typeof built !== 'string') {
-      findings.push({ node: prop, message: `'${key}' ${built.message}` });
+    const key = propertyKey(prop.name) ?? prop.name.getText();
+    if ('message' in column) {
+      findings.push({ node: prop, message: `'${key}' ${column.message}` });
       return undefined;
     }
-    return withValue(prop, built);
+    const problem = claimed.problems.get(prop);
+    if (problem) {
+      findings.push({ node: prop, message: `'${key}' ${problem}` });
+      return undefined;
+    }
+    return withValue(prop, column.builder);
   });
   const sections = CHAINED_OPTIONS.flatMap((section) => {
     const value = propertyValue(options, section);
     return value ? [chainedSection(section, value, param, findings)] : [];
   });
-  if (references.length) {
-    sections.push(`.references({ ${references.join(', ')} })`);
-  }
-  const relations = propertyValue(options, 'relations');
-  const aggregates = propertyValue(options, 'aggregates');
-  if (relations || aggregates) {
-    sections.push(
-      `.relations(${relations?.getText() ?? '() => ({})'}${aggregates ? `, ${aggregates.getText()}` : ''})`,
-    );
+  const indent = indentOf(call);
+  const unit = indentUnit(call.getSourceFile());
+  const related = relationsText(
+    relations,
+    targets.rel,
+    claimed.claims,
+    fields.getText().includes('\n') ? `${indent}${unit}` : undefined,
+    unit,
+  );
+  if (related || aggregates) {
+    sections.push(`.relations(${related ?? '() => ({})'}${aggregates ? `, ${aggregates.getText()}` : ''})`);
   }
   const written = columns.filter((it) => it !== undefined);
   if (written.length !== columns.length || sections.some((it) => it === undefined)) {
@@ -359,11 +388,10 @@ function schemaEdits(call: ts.CallExpression, findings: Finding[], used: Set<str
   const kept = options.properties
     .filter((prop) => FIRST_CALL.has(keyOf(prop)))
     .map((prop) => (prop === field ? withValue(field, literal(fields, written)) : prop.getFullText()));
-  const indent = indentOf(call);
   return [
     replaced(
       call,
-      `${call.expression.getText()}(${literal(options, kept)})${sections.map((it) => `\n${indent}  ${it}`).join('')}`,
+      `${call.expression.getText()}(${literal(options, kept)})${sections.map((it) => `\n${indent}${unit}${it}`).join('')}`,
     ),
   ];
 }
@@ -375,40 +403,282 @@ function schemaParam(call: ts.CallExpression): string {
   return paramFor(name ?? identifierText(variableOf(call)));
 }
 
-/** A schema column written as options, through {@link schemaColumn}, or why it cannot be. */
-function schemaColumnOf(node: ts.Expression, key: string, references: string[]): string | { readonly message: string } {
-  const column = optionsByKey(node);
-  return typeof column === 'string'
-    ? { message: `cannot be written as a builder because ${column}` }
-    : schemaColumn(column, key, references);
+/** A column's foreign key as written: its target's text, and the delete action it states. */
+type ForeignKey = { readonly target: string; readonly onDelete: string | undefined };
+
+/** A schema column as its builder with no foreign key, and the foreign key it named, or why it cannot be written. */
+type SchemaColumn = { readonly builder: string; readonly key?: ForeignKey } | { readonly message: string };
+
+/** The foreign keys' claims so far: the member names taken, the relations added, and each to-one's options written. */
+type Claims = {
+  readonly named: ReadonlySet<string | undefined>;
+  readonly added: readonly string[];
+  readonly options: ReadonlyMap<ts.CallExpression, readonly string[]>;
+};
+
+/** Where a schema's foreign keys move: the to-one joining on each column, the reference each inferred join writes. */
+type Targets = {
+  readonly param: string;
+  readonly rel: string;
+  readonly joins: ReadonlyMap<string, ts.CallExpression>;
+  readonly insertable: boolean;
+};
+
+/** Whether a claim went through, and what it left, or why it did not. */
+type Outcome = { readonly claims: Claims; readonly problem?: string };
+
+/** A schema column's builder off its options or chain, its `references` and `onDelete` taken out to move to a relation. */
+function schemaColumn(node: ts.Expression): SchemaColumn {
+  if (isBuilder(node)) {
+    const methods = chainMethods(node);
+    const references = methods.get('references');
+    if (!references) {
+      return { builder: node.getText() };
+    }
+    const target = targetOf(references.call.arguments[0]);
+    if (identifierText(references.receiver) === 'f' || !target) {
+      return { message: target ? NO_KEY_TYPE : FOREIGN_KEY_IN_SCHEMA };
+    }
+    const onDelete = methods.get('onDelete');
+    const cut = [references, ...(onDelete ? [onDelete] : [])].map((method) => ({
+      start: method.receiver.getEnd() - node.getStart(),
+      end: method.call.getEnd() - node.getStart(),
+      text: '',
+    }));
+    return {
+      builder: applyEdits(node.getText(), cut),
+      key: { target, onDelete: onDelete?.call.arguments[0]?.getText() },
+    };
+  }
+  const options = optionsByKey(node);
+  if (typeof options === 'string') {
+    return { message: `cannot be written as a builder because ${options}` };
+  }
+  const references = options.get('references');
+  const target = references && targetOf(references);
+  if (references && !target) {
+    return { message: FOREIGN_KEY_IN_SCHEMA };
+  }
+  if (target && !options.has('type')) {
+    return { message: NO_KEY_TYPE };
+  }
+  const built = columnBuilder(
+    new Map([...options].filter(([option]) => !target || (option !== 'references' && option !== 'onDelete'))),
+    false,
+  );
+  if (typeof built !== 'string') {
+    return built;
+  }
+  return target
+    ? { builder: built, key: { target, onDelete: options.get('onDelete')?.getText() } }
+    : { builder: built };
 }
 
-/**
- * A schema column's builder, its foreign key moved into `.references()`, where its target is read once every entity
- * exists: written in `fields`, it would read the target while that target's own type is still being inferred.
- */
-function schemaColumn(
-  options: Map<string, ts.Expression>,
-  key: string,
-  references: string[],
-): string | { readonly message: string } {
-  const target = options.get('references');
-  if (!target) {
-    return columnBuilder(options, false);
-  }
-  if (!options.has('type')) {
-    return { message: "references another entity but states no 'type': state the column's, as its key's" };
-  }
-  references.push(referenceEntry(key, target.getText(), options.get('onDelete')?.getText()));
-  return columnBuilder(
-    new Map([...options].filter(([option]) => option !== 'references' && option !== 'onDelete')),
-    false,
+/** The entity a `() => Target` getter names, as its text. */
+function targetOf(getter: ts.Expression | undefined): string | undefined {
+  return getter && ts.isArrowFunction(getter) && !ts.isBlock(getter.body) ? getter.body.getText() : undefined;
+}
+
+/** Each column's foreign key target, for the columns naming one. */
+function targetsOf(read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: SchemaColumn }[]) {
+  return new Map(
+    read.flatMap(({ prop, column }) =>
+      column && 'key' in column && column.key ? [[prop.name?.getText(), column.key.target] as const] : [],
+    ),
   );
 }
 
-/** One entry of `.references()`: the target's getter, with its `onDelete` where one is stated. */
-function referenceEntry(key: string, getter: string | undefined, action: string | undefined): string {
-  return action ? `${key}: { entity: ${getter}, onDelete: ${action} }` : `${key}: ${getter}`;
+/** The schema's columns' foreign keys claimed in turn, the problem of each column by its name node. */
+function claimColumns(
+  read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: SchemaColumn }[],
+  start: Claims,
+  targets: Targets,
+): { readonly claims: Claims; readonly problems: ReadonlyMap<ts.Node, string> } {
+  const problems = new Map<ts.Node, string>();
+  const claims = read.reduce<Claims>((state, { prop, column }) => {
+    if (!ts.isPropertyAssignment(prop) || !column || !('key' in column) || !column.key) {
+      return state;
+    }
+    const outcome = claimKey(prop.name, column.key, state, targets);
+    if (outcome.problem) {
+      problems.set(prop, outcome.problem);
+    }
+    return outcome.claims;
+  }, start);
+  return { claims, problems };
+}
+
+/**
+ * A column's foreign key moved into the to-one joining on it, with its `onDelete`, else into a `manyToOne` written for
+ * it, named as the column less its `Id`; or why it cannot be.
+ */
+function claimKey(name: ts.PropertyName, { target, onDelete }: ForeignKey, claims: Claims, targets: Targets): Outcome {
+  const key = name.getText();
+  const join = targets.joins.get(key);
+  if (join) {
+    return onDelete ? movedOnDelete(join, onDelete, claims) : { claims };
+  }
+  const relation = ts.isIdentifier(name) ? /^(.+?)(?:Id|_id)$/.exec(key)?.[1] : undefined;
+  if (!relation || claims.named.has(relation) || !targets.insertable) {
+    return { claims, problem: FOREIGN_KEY_IN_SCHEMA };
+  }
+  const written = [
+    `references: (${targets.param}) => ${targets.param}.${key}`,
+    ...(onDelete ? [`onDelete: ${onDelete}`] : []),
+  ];
+  return {
+    claims: {
+      ...claims,
+      named: new Set([...claims.named, relation]),
+      added: [...claims.added, `${relation}: () => ${targets.rel}.manyToOne(${target}, { ${written.join(', ')} })`],
+    },
+  };
+}
+
+/** Writes a column's `onDelete` into the to-one joining on it, or says why not: it states another, or options none can be written into. */
+function movedOnDelete(relation: ts.CallExpression, onDelete: string, claims: Claims): Outcome {
+  const written = `onDelete: ${onDelete}`;
+  const options = relation.arguments[1];
+  const literal = objectLiteral(options);
+  const stated = literal ? propertyValue(literal, 'onDelete')?.getText() : undefined;
+  const current = claims.options.get(relation) ?? [];
+  const pending = current.find((option) => option.startsWith('onDelete: '));
+  if ((options && !literal) || (stated ?? onDelete) !== onDelete || (pending ?? written) !== written) {
+    return { claims, problem: ON_DELETE_ON_RELATION };
+  }
+  return stated || pending
+    ? { claims }
+    : { claims: { ...claims, options: new Map(claims.options).set(relation, [...current, written]) } };
+}
+
+/** The relation calls a schema's `relations` returns, one per relation. */
+function relationCalls(relations: ts.Expression | undefined): ts.CallExpression[] {
+  return objectProperties(returnedLiteral(relations)).flatMap((prop) => {
+    const relation = ts.isArrowFunction(prop.initializer) ? prop.initializer.body : undefined;
+    return relation && ts.isCallExpression(relation) ? [relation] : [];
+  });
+}
+
+/** The object literal a callback returns, `(rel) => ({ ... })`, or nothing where it returns none so. */
+function returnedLiteral(callback: ts.Expression | undefined): ts.ObjectLiteralExpression | undefined {
+  const body = callback && ts.isArrowFunction(callback) && !ts.isBlock(callback.body) ? callback.body : undefined;
+  return objectLiteral(body && ts.isParenthesizedExpression(body) ? body.expression : body);
+}
+
+/**
+ * The to-one joining on each column: by the `references` it names, `(row) => row.column` or pairs of `local`s, else by
+ * the ORM's inference, the one column whose foreign key names its target, whose `references` is written as inferred.
+ */
+function joinsOf(
+  relations: ts.Expression | undefined,
+  targets: ReadonlyMap<string | undefined, string>,
+  param: string,
+): {
+  readonly joins: ReadonlyMap<string, ts.CallExpression>;
+  readonly inferred: ReadonlyMap<ts.CallExpression, string>;
+} {
+  const joins = new Map<string, ts.CallExpression>();
+  const inferred = new Map<ts.CallExpression, string>();
+  for (const relation of relationCalls(relations)) {
+    const named = namedColumns(relation);
+    for (const column of named ?? []) {
+      if (!joins.has(column)) joins.set(column, relation);
+    }
+    const target = relation.arguments[0]?.getText();
+    const matching = [...targets].filter(([, named]) => named === target).map(([key]) => key);
+    const column = matching.length === 1 ? matching[0] : undefined;
+    if (!named && isToOne(relation) && writableOptions(relation) && column && !joins.has(column)) {
+      inferred.set(relation, `references: (${param}) => ${param}.${column}`);
+      joins.set(column, relation);
+    }
+  }
+  return { joins, inferred };
+}
+
+/** The columns a relation's `references` names on its local side, or nothing where it names none it can read. */
+function namedColumns(relation: ts.CallExpression): readonly string[] | undefined {
+  const options = objectLiteral(relation.arguments[1]);
+  const references = options && propertyValue(options, 'references');
+  if (!references) {
+    return undefined;
+  }
+  const local = ts.isArrowFunction(references) ? identifierText(references.parameters[0]?.name) : undefined;
+  const column = (node: ts.Expression | undefined) =>
+    node && ts.isPropertyAccessExpression(node) && identifierText(node.expression) === local
+      ? node.name.text
+      : undefined;
+  const body = local && ts.isArrowFunction(references) ? references.body : undefined;
+  if (body && ts.isArrayLiteralExpression(body)) {
+    const locals = body.elements.map((pair) => {
+      const literal = objectLiteral(pair);
+      return column(literal && propertyValue(literal, 'local'));
+    });
+    return locals.every((it) => it !== undefined) ? locals : [];
+  }
+  const single = body && ts.isExpression(body) ? column(body) : undefined;
+  return single ? [single] : [];
+}
+
+function isToOne(relation: ts.CallExpression): boolean {
+  return ts.isPropertyAccessExpression(relation.expression) && relation.expression.name.text === 'manyToOne';
+}
+
+/** Whether a relation's options are absent or a literal, the only kind an option can be written into. */
+function writableOptions(relation: ts.CallExpression): boolean {
+  return relation.arguments.length < 2 || objectLiteral(relation.arguments[1]) !== undefined;
+}
+
+/**
+ * The relations' text, each to-one's options written into its relation and each relation added for a foreign key
+ * appended, or nothing where there are none. A section of its own is laid out a line per relation, a `unit` in from
+ * the section's `indent`, where one is given.
+ */
+function relationsText(
+  relations: ts.Expression | undefined,
+  rel: string,
+  { options, added }: Claims,
+  indent: string | undefined,
+  unit: string,
+): string | undefined {
+  if (!relations) {
+    if (!added.length) return undefined;
+    const listed =
+      indent === undefined
+        ? `{ ${added.join(', ')} }`
+        : `{\n${added.map((entry) => `${indent}${unit}${entry},\n`).join('')}${indent}}`;
+    return `(${rel}) => (${listed})`;
+  }
+  const base = relations.getStart();
+  const edits = [...options].flatMap(([relation, written]) =>
+    written.length ? [withOptions(relation, written, base)] : [],
+  );
+  const literal = returnedLiteral(relations);
+  if (literal && added.length) {
+    edits.push(appendedEntries(literal, added, base));
+  }
+  return applyEdits(relations.getText(), edits);
+}
+
+/** The edit writing `options` into a relation call: after its options' last, else as options after its target. */
+function withOptions(relation: ts.CallExpression, options: readonly string[], base: number): Edit {
+  const literal = objectLiteral(relation.arguments[1]);
+  const last = literal?.properties.at(-1);
+  if (literal && !last) {
+    return { start: literal.getStart() - base, end: literal.getEnd() - base, text: `{ ${options.join(', ')} }` };
+  }
+  const at = (last ?? relation.arguments[0]).getEnd() - base;
+  return { start: at, end: at, text: last ? `, ${options.join(', ')}` : `, { ${options.join(', ')} }` };
+}
+
+/** The edit appending `entries` to an object literal, laid out as its own entries are. */
+function appendedEntries(literal: ts.ObjectLiteralExpression, entries: readonly string[], base: number): Edit {
+  const last = literal.properties.at(-1);
+  if (!last) {
+    return { start: literal.getStart() - base, end: literal.getEnd() - base, text: `{ ${entries.join(', ')} }` };
+  }
+  const separator = literal.getText().includes('\n') ? `,\n${indentOf(last)}` : ', ';
+  const at = last.getEnd() - base;
+  return { start: at, end: at, text: entries.map((entry) => `${separator}${entry}`).join('') };
 }
 
 /** Whether a schema column is a builder naming no foreign key, which a schema's `fields` keep as they are. */
@@ -421,31 +691,6 @@ function isSchemaColumn(prop: ts.ObjectLiteralElementLike): boolean {
 /** Each method a builder chain calls, by name. */
 function chainMethods(node: ts.Expression): ReadonlyMap<string, ChainMethod> {
   return new Map(chainOf(node).methods.map((method) => [method.name, method] as const));
-}
-
-/** A builder in `fields` with its foreign key, `.references(() => X)` and `.onDelete()`, moved into `.references()`. */
-function builtSchemaColumn(
-  node: ts.Expression,
-  key: string,
-  references: string[],
-): string | { readonly message: string } {
-  const methods = chainMethods(node);
-  const target = methods.get('references');
-  if (!target) {
-    return node.getText();
-  }
-  if (identifierText(target.receiver) === 'f') {
-    return { message: "references another entity but states no type: write its builder, as its key's" };
-  }
-  const onDelete = methods.get('onDelete');
-  references.push(referenceEntry(key, target.call.arguments[0]?.getText(), onDelete?.call.arguments[0]?.getText()));
-  // Each method is cut out with the chain before it: from that receiver's end to the call's.
-  const cut = [onDelete, target].flatMap((method) =>
-    method
-      ? [{ start: method.receiver.getEnd() - node.getStart(), end: method.call.getEnd() - node.getStart(), text: '' }]
-      : [],
-  );
-  return applyEdits(node.getText(), cut);
 }
 
 /**
@@ -676,28 +921,35 @@ export function toBuilders(
   if (clash) {
     return {
       ...unedited(text),
-      unresolved: [
-        ...unresolved,
-        `${located(0)}: '${clash}' is already named here, and the codemod writes it: rename that, then run again`,
-      ],
+      unresolved: [...unresolved, `${located(0)}: ${nameClash(clash)}: rename that, then run again`],
     };
   }
-  return { ...reparsedAgain(fileName, editedText(text, edits), (edited) => importEdits(edited, used)), unresolved };
+  return {
+    ...reparsedAgain(fileName, editedText(text, edits), (edited) => importEdits(edited, used, FIELD_DECORATORS)),
+    unresolved,
+  };
 }
 
-/** Imports what the pass now writes, `f` and `Computed`, and no longer the field decorators it replaced, once unspelled. */
-function importEdits(source: ts.SourceFile, used: ReadonlySet<string>): readonly Edit[] {
-  const [declaration] = uqlImportDeclarations(source, true);
-  if (!declaration) {
-    return used.size ? [{ start: 0, end: 0, text: `${importText('import', [...used].toSorted(), 'uql-orm')}\n` }] : [];
-  }
-  const names = new Set(declaration.elements.map((it) => it.name.text));
-  const added = [...used].filter((name) => !names.has(name)).toSorted();
-  const dead = deadImports(declaration.elements, FIELD_DECORATORS, spelledNames(source));
-  const first = declaration.elements.find((it) => !dead.includes(it));
-  if (!first) {
-    return [replaced(declaration.declaration, importText('import', added, 'uql-orm'))];
-  }
-  const removals = importRemovalEdits(declaration.declaration, declaration.elements, dead);
-  return added.length ? [...removals, inserted(first, `${added.join(', ')}, `)] : removals;
+/**
+ * A schema's statement, `const X = defineEntity({...})`, its call written as a chain and the builders it writes, or why
+ * it cannot be.
+ */
+export function chainedSchema(
+  text: string,
+): { readonly text: string; readonly builders: ReadonlySet<string> } | { readonly reasons: readonly string[] } {
+  const source = ts.createSourceFile('/schema.ts', text, ts.ScriptTarget.Latest, true);
+  const findings: Finding[] = [];
+  const used = new Set<string>();
+  const edits: Edit[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && identifierText(node.expression) === 'defineEntity') {
+      edits.push(...schemaEdits(node, findings, used));
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return findings.length
+    ? { reasons: findings.map(({ message }) => message) }
+    : { text: applyEdits(text, edits), builders: used };
 }

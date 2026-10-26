@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { chainedSchema } from './builders.js';
 import { type Finding, formatFindings, locationAt } from './context.js';
 import { CLASS_DEFINERS, type DefinerCall, type DefinerName, definerCall } from './definers.js';
 import {
@@ -11,8 +12,9 @@ import {
   reparsedAgain,
   unedited,
 } from './edits.js';
-import { unusedImportEdits } from './imports.js';
+import { importEdits } from './imports.js';
 import { memberKey, paramFor, quoted } from './keyMaps.js';
+import { nameClash } from './schemaMessages.js';
 import { KEPT_OPTIONS } from './schemaOptions.js';
 import {
   arrayElements,
@@ -82,12 +84,16 @@ export type SchemaResult = Pass & { readonly unresolved: string[]; readonly note
 type Registration = { readonly cls: ts.ClassDeclaration; readonly calls: DefinerCall[] };
 
 /**
- * Declares each class `defineEntity(Class, options)` registered as the schema `defineEntity({ name, ... })`,
- * folding the string-keyed definers of the same class in. Read off the text the other rewrites produced,
- * whose options already name members by callback, so it only moves what is written. An entity it cannot
- * declare faithfully is left as written and reported.
+ * Declares each class `defineEntity(Class, options)` registered as the schema `defineEntity({ name, fields })` and its
+ * chain of sections, folding the string-keyed definers of the same class in. Read off the text the other rewrites
+ * produced, whose options already name members by callback, so it only moves what is written. An entity it cannot
+ * declare faithfully, `taken` naming a builder it writes among them, is left as written and reported.
  */
-export function toSchemaEntities(fileName: string, text: string, locate?: (at: number) => string): SchemaResult {
+export function toSchemaEntities(
+  fileName: string,
+  text: string,
+  { locate, taken }: { readonly locate?: (at: number) => string; readonly taken: ReadonlySet<string> },
+): SchemaResult {
   if (!CLASS_FORM_CALL.test(text)) {
     return { ...unedited(text), unresolved: [], notes: [] };
   }
@@ -97,6 +103,7 @@ export function toSchemaEntities(fileName: string, text: string, locate?: (at: n
   const unresolved: Finding[] = [];
   const notes: Finding[] = [];
   const edits: Edit[] = [];
+  const written = new Set<string>();
   const registrations = collectRegistrations(source, unresolved);
   const entityCallOf = (calls: readonly DefinerCall[]) => calls.find(({ definer }) => definer === 'defineEntity')?.call;
   for (const [name, { cls, calls }] of registrations) {
@@ -119,17 +126,30 @@ export function toSchemaEntities(fileName: string, text: string, locate?: (at: n
       unresolved.push(schema);
       continue;
     }
+    const chained = chainedSchema(schema.text);
+    if (!('text' in chained)) {
+      unresolved.push(
+        ...chained.reasons.map((reason) => ({ node: entityCall, message: `'${name}' is left as written: ${reason}` })),
+      );
+      continue;
+    }
+    const clash = [...chained.builders].find((builder) => taken.has(builder));
+    if (clash !== undefined) {
+      unresolved.push({ node: entityCall, message: `'${name}' is left as written: ${nameClash(clash)}` });
+      continue;
+    }
+    for (const builder of chained.builders) written.add(builder);
     notes.push(...schema.notes);
     edits.push(removeStatement(cls));
     for (const { call } of calls) {
       edits.push(
-        call === entityCall ? replaced(call.parent, indented(schema.text, call.parent)) : removeStatement(call.parent),
+        call === entityCall ? replaced(call.parent, indented(chained.text, call.parent)) : removeStatement(call.parent),
       );
     }
   }
   return {
     ...(edits.length
-      ? reparsedAgain(fileName, editedText(text, edits), (edited) => unusedImportEdits(edited, FOLDED_IMPORTS))
+      ? reparsedAgain(fileName, editedText(text, edits), (edited) => importEdits(edited, written, FOLDED_IMPORTS))
       : unedited(text)),
     unresolved: formatFindings(unresolved, located),
     notes: formatFindings(notes, located),
@@ -188,6 +208,8 @@ type Schema = { readonly text: string; readonly notes: Finding[] };
 /** The options of the class's registrations gathered by kind, each entry as written. */
 type Gathered = {
   fields: string[];
+  /** Whether a field took its column type from the class's declaration, so `fields` is no longer as written. */
+  typed: boolean;
   computed: string[];
   aggregates: string[];
   relations: Map<string, string>;
@@ -238,6 +260,8 @@ function schemaOf(
       'rel',
       calls.map(({ call }) => call),
     ),
+    self: freeName(paramFor(name), outerReads(paramFor(name), options, calls)),
+    declared: declaredTypes(cls),
     relations: new Set([
       ...objectProperties(propertyValue(options, 'relations')).map((it) => propertyKey(it.name)),
       ...calls.filter((read) => read.definer === 'defineRelation').map((read) => read.key),
@@ -251,6 +275,7 @@ function schemaOf(
   };
   const gathered: Gathered = {
     fields: [],
+    typed: false,
     computed: [],
     aggregates: [],
     relations: new Map(),
@@ -297,6 +322,7 @@ function schemaOf(
   const untouched =
     fieldsValue &&
     gathered.fields.length === objectProperties(fieldsValue).length &&
+    !gathered.typed &&
     !gathered.computed.length &&
     !gathered.aggregates.length;
   lines.push(`fields: ${untouched ? textOf(fieldsValue) : block(gathered.fields, unit)}`);
@@ -307,7 +333,7 @@ function schemaOf(
     lines.push(`relations: (${scope.rel}) => (${block([...gathered.relations.values()], unit)})`);
   }
   if (gathered.aggregates.length) {
-    lines.push(`aggregates: (${scope.rel}) => (${block(gathered.aggregates, unit)})`);
+    lines.push(`aggregates: (${scope.self}) => (${block(gathered.aggregates, unit)})`);
   }
   for (const key of KEPT_OPTIONS) {
     const entries = gathered.kept.get(key);
@@ -377,7 +403,7 @@ function gather(
   { call, definer, key, options: third, rest }: DefinerCall,
   options: ts.ObjectLiteralExpression | undefined,
   gathered: Gathered,
-  { name, param, rel, relations, methods, hooked }: Scope,
+  { name, param, rel, self, relations, methods, hooked, declared }: Scope,
 ): Finding | undefined {
   const unreadable = {
     node: call,
@@ -401,8 +427,14 @@ function gather(
     gathered.hooks.set(event, runs);
     return undefined;
   };
-  const addField = (key: string | undefined, entry: string, fieldOptions: ts.Expression, node: ts.Node) => {
-    const aggregate = key && aggregateEntry(`${name}.${key}`, key, fieldOptions, relations, rel);
+  const addField = (
+    key: string | undefined,
+    label: string,
+    value: string,
+    fieldOptions: ts.Expression,
+    node: ts.Node,
+  ) => {
+    const aggregate = key && aggregateEntry(`${name}.${key}`, key, fieldOptions, relations, self);
     if (typeof aggregate === 'string') {
       gathered.aggregates.push(aggregate);
       return undefined;
@@ -410,6 +442,9 @@ function gather(
     if (aggregate) {
       return { node, message: aggregate.message };
     }
+    const type = key === undefined ? undefined : untyped(fieldOptions) && declared.get(key);
+    gathered.typed ||= !!type;
+    const entry = `${label}: ${type ? withOption(value, `type: ${type}`) : value}`;
     (isComputed(fieldOptions) ? gathered.computed : gathered.fields).push(entry);
     return undefined;
   };
@@ -428,7 +463,13 @@ function gather(
 
   if (options) {
     for (const field of objectProperties(propertyValue(options, 'fields'))) {
-      const problem = addField(propertyKey(field.name), textOf(field), field.initializer, field);
+      const problem = addField(
+        propertyKey(field.name),
+        textOf(field.name),
+        textOf(field.initializer),
+        field.initializer,
+        field,
+      );
       if (problem) return problem;
     }
     for (const relation of objectProperties(propertyValue(options, 'relations'))) {
@@ -466,9 +507,10 @@ function gather(
     case 'defineField':
     case 'defineId': {
       if (!key || !third) return unreadable;
-      const value = definer === 'defineId' ? withIsId(third) : textOf(third);
+      const literal = objectLiteral(third);
+      const value = definer === 'defineId' ? literal && withOption(textOf(literal), 'isId: true') : textOf(third);
       if (!value) return unreadable;
-      return addField(key, `${memberKey(key)}: ${value}`, third, call);
+      return addField(key, memberKey(key), value, third, call);
     }
     case 'defineRelation':
       return third && addRelation(key, third) ? undefined : unreadable;
@@ -500,12 +542,56 @@ function isComputed(options: ts.Expression): boolean {
   return !!literal && propertyValue(literal, 'computed') !== undefined;
 }
 
-/** `{ ...options, isId: true }` written into a literal's own text, or nothing where it is not one. */
-function withIsId(options: ts.Expression): string | undefined {
+/**
+ * The bodies of the field callbacks whose parameter is not `name`, where a `name` they read is the file's: a
+ * callback taking `name` reads its own under it, which the aggregate it becomes reads under the same name.
+ */
+function outerReads(name: string, options: ts.ObjectLiteralExpression, calls: readonly DefinerCall[]): ts.Node[] {
+  const declared = [
+    ...objectProperties(propertyValue(options, 'fields')).map((field) => field.initializer),
+    ...calls.flatMap(({ options: third }) => (third ? [third] : [])),
+  ];
+  return declared.flatMap((field) => {
+    const literal = objectLiteral(field);
+    const computed = literal && propertyValue(literal, 'computed');
+    return computed && ts.isArrowFunction(computed) && identifierText(computed.parameters[0]?.name) !== name
+      ? [computed.body]
+      : [];
+  });
+}
+
+/** An options literal's text with `option` written first: `{ isId: true, type: String }`. */
+function withOption(literal: string, option: string): string {
+  return /^\{\s*\}$/.test(literal) ? `{ ${option} }` : literal.replace(/^\{\s*/, `{ ${option}, `);
+}
+
+/** Whether a field's options are a literal stating no column type, which the class's declaration may say instead. */
+function untyped(options: ts.Expression): boolean {
   const literal = objectLiteral(options);
-  if (!literal) return undefined;
-  const text = textOf(literal);
-  return literal.properties.length ? text.replace(/^\{\s*/, '{ isId: true, ') : '{ isId: true }';
+  return !!literal && ['type', 'enum', 'version'].every((option) => propertyValue(literal, option) === undefined);
+}
+
+/** The constructors the TypeScript types of a class's properties name: `number | null` is `Number`. */
+const DECLARED_TYPES: Readonly<Record<string, string>> = {
+  number: 'Number',
+  string: 'String',
+  boolean: 'Boolean',
+  bigint: 'BigInt',
+  Date: 'Date',
+};
+
+/** Each property a class declares as one of {@link DECLARED_TYPES}, with that type's constructor. */
+function declaredTypes(cls: ts.ClassDeclaration): ReadonlyMap<string, string> {
+  return new Map(
+    cls.members.filter(ts.isPropertyDeclaration).flatMap((member) => {
+      const key = propertyKey(member.name);
+      const type = member.type;
+      const arms = type && ts.isUnionTypeNode(type) ? type.types : type ? [type] : [];
+      const named = arms.map((arm) => arm.getText()).filter((arm) => arm !== 'null' && arm !== 'undefined');
+      const constructor = named.length === 1 ? DECLARED_TYPES[named[0]] : undefined;
+      return key && constructor ? [[key, constructor] as const] : [];
+    }),
+  );
 }
 
 /** `author: () => rel.manyToOne(User, { references })` from `{ cardinality: 'm1', entity: () => User, references }`. */
@@ -563,8 +649,12 @@ function hookFunction(method: ts.MethodDeclaration, preferred: string): string |
 type Scope = {
   readonly name: string;
   readonly param: string;
-  /** The schema's `relations` and `aggregates` parameter, `rel` unless their code reads that name already. */
+  /** The schema's `relations` parameter, `rel` unless their code reads that name already. */
   readonly rel: string;
+  /** The parameter its aggregates read the entity's relations off, named after the entity likewise. */
+  readonly self: string;
+  /** The column type each property's TypeScript type states, for a field whose options state none. */
+  readonly declared: ReadonlyMap<string, string>;
   readonly relations: ReadonlySet<string | undefined>;
   readonly methods: ReadonlyMap<string, ts.MethodDeclaration>;
   readonly hooked: Map<string, ts.MethodDeclaration>;
@@ -619,11 +709,11 @@ function looserTypes(cls: ts.ClassDeclaration, options: ts.ObjectLiteralExpressi
     }
     const written = textOf(declared);
     const said = (option: string) => propertyValue(field, option) !== undefined;
-    if (/\bJson</.test(written) && !said('shape')) {
+    if (/\bJson</.test(written) && !said('schema')) {
       return [
         {
           node: member,
-          message: `'${key}' was declared ${written}: describe its payload with 'shape' to keep it typed`,
+          message: `'${key}' was declared ${written}: describe its payload with a Standard Schema, 'f.json(schema)', to keep it typed`,
         },
       ];
     }
