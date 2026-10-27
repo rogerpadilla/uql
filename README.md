@@ -154,7 +154,7 @@ Follow the [Quick Start](https://uql-orm.dev/getting-started), or [switch from](
 
 Using a coding agent? The package ships a [skill](skills/uql-orm/SKILL.md) for it, and every docs page is Markdown: [set it up](https://uql-orm.dev/ai-agents).
 
-Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md).
+Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md), and the build order for what comes next in [architecture/roadmap.md](architecture/roadmap.md).
 
 ---
 
