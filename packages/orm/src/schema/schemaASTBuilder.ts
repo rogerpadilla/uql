@@ -1,4 +1,4 @@
-import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
+import { fieldOf, foreignKeysOf, getMeta, ownsSoleKey } from '../entity/metadata/definition.js';
 import type {
   IndexEntry,
   EntityIndexMeta,
@@ -9,7 +9,7 @@ import type {
 } from '../type/index.js';
 import { declaredIndexes, enumCheck, ownedCheck, renderIndex } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
-import { isInlinedExpression, isSoleIdField } from '../util/field.util.js';
+import { isInlinedExpression } from '../util/field.util.js';
 import { entryColumn, entryColumns, renamedEntry } from '../util/indexEntry.util.js';
 import { definedEntries, entityName } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
@@ -134,7 +134,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
     const column: ColumnNode = {
       ...declaredColumn(field, {
         name: columnName,
-        soleKey: isSoleIdField(meta, field),
+        soleKey: ownsSoleKey(meta, key),
         compile: (sql) => ctx.compileDdl(sql, meta.entity),
       }),
       ...(notNull.has(key) && { nullable: false }),

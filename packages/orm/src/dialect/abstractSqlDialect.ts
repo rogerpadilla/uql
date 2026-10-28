@@ -1,5 +1,5 @@
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
-import { soleId, valueFieldOf } from '../entity/metadata/definition.js';
+import { generatesKey, soleId, valueFieldOf } from '../entity/metadata/definition.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -65,7 +65,6 @@ import {
 import { utcTimestamp } from '../util/date.js';
 import { ancestorPaths, isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
 import {
-  isAutoIncrement,
   RETURNED_ID,
   isSelectList,
   assertNonNegativeInteger,
@@ -2324,7 +2323,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     return this.insertIdSource === 'returning'
       ? rows === 1 || this.features.orderedUpsertReturning
-      : rows === 1 && isAutoIncrement(id.field, true);
+      : rows === 1 && generatesKey(meta);
   }
 
   /** Whether the upsert's assignments bind straight into the statement, as numbered `$n` placeholders can. */

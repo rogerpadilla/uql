@@ -6,7 +6,7 @@ import type { ColumnNode } from './types.js';
 
 /**
  * The column a field's options declare, whether an entity's table or a migration holds it: `soleKey` says whether it
- * is its table's only key, which a numeric one auto-increments as, and `compile` renders its SQL.
+ * is its table's whole and own key, which a numeric one auto-increments as, and `compile` renders its SQL.
  */
 export function declaredColumn(
   field: FieldMeta,

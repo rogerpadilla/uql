@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Computed, Entity, f, Field, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { Computed, defineEntity, Entity, f, Field, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
@@ -676,6 +676,32 @@ describe('SchemaASTBuilder', () => {
 
       expect(ast.getTable('AutoInc')?.columns.get('id')?.isAutoIncrement).toBe(true);
       expect(ast.getTable('NoAutoInc')?.columns.get('id')?.isAutoIncrement).toBe(false);
+    });
+
+    it('should not auto-increment a key shared with the row it references, however declared', () => {
+      @Entity()
+      class Holder {
+        @Field(f.number().id()) id?: number;
+      }
+      @Entity()
+      class SharedDecorated {
+        @Field(f.number().id()) id?: number;
+        @OneToOne({ entity: () => Holder, references: (shared) => shared.id }) holder?: Holder;
+      }
+      @Entity()
+      class SharedReference {
+        @Field(f.references(() => Holder).id()) id?: number;
+      }
+      const SharedSchema = defineEntity({ name: 'SharedSchema', fields: { id: f.number().id() } }).relations((rel) => ({
+        holder: () => rel.oneToOne(Holder, { references: (shared) => shared.id }),
+      }));
+
+      const ast = buildSchemaAST([Holder, SharedDecorated, SharedReference, SharedSchema]);
+
+      expect(ast.getTable('Holder')?.columns.get('id')?.isAutoIncrement).toBe(true);
+      expect(ast.getTable('SharedDecorated')?.columns.get('id')?.isAutoIncrement).toBe(false);
+      expect(ast.getTable('SharedReference')?.columns.get('id')?.isAutoIncrement).toBe(false);
+      expect(ast.getTable('SharedSchema')?.columns.get('id')?.isAutoIncrement).toBe(false);
     });
 
     it('should name an index declared as `true` after its table and column', () => {

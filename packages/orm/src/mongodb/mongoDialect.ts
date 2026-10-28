@@ -33,6 +33,7 @@ import {
   resolveSortableJoin,
 } from '../dialect/queryJoins.js';
 import { assertSoleId, fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
+import { referenceKeys } from '../entity/metadata/definition.js';
 import type {
   RelationAggregateOp,
   RelationAggregateSpec,
@@ -1456,15 +1457,8 @@ export class MongoDialect extends AbstractDialect {
     );
   }
 
-  private referenceKeys<E>(meta: EntityMeta<E>): readonly string[] {
-    return cachedIn(this.#referenceKeys, meta, () =>
-      getKeys(meta.fields).filter((key) => meta.fields[key]?.references),
-    );
-  }
-
   // Keyed by the meta object itself; entity metadata is immutable once defined.
   readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
-  readonly #referenceKeys = new WeakMap<object, readonly string[]>();
   readonly #relationReads = new WeakMap<object, readonly RelationRead[]>();
 
   public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[]): E[] {
@@ -1500,7 +1494,7 @@ export class MongoDialect extends AbstractDialect {
       }
     }
     // After the rename, so a renamed reference is converted under the name the code reads.
-    for (const key of this.referenceKeys(meta)) {
+    for (const key of referenceKeys(meta)) {
       if (res[key] !== undefined) {
         res[key] = this.fromWireId(res[key]);
       }
@@ -1554,7 +1548,7 @@ export class MongoDialect extends AbstractDialect {
 
   /** Whether `key` holds ids the driver stores as `ObjectId`s: the entity's own `_id`, or a reference to one. */
   private holdsKeys<E>(meta: EntityMeta<E>, key: string): boolean {
-    return this.pathOf(meta, key) === ID_KEY || !!meta.fields[key]?.references;
+    return this.pathOf(meta, key) === ID_KEY || referenceKeys(meta).has(key);
   }
 
   /** Converts every operand `ops` compares a key against with {@link toWireId}, including inside a `$not`. */
@@ -1648,7 +1642,7 @@ export class MongoDialect extends AbstractDialect {
         const field = fieldOf(meta, key);
         const value = it[key];
         assertNoRaw(value, 'a write');
-        doc[this.resolveColumnName(key, field)] = field.references ? this.toWireId(value) : value;
+        doc[this.resolveColumnName(key, field)] = referenceKeys(meta).has(key) ? this.toWireId(value) : value;
       }
       // Keyed by column, which the driver's types read as `E`'s keys: they name the same fields.
       return doc as Partial<E>;

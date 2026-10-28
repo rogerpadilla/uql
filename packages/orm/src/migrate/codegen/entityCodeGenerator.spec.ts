@@ -934,6 +934,29 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('profiles?: Profile;');
     });
 
+    /** The relation already keeps a key shared with the row it references from being generated. */
+    it('should not state that a key shared with the row it references is not generated', () => {
+      const ast = new SchemaAST();
+      const people = mockTableNode('people', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const passports = mockTableNode('passports', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      ast.addTable(people);
+      ast.addTable(passports);
+      ast.addRelationship({
+        name: 'passports_people_fk',
+        type: 'OneToOne',
+        from: { table: passports, columns: columnsOf(passports, 'id') },
+        to: { table: people, columns: columnsOf(people, 'id') },
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('passports');
+
+      assertDefined(result);
+
+      expect(result.code).toContain("@Field(f.column('int').id())");
+    });
+
     it('should emit a bare index entry for a composite index with no name and no unique flag', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [

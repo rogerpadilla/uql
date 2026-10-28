@@ -2,8 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
-## [Unreleased]
+## [0.107.0] - 2026-10-27
 
+- **Breaking:** on MongoDB, a foreign key only a relation declares is stored as an `ObjectId`, as an `f.references()` one is, so `$populate` and `$count` find its rows. Convert documents written before: `db.posts.updateMany({ author: { $regex: '^[0-9a-fA-F]{24}$' } }, [{ $set: { author: { $toObjectId: '$author' } } }])`.
+- **Fixed:** a numeric key a one-to-one shares with its target is no longer auto-incremented where only the relation declares it; `drift:check` reports an existing table that is.
 - The `uql-orm` skill covers JSON properties as `Json<T>`, the codemod upgrade path, `abstract` in `defineEntity`, and the decorator and schema trade-offs.
 
 ## [0.106.1] - 2026-10-26

@@ -25,10 +25,7 @@ const METHOD_SOURCE = {
   isPrimaryKey: (col) => (col.isPrimaryKey ? ['.id()'] : []),
   // Generates where `isAutoIncrement` says, which only a column the database treats otherwise contradicts.
   isAutoIncrement: (col) =>
-    isAutoIncrement(
-      { type: canonicalToColumnType(col.type) },
-      col.isPrimaryKey && col.table.primaryKey?.columns.length === 1,
-    ) === col.isAutoIncrement
+    isAutoIncrement({ type: canonicalToColumnType(col.type) }, ownsSoleKey(col)) === col.isAutoIncrement
       ? []
       : [col.isAutoIncrement ? '.autoIncrement()' : '.autoIncrement(false)'],
   isUnique: (col) => (col.isUnique ? ['.unique()'] : []),
@@ -42,6 +39,16 @@ const METHOD_SOURCE = {
   // The graph link: a foreign key becomes a relation decorator, emitted beside the field rather than in it.
   table: null,
 } as const satisfies Record<keyof ColumnNode, MethodSource | null>;
+
+/** The AST's reading of the entity's `ownsSoleKey`: the table's whole key, and not the key of a row it references. */
+function ownsSoleKey(col: ColumnNode): boolean {
+  const { primaryKey, outgoingRelations } = col.table;
+  return (
+    col.isPrimaryKey &&
+    primaryKey?.columns.length === 1 &&
+    !outgoingRelations.some(({ from }) => from.columns.includes(col))
+  );
+}
 
 /** Whether to write `type`'s precision: not for a timestamp at a `Date`'s milliseconds, its default. */
 function writesPrecision(type: ColumnNode['type']): boolean {

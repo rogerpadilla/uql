@@ -8,7 +8,7 @@ import {
   relTempField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
-import { Computed, Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../entity/index.js';
+import { Computed, defineEntity, Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
   Company,
@@ -2364,6 +2364,31 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.where(Doc, { parentId: [hex, 'plain'] })).toEqual({
       parentId: { $in: [new ObjectId(hex), 'plain'] },
     });
+  }
+
+  /** A foreign key a relation declares alone, a schema's always, holds an `ObjectId` as an `f.references()` one does. */
+  shouldMapAForeignKeyARelationDeclaresIntoTheWire() {
+    const Folder = defineEntity({ name: 'Folder', fields: { id: f.string().id() } });
+    type Folder = InstanceType<typeof Folder>;
+    const Sheet = defineEntity({
+      name: 'Sheet',
+      fields: { id: f.string().id(), folderId: f.string().name('folder') },
+    }).relations((rel) => ({ folder: () => rel.manyToOne(Folder, { references: (sheet) => sheet.folderId }) }));
+    @Entity()
+    class Card {
+      @Field(f.string().id()) id?: string;
+      @Field(f.string().name('folder')) folderId!: string;
+      @ManyToOne({ entity: () => Folder, references: (card) => card.folderId }) folder?: Folder;
+    }
+    const hex = '507f191e810c19729de860ea';
+    const stored = { _id: new ObjectId(hex), folder: new ObjectId(hex) };
+
+    expect(this.dialect.getPersistables(getMeta(Sheet), [{ id: hex, folderId: hex }], 'onInsert')).toEqual([stored]);
+    expect(this.dialect.getPersistables(getMeta(Card), [{ id: hex, folderId: hex }], 'onInsert')).toEqual([stored]);
+    expect(this.dialect.where(Sheet, { folderId: hex })).toEqual({ folder: new ObjectId(hex) });
+    expect(this.dialect.where(Card, { folderId: hex })).toEqual({ folder: new ObjectId(hex) });
+    expect(this.dialect.normalizeId(getMeta(Sheet), { ...stored })).toEqual({ id: hex, folderId: hex });
+    expect(this.dialect.normalizeId(getMeta(Card), { ...stored })).toEqual({ id: hex, folderId: hex });
   }
 
   /**

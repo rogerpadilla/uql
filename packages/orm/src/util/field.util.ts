@@ -106,19 +106,14 @@ export function isDatabaseWritten(field: FieldOptions): boolean {
   return field.computed !== undefined;
 }
 
-/** Whether the field is the whole primary key, the only kind a serial stands for and a column may declare. */
-export function isSoleIdField<E>(meta: EntityMeta<E>, field: FieldOptions): boolean {
-  return field.isId === true && meta.ids.length === 1;
-}
-
 /**
- * Whether the database generates this column's value: a numeric key nothing else fills. `onInsert` fills
- * it from the application and `references` from the row it shares its key with; a `columnType` only
- * states its width. The one answer the create statement and the diff both read.
+ * Whether the database generates this column's value: its table's whole and own key (see `ownsSoleKey`), numeric,
+ * that the application does not fill `onInsert`; a `columnType` only states its width. The one answer the create
+ * statement and the diff both read.
  */
-export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boolean {
+export function isAutoIncrement(field: FieldOptions, soleKey: boolean): boolean {
   if (field.autoIncrement !== undefined) return field.autoIncrement;
-  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.references;
+  return soleKey && columnFamily(field.type) === 'numeric' && !field.onInsert;
 }
 
 /** The column family of a field, from its `columnType` if set, else from its `type`. */

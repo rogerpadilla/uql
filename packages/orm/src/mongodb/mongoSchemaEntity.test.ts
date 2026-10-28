@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ObjectId } from 'mongodb';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { defineEntity, f } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
@@ -33,12 +34,24 @@ const Note = defineEntity({
   })
   .relations((rel) => ({ shelf: () => rel.manyToOne(Shelf, { references: (note) => note.shelfId }) }));
 
+const objectId = () => new ObjectId().toHexString();
+
+const Writer = defineEntity({
+  name: 'Writer',
+  fields: { id: f.string().id().onInsert(objectId), name: f.string() },
+}).relations((rel) => ({ essays: () => rel.oneToMany(Essay, { mappedBy: (essay) => essay.writer }) }));
+
+const Essay = defineEntity({
+  name: 'Essay',
+  fields: { id: f.string().id().onInsert(objectId), title: f.string(), writerId: f.string().name('writer') },
+}).relations((rel) => ({ writer: () => rel.manyToOne(Writer, { references: (essay) => essay.writerId }) }));
+
 /** A schema entity is a document collection too: a filled column, a hook, a JSON payload and relations, on MongoDB. */
 const pool = new MongodbQuerierPool(mongoUri('uql_schema_entity'));
 
 beforeAll(async () => {
   await pool.withQuerier((querier) => querier.db.dropDatabase());
-  await new Migrator(pool, { entities: [Shelf, Note] }).sync({ logging: false });
+  await new Migrator(pool, { entities: [Shelf, Note, Writer, Essay] }).sync({ logging: false });
 }, provisioningTimeout);
 
 afterAll(async () => {
@@ -75,4 +88,26 @@ it('should read an aggregate over a relation as a column', async () => {
     { label: 'Busy', noteCount: 2, topStars: 5 },
     { label: 'Empty', noteCount: 0, topStars: null },
   ]);
+});
+
+/** Keyed by `ObjectId`s, a schema's foreign key is stored as one, so a lookup on `_id` finds its rows both ways. */
+it("should store a schema's foreign key to an ObjectId key as an ObjectId", async () => {
+  const writerId = objectId();
+  await pool.insertOne(Writer, { id: writerId, name: 'Ada' });
+  await pool.insertMany(Essay, [
+    { title: 'Notes', writerId },
+    { title: 'Sketch', writerId },
+  ]);
+
+  const stored = await pool.withQuerier((querier) => querier.db.collection('Essay').findOne({ title: 'Notes' }));
+  const [essay] = await pool.findMany(Essay, {
+    $select: { title: true },
+    $populate: { writer: { $select: { name: true } } },
+    $where: { writerId, title: 'Notes' },
+  });
+  const [writer] = await pool.findMany(Writer, { $select: { name: true }, $count: { essays: true } });
+
+  expect(stored?.['writer']).toEqual(new ObjectId(writerId));
+  expect(essay).toEqual({ title: 'Notes', writer: { id: writerId, name: 'Ada' } });
+  expect(writer).toEqual({ name: 'Ada', _count: { essays: 2 } });
 });

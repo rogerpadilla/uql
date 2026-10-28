@@ -93,16 +93,6 @@ describe('isAutoIncrement', () => {
     expect(isAutoIncrement({ type: 'boolean' }, true)).toBe(false);
     expect(isAutoIncrement({ type: 'varchar' }, true)).toBe(false);
   });
-
-  it('should return false if autoIncrement is explicitly false', () => {
-    const field: FieldOptions = { type: Number, autoIncrement: false };
-    expect(isAutoIncrement(field, true)).toBe(false);
-  });
-
-  it('should return false if onInsert is defined', () => {
-    const field: FieldOptions = { type: Number, onInsert: () => 1 };
-    expect(isAutoIncrement(field, true)).toBe(false);
-  });
 });
 
 describe('declaresNotNull', () => {

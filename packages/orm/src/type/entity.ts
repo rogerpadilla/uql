@@ -995,6 +995,8 @@ export type EntityMeta<E> = {
   stage?: 'declared' | 'settled' | 'resolved';
   /** The fields a read answers with where it names none, set once resolved: see `defaultReadKeys`. */
   readKeys?: readonly FieldKey<E>[];
+  /** The fields holding another entity's key, set once resolved: see `referenceKeys`. */
+  referenceKeys?: ReadonlySet<string>;
 };
 
 /** When the database writes a stamp: as the row is inserted, as it is updated, or both. */

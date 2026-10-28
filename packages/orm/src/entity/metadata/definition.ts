@@ -45,7 +45,13 @@ import {
   type SchemaEntity,
   SOFT_DELETE_FILTER,
 } from '../../type/index.js';
-import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
+import {
+  aggregateField,
+  defaultReadKeys,
+  fieldKeys,
+  isAutoIncrement,
+  isInlinedExpression,
+} from '../../util/field.util.js';
 import {
   fieldOptionConflict,
   findVectorIndex,
@@ -712,6 +718,9 @@ export function getMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
   // reads other entities without resolving them, so no entity is ever read half resolved.
   fillRelations(meta);
   meta.readKeys = defaultReadKeys(meta);
+  // A column `references` names is a foreign key with or without a relation over it, and one cannot point
+  // at a composite key: refused on first read, as a relation that cannot join is, not at the schema build.
+  meta.referenceKeys = referenceKeys(meta);
   meta.stage = 'resolved';
   return meta;
 }
@@ -744,9 +753,6 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
       );
     }
   }
-  // A column `references` names is a foreign key with or without a relation over it, and one cannot point
-  // at a composite key: refused on first read, as a relation that cannot join is, not at the schema build.
-  foreignKeysOf(meta);
 }
 
 /**
@@ -982,6 +988,34 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
     return [{ entity: field.references, cardinality: 'm1', references: [{ local: key, foreign: target.ids[0] }] }];
   });
   return [...owning, ...columns];
+}
+
+/**
+ * The fields holding another entity's primary key: each column of a foreign key paired with a column of its
+ * target's key, whether `f.references()` or a relation declares it. Per entity, not per field: an entity
+ * extending another may join by other columns. Kept once resolved.
+ */
+export function referenceKeys<E>(meta: EntityMeta<E>): ReadonlySet<string> {
+  return (
+    meta.referenceKeys ??
+    new Set(
+      foreignKeysOf(meta).flatMap(({ entity, references }) => {
+        const { ids } = knownMeta(entity());
+        return references.filter(({ foreign }) => ids.some((id) => id === foreign)).map(({ local }) => local);
+      }),
+    )
+  );
+}
+
+/** Whether `key` is `meta`'s whole primary key and its own, not the key of the row it references. */
+export function ownsSoleKey<E>(meta: EntityMeta<E>, key: string): boolean {
+  return soleId(meta)?.key === key && !referenceKeys(meta).has(key);
+}
+
+/** Whether the database generates `meta`'s key on insert: the one answer every insert path reads. */
+export function generatesKey<E>(meta: EntityMeta<E>): boolean {
+  const sole = soleId(meta);
+  return !!sole && isAutoIncrement(sole.field, ownsSoleKey(meta, sole.key));
 }
 
 /** The kinds a column of `type` holds as a join compares them, as `JoinKind` does: a bigint is a number, which BIGINT widens. */

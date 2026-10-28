@@ -2,7 +2,7 @@ import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { soleId } from '../entity/metadata/definition.js';
+import { generatesKey, soleId } from '../entity/metadata/definition.js';
 import type {
   QueryContext,
   EntityData,
@@ -34,7 +34,6 @@ import {
   clone,
   getInsertFieldKeys,
   insertShapeOf,
-  isAutoIncrement,
   upsertKeepsOwnKey,
 } from '../util/index.js';
 import { statementOf } from '../util/sql.js';
@@ -389,7 +388,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // already carry every column of it. `sole` is what keeps every id path off such a key.
     const [idKey] = meta.ids;
     const sole = soleId(meta);
-    const generatedKey = !!sole && isAutoIncrement(sole.field, true);
+    const generatedKey = generatesKey(meta);
 
     // Per group, not per batch: the two carry different columns - one names the key, one does not - so a budget
     // taken over their union would under-fill the statement that is missing one. Header ids are only sound where

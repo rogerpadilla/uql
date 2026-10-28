@@ -21,7 +21,7 @@ import {
 } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import { soleId } from '../entity/metadata/definition.js';
+import { generatesKey, soleId } from '../entity/metadata/definition.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { QuerySql } from '../type/index.js';
 import type {
@@ -44,7 +44,7 @@ import type {
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
-import { isAutoIncrement, isExactDecimal, jsonPathKeys } from '../util/field.util.js';
+import { isExactDecimal, jsonPathKeys } from '../util/field.util.js';
 import { assertNonNegativeInteger, isOperatorMap, RETURNED_ID } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -209,12 +209,12 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   /** The table to toggle, or nothing when no record writes a key the engine would have generated. */
   private identityInsertTarget<E>(meta: EntityMeta<E>, payload: E | E[]): string | undefined {
-    const id = soleId(meta);
-    if (!id || !isAutoIncrement(id.field, true)) {
+    if (!generatesKey(meta)) {
       return undefined;
     }
+    const [idKey] = meta.ids;
     const records = Array.isArray(payload) ? payload : [payload];
-    const stated = records.some((record) => record[id.key] !== undefined);
+    const stated = records.some((record) => record[idKey] !== undefined);
     return stated ? this.escapedTableName(meta) : undefined;
   }
 

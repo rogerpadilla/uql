@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { sql } from '../../util/index.js';
-import { Entity, f, Field, ManyToOne } from '../index.js';
-import { defineEntity, getMeta, removeEntity } from './definition.js';
+import { Entity, f, Field, ManyToOne, OneToOne } from '../index.js';
+import { defineEntity, generatesKey, getMeta, referenceKeys, removeEntity } from './definition.js';
 import { Dog } from './schemaFixture/animal.js';
 import { Author } from './schemaFixture/author.js';
 import { Book } from './schemaFixture/book.js';
@@ -118,6 +118,73 @@ it("should keep a schema's own relation over its decorated base's", () => {
 
   expect(getMeta(Pen).relations['keeper']?.references).toEqual([{ local: 'minderId', foreign: 'id' }]);
   expect(getMeta(Stall).relations.keeper?.references).toEqual([{ local: 'keeperId', foreign: 'id' }]);
+});
+
+/** What MongoDB stores as an `ObjectId`, and what keeps a shared key from being generated. */
+it('should read a column an owning to-one joins by as holding its key, as an f.references() one', () => {
+  const Writer = defineEntity({ name: 'Writer', fields: { id: f.string().id() } });
+  const Essay = defineEntity({
+    name: 'Essay',
+    fields: { id: f.string().id(), writerId: f.string() },
+  }).relations((rel) => ({ writer: () => rel.manyToOne(Writer, { references: (essay) => essay.writerId }) }));
+  type Writer = InstanceType<typeof Writer>;
+  @Entity()
+  class Note {
+    @Field(f.string().id()) id?: string;
+    @Field(f.string()) writerId!: string;
+    @ManyToOne({ entity: () => Writer, references: (note) => note.writerId }) writer?: Writer;
+  }
+
+  expect(referenceKeys(getMeta(Essay))).toEqual(new Set(['writerId']));
+  expect(referenceKeys(getMeta(Note))).toEqual(new Set(['writerId']));
+});
+
+it("should not read a column a to-one joins to another than its target's key as holding a key", () => {
+  const Region = defineEntity({ name: 'Region', fields: { id: f.number().id(), code: f.string().unique() } });
+  const Office = defineEntity({
+    name: 'Office',
+    fields: { id: f.number().id(), regionCode: f.string() },
+  }).relations((rel) => ({
+    region: () =>
+      rel.manyToOne(Region, { references: (office, region) => [{ local: office.regionCode, foreign: region.code }] }),
+  }));
+
+  expect(referenceKeys(getMeta(Office))).toEqual(new Set());
+});
+
+it("should read the key columns of each entity by its own relations, not its base's", () => {
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Pet = defineEntity({
+    name: 'Pet',
+    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
+  const Foster = defineEntity({
+    name: 'Foster',
+    extends: Pet,
+    fields: { fosterId: f.number().nullable() },
+  }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (foster) => foster.fosterId }) }));
+
+  expect(referenceKeys(getMeta(Pet))).toEqual(new Set(['ownerId']));
+  expect(referenceKeys(getMeta(Foster))).toEqual(new Set(['fosterId']));
+});
+
+/** A key shared with the row it extends is that row's, so the database must not generate it. */
+it('should not auto-increment a numeric key a one-to-one shares with its target', () => {
+  const Person = defineEntity({ name: 'Person', fields: { id: f.number().id() } });
+  const Passport = defineEntity({ name: 'Passport', fields: { id: f.number().id() } }).relations((rel) => ({
+    person: () => rel.oneToOne(Person, { references: (passport) => passport.id }),
+  }));
+
+  type Person = InstanceType<typeof Person>;
+  @Entity()
+  class Visa {
+    @Field(f.number().id()) id?: number;
+    @OneToOne({ entity: () => Person, references: (visa) => visa.id }) person?: Person;
+  }
+
+  expect(generatesKey(getMeta(Passport))).toBe(false);
+  expect(generatesKey(getMeta(Visa))).toBe(false);
+  expect(generatesKey(getMeta(Person))).toBe(true);
 });
 
 it('should map a one-to-many naming no options by the one relation of its target pointing back', () => {
