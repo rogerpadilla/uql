@@ -86,6 +86,8 @@ export class Post {
 Or declare one as data, its row type derived:
 
 ```ts
+import { defineEntity, f } from 'uql-orm';
+
 export const Post = defineEntity({
   name: 'Post',
   fields: {
@@ -97,6 +99,9 @@ export const Post = defineEntity({
 }).relations((rel) => ({
   author: () => rel.manyToOne(User, { references: (post) => post.authorId }),
 }));
+
+// One name for the entity and its rows, as a class has: a function takes `post: Post`.
+export type Post = InstanceType<typeof Post>;
 ```
 
 ### 2. A pool, and the migrations it drives

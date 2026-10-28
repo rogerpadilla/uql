@@ -123,7 +123,7 @@ Both forms are supported, mix them per entity, and produce the same queries and 
   - Cons
     - Relations are thunks declared after the columns, and `.relations()` comes last (only `.filters()` may follow it).
     - No column-level foreign keys: a shared key is a relation helper, and an eager read across two entities can create an inference cycle (TS7022).
-    - Each entity needs a `type X = InstanceType<typeof X>` alias for its name.
+    - Naming its row type as `X`, as a class does, takes a `type X = InstanceType<typeof X>` alias beside it.
     - No class to annotate or extend: inheritance uses `extends` naming the base.
     - Newer and less used.
 

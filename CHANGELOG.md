@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.107.2] - 2026-10-28
+
+- The README's `defineEntity` example shows its imports and the `type Post = InstanceType<typeof Post>` line that names its rows. Also better formatting for the readme.md
+
 ## [0.107.1] - 2026-10-28
 
 - The types `defineEntity` takes and returns are named for it: `SchemaEntity` is `DefinedEntity`. Its docs page is now [/entities/define-entity](https://uql-orm.dev/entities/define-entity).
