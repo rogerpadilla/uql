@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.107.3] - 2026-10-28
+
+- The `uql-orm` skill is shorter and covers every `$where` operator (`$exists`, `$text`, `$all`, `$size`, `$elemMatch`, `$near`, the case-insensitive text forms), relation filters, filters for soft delete and tenants, hooks, pool options and `sql` conditions over `refs()`.
+
 ## [0.107.2] - 2026-10-28
 
 - The README's `defineEntity` example shows its imports and the `type Post = InstanceType<typeof Post>` line that names its rows. Also better formatting for the readme.md
