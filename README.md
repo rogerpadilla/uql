@@ -30,10 +30,10 @@
 ---
 
 ```sh
-npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
+npm install uql-orm pg
 ```
 
-That is the whole install ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/define-entity).
+That is the whole install, `pg` swapped for your database's driver: `mysql2`, `mariadb`, `better-sqlite3`, `mongodb`, `@tursodatabase/serverless` or `@libsql/client` ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/define-entity).
 
 <a href="https://uql-orm.dev">
   <picture>
@@ -94,7 +94,9 @@ export const Post = defineEntity({
     likes: f.number().nullable(),
     authorId: f.number().nullable(),
   },
-}).relations((rel) => ({ author: () => rel.manyToOne(User, { references: (post) => post.authorId }) }));
+}).relations((rel) => ({
+  author: () => rel.manyToOne(User, { references: (post) => post.authorId }),
+}));
 ```
 
 ### 2. A pool, and the migrations it drives
@@ -112,7 +114,7 @@ export default { pool, entities: [User, Post] } satisfies Config;
 
 ```sh
 npm i -D tsx                                # Node only: the CLI loads uql.config.ts through it
-npx uql-migrate generate:entities initial   # diffs the entities against the database into a migration you review
+npx uql-migrate generate:entities initial   # writes the diff against the database, to review
 npx uql-migrate up                          # applies it
 ```
 
