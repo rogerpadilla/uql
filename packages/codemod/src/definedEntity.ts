@@ -1,6 +1,8 @@
 import ts from 'typescript';
-import { chainedSchema } from './builders.js';
+import { chainedEntity } from './builders.js';
 import { type Finding, formatFindings, locationAt } from './context.js';
+import { nameClash } from './definedMessages.js';
+import { KEPT_OPTIONS } from './definedOptions.js';
 import { CLASS_DEFINERS, type DefinerCall, type DefinerName, definerCall } from './definers.js';
 import {
   type Edit,
@@ -14,8 +16,6 @@ import {
 } from './edits.js';
 import { importEdits } from './imports.js';
 import { memberKey, paramFor, quoted } from './keyMaps.js';
-import { nameClash } from './schemaMessages.js';
-import { KEPT_OPTIONS } from './schemaOptions.js';
 import {
   arrayElements,
   decoratorsOf,
@@ -32,7 +32,7 @@ import {
   propertyValue,
 } from './syntax.js';
 
-/** Imports a converted file may no longer read: the definers folded in, and the brands a schema derives. */
+/** Imports a converted file may no longer read: the definers folded in, and the brands a defined entity derives. */
 const FOLDED_IMPORTS: ReadonlySet<string> = new Set([
   ...Object.keys(CLASS_DEFINERS).filter((name) => name !== 'defineEntity'),
   'idKey',
@@ -78,22 +78,22 @@ function readsAs(value: ts.Expression, shape: 'map' | 'list'): boolean {
 /** What a class-form relation said that a `rel` builder says by its name and first argument. */
 const RELATION_SHAPE: ReadonlySet<string | undefined> = new Set(['cardinality', 'entity']);
 
-export type SchemaResult = Pass & { readonly unresolved: string[]; readonly notes: string[] };
+export type DefinedResult = Pass & { readonly unresolved: string[]; readonly notes: string[] };
 
 /** A class registered by a call naming it, and the calls that did. */
 type Registration = { readonly cls: ts.ClassDeclaration; readonly calls: DefinerCall[] };
 
 /**
- * Declares each class `defineEntity(Class, options)` registered as the schema `defineEntity({ name, fields })` and its
+ * Declares each class `defineEntity(Class, options)` registered as `defineEntity({ name, fields })` and its
  * chain of sections, folding the string-keyed definers of the same class in. Read off the text the other rewrites
  * produced, whose options already name members by callback, so it only moves what is written. An entity it cannot
  * declare faithfully, `taken` naming a builder it writes among them, is left as written and reported.
  */
-export function toSchemaEntities(
+export function toDefinedEntities(
   fileName: string,
   text: string,
   { locate, taken }: { readonly locate?: (at: number) => string; readonly taken: ReadonlySet<string> },
-): SchemaResult {
+): DefinedResult {
   if (!CLASS_FORM_CALL.test(text)) {
     return { ...unedited(text), unresolved: [], notes: [] };
   }
@@ -121,12 +121,12 @@ export function toSchemaEntities(
       });
       continue;
     }
-    const schema = schemaOf(name, cls, calls, entityCall, unit);
-    if ('message' in schema) {
-      unresolved.push(schema);
+    const defined = definedOf(name, cls, calls, entityCall, unit);
+    if ('message' in defined) {
+      unresolved.push(defined);
       continue;
     }
-    const chained = chainedSchema(schema.text);
+    const chained = chainedEntity(defined.text);
     if (!('text' in chained)) {
       unresolved.push(
         ...chained.reasons.map((reason) => ({ node: entityCall, message: `'${name}' is left as written: ${reason}` })),
@@ -139,7 +139,7 @@ export function toSchemaEntities(
       continue;
     }
     for (const builder of chained.builders) written.add(builder);
-    notes.push(...schema.notes);
+    notes.push(...defined.notes);
     edits.push(removeStatement(cls));
     for (const { call } of calls) {
       edits.push(
@@ -156,7 +156,7 @@ export function toSchemaEntities(
   };
 }
 
-/** The class a `defineEntity(Class, { extends })` names as its base, which its schema's const reads where it is declared. */
+/** The class a `defineEntity(Class, { extends })` names as its base, which its defined const reads where it is declared. */
 function baseName(entityCall: ts.CallExpression): string | undefined {
   const options = objectLiteral(entityCall.arguments[1]);
   return identifierText(options && propertyValue(options, 'extends'));
@@ -186,7 +186,7 @@ function collectRegistrations(source: ts.SourceFile, unresolved: Finding[]): Map
         registration.calls.push(read);
         registrations.set(name, registration);
       } else if (read.definer === 'defineEntity') {
-        unresolved.push({ node, message: 'defineEntity takes a schema now: defineEntity({ name, fields, ... })' });
+        unresolved.push({ node, message: 'defineEntity takes options alone now: defineEntity({ name, fields, ... })' });
       } else {
         unresolved.push({ node, message: removedDefiner(read.definer, textOf(read.entity)) });
       }
@@ -202,8 +202,8 @@ function removedDefiner(definer: DefinerName, entity: string): string {
   return `${definer} was removed: register '${entity}' with defineEntity in this file, or decorate it (${CLASS_DEFINERS[definer]})`;
 }
 
-/** The schema a class's registrations declare, and what about it is worth a second look. */
-type Schema = { readonly text: string; readonly notes: Finding[] };
+/** The defined entity a class's registrations declare, and what about it is worth a second look. */
+type Defined = { readonly text: string; readonly notes: Finding[] };
 
 /** The options of the class's registrations gathered by kind, each entry as written. */
 type Gathered = {
@@ -219,13 +219,13 @@ type Gathered = {
 
 type KeptOption = (typeof KEPT_OPTIONS)[number];
 
-function schemaOf(
+function definedOf(
   name: string,
   cls: ts.ClassDeclaration,
   calls: readonly DefinerCall[],
   entityCall: ts.CallExpression,
   unit: string,
-): Schema | Finding {
+): Defined | Finding {
   const refused = (message: string): Finding => ({ node: entityCall, message });
   const options = objectLiteral(entityCall.arguments[1]) ?? (entityCall.arguments[1] ? undefined : emptyOptions());
   if (!options || options.properties.some((prop) => !ts.isPropertyAssignment(prop))) {
@@ -235,15 +235,15 @@ function schemaOf(
     return refused(`'${name}' extends a class: declare the base with defineEntity too and pass it as 'extends'`);
   }
   if (decoratorsOf(cls).length) {
-    return refused(`'${name}' is decorated as well: declare it one way, decorators or a schema`);
+    return refused(`'${name}' is decorated as well: declare it one way, decorators or defineEntity`);
   }
   const exported = hasModifier(cls, ts.SyntaxKind.ExportKeyword);
   if (hasModifier(cls, ts.SyntaxKind.DefaultKeyword)) {
-    return refused(`'${name}' is a default export: export the schema's const by name instead`);
+    return refused(`'${name}' is a default export: export its defineEntity const by name instead`);
   }
   const unread = objectProperties(options).find(({ name: key }) => !READ_OPTIONS.has(propertyKey(key)));
   if (unread) {
-    return refused(`'${textOf(unread.name)}' has no place in a schema: move it by hand`);
+    return refused(`'${textOf(unread.name)}' has no place in defineEntity: move it by hand`);
   }
   for (const [option, shape] of Object.entries(ENTRY_OPTIONS)) {
     const value = propertyValue(options, option);
@@ -536,7 +536,7 @@ function gather(
   }
 }
 
-/** Whether a field's options compute it, which a schema declares under `computed`. */
+/** Whether a field's options compute it, which a defined entity declares under `computed`. */
 function isComputed(options: ts.Expression): boolean {
   const literal = objectLiteral(options);
   return !!literal && propertyValue(literal, 'computed') !== undefined;
@@ -649,7 +649,7 @@ function hookFunction(method: ts.MethodDeclaration, preferred: string): string |
 type Scope = {
   readonly name: string;
   readonly param: string;
-  /** The schema's `relations` parameter, `rel` unless their code reads that name already. */
+  /** The `relations` parameter, `rel` unless their code reads that name already. */
   readonly rel: string;
   /** The parameter its aggregates read the entity's relations off, named after the entity likewise. */
   readonly self: string;
@@ -662,7 +662,7 @@ type Scope = {
 
 /**
  * `total: () => rel.items.count()` from a field computed over a relation, `{ computed: (counted) => counted.items.count() }`,
- * which a schema declares among its aggregates; nothing for a field reading no relation, and why where it cannot move.
+ * which a defined entity declares among its aggregates; nothing for a field reading no relation, and why where it cannot move.
  */
 function aggregateEntry(
   label: string,
@@ -697,7 +697,7 @@ function substituted(body: ts.Node, uses: readonly ts.Node[], replacement: strin
   return rebased(replacingUses(body, uses, replacement), body);
 }
 
-/** Notes each property the class typed more narrowly than its schema derives, with the option that keeps it. */
+/** Notes each property the class typed more narrowly than defineEntity derives, with the option that keeps it. */
 function looserTypes(cls: ts.ClassDeclaration, options: ts.ObjectLiteralExpression): Finding[] {
   const fields = objectLiteral(propertyValue(options, 'fields'));
   return cls.members.flatMap((member): Finding[] => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toBuilders } from './builders.js';
-import { FOREIGN_KEY_IN_SCHEMA as FOREIGN_KEY, NO_KEY_TYPE, ON_DELETE_ON_RELATION } from './schemaMessages.js';
+import { FOREIGN_KEY_IN_DEFINED as FOREIGN_KEY, NO_KEY_TYPE, ON_DELETE_ON_RELATION } from './definedMessages.js';
 
 const build = (text: string) => {
   const { text: written, unresolved } = toBuilders('/entities.ts', text, { taken: new Set() });
@@ -85,7 +85,7 @@ export class Post {}`);
 export class Post {}`);
   });
 
-  it('should write a schema as its columns and a chain of sections, relations last', () => {
+  it('should write a defined entity as its columns and a chain of sections, relations last', () => {
     const { text, unresolved } = build(`import { defineEntity } from 'uql-orm';
 export const Book = defineEntity({
   name: 'Book',
@@ -118,7 +118,7 @@ export const Book = defineEntity({
   .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }), (rel) => ({ n: () => rel.tags.count() }));`);
   });
 
-  it("should write the relation a schema column's foreign key needs, and move its onDelete there", () => {
+  it("should write the relation a defined column's foreign key needs, and move its onDelete there", () => {
     const { text, unresolved } = build(`export const Order = defineEntity({
   name: 'Order',
   fields: {
@@ -163,7 +163,7 @@ export const Order = defineEntity({
     ]);
   });
 
-  it("should drop a schema column's foreign key where its relation already joins on it", () => {
+  it("should drop a defined column's foreign key where its relation already joins on it", () => {
     const { text, unresolved } = build(`export const Order = defineEntity({
   name: 'Order',
   fields: {
@@ -340,7 +340,7 @@ export class User {
     ]);
   });
 
-  it('should refuse a shape, which no builder writes, and chain a schema with no columns of its own', () => {
+  it('should refuse a shape, which no builder writes, and chain a defined entity with no columns of its own', () => {
     const { text, unresolved } = build(`defineEntity({
   name: 'Anthology',
   extends: Author,
@@ -410,7 +410,7 @@ export class Wrong {
     ]);
   });
 
-  it("should move a builder already in a schema's fields off its foreign key, and refuse one with no type", () => {
+  it("should move a builder already in a defined entity's fields off its foreign key, and refuse one with no type", () => {
     const { text, unresolved } = build(`import { defineEntity, f } from 'uql-orm';
 export const Order = defineEntity({
   name: 'Order',
@@ -440,7 +440,7 @@ export const Plain = defineEntity({ name: 'Plain', fields: { id: f.number().id()
     expect(text).toContain(`export const Plain = defineEntity({ name: 'Plain', fields: { id: f.number().id() } });`);
   });
 
-  it('should report a schema field foreign key with no type, and sections it cannot read', () => {
+  it("should report a defined field's foreign key with no type, and sections it cannot read", () => {
     const { unresolved } = build(`export const Order = defineEntity({
   name: 'Order',
   fields: { id: { type: Number, isId: true }, customerId: { references: () => Customer } },
@@ -464,7 +464,7 @@ const Chained = defineEntity({ name, fields: { id: f.number().id() }, indexes: [
     ]);
   });
 
-  it("should chain a list named off the schema's variable, and keep a stored computed column's events", () => {
+  it("should chain a list named off the defined entity's variable, and keep a stored computed column's events", () => {
     const { text } = build(`import { Id } from 'uql-orm';
 const Chained = defineEntity({ name, fields: { id: f.number().id() }, checks: [{ where: { id: 1 } }] });
 export const Stamped = defineEntity({
@@ -508,7 +508,7 @@ defineEntity({ name: 'Free', fields: { id: { type: Number, isId: true } }, index
   .relations((rel) => ({}));`);
   });
 
-  it('should report what a schema or a section it cannot read states', () => {
+  it('should report what a defined entity or a section it cannot read states', () => {
     const { unresolved } = build(`defineEntity(Shared);
 defineEntity({ ...base, fields: { id: { type: Number, isId: true } } });
 defineEntity({ name: 'S', fields: { id, ...more } });
@@ -677,7 +677,7 @@ describe('foreign keys moved into their relations', () => {
     );
   });
 
-  it('should add the relation a foreign key needs to a schema whose relations are empty', () => {
+  it('should add the relation a foreign key needs to a defined entity whose relations are empty', () => {
     const { text, unresolved } = build(`export const Line = defineEntity({
   name: 'Line',
   fields: { id: { type: Number, isId: true }, ownerId: { type: Number, references: () => Order } },
@@ -689,7 +689,7 @@ describe('foreign keys moved into their relations', () => {
     );
   });
 
-  it('should add the relation a foreign key needs to a schema with no relations, laid out as its fields are', () => {
+  it('should add the relation a foreign key needs to a defined entity with no relations, laid out as its fields are', () => {
     const { text, unresolved } =
       build(`export const Line = defineEntity({ name: 'Line', fields: { id: { type: Number, isId: true }, ownerId: { type: Number, references: () => Order } } });
 export const Tab = defineEntity({

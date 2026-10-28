@@ -33,7 +33,7 @@
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
 ```
 
-That is the whole install ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/imperative).
+That is the whole install ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/define-entity).
 
 <a href="https://uql-orm.dev">
   <picture>

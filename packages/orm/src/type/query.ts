@@ -123,7 +123,7 @@ export type FilterWhere<E> = QueryWhere<E> | ((context: UqlContext | undefined) 
 export type FilterOnMissing = 'skip' | 'throw';
 
 /**
- * Authoring shape for `@Entity({ filters })` and a schema's `filters`.
+ * Authoring shape for `@Entity({ filters })` and `defineEntity`'s `.filters()`.
  */
 export type FilterOptions<E = unknown> = {
   readonly where: FilterWhere<E>;

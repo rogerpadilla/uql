@@ -2366,7 +2366,7 @@ class MongoDialectSpec implements Spec {
     });
   }
 
-  /** A foreign key a relation declares alone, a schema's always, holds an `ObjectId` as an `f.references()` one does. */
+  /** A foreign key a relation declares alone, a defined entity's always, holds an `ObjectId` as an `f.references()` one does. */
   shouldMapAForeignKeyARelationDeclaresIntoTheWire() {
     const Folder = defineEntity({ name: 'Folder', fields: { id: f.string().id() } });
     type Folder = InstanceType<typeof Folder>;

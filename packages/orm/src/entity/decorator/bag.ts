@@ -12,7 +12,7 @@ const registrations = Symbol.for('uql-orm/entity/decoratorMembers');
 
 /**
  * What the member decorators record for one class, until `@Entity()` or a subclass's registration drains it: the
- * only channel from a member decorator to its class, and what a schema's members are registered as too.
+ * only channel from a member decorator to its class, and what a defined entity's members are registered as too.
  */
 export type MemberRegistrations = {
   readonly fields: Record<string, FieldOptions>;

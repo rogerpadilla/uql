@@ -120,7 +120,7 @@ describe('an abstract base', () => {
     expect(() => getMeta(Audited)).toThrow("'Audited' is abstract: read an entity extending it");
   });
 
-  it('should be declared by a schema too', () => {
+  it('should be declared by defineEntity too', () => {
     const Stamped = defineEntity({ name: 'Stamped', abstract: true, fields: { at: f.date().nullable() } });
     const Visit = defineEntity({ name: 'Visit', extends: Stamped, fields: { id: f.number().id() } });
 

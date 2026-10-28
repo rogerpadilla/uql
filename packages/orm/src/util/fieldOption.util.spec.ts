@@ -115,7 +115,7 @@ it('should backstop at run time what the decorators reject at compile time', () 
   }).toThrow("'Backstopped.id' cannot use 'nullable': it is ignored on a primary key.");
 });
 
-/** A schema built from data at run time reaches here without the types' check. */
+/** An entity defined from data at run time reaches here without the types' check. */
 it('should report an enum member its type cannot hold', () => {
   expect(fieldOptionConflict({ type: String, enum: ['draft', 2] })).toBe(
     "cannot use 'enum': its member 2 is no string, which its type holds",

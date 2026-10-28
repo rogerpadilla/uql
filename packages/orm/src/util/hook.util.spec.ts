@@ -94,7 +94,7 @@ describe('runHooks', () => {
     expect(payloads).toEqual([{ title: 'untouched' }]);
   });
 
-  it("should await a schema's hook, each run on the row with the context", async () => {
+  it("should await a defined entity's hook, each run on the row with the context", async () => {
     const Note = defineEntity({
       name: 'Note',
       fields: { id: f.number().id(), body: f.string().nullable(), seen: f.boolean().nullable() },
@@ -114,7 +114,7 @@ describe('runHooks', () => {
     expect(note).toEqual({ id: 1, body: 'hi', seen: true });
   });
 
-  it("should run a schema base's hooks on the entities extending it", async () => {
+  it("should run a defined base's hooks on the entities extending it", async () => {
     const Stamped = defineEntity({
       name: 'Stamped',
       abstract: true,

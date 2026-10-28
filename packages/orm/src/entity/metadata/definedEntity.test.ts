@@ -1,12 +1,12 @@
-// One suite over every SQL engine: a schema entity registers through the same metadata as a decorated one, so
+// One suite over every SQL engine: a defined entity registers through the same metadata as a decorated one, so
 // every engine has to write and read it the same, its defaults, computed column, version and hooks included.
 
 import { describe, expect, it } from 'vitest';
 import { sqlPools, syncedPool } from '../../test/sqlPools.js';
-import { Author, label } from './schemaFixture/author.js';
-import { Book } from './schemaFixture/book.js';
+import { Author, label } from './definedFixture/author.js';
+import { Book } from './definedFixture/book.js';
 
-describe.each(sqlPools('test_schema'))('a schema entity on %s', (_engine, connect) => {
+describe.each(sqlPools('test_schema'))('a defined entity on %s', (_engine, connect) => {
   const pool = syncedPool(connect, [Author, Book]);
 
   it('should write and read rows, its defaults, computed column, version, hook and relations', async () => {

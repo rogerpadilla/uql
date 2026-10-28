@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { toSchemaEntities } from './schemaEntity.js';
+import { toDefinedEntities } from './definedEntity.js';
 
 const convert = (text: string) => {
-  const { text: written, unresolved, notes } = toSchemaEntities('/entities.ts', text, { taken: new Set() });
+  const { text: written, unresolved, notes } = toDefinedEntities('/entities.ts', text, { taken: new Set() });
   return { text: written, unresolved, notes };
 };
 
-describe('toSchemaEntities', () => {
-  it('declares a class defineEntity registers as a schema and its chain, a column typed as the class declares it', () => {
+describe('toDefinedEntities', () => {
+  it('declares a class defineEntity registers as a defined entity and its chain, a column typed as the class declares it', () => {
     const { text, unresolved } = convert(`import { defineEntity } from 'uql-orm';
 
 export class Post {
@@ -49,7 +49,7 @@ export type Post = InstanceType<typeof Post>;
 `);
   });
 
-  it('names a schema after its class, moves computed columns apart, and spells each cardinality', () => {
+  it('names a defined entity after its class, moves computed columns apart, and spells each cardinality', () => {
     const { text } = convert(`class Line {
   id?: number;
 }
@@ -136,7 +136,7 @@ type Article = InstanceType<typeof Article>;
     ]);
   });
 
-  it('keeps a brand off the schema, which derives its own', () => {
+  it('keeps a brand off the defined entity, which derives its own', () => {
     const { text } = convert(`class Seat {
   [idKey]?: 'code';
   code?: string;
@@ -153,7 +153,7 @@ type Seat = InstanceType<typeof Seat>;
 `);
   });
 
-  it('notes a property type a schema would derive more loosely, naming the option that keeps it', () => {
+  it('notes a property type defineEntity would derive more loosely, naming the option that keeps it', () => {
     const { notes } = convert(`class Doc {
   id?: number;
   meta?: Json<{ lang: string }>;
@@ -168,7 +168,7 @@ defineEntity(Doc, { fields: { id: { type: Number, isId: true }, meta: { type: 'j
     ]);
   });
 
-  it('leaves what it cannot declare as a schema as written, saying what to do', () => {
+  it('leaves what it cannot declare with defineEntity as written, saying what to do', () => {
     const { text, unresolved } = convert(`class Base {}
 class Child extends Base {
   id?: number;
@@ -199,12 +199,12 @@ defineIndex(Decorated, { columns: (decorated) => [decorated.title] });
       "/entities.ts:5: 'Child' extends a class: declare the base with defineEntity too and pass it as 'extends'",
       "/entities.ts:13: 'Behaving' has the method 'label': rows are plain objects, so make it a function of the row, then run again",
       "/entities.ts:18: defineEntity's options could not be read: write them as an object literal",
-      '/entities.ts:21: defineEntity takes a schema now: defineEntity({ name, fields, ... })',
+      '/entities.ts:21: defineEntity takes options alone now: defineEntity({ name, fields, ... })',
       "/entities.ts:23: defineIndex was removed: register 'Decorated' with defineEntity in this file, or decorate it (@Entity's 'indexes')",
     ]);
   });
 
-  it("declares a computed field over a relation as one of the schema's aggregates", () => {
+  it("declares a computed field over a relation as one of the defined entity's aggregates", () => {
     const { text, unresolved } = convert(`class Counted {
   id?: number;
 }
@@ -258,7 +258,7 @@ defineEntity(Counted, {
     expect(unresolved).toEqual([`/entities.ts:5: ${message}`]);
   });
 
-  it("folds a definer's aggregate into the schema's, and reports one it cannot move", () => {
+  it("folds a definer's aggregate into the defined entity's, and reports one it cannot move", () => {
     const { text, unresolved } = convert(`class Counted {
   id?: number;
 }
@@ -340,9 +340,9 @@ type Page = InstanceType<typeof Page>;`);
     ['a default export', 'export default class C { id?: number; }\ndefineEntity(C, {});', "'C' is a default export"],
     ['a decorated class', '@Entity()\nclass C { id?: number; }\ndefineEntity(C, {});', "'C' is decorated as well"],
     [
-      'an option a schema has no place for',
+      'an option defineEntity has no place for',
       "class C {}\ndefineEntity(C, { comment: 'x' });",
-      "'comment' has no place in a schema",
+      "'comment' has no place in defineEntity",
     ],
     ['a constructor', 'class C { constructor() {} }\ndefineEntity(C, {});', "'C' has the member 'constructor() {}'"],
     [
@@ -484,7 +484,7 @@ defineEntity(Log, { fields: { id: { type: Number, isId: true } } });
   }],`);
   });
 
-  it("names a hook's row, and the schema's rel, past any name their code already reads", () => {
+  it("names a hook's row, and the defined entity's rel, past any name their code already reads", () => {
     const { text } = convert(`class Log {
   stamp() {
     const log = load();
@@ -508,14 +508,14 @@ defineEntity(Log, {
     expect(text).toContain('}), (log) => ({\n    total: () => log.items.count(),');
   });
 
-  it('leaves a class as written where its schema cannot be chained, or would write a builder the file names', () => {
+  it('leaves a class as written where its defined entity cannot be chained, or would write a builder the file names', () => {
     const source = `class Odd {
   id?: number;
 }
 defineEntity(Odd, { fields: { id: { type: Number, isId: true }, b: { type: String, frob: true } } });
 `;
     const { text, unresolved } = convert(source);
-    const named = toSchemaEntities(
+    const named = toDefinedEntities(
       '/entities.ts',
       'class Post {}\ndefineEntity(Post, { fields: { id: { type: Number, isId: true } } });',
       {
@@ -582,7 +582,7 @@ defineEntity(Post, { fields: { id: { type: Number, isId: true } }, indexes: [{ c
   });
 });
 
-describe('the schema it writes', () => {
+describe('the defined entity it writes', () => {
   it("should write in the file's own indentation, four spaces here", () => {
     const { text } = convert(`import { defineEntity } from 'uql-orm';
 class Post {}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS, KEPT_OPTIONS } from './schemaOptions.js';
+import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS, KEPT_OPTIONS } from './definedOptions.js';
 
-describe('schemaOptions', () => {
+describe('definedOptions', () => {
   it('should chain every section a class-form definer folds in', () => {
     expect(CHAINED_OPTIONS).toEqual(expect.arrayContaining([...KEPT_OPTIONS]));
   });

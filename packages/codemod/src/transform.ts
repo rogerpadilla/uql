@@ -11,6 +11,8 @@ import {
   type Owner,
   ownerOf,
 } from './context.js';
+import { toDefinedEntities } from './definedEntity.js';
+import { nameClash } from './definedMessages.js';
 import { definerCall } from './definers.js';
 import {
   appended,
@@ -53,8 +55,6 @@ import {
 } from './keyMaps.js';
 import { toMigrationBuilders } from './migrationBuilders.js';
 import { relationTargetFor } from './relationTarget.js';
-import { toSchemaEntities } from './schemaEntity.js';
-import { nameClash } from './schemaMessages.js';
 import { statementTemplate } from './statementSql.js';
 import {
   arrayElements,
@@ -855,7 +855,7 @@ function rewriteRawCall(node: ts.Node, ctx: Context): void {
 }
 
 /**
- * Rewrites one file across every breaking change: the earlier ones off the checker, then column builders and schema
+ * Rewrites one file across every breaking change: the earlier ones off the checker, then column builders and defineEntity
  * chains off the text those produced, so neither pass edits what the other writes.
  */
 export function transformFile(
@@ -878,7 +878,7 @@ export function transformFile(
 }
 
 /**
- * The rewrites the checker reads types for, up to the schema entities a class-form registration declares. The
+ * The rewrites the checker reads types for, up to the defined entities a class-form registration declares. The
  * builder's and querier's methods are known by name, so they are read only in a file importing uql-orm, and `expr`
  * only where it is uql's.
  */
@@ -936,13 +936,13 @@ export function rewriteLegacy(
   reportRemovedExports(ctx);
 
   const edited = editedText(source.getFullText(), ctx.edits);
-  const schema = toSchemaEntities(source.fileName, edited.text, {
+  const defined = toDefinedEntities(source.fileName, edited.text, {
     locate: (at) => locationAt(source, edited.sourceOffset(at)),
     taken,
   });
-  ctx.unresolved.push(...schema.unresolved);
-  ctx.notes.push(...schema.notes);
-  return { ...fileResult(ctx, schema.text), sourceOffset: followed(edited, schema).sourceOffset };
+  ctx.unresolved.push(...defined.unresolved);
+  ctx.notes.push(...defined.notes);
+  return { ...fileResult(ctx, defined.text), sourceOffset: followed(edited, defined).sourceOffset };
 }
 
 function fileResult({ source, unresolved, notes }: Context, text: string): FileResult {

@@ -1,5 +1,5 @@
 /**
- * An entity declared by its schema: the row type is derived from it, so nothing is written twice, and a class
+ * An entity declared with `defineEntity`: the row type is derived from its columns, so nothing is written twice, and a class
  * extending it adds behaviour. Type-checked by `bun run ts` only.
  */
 import { expectTypeOf } from 'vitest';
@@ -134,7 +134,7 @@ export function definitionsAreChecked() {
     name: 'Typo',
     fields: { id: f.number().id() },
   })
-    // @ts-expect-error a column the schema does not declare
+    // @ts-expect-error a column the entity does not declare
     .indexes((typo, index) => [index([typo.idd])]);
   defineEntity({
     name: 'BadInverse',
@@ -149,7 +149,7 @@ export function definitionsAreChecked() {
     shout: f
       .string()
       .nullable()
-      // @ts-expect-error a column the schema does not declare
+      // @ts-expect-error a column the entity does not declare
       .as(sql`upper(${badComputed.titel})`),
   }));
   defineEntity({
@@ -245,7 +245,7 @@ export const Shelf = defineEntity({
 
 expectTypeOf<NonNullable<InstanceType<typeof Shelf>['books']>>().toEqualTypeOf<InstanceType<typeof Book>[]>();
 
-/** An entity extending a schema aggregates over the relations it inherits. */
+/** An entity extending a defined one aggregates over the relations it inherits. */
 export const Anthology = defineEntity({
   name: 'Anthology',
   extends: Author,
@@ -337,10 +337,10 @@ defineEntity({
   name: 'Watched',
   fields: { id: f.number().id(), title: f.string().nullable(), live: f.boolean().nullable() },
 })
-  // @ts-expect-error a trigger watches the schema's columns
+  // @ts-expect-error a trigger watches the entity's columns
   .triggers((watched, trigger) => [trigger({ on: 'beforeUpdate', of: [watched.titl], run: () => sql`select 1` })])
   .filters({
-    // @ts-expect-error a filter's predicate names the schema's columns
+    // @ts-expect-error a filter's predicate names the entity's columns
     live: { where: { lve: true } },
   });
 
@@ -396,7 +396,7 @@ export const Shouting = defineEntity({
   },
 });
 
-/** A foreign key is a relation: a column never names its target, and a schema section names none. */
+/** A foreign key is a relation: a column never names its target, and a defined entity's section names none. */
 export const RelationOnlyNode = defineEntity({
   name: 'RelationOnlyNode',
   fields: { id: f.number().id(), parentId: f.number().nullable() },

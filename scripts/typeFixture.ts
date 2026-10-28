@@ -1,6 +1,6 @@
 /**
  * A consuming project as `tsc` sees it: decorated entities, `queries` call sites mixing the clauses a real query
- * does, then `definitions` decorated and `schemas` schema entities declaring the same indexes, each read once.
+ * does, then `definitions` decorated and `defined` entities from `defineEntity` declaring the same indexes, each read once.
  * The caller makes `uql-orm` resolve. Shared by `type-perf.ts`, `type-floor.ts` and `packages/orm/verify-dist.ts`.
  */
 
@@ -103,10 +103,10 @@ export class Indexed${i} {
 }
 ${read('Indexed', i)}`;
 
-/** The same entity and indexes declared by its schema, its row derived, to weigh the two forms against each other. */
-const schema = (i: number) => /*ts*/ `
-export const Schema${i} = defineEntity({
-  name: 'Schema${i}',
+/** The same entity and indexes declared with `defineEntity`, its row derived, to weigh the two forms against each other. */
+const definedEntity = (i: number) => /*ts*/ `
+export const Defined${i} = defineEntity({
+  name: 'Defined${i}',
   fields: {
     id: f.number().id(),
     name: f.string().nullable(),
@@ -118,23 +118,23 @@ export const Schema${i} = defineEntity({
 })
   .indexes(${indexes})
   .relations(
-    (rel) => ({ children: () => rel.oneToMany(SchemaChild${i}, { mappedBy: (child) => child.parent }) }),
+    (rel) => ({ children: () => rel.oneToMany(DefinedChild${i}, { mappedBy: (child) => child.parent }) }),
     (agg) => ({ childCount: () => agg.children.count() }),
   )
   .filters(${filters});
-export const SchemaChild${i} = defineEntity({
-  name: 'SchemaChild${i}',
+export const DefinedChild${i} = defineEntity({
+  name: 'DefinedChild${i}',
   fields: { id: f.number().id(), parentId: f.number().nullable() },
-}).relations((rel) => ({ parent: () => rel.manyToOne(Schema${i}, { references: (child) => child.parentId }) }));
-${read('Schema', i)}`;
+}).relations((rel) => ({ parent: () => rel.manyToOne(Defined${i}, { references: (child) => child.parentId }) }));
+${read('Defined', i)}`;
 
 /** How many of each block the project holds. */
-export type FixtureSize = { readonly queries: number; readonly definitions: number; readonly schemas: number };
+export type FixtureSize = { readonly queries: number; readonly definitions: number; readonly defined: number };
 
 const times = (count: number, write: (i: number) => string) => Array.from({ length: count }, (_, i) => write(i));
 
 /** The project's sources by file name. */
-function sources({ queries, definitions, schemas }: FixtureSize): Record<string, string> {
+function sources({ queries, definitions, defined }: FixtureSize): Record<string, string> {
   return {
     'entities.ts': entities,
     'payloads.ts': /*ts*/ `import type { StandardSchemaV1 } from 'uql-orm';
@@ -152,10 +152,10 @@ export declare const Tags: StandardSchemaV1<unknown, string[]>;
       /*ts*/ `import { Settings, Tags } from './payloads.js';`,
       ...times(definitions, definition),
     ].join('\n'),
-    'schemas.ts': [
+    'defined.ts': [
       /*ts*/ `import { defineEntity, f, sql, type Querier } from 'uql-orm';`,
       /*ts*/ `import { Settings, Tags } from './payloads.js';`,
-      ...times(schemas, schema),
+      ...times(defined, definedEntity),
     ].join('\n'),
   };
 }

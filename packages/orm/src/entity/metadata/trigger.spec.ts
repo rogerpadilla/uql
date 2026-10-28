@@ -30,7 +30,7 @@ describe('triggers', () => {
     removeEntity(entity);
   });
 
-  it('should register the triggers a schema lists, as @Trigger does', () => {
+  it('should register the triggers a defined entity lists, as @Trigger does', () => {
     const Note = defineEntity({
       name: 'Note',
       fields: { id: f.number().id(), body: f.string().nullable() },

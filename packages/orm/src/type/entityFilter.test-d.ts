@@ -1,5 +1,5 @@
 /**
- * Named `$where` filters (`@Entity`'s and a schema's `filters`): a plain `QueryWhere<E>`
+ * Named `$where` filters (`@Entity`'s and a defined entity's `filters`): a plain `QueryWhere<E>`
  * fragment or a function of the ambient {@link UqlContext}, both checked against the entity declaring
  * it. Type-checked by `bun run ts` only.
  */
@@ -58,7 +58,7 @@ class MisfilteredInvoice {
 }
 void MisfilteredInvoice;
 
-// ─── a schema's filters: checked against its columns, same as decorators ───
+// ─── a defined entity's filters: checked against its columns, same as decorators ───
 defineEntity({
   name: 'Bill',
   fields: { id: f.number().id(), status: f.string().nullable() },
@@ -71,7 +71,7 @@ defineEntity({
   active: { where: { statuz: 'active' } },
 });
 
-// ─── a schema's filters after its relations read through them, as a decorated entity's do ───
+// ─── a defined entity's filters after its relations read through them, as a decorated entity's do ───
 export const Writer = defineEntity({
   name: 'Writer',
   fields: { id: f.number().id(), name: f.string(), active: f.boolean() },

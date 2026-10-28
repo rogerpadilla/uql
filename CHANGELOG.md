@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.107.1] - 2026-10-28
+
+- The types `defineEntity` takes and returns are named for it: `SchemaEntity` is `DefinedEntity`. Its docs page is now [/entities/define-entity](https://uql-orm.dev/entities/define-entity).
+
 ## [0.107.0] - 2026-10-27
 
 - **Breaking:** on MongoDB, a foreign key only a relation declares is stored as an `ObjectId`, as an `f.references()` one is, so `$populate` and `$count` find its rows. Convert documents written before: `db.posts.updateMany({ author: { $regex: '^[0-9a-fA-F]{24}$' } }, [{ $set: { author: { $toObjectId: '$author' } } }])`.

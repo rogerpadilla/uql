@@ -1,5 +1,5 @@
 /**
- * What a schema derives and refuses: its row from the columns, each section typed by them once fixed, and the
+ * What a defined entity derives and refuses: its row from the columns, each section typed by them once fixed, and the
  * relations last but for filters, entities pointing at each other in either order. Type-checked by `bun run ts` only.
  */
 import { expectTypeOf } from 'vitest';
@@ -68,7 +68,7 @@ export const Mistakes = defineEntity({ name: 'Mistakes', fields: { id: f.number(
   .indexes((mistakes, index) => [index([mistakes.email], { uniqe: true })])
   // @ts-expect-error and so is a predicate's column
   .checks((mistakes, check) => [check({ emial: '' })])
-  // @ts-expect-error a schema has no `.references()` section: a foreign key is a relation
+  // @ts-expect-error a defined entity has no `.references()` section: a foreign key is a relation
   .references({ emial: () => Author })
   .relations(() => ({}));
 

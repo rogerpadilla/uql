@@ -11,7 +11,7 @@ export * from './query.js';
 export * from './queryAggregate.js';
 export * from './queryLock.js';
 export * from './querySql.js';
-export * from './schemaEntity.js';
+export * from './definedEntity.js';
 export * from './queryWhere.js';
 export * from './universalQuerier.js';
 export * from './standardSchema.js';

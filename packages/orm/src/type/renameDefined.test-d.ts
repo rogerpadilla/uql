@@ -1,4 +1,4 @@
-/** Every place a statement names a member of a schema entity, renamed by `bun run ts.rename`. */
+/** Every place a statement names a member of a defined entity, renamed by `bun run ts.rename`. */
 import { f } from '../entity/column.js';
 import { defineEntity } from '../entity/metadata/definition.js';
 import { sql } from '../util/index.js';

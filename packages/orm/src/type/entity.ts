@@ -500,7 +500,7 @@ export type DdlDefault<V, T = NonNullable<V>> =
 /** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list included, or its text. */
 type JsonDdlDefault = Scalar | Record<string, unknown> | readonly unknown[];
 
-/** The TypeScript type a declared `type` implies: a decorator checks the property against it, a schema derives it. */
+/** The TypeScript type a declared `type` implies: a decorator checks the property against it, a defined entity derives it. */
 export type TsTypeOf<T> = T extends StringConstructor
   ? string
   : T extends NumberConstructor
@@ -609,7 +609,7 @@ export type RelationRegistration = Merge<
 /**
  * What a relation's join callbacks answer, `E` its target and `O` the entity declaring it: one foreign key, pairs of
  * columns, or the target's member mapping it. Each form states its own: a decorated class checks each member's
- * kind, a schema reads keys alone, since its target's types are still being inferred.
+ * kind, a defined entity reads keys alone, since its target's types are still being inferred.
  */
 export type RelationJoins = { readonly key: unknown; readonly pairs: unknown; readonly mappedBy: unknown };
 
@@ -763,7 +763,7 @@ export type HookEvent =
   | 'afterDelete'
   | 'afterLoad';
 
-/** A hook as declared: the entity's method a decorator names, or the function a schema runs on the row. */
+/** A hook as declared: the entity's method a decorator names, or the function a defined entity runs on the row. */
 export type HookDeclaration = { readonly methodName: string } | { readonly run: HookFunction };
 
 /** A registered hook, run on the row; a method's name kept so an entity overriding it replaces its base's. */
@@ -778,7 +778,7 @@ export type HookContext = {
   readonly onCommit: Querier['onCommit'];
 };
 
-/** A schema entity's hook, bivariant in its row, so one typed by its row registers. */
+/** A defined entity's hook, bivariant in its row, so one typed by its row registers. */
 export type HookFunction = { run(row: object, ctx: HookContext): unknown }['run'];
 
 /**
@@ -979,7 +979,7 @@ export type EntityMeta<E> = {
   relations: {
     [K in RelationKey<E>]?: RelationMeta;
   } & { [key: string]: RelationMeta | undefined };
-  /** The indexes `@Entity({ indexes })` or a schema's `indexes` declare. */
+  /** The indexes `@Entity({ indexes })` or `defineEntity`'s `.indexes()` declare. */
   indexes?: EntityIndexMeta<E>[];
   /** `CHECK` constraints, compiled when the schema is built. */
   checks?: EntityCheckMeta<E>[];
@@ -988,8 +988,8 @@ export type EntityMeta<E> = {
   /** Triggers the database runs, compiled when the schema is built. */
   triggers?: EntityTriggerMeta<E>[];
   /**
-   * How far the registry finalized it: `'declared'` while a schema takes sections and is not registered, unset
-   * once registered, `'settled'` once its schemas' relations, its bases' included, are in, and `'resolved'`
+   * How far the registry finalized it: `'declared'` while a defined entity takes sections and is not registered, unset
+   * once registered, `'settled'` once its `defineEntity` relations, its bases' included, are in, and `'resolved'`
    * once `getMeta` joined them too, which makes each step idempotent and re-entrant.
    */
   stage?: 'declared' | 'settled' | 'resolved';

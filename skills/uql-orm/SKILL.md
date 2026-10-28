@@ -10,7 +10,7 @@ description: >
 
 # UQL
 
-An entity is a decorated class, or a schema its row type is derived from. A query is a JSON object checked key by key against the entity, and it runs the same on every supported database. There is no schema file, no generated client and no query builder.
+An entity is a decorated class, or declared as data with `defineEntity`, its row type derived. A query is a JSON object checked key by key against the entity, and it runs the same on every supported database. There is no schema file, no generated client and no query builder.
 
 Full docs are Markdown: the index at https://uql-orm.dev/llms.txt, and each page at its URL plus `.md`. Read the page for the task before guessing an option.
 
@@ -22,7 +22,7 @@ npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/
 
 ESM only. Needs Node 22.18+, Bun or an edge runtime, and TypeScript 5.7+.
 
-Decorators are TC39 standard. Never enable `experimentalDecorators` or `emitDecoratorMetadata`, and never import `reflect-metadata`. A project on legacy decorators (NestJS, Angular) keeps its config and defines entities with `defineEntity`: https://uql-orm.dev/entities/imperative.md
+Decorators are TC39 standard. Never enable `experimentalDecorators` or `emitDecoratorMetadata`, and never import `reflect-metadata`. A project on legacy decorators (NestJS, Angular) keeps its config and defines entities with `defineEntity`: https://uql-orm.dev/entities/define-entity.md
 
 Node runs no decorators natively yet, so add `tsx` there (`npm i -D tsx`); `uql-migrate` loads `uql.config.ts` through it. A bundler that minifies class names needs `@Entity({ name: 'todo' })`, since the table name defaults to the class name.
 
@@ -83,7 +83,7 @@ export class Post {
 - Declare a NOT NULL column with `!` (`email!: string`). Declare `?` for anything else an insert may omit: nullable columns, `.eager(false)` fields, and relations. A computed field is present on a default read, so it is not optional. uql fills a single-column key and a version.
 - A NOT NULL field a default fills (`.default()`, `.onInsert()`) is `!` and listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
-- A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring indexes, filters, checks or triggers but no table is `@Entity({ abstract: true, ... }) abstract class`, or a schema's `abstract: true`. A query or write on one does not compile: query the entities extending it.
+- A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring indexes, filters, checks or triggers but no table is `@Entity({ abstract: true, ... }) abstract class`, or `abstract: true` in `defineEntity`. A query or write on one does not compile: query the entities extending it.
 - `Date` is an instant, stored in UTC to the millisecond on every engine. `f.decimal()` is exact text (`price?: string | null`). `f.number().precision(10).scale(2)` opts into a rounding JS number.
 - Members are named by callbacks, never strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`. Either may be left out where only one member fits: a decorated many-to-one's one foreign key to its target, a one-to-many's one many-to-one pointing back.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names the junction entity. `cascade: true` writes related rows in the same transaction; an update replaces a to-many's rows.
@@ -111,8 +111,8 @@ Both forms are supported, mix them per entity, and produce the same queries and 
     - Without `@Entity({ name })`, the table name comes from the class name, which a minifier can change.
     - Higher type-check cost on the benchmark model (9,297 vs 5,110 instantiations).
     - Cannot be declared at run time.
-    - `uql-codemod` cannot convert it into a schema.
-- Schema
+    - `uql-codemod` cannot convert it into `defineEntity`.
+- `defineEntity`
   - Pros
     - The row type is derived from the builders, with nothing written twice.
     - Shorter: 19 to 30% fewer lines in the two apps this was measured on.
@@ -124,10 +124,10 @@ Both forms are supported, mix them per entity, and produce the same queries and 
     - Relations are thunks declared after the columns, and `.relations()` comes last (only `.filters()` may follow it).
     - No column-level foreign keys: a shared key is a relation helper, and an eager read across two entities can create an inference cycle (TS7022).
     - Each entity needs a `type X = InstanceType<typeof X>` alias for its name.
-    - No class to annotate or extend: inheritance uses `extends` on a base schema.
+    - No class to annotate or extend: inheritance uses `extends` naming the base.
     - Newer and less used.
 
-### Schema entities
+### defineEntity
 
 The same entities declared as data, the row type derived:
 
@@ -181,7 +181,7 @@ export const Book = defineEntity({
 
 - Each field is a column builder, as in the decorated form. The row follows from them: a key, a version and a NOT NULL column are always present, a `.nullable()` one reads `| null`; a default (`.default()`, `.onInsert()`, `.autoIncrement()`) makes it optional on insert; `f.enum()` gives the literal union. No `!`, `?` or brands to write.
 - The other options are sections chained after `defineEntity`, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters` and `hooks` read the columns; `relations` comes last, but for a `filters` that reads through them: `.relations(...).filters({ byActiveAuthor: { where: { author: { active: true } } } })`. `defineEntity` itself takes `name` (the class name, which a naming strategy derives the table from), `table`, `schema`, `extends`, `abstract` and `fields`.
-- Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. A schema's foreign key is a relation: `manyToOne` names its `references` column, whose type is checked against the target's key; the column itself stays a plain field. `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
+- Each relation is a thunk, `author: () => rel.manyToOne(...)`, so entities pointing at each other can sit in either order and in different files. In `defineEntity`, a foreign key is a relation: `manyToOne` names its `references` column, whose type is checked against the target's key; the column itself stays a plain field. `oneToMany(Book)` with no options is mapped by the one relation of `Book` pointing back.
 - `relations`' second callback declares the derived fields: each value is a thunk, read lazily, of an aggregate over a to-many (`() => author.books.count()`) or a column expression. The callback's refs are the entity's own columns and its relations, so one expression can combine them.
 - A hook is a function of the row and `{ querier, onCommit }`.
 - A JSON column's payload is a Standard Schema, `f.json(schema)`, typed by its output: any library's schema (Zod, Valibot, ArkType), or a hand-written `StandardSchemaV1`. Without one, any path reads. The schema types the column; uql never runs it, so a write is not validated.

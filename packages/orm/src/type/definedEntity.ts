@@ -26,18 +26,18 @@ import type { QuerySql, RelationAggregate } from './querySql.js';
 import type { Type, AbstractType } from './utility.js';
 
 /**
- * A schema entity's columns, each an `f` builder. A foreign key's target is a relation in `.relations()`, read lazily:
+ * A defined entity's columns, each an `f` builder. A foreign key's target is a relation in `.relations()`, read lazily:
  * a column naming its target here would read it while it is still being inferred. A computed column is declared in
  * `.computed()`, where its row is read-only.
  */
-export type SchemaFields = {
+export type DefinedFields = {
   readonly [key: string]: Column<
     { readonly references?: undefined; readonly computed?: undefined } & { readonly [key: string]: unknown }
   >;
 };
 
-/** The key a class holds: carried beside a schema's, so a cycle never reads its row; read off a decorated one's. */
-export type ReferencedKey<C> = C extends { readonly [schemaShape]?: { readonly key: infer K } }
+/** The key a class holds: carried beside a defined one's, so a cycle never reads its row; read off a decorated one's. */
+export type ReferencedKey<C> = C extends { readonly [definedShape]?: { readonly key: infer K } }
   ? unknown extends K
     ? RowKey<C>
     : K
@@ -71,10 +71,10 @@ type IsEager<F> =
   F extends RelationAggregate<unknown> ? true : ColumnOptionsOf<F> extends { readonly eager: false } ? false : true;
 
 /** What `.computed()` returns: columns the database computes, `f.string().as(sql`...`)`. */
-type SchemaComputed = { readonly [key: string]: Column<{ readonly computed: QuerySql }> };
+type DefinedComputed = { readonly [key: string]: Column<{ readonly computed: QuerySql }> };
 
-/** A relation as a schema declares it: what `rel.*` returns, its target carried for the row. */
-export type SchemaRelation<T = object, C extends RelationCardinality = RelationCardinality, Columns = T> = {
+/** A relation as a defined entity declares it: what `rel.*` returns, its target carried for the row. */
+export type DefinedRelation<T = object, C extends RelationCardinality = RelationCardinality, Columns = T> = {
   readonly target: Type<T>;
   readonly cardinality: C;
   /** Checked by the builder's signature, so held erased: the registry reads them back as any relation's options. */
@@ -90,7 +90,7 @@ type AggregateRefs<R> = {
     : never;
 };
 
-type RelationValue<P> = P extends () => SchemaRelation<infer T, infer C, unknown>
+type RelationValue<P> = P extends () => DefinedRelation<infer T, infer C, unknown>
   ? C extends '1m' | 'mm'
     ? T[]
     : T
@@ -106,7 +106,7 @@ export type DerivedRow<A> = {
   readonly [K in keyof A]-?: A[K] extends () => infer F ? FieldValue<F> : never;
 };
 
-/** The relations as a row reads them; exported, as a schema's emitted declaration names it. */
+/** The relations as a row reads them; exported, as a defined entity's emitted declaration names it. */
 export type RelationRow<R> = { -readonly [K in keyof R]?: RelationValue<R[K]> };
 
 /**
@@ -124,50 +124,50 @@ type IdKeyOf<F> = FlagKeys<F, Column<{ readonly isId: true }>>;
 type VersionKeyOf<F> = FlagKeys<F, Column<{ readonly version: true }>>;
 type FilledKeyOf<F> = Exclude<FlagKeys<F, Column<FilledOptions>>, IdKeyOf<F>>;
 
-/** The relation constructors a schema's `relations` receives, typed by the columns of the entity declaring them. */
+/** The relation constructors a defined entity's `relations` receives, typed by the columns of the entity declaring them. */
 export type RelationBuilder<O> = {
   oneToOne<T extends object, K = IdValue<T>, Columns = T>(
-    target: Type<T> & SchemaShape<K, Columns>,
+    target: Type<T> & DefinedShape<K, Columns>,
     opts:
-      | RelationOwnerOptions<T, O, SchemaJoins<T, O, K, Columns>>
-      | RelationInverseOptions<T, SchemaJoins<T, O, K, Columns>>,
-  ): SchemaRelation<T, '11'>;
+      | RelationOwnerOptions<T, O, DefinedJoins<T, O, K, Columns>>
+      | RelationInverseOptions<T, DefinedJoins<T, O, K, Columns>>,
+  ): DefinedRelation<T, '11'>;
   manyToOne<T extends object, K = IdValue<T>, Columns = T>(
-    target: Type<T> & SchemaShape<K, Columns>,
-    opts: RelationOwnerOptions<T, O, SchemaJoins<T, O, K, Columns>>,
-  ): SchemaRelation<T, 'm1'>;
+    target: Type<T> & DefinedShape<K, Columns>,
+    opts: RelationOwnerOptions<T, O, DefinedJoins<T, O, K, Columns>>,
+  ): DefinedRelation<T, 'm1'>;
   /** With no options, it is mapped by the one many-to-one of its target pointing back. */
   oneToMany<T extends object, Columns = T>(
-    target: Type<T> & SchemaShape<unknown, Columns>,
+    target: Type<T> & DefinedShape<unknown, Columns>,
     opts?:
-      | RelationInverseOptions<T, SchemaJoins<T, O, unknown, Columns>>
-      | RelationJoinOptions<T, O, SchemaJoins<T, O, unknown, Columns>>,
-  ): SchemaRelation<T, '1m', Columns>;
+      | RelationInverseOptions<T, DefinedJoins<T, O, unknown, Columns>>
+      | RelationJoinOptions<T, O, DefinedJoins<T, O, unknown, Columns>>,
+  ): DefinedRelation<T, '1m', Columns>;
   manyToMany<T extends object, Columns = T>(
-    target: Type<T> & SchemaShape<unknown, Columns>,
+    target: Type<T> & DefinedShape<unknown, Columns>,
     opts:
-      | RelationInverseOptions<T, SchemaJoins<T, O, unknown, Columns>>
-      | RelationJoinOptions<T, O, SchemaJoins<T, O, unknown, Columns>>,
-  ): SchemaRelation<T, 'mm', Columns>;
+      | RelationInverseOptions<T, DefinedJoins<T, O, unknown, Columns>>
+      | RelationJoinOptions<T, O, DefinedJoins<T, O, unknown, Columns>>,
+  ): DefinedRelation<T, 'mm', Columns>;
 };
 
 /**
- * A schema's joins: a foreign key and paired columns checked by type, off the target's carried key and columns;
+ * A defined entity's joins: a foreign key and paired columns checked by type, off the target's carried key and columns;
  * `mappedBy` by key alone, its kind checked on first read.
  */
-type SchemaJoins<T, O, K = unknown, Columns = T> = {
+type DefinedJoins<T, O, K = unknown, Columns = T> = {
   readonly key: KeyHolding<O, K>;
-  readonly pairs: readonly SchemaJoinPair<O, Columns>[];
+  readonly pairs: readonly DefinedJoinPair<O, Columns>[];
   readonly mappedBy: keyof T;
 };
 
 /** One pair of join columns, the local one holding what the target's column does. */
-type SchemaJoinPair<O, Columns> = {
+type DefinedJoinPair<O, Columns> = {
   readonly [F in keyof Columns]-?: { readonly local: KeyHolding<O, NonNullable<Columns[F]>>; readonly foreign: F };
 }[keyof Columns];
 
-/** What the first call of a schema states: the class, its table and its columns. */
-export type SchemaEntityOptions<F extends SchemaFields, B = object, BK = unknown, BC = unknown> = {
+/** What the first call of `defineEntity` states: the class, its table and its columns. */
+export type DefineEntityOptions<F extends DefinedFields, B = object, BK = unknown, BC = unknown> = {
   /** The class's name, which a naming strategy derives the table's from, as it does a decorated class's. */
   readonly name: string;
   /** The table, exactly as the database names it, where it is not derived from `name`. */
@@ -177,28 +177,28 @@ export type SchemaEntityOptions<F extends SchemaFields, B = object, BK = unknown
   /** A base that is never a table: the entities extending it take what it declares. */
   readonly abstract?: true;
   /** The entity it inherits from, which the declared class extends, so its methods and `super` work. */
-  readonly extends?: SchemaClass<B, BK, BC, boolean>;
+  readonly extends?: DefinedClass<B, BK, BC, boolean>;
   readonly fields: F;
 };
 
-/** A hook a schema runs on a row; a promise it returns is awaited. */
-type SchemaHook<Row> = (row: Row, ctx: HookContext) => unknown;
+/** A hook a defined entity runs on a row; a promise it returns is awaited. */
+type DefinedHook<Row> = (row: Row, ctx: HookContext) => unknown;
 
 /**
- * What a schema declares after its columns, each section typed by the columns now fixed, so none is inferred
+ * What a defined entity declares after its columns, each section typed by the columns now fixed, so none is inferred
  * again. `relations` comes last but for `filters`, which reads the row they complete.
  */
-type SchemaSections<Row, Key, Columns, B, Abstract> = {
+type DefinedSections<Row, Key, Columns, B, Abstract> = {
   /** Columns the database computes off the stored ones, `(post) => ({ slug: f.string().as(sql`...`) })`. */
-  computed<const C extends SchemaComputed>(
+  computed<const C extends DefinedComputed>(
     computed: (refs: RefMap<Columns>) => C,
-  ): SchemaEntity<Row & ReadRow<C>, Key, Columns & ReadRow<C>, B, Abstract>;
-  indexes(indexes: IndexSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
-  checks(checks: CheckSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
-  triggers(triggers: TriggerSection<Columns>): SchemaEntity<Row, Key, Columns, B, Abstract>;
-  filters(filters: FilterSection<Row>): SchemaEntity<Row, Key, Columns, B, Abstract>;
+  ): DefinedEntity<Row & ReadRow<C>, Key, Columns & ReadRow<C>, B, Abstract>;
+  indexes(indexes: IndexSection<Columns>): DefinedEntity<Row, Key, Columns, B, Abstract>;
+  checks(checks: CheckSection<Columns>): DefinedEntity<Row, Key, Columns, B, Abstract>;
+  triggers(triggers: TriggerSection<Columns>): DefinedEntity<Row, Key, Columns, B, Abstract>;
+  filters(filters: FilterSection<Row>): DefinedEntity<Row, Key, Columns, B, Abstract>;
   /** Functions each lifecycle event runs on the row, in order, given the querier writing it. */
-  hooks(hooks: { readonly [E in HookEvent]?: readonly SchemaHook<Row>[] }): SchemaEntity<
+  hooks(hooks: { readonly [E in HookEvent]?: readonly DefinedHook<Row>[] }): DefinedEntity<
     Row,
     Key,
     Columns,
@@ -215,36 +215,36 @@ type SchemaSections<Row, Key, Columns, B, Abstract> = {
   ): RelatedEntity<Row & RelationRow<R> & DerivedRow<A>, Key, Columns, Abstract>;
 };
 
-/** A schema entity's class once its relations are in: its filters may follow, and read through them. */
-export type RelatedEntity<Row, Key, Columns, Abstract = false> = SchemaClass<Row, Key, Columns, Abstract> & {
-  filters(filters: FilterSection<Row>): SchemaClass<Row, Key, Columns, Abstract>;
+/** A defined entity's class once its relations are in: its filters may follow, and read through them. */
+export type RelatedEntity<Row, Key, Columns, Abstract = false> = DefinedClass<Row, Key, Columns, Abstract> & {
+  filters(filters: FilterSection<Row>): DefinedClass<Row, Key, Columns, Abstract>;
 };
 
-/** A schema entity's class while its sections may still be declared. */
-export type SchemaEntity<Row, Key, Columns, B, Abstract = false> = SchemaClass<Row, Key, Columns, Abstract> &
-  SchemaSections<Row, Key, Columns, B, Abstract>;
+/** A defined entity's class while its sections may still be declared. */
+export type DefinedEntity<Row, Key, Columns, B, Abstract = false> = DefinedClass<Row, Key, Columns, Abstract> &
+  DefinedSections<Row, Key, Columns, B, Abstract>;
 
-/** The class a schema declares, to use as it is or to extend with behaviour; abstract for a base never a table. */
-export type SchemaClass<Row, Key = unknown, Columns = unknown, Abstract = false> = (Abstract extends true
+/** The class `defineEntity` declares, to use as it is or to extend with behaviour; abstract for a base never a table. */
+export type DefinedClass<Row, Key = unknown, Columns = unknown, Abstract = false> = (Abstract extends true
   ? abstract new () => Row
   : new () => Row) &
-  SchemaShape<Key, Columns>;
+  DefinedShape<Key, Columns>;
 
-declare const schemaShape: unique symbol;
+declare const definedShape: unique symbol;
 
 /**
- * What a relation or an aggregate pointing at a schema reads of it, its key's type and its columns, carried beside
+ * What a relation or an aggregate pointing at a defined entity reads of it, its key's type and its columns, carried beside
  * its class rather than read off its row: the columns alone settle both while the row is still being inferred.
  */
-type SchemaShape<Key, Columns = unknown> = {
-  readonly [schemaShape]?: { readonly key: Key; readonly columns: Columns };
+type DefinedShape<Key, Columns = unknown> = {
+  readonly [definedShape]?: { readonly key: Key; readonly columns: Columns };
 };
 
 /**
  * The key's type: its own column's, else the base's it inherits, `never` for a composite, which no one column can
- * reference, and anything for a schema built from data, whose columns are known only at run time.
+ * reference, and anything for an entity defined from data, whose columns are known only at run time.
  */
-export type SchemaKey<F, Inherited = unknown> = string extends keyof F
+export type DefinedKey<F, Inherited = unknown> = string extends keyof F
   ? unknown
   : FlagKeys<F, Column<{ readonly isId: true }>> extends infer K extends keyof F
     ? [K] extends [never]

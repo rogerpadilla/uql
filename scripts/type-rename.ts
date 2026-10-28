@@ -1,7 +1,7 @@
 /**
  * Renames each member the fixtures declare through the TypeScript language server, the way an editor does,
- * and fails on every mention a rename leaves behind: decorated entities in `rename.test-d.ts`, schema ones in
- * `renameSchema.test-d.ts`. `tsc` cannot see this: a key whose type lost its link to the entity's member still
+ * and fails on every mention a rename leaves behind: decorated entities in `rename.test-d.ts`, defined ones in
+ * `renameDefined.test-d.ts`. `tsc` cannot see this: a key whose type lost its link to the entity's member still
  * type-checks, it just stops following renames and find-references.
  */
 
@@ -16,9 +16,9 @@ type RenameResult = { readonly changes?: Readonly<Record<string, readonly TextEd
 type Message = { readonly id?: number; readonly method?: string; readonly result?: unknown; readonly error?: unknown };
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
-const FIXTURES = ['rename.test-d.ts', 'renameSchema.test-d.ts'];
+const FIXTURES = ['rename.test-d.ts', 'renameDefined.test-d.ts'];
 
-/** A schema's parts whose entries each declare a member, as the language server outlines them. */
+/** A defined entity's parts whose entries each declare a member, as the language server outlines them. */
 const MEMBER_OPTIONS: ReadonlySet<string> = new Set(['fields', 'computed() callback', 'relations() callback']);
 
 /** The parts of {@link MEMBER_OPTIONS} some fixture outlined, so one the server renames fails instead of going unread. */
@@ -37,7 +37,7 @@ const MEMBER = new Set<number>([SymbolKind.Method, SymbolKind.Property]);
 
 /**
  * The members each entity of a fixture declares, where a rename of them starts: a class's properties and methods,
- * a schema's fields, computed columns and relations. A class's decorators outline above its name, so its members
+ * a defined entity's fields, computed columns and relations. A class's decorators outline above its name, so its members
  * are what follows it. `id` is left out, since every entity repeats it.
  */
 function declaredMembers(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
@@ -48,13 +48,13 @@ function declaredMembers(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
         (child) => MEMBER.has(child.kind) && child.selectionRange.start.line > symbol.selectionRange.start.line,
       ),
     );
-  return [...classMembers, ...schemaOptions(symbols).flatMap((option) => option.children ?? [])].filter(
+  return [...classMembers, ...definedOptions(symbols).flatMap((option) => option.children ?? [])].filter(
     (member) => member.name !== 'id',
   );
 }
 
-/** The schema options a document outlines, the `MEMBER_OPTIONS` parts of each schema, classes left out. */
-function schemaOptions(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
+/** The `defineEntity` options a document outlines, the `MEMBER_OPTIONS` parts of each, classes left out. */
+function definedOptions(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
   return symbols
     .filter((symbol) => symbol.kind !== SymbolKind.Class)
     .flatMap((symbol) => symbol.children ?? [])
@@ -128,7 +128,7 @@ for (const file of FIXTURES) {
   });
   const outline = await request('textDocument/documentSymbol', { textDocument: { uri } });
   const symbols = (outline.result as DocumentSymbol[] | null) ?? [];
-  for (const { name } of schemaOptions(symbols)) {
+  for (const { name } of definedOptions(symbols)) {
     outlined.add(name);
   }
   for (const { name, selectionRange } of declaredMembers(symbols)) {

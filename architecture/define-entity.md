@@ -1,6 +1,6 @@
-# Schema entities
+# defineEntity
 
-An imperative entity whose row type is derived from its definition, so nothing is written twice and no
+An entity declared as data, whose row type is derived from its definition, so nothing is written twice and no
 decorator or class is involved. Decorators stay as the class-first API. Settled by a spike (2026-10-23) on
 uql's real types, against MikroORM 7.2.5, Drizzle 1.0.0-rc.5 and Prisma 8.0.0-rc.20 on the same model.
 
@@ -78,24 +78,24 @@ first definition of it, then each further copy.
 
 |                | First  | Each copy |
 | -------------- | ------ | --------- |
-| uql schema     | 4,417  | 1,416     |
+| uql defined    | 4,417  | 1,416     |
 | uql decorators | 8,836  | 2,010     |
 | MikroORM 7     | 3,303  | 287       |
 | Drizzle 0.45   | 14,367 | 4,908     |
 
 A read over the same model, `findMany` with two columns, a filter and a populated to-one, each read a different
-shape: uql's first costs ~4,100 (schema) or ~3,400 (decorators) and each further one ~150; MikroORM's first
+shape: uql's first costs ~4,100 (defined) or ~3,400 (decorators) and each further one ~150; MikroORM's first
 ~45,000 and each further one ~360. With its first read, uql's model costs less in total.
 
-Per copy, the schema form's cost is mostly its relations (a many-to-one ~470 and a one-to-many ~200, ~220 of
+Per copy, the defined form's cost is mostly its relations (a many-to-one ~470 and a one-to-many ~200, ~220 of
 that the foreign key's type check), then a computed column ~260 and an index ~150; a column is ~15. A decorated field costs
 ~100, ~60 of it the checks on its property (the column's `null`, the `filledKey` and `versionKey` brands, a named key),
 which run per field because TypeScript infers each decorator's context. The relation options take `cascade`,
 `onDelete` and `onUpdate` from their own non-generic types: picked off `RelationOptions<E, O>`, they made the first
-schema entity instantiate it whole, ~2,700.
+defined entity instantiate it whole, ~2,700.
 
-A filter through a to-many costs ~310 per schema entity and ~220 per decorated one (`ts.perf`, 200 of each), and
-offering `filters` after the relations costs a schema declaring none ~4. MikroORM's `defineEntity` types a filter's
+A filter through a to-many costs ~310 per defined entity and ~220 per decorated one (`ts.perf`, 200 of each), and
+offering `filters` after the relations costs a defined entity declaring none ~4. MikroORM's `defineEntity` types a filter's
 condition as a loose `Dictionary` to avoid this cycle (its GH #7440); Drizzle and Prisma have no entity filters.
 
 The builders cost little because an option that does not apply is not a method, so nothing checks it, and the
@@ -109,7 +109,7 @@ load. Prisma lets a Book with no author compile, and a populated required author
 
 ## Verified by the spike
 
-- Every pin in `schemaEntity.test-d.ts`: four entities with a one-to-many/many-to-one cycle, a
+- Every pin in `definedEntity.test-d.ts`: four entities with a one-to-many/many-to-one cycle, a
   self-reference, many-to-many through a junction, enum, default, `onInsert`, version, computed column,
   and typos in column methods, `mappedBy`, index and check entries, computed refs and hooks, and an option
   its column cannot use. The same on TypeScript 5.7.
@@ -120,19 +120,19 @@ load. Prisma lets a Book with no author compile, and a populated required author
 
 ## Plan
 
-1. Done. Columns are `f.*` builders in both forms, the schema's options are chained sections, entries are
+1. Done. Columns are `f.*` builders in both forms, `defineEntity`'s options are chained sections, entries are
    helper calls, and a migration builder column is the same builder, named. `RelationRef` is `in out`.
-2. Done. The schema form sharing `registerEntity` with `@Entity`, relations settled
+2. Done. The defined form sharing `registerEntity` with `@Entity`, relations settled
    lazily in `getMeta`, hooks as functions, a JSON column's payload as a Standard Schema; pins, a suite on every engine,
    `ts.rename` over both fixtures and a `ts.perf` row, and aggregates over the relations.
 3. Done. `defineEntity(Class, opts)`, the string-keyed definers, `defineIndex`/`defineTrigger`/`defineFilter`
-   and `@Entity`'s `fields`, `relations`, `hooks` and `extends` are gone; the schema form took `schema`,
-   `filters` and `triggers`, and `uql-codemod` rewrites a registered class into its schema.
+   and `@Entity`'s `fields`, `relations`, `hooks` and `extends` are gone; the defined form took `schema`,
+   `filters` and `triggers`, and `uql-codemod` rewrites a registered class into `defineEntity({ ... })`.
 4. Done. A read row types its methods `never`, for decorated entities too: still an `E`, so generic code
    returning its rows compiles.
-5. Done. Every schema foreign key is a relation: a column never names its target, the relation's `references`
+5. Done. Every defined entity's foreign key is a relation: a column never names its target, the relation's `references`
    is checked against the target's key type at compile time, and at run time by the kinds the join compares (a
    bigint and a number are one kind). Each cardinality takes only the options it joins by. `mappedBy` is checked
    by kind on first read, by decision: its kind is the target's relation, and reading the target's relations while
-   they are inferred is the cycle the marker exists to avoid; carrying them on it too would cost every schema for a
+   they are inferred is the cycle the marker exists to avoid; carrying them on it too would cost every defined entity for a
    mistake the first read names.

@@ -123,8 +123,8 @@
     }
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.12",
-    "@electric-sql/pglite-pgvector": "0.0.13",
+    "@electric-sql/pglite": "0.5.13",
+    "@electric-sql/pglite-pgvector": "0.0.14",
     "@libsql/client": "^0.18.0",
     "@neondatabase/serverless": "^1.2.0",
     "@nestjs/common": "^12.3.2",

@@ -1,7 +1,7 @@
 /**
  * A column is NOT NULL unless `nullable()` says otherwise, and a read hydrates a nullable one's `null`, so the
- * property admits it: a decorator checks the property it is applied to, and a schema derives it
- * (`schemaEntity.test-d.ts`). Type-checked by `bun run ts` only.
+ * property admits it: a decorator checks the property it is applied to, and a defined entity derives it
+ * (`definedEntity.test-d.ts`). Type-checked by `bun run ts` only.
  */
 import { Entity, f, Field } from '../entity/index.js';
 import { idKey } from './entity.js';

@@ -1,5 +1,6 @@
 import type { ForeignKeyAction } from '../schema/types.js';
 import type { TYPE_BOUNDS, VALUE_DECIDERS } from '../util/fieldOption.util.js';
+import type { ReferencedKey } from './definedEntity.js';
 import type {
   BlobColumnType,
   BooleanColumnType,
@@ -18,7 +19,6 @@ import type {
   StampEvent,
 } from './entity.js';
 import type { QuerySql } from './querySql.js';
-import type { ReferencedKey } from './schemaEntity.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
 import type { Type, Json, AbstractType } from './utility.js';
 import type { VectorDistance } from './vector.js';
@@ -76,7 +76,7 @@ interface Builders<O, V> {
   readonly json: ColumnBuilder<O, V, 'json'>;
   readonly blob: ColumnBuilder<O, V, 'blob'>;
   readonly vector: VectorColumn<O, V>;
-  /** A column whose family is known only at run time: a foreign key's is its target key's, a runtime schema's its data's. */
+  /** A column whose family is known only at run time: a foreign key's is its target key's, an entity defined at run time, its data's. */
   readonly any: ColumnBuilder<O, V, 'any'>;
 }
 
@@ -251,7 +251,7 @@ export type ColumnFactory = {
   column(type: BooleanColumnType): ColumnBuilder<{ readonly type: BooleanColumnType }, boolean, 'boolean'>;
   column(type: JsonColumnType): ColumnBuilder<{ readonly type: JsonColumnType }, Json, 'json'>;
   column(type: BlobColumnType): ColumnBuilder<{ readonly type: BlobColumnType }, Uint8Array, 'blob'>;
-  /** A column whose type is data, as a schema built at run time declares one. */
+  /** A column whose type is data, as an entity defined at run time declares one. */
   column(type: ColumnType): ColumnBuilder<{ readonly type: ColumnType }, unknown, 'any'>;
   /** A foreign key to `entity`'s key, its column typed as that key is. */
   references<C extends Type<object>>(

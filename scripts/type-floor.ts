@@ -23,7 +23,7 @@ const dir = mkdtempSync(resolve(tmpdir(), 'uql-type-floor-'));
 try {
   writeConsumerProject(
     dir,
-    { queries: 1, definitions: 1, schemas: 1 },
+    { queries: 1, definitions: 1, defined: 1 },
     { target: 'es2022', module: 'NodeNext', lib: ['ESNext'], skipLibCheck: false, paths: { 'uql-orm': [built] } },
   );
   const out = await $`bunx -p typescript@${MIN_TYPESCRIPT} tsc -p ${dir}`.nothrow().text();

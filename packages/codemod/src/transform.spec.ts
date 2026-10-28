@@ -221,7 +221,7 @@ defineEntity(Post, {
     transformFile,
   );
 
-  it('should write the schema form whole, every foreign key a relation', () => {
+  it('should write the defined form whole, every foreign key a relation', () => {
     expect(written.unresolved).toEqual([]);
     expect(written.text).toBe(`import { f, defineEntity, sql } from 'uql-orm';
 
@@ -265,8 +265,8 @@ export type Post = InstanceType<typeof Post>;
 });
 
 describe('codemod transforms', () => {
-  /** The schema pass reads the text the first one wrote, so a line it reports is mapped back to the file's own. */
-  it('reports a schema it cannot convert at its line in the file as written', () => {
+  /** The defineEntity pass reads the text the first one wrote, so a line it reports is mapped back to the file's own. */
+  it('reports a defined entity it cannot convert at its line in the file as written', () => {
     const { unresolved } = codemodFile(`import 'reflect-metadata';
 import { defineEntity } from 'uql-orm';
 
@@ -1266,7 +1266,7 @@ class Employee extends Base {
     expect(unresolved).toEqual([]);
   });
 
-  it("rewrites defineEntity's indexes, hooks and relations into a schema's callbacks", () => {
+  it("rewrites defineEntity's indexes, hooks and relations into a defined entity's callbacks", () => {
     const { text } = codemod(/*ts*/ `
       class Tag { id?: number; posts?: Post[]; }
       class Post { id?: number; title?: string; tagId?: number; tags?: Tag[]; tag?: Tag; touch(): void {} }
@@ -2775,7 +2775,7 @@ defineEntity(models.Line, { fields: { total: { type: Number, computed: raw\`\${c
     expect(text).toContain('$where: { [key]: sql`${refs(Item).stock} > 0` }');
     expect(text).toContain('computed: (product) => sql`${product.cost} * ${settings.product}`');
     expect(text).toContain('computed: (entity) => sql`${entity.unitPrice} * 2`');
-    expect(unresolved).toEqual([expect.stringContaining('defineEntity takes a schema now')]);
+    expect(unresolved).toEqual([expect.stringContaining('defineEntity takes options alone now')]);
   });
 
   it('reports a computed col() whose callback parameter would shadow a binding its SQL reads', () => {

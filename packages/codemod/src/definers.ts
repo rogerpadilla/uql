@@ -37,7 +37,7 @@ export type DefinerCall = {
   readonly rest: readonly ts.Expression[];
 };
 
-/** `call` read as a class-form definer, or nothing where it is another call, the schema form included. */
+/** `call` read as a class-form definer, or nothing where it is another call, the defined form included. */
 export function definerCall(call: ts.CallExpression): DefinerCall | undefined {
   const definer = identifierText(call.expression);
   const [entity, ...rest] = call.arguments;

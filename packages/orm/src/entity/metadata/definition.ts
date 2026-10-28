@@ -25,14 +25,14 @@ import {
   type RelationReferences,
   type RelationBuilder,
   type RelationRegistration,
-  type SchemaClass,
-  type SchemaEntityOptions,
+  type DefinedClass,
+  type DefineEntityOptions,
   type Brands,
   type EntityBrand,
   type ColumnRow,
-  type SchemaFields,
-  type SchemaKey,
-  type SchemaRelation,
+  type DefinedFields,
+  type DefinedKey,
+  type DefinedRelation,
   type TriggerOptions,
   type Type,
   type AbstractType,
@@ -42,7 +42,7 @@ import {
   SECTION_ENTRY,
   type SectionEntry,
   type DerivedFields,
-  type SchemaEntity,
+  type DefinedEntity,
   SOFT_DELETE_FILTER,
 } from '../../type/index.js';
 import {
@@ -228,7 +228,7 @@ function addFilter<E>(meta: EntityMeta<E>, name: string, opts: FilterOptions<E>)
   (meta.filters ??= {})[name] = opts;
 }
 
-/** Registers the fields, relations and hooks decorators or a schema declared, before anything is finalized. */
+/** Registers the fields, relations and hooks decorators or `defineEntity` declared, before anything is finalized. */
 function applyMembers<E>(meta: EntityMeta<E>, members: Partial<MemberRegistrations> | undefined): void {
   for (const [key, spec] of definedEntries(members?.fields ?? {})) {
     addField(meta, key, spec);
@@ -271,10 +271,10 @@ function resolvedHook<E>(
 /** A row as the registry reads it, every key a column's. */
 type ErasedRow = Readonly<Record<string, unknown>>;
 
-/** A schema's relations as the registry reads them. */
-type ErasedRelations = Readonly<Record<string, () => SchemaRelation<ErasedRow>>>;
+/** A defined entity's relations as the registry reads them. */
+type ErasedRelations = Readonly<Record<string, () => DefinedRelation<ErasedRow>>>;
 
-/** What a schema's sections declared, as the registry reads them. */
+/** What a defined entity's sections declared, as the registry reads them. */
 type ErasedSections = {
   computed?: (refs: object) => Readonly<Record<string, Column>>;
   indexes?: EntityOptions<object>['indexes'];
@@ -286,12 +286,12 @@ type ErasedSections = {
   derived?: (refs: object) => DerivedFields;
 };
 
-/** A schema class as the registry reads it, abstract or not. */
-type ErasedClass = SchemaClass<object, unknown, unknown, boolean>;
+/** A defined class as the registry reads it, abstract or not. */
+type ErasedClass = DefinedClass<object, unknown, unknown, boolean>;
 
-/** A schema as the registry reads it, its row erased to {@link ErasedRow}. */
-type ErasedSchema = Merge<
-  SchemaEntityOptions<SchemaFields>,
+/** `defineEntity`'s options as the registry reads them, its row erased to {@link ErasedRow}. */
+type ErasedOptions = Merge<
+  DefineEntityOptions<DefinedFields>,
   {
     readonly extends?: ErasedClass;
     readonly fields: Readonly<Record<string, Column>>;
@@ -299,36 +299,36 @@ type ErasedSchema = Merge<
 >;
 
 /**
- * What a schema declared: its sections are open while its meta is `'declared'`, and its relations are read
+ * What a defined entity declared: its sections are open while its meta is `'declared'`, and its relations are read
  * on first lookup of it or of an entity extending it, once each target exists.
  */
-type DeclaredSchema = { readonly schema: ErasedSchema; readonly sections: ErasedSections };
+type DeclaredEntity = { readonly options: ErasedOptions; readonly sections: ErasedSections };
 
-const declaredSchemas = new WeakMap<object, DeclaredSchema>();
+const declaredEntities = new WeakMap<object, DeclaredEntity>();
 
-type DeclaredRow<F extends SchemaFields, B> = Except<B, EntityBrand & keyof B> & ColumnRow<F> & Brands<F, B>;
+type DeclaredRow<F extends DefinedFields, B> = Except<B, EntityBrand & keyof B> & ColumnRow<F> & Brands<F, B>;
 
 /**
- * Declares an entity by its schema and returns its class, whose row type the schema derives, so nothing is
+ * Declares an entity by its options and returns its class, whose row type the columns derive, so nothing is
  * written twice: its columns now, then each section, `.indexes()` and so on, `.relations()` last but for
  * `.filters()`. It registers on first read, with every section in, and its relations once each target exists.
  */
-export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
-  schema: SchemaEntityOptions<F, B, BK, BC> & { readonly abstract: true },
-): SchemaEntity<DeclaredRow<F, B>, SchemaKey<F, BK>, BC & ColumnRow<F>, B, true>;
-export function defineEntity<const F extends SchemaFields, B = object, BK = unknown, BC = unknown>(
-  schema: SchemaEntityOptions<F, B, BK, BC>,
-): SchemaEntity<DeclaredRow<F, B>, SchemaKey<F, BK>, BC & ColumnRow<F>, B>;
-export function defineEntity(schema: ErasedSchema): ErasedClass {
-  const base = schema.extends ?? Object;
-  // Its rows are read by key alone, which is what the registry types an erased schema's columns by.
+export function defineEntity<const F extends DefinedFields, B = object, BK = unknown, BC = unknown>(
+  options: DefineEntityOptions<F, B, BK, BC> & { readonly abstract: true },
+): DefinedEntity<DeclaredRow<F, B>, DefinedKey<F, BK>, BC & ColumnRow<F>, B, true>;
+export function defineEntity<const F extends DefinedFields, B = object, BK = unknown, BC = unknown>(
+  options: DefineEntityOptions<F, B, BK, BC>,
+): DefinedEntity<DeclaredRow<F, B>, DefinedKey<F, BK>, BC & ColumnRow<F>, B>;
+export function defineEntity(options: ErasedOptions): ErasedClass {
+  const base = options.extends ?? Object;
+  // Its rows are read by key alone, which is what the registry types erased options' columns by.
   const entity = {
-    [schema.name]: class extends base {
+    [options.name]: class extends base {
       [key: string]: unknown;
     },
-  }[schema.name];
+  }[options.name];
   metas.set(entity, { ...emptyMeta(entity), stage: 'declared' });
-  declaredSchemas.set(entity, { schema, sections: {} });
+  declaredEntities.set(entity, { options, sections: {} });
   for (const section of SECTIONS) {
     Object.defineProperty(entity, section, {
       value(this: AbstractType<object>, declared: unknown, derived?: unknown) {
@@ -343,12 +343,12 @@ export function defineEntity(schema: ErasedSchema): ErasedClass {
   return entity;
 }
 
-/** The sections a schema declares as methods. `derived` is no method: `relations` takes it as its second argument. */
+/** The sections a defined entity declares as methods. `derived` is no method: `relations` takes it as its second argument. */
 const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'hooks', 'relations'] as const;
 
-/** Records one section of a pending schema, refusing a second of it and one declared after the entity was read. */
+/** Records one section of a pending defined entity, refusing a second of it and one declared after the entity was read. */
 function declareSection(entity: AbstractType<object>, section: string, declared: unknown): void {
-  const pending = pendingSchema(entity);
+  const pending = pendingEntity(entity);
   if (!pending) {
     throw new UqlUsageError(`'${entity.name}' was read already: declare its ${section} before its first use`);
   }
@@ -358,36 +358,36 @@ function declareSection(entity: AbstractType<object>, section: string, declared:
   Object.assign(pending.sections, { [section]: declared });
 }
 
-/** What `entity` declared as a schema, while it is not registered yet. */
-function pendingSchema(entity: AbstractType<unknown>): DeclaredSchema | undefined {
-  return metas.get(entity)?.stage === 'declared' ? declaredSchemas.get(entity) : undefined;
+/** What `entity` declared with `defineEntity`, while it is not registered yet. */
+function pendingEntity(entity: AbstractType<unknown>): DeclaredEntity | undefined {
+  return metas.get(entity)?.stage === 'declared' ? declaredEntities.get(entity) : undefined;
 }
 
-/** Registers a pending schema, its base's first; a failure leaves it pending, so a later read reports it again. */
-function settleSchema(entity: AbstractType<unknown>): void {
-  const pending = pendingSchema(entity);
+/** Registers a pending defined entity, its base's first; a failure leaves it pending, so a later read reports it again. */
+function settleEntity(entity: AbstractType<unknown>): void {
+  const pending = pendingEntity(entity);
   if (!pending) {
     return;
   }
-  const { schema, sections } = pending;
-  const fields = fieldsOf(schema.name, schema.fields);
+  const { options, sections } = pending;
+  const fields = fieldsOf(options.name, options.fields);
   const refs = memberRefs();
   for (const added of [
-    fieldsOf(schema.name, sections.computed?.(refs) ?? {}),
-    fieldsOf(schema.name, readDerived(sections.derived, refs)),
+    fieldsOf(options.name, sections.computed?.(refs) ?? {}),
+    fieldsOf(options.name, readDerived(sections.derived, refs)),
   ]) {
     const taken = Object.keys(added).find((key) => key in fields);
     if (taken) {
-      throw new UqlUsageError(`'${schema.name}.${taken}' is declared twice: name each member once`);
+      throw new UqlUsageError(`'${options.name}.${taken}' is declared twice: name each member once`);
     }
     Object.assign(fields, added);
   }
   registerEntity(
     entity,
     {
-      name: schema.table,
-      schema: schema.schema,
-      abstract: schema.abstract,
+      name: options.table,
+      schema: options.schema,
+      abstract: options.abstract,
       indexes: sections.indexes,
       checks: sections.checks,
       triggers: sections.triggers,
@@ -454,7 +454,7 @@ const RELATION_BUILDER: RelationBuilder<object> = {
 };
 
 /**
- * Settles an entity's relations, once: its schema's, read now that each target exists, beside those its decorators
+ * Settles an entity's relations, once: those `defineEntity` declared, read now that each target exists, beside those its decorators
  * registered, then a copy of each its base settled that it does not declare itself. The one place either form
  * inherits a relation. Marked after, so a read after a failure reports the same mistake again.
  */
@@ -465,7 +465,7 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
   const parent = parentOf(meta.entity);
   const inherited: EntityMeta<object>['relations'] =
     parent && metas.has(parent) ? registeredMeta(parent).relations : {};
-  const declared = declaredSchemas.get(meta.entity)?.sections.relations;
+  const declared = declaredEntities.get(meta.entity)?.sections.relations;
   for (const [key, read] of Object.entries(declared?.(RELATION_BUILDER) ?? {})) {
     const { target, cardinality, options } = read();
     addRelation(
@@ -484,7 +484,7 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
 }
 
 /**
- * The registration both forms share, a schema's `members` given as the decorators would register them. Built
+ * The registration both forms share, a defined entity's `members` given as the decorators would register them. Built
  * apart and stored once it passes, so a rejected definition leaves the registry as it was.
  */
 export function registerEntity<E>(
@@ -656,7 +656,7 @@ export function idOf<E>(meta: EntityMeta<E>, row: KeyedRow<E>): WrittenId<E> {
  * Forgets an entity, and reports whether there was one - for a registry that grows at runtime, where a
  * deleted content type would otherwise keep its metadata for the life of the process. Nothing rewrites
  * what pointed at it, and a decorated class does not come back (its decorators drained at first
- * registration). See the Runtime Schemas guide.
+ * registration). See the Runtime Entities guide.
  */
 export function removeEntity<E>(entity: AbstractType<E>): boolean {
   return metas.delete(entity);
@@ -664,7 +664,7 @@ export function removeEntity<E>(entity: AbstractType<E>): boolean {
 
 export function getEntities(): Type<object>[] {
   for (const entity of metas.keys()) {
-    settleSchema(entity);
+    settleEntity(entity);
   }
   return [...metas.values()]
     .filter((meta) => meta.ids.length)
@@ -672,7 +672,7 @@ export function getEntities(): Type<object>[] {
     .filter(isTable);
 }
 
-/** The class a schema relation targets, refused where it is abstract: a relation needs a table to join. */
+/** The class a defined relation targets, refused where it is abstract: a relation needs a table to join. */
 function tableOf<E extends object>(target: AbstractType<E>): Type<E> {
   if (!isTable(target)) {
     throw new UqlUsageError(`'${target.name}' is abstract: a relation needs a table to join`);
@@ -685,9 +685,9 @@ function isTable<E extends object>(entity: AbstractType<E>): entity is Type<E> {
   return !metas.get(entity)?.abstract;
 }
 
-/** The metadata `entity` has, a pending schema registered first, without settling anything further. */
+/** The metadata `entity` has, a pending defined entity registered first, without settling anything further. */
 function knownMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
-  settleSchema(entity);
+  settleEntity(entity);
   return ensureMeta(entity);
 }
 
@@ -727,7 +727,7 @@ export function getMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
 
 /** The metadata `entity` registered, however much of it is resolved. */
 function registeredMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
-  settleSchema(entity);
+  settleEntity(entity);
   const meta = metas.get(entity);
   if (!meta) {
     throw new UqlUsageError(`'${entity.name}' is not an entity`);

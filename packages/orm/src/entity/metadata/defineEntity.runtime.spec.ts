@@ -3,7 +3,7 @@ import { Migrator } from '../../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import type { ColumnType, SchemaClass, SchemaFields, AbstractType } from '../../type/index.js';
+import type { ColumnType, DefinedClass, DefinedFields, AbstractType } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import { f } from '../column.js';
 import { Field } from '../decorator/members.js';
@@ -11,7 +11,7 @@ import { defineEntity, getEntities, getMeta, removeEntity } from './definition.j
 
 /**
  * A content type an admin creates through a UI: its shape is a row in a table, not a class in the
- * source. Nothing in uql reads a TypeScript type at runtime, so a schema can be assembled from data.
+ * source. Nothing in uql reads a TypeScript type at runtime, so an entity can be defined from data.
  * What that costs at compile time - which is the only thing it costs - is pinned in
  * `defineEntity.runtime.test-d.ts`.
  */
@@ -19,8 +19,8 @@ import { defineEntity, getEntities, getMeta, removeEntity } from './definition.j
 /** What the admin UI stored: a column per field, which is the shape a CMS keeps its own schema in. */
 type ContentType = { name: string; fields: { name: string; type: ColumnType }[] };
 
-/** Its columns as a schema takes them, keyed by whatever the admin named each field. */
-function columnsOf({ fields }: ContentType): SchemaFields {
+/** Its columns as `defineEntity` takes them, keyed by whatever the admin named each field. */
+function columnsOf({ fields }: ContentType): DefinedFields {
   return {
     id: f.column('bigint').id(),
     ...Object.fromEntries(fields.map((field) => [field.name, f.column(field.type).nullable()])),
@@ -28,7 +28,7 @@ function columnsOf({ fields }: ContentType): SchemaFields {
 }
 
 /** Named after the content type, so its DDL and its errors read like a hand-written entity's. */
-function register(contentType: ContentType, base?: SchemaClass<object>) {
+function register(contentType: ContentType, base?: DefinedClass<object>) {
   return defineEntity({ name: contentType.name, extends: base, fields: columnsOf(contentType) });
 }
 

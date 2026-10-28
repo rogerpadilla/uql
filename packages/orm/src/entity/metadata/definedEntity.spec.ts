@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 import { sql } from '../../util/index.js';
 import { Entity, f, Field, ManyToOne, OneToOne } from '../index.js';
+import { Dog } from './definedFixture/animal.js';
+import { Author } from './definedFixture/author.js';
+import { Book } from './definedFixture/book.js';
 import { defineEntity, generatesKey, getMeta, referenceKeys, removeEntity } from './definition.js';
-import { Dog } from './schemaFixture/animal.js';
-import { Author } from './schemaFixture/author.js';
-import { Book } from './schemaFixture/book.js';
 
-it('should register the class a schema declares, its relations once first read', () => {
+it('should register the class defineEntity declares, its relations once first read', () => {
   expect(getMeta(Author)).toMatchObject({ name: 'Author', ids: ['id'] });
   expect(Object.keys(getMeta(Book).relations)).toEqual(['author']);
 });
@@ -16,7 +16,7 @@ it('should inherit the columns of the entity it extends', () => {
   expect(getMeta(Dog).ids).toEqual(['id']);
 });
 
-it('should register each relation kind the builder declares, and an async hook of a schema', async () => {
+it('should register each relation kind the builder declares, and an async hook of a defined entity', async () => {
   const Junction = defineEntity({
     name: 'Junction',
     fields: {
@@ -43,7 +43,7 @@ it('should register each relation kind the builder declares, and an async hook o
   expect(getMeta(Parent).hooks?.beforeInsert?.[0]?.run).toBeTypeOf('function');
 });
 
-it("should register a schema's table schema, filters and triggers", () => {
+it("should register a defined entity's table schema, filters and triggers", () => {
   const Post = defineEntity({
     name: 'Post',
     schema: 'blog',
@@ -57,7 +57,7 @@ it("should register a schema's table schema, filters and triggers", () => {
 });
 
 /** A base's relations reach every entity extending it, whichever of them is read first. */
-it("should inherit a schema base's relations, read before or after the base", () => {
+it("should inherit a defined base's relations, read before or after the base", () => {
   const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
   const Pet = defineEntity({
     name: 'Pet',
@@ -75,7 +75,7 @@ it("should inherit a schema base's relations, read before or after the base", ()
   expect(getMeta(Cat).relations.owner?.references).toEqual([{ local: 'ownerId', foreign: 'id' }]);
 });
 
-it('should answer a removed schema as no entity', () => {
+it('should answer a removed defined entity as no entity', () => {
   const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
   const Gone = defineEntity({
     name: 'Gone',
@@ -88,7 +88,7 @@ it('should answer a removed schema as no entity', () => {
 });
 
 /** An entity declaring a relation its base declares too keeps its own. */
-it("should keep an entity's own relation over its schema base's", () => {
+it("should keep an entity's own relation over its defined base's", () => {
   const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
   const Pet = defineEntity({
     name: 'Pet',
@@ -103,7 +103,7 @@ it("should keep an entity's own relation over its schema base's", () => {
   expect(getMeta(Foster).relations.owner?.references).toEqual([{ local: 'fosterId', foreign: 'id' }]);
 });
 
-it("should keep a schema's own relation over its decorated base's", () => {
+it("should keep a defined entity's own relation over its decorated base's", () => {
   const Keeper = defineEntity({ name: 'Keeper', fields: { id: f.number().id() } });
   type Keeper = InstanceType<typeof Keeper>;
   @Entity()
@@ -203,7 +203,7 @@ it('should map a one-to-many naming no options by the one relation of its target
   });
 });
 
-/** A schema built from data at run time reaches here without the types' check. */
+/** An entity defined from data at run time reaches here without the types' check. */
 it('should refuse a foreign key whose type holds another kind of value than the key it references', () => {
   const Badge = defineEntity({ name: 'Badge', fields: { id: f.string().id() } });
   const Wearer = defineEntity({
@@ -232,7 +232,7 @@ it('should take a BigInt foreign key over a numeric key, which it widens', () =>
 });
 
 /** An entity declaring an aggregate its base declares too keeps its own. */
-it("should keep an entity's own aggregate over its schema base's", () => {
+it("should keep an entity's own aggregate over its defined base's", () => {
   const Kennel = defineEntity({
     name: 'Kennel',
     fields: { id: f.number().id() },

@@ -99,7 +99,7 @@ export async function anInsertNamesTheRest() {
   await querier.insertMany(Article, [{ views: 1 }]);
   // @ts-expect-error ...and where an upsert may insert
   await querier.upsertOne(Article, { id: true }, { id: 'a' });
-  // @ts-expect-error ...on a schema entity alike
+  // @ts-expect-error ...on a defined entity alike
   await querier.insertOne(Tally, {});
   // @ts-expect-error a composite key is the references the row is made of, which the caller supplies
   await querier.insertOne(Membership, { authorId: 'a', role: 'owner' });

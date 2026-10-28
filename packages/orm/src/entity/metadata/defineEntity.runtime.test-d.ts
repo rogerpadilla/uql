@@ -4,7 +4,7 @@
  * compiler reports the call instead. Type-checked by `bun run ts` only.
  */
 import { expectTypeOf } from 'vitest';
-import { type ColumnType, idKey, type Querier, type Scalar, type SchemaFields, type Type } from '../../type/index.js';
+import { type ColumnType, idKey, type Querier, type Scalar, type DefinedFields, type Type } from '../../type/index.js';
 import { f } from '../column.js';
 import { defineEntity } from './definition.js';
 
@@ -13,10 +13,10 @@ declare const querier: Querier;
 declare const contentType: { name: string; fields: { name: string; type: ColumnType }[] };
 
 /**
- * A schema built from data: its columns are a record, so the row is too. A spread into a literal would
+ * An entity defined from data: its columns are a record, so the row is too. A spread into a literal would
  * drop the record's index signature, which is why the columns are built as one.
  */
-const fields: SchemaFields = {
+const fields: DefinedFields = {
   id: f.uuid().id(),
   ...Object.fromEntries(contentType.fields.map((field) => [field.name, f.column(field.type).nullable()])),
 };

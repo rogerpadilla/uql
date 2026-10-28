@@ -46,7 +46,7 @@ export const Visit = defineEntity({ name: 'Visit', extends: StampedSchema, field
 
 export async function aSchemaBaseIsNotQueried() {
   await querier.count(Visit);
-  // @ts-expect-error a schema's abstract base is not a table, so it cannot be queried
+  // @ts-expect-error a defined abstract base is not a table, so it cannot be queried
   await querier.count(StampedSchema);
 }
 

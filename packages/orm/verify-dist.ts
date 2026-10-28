@@ -344,7 +344,7 @@ function installConsumerProject(): { checkDir: string; installed: string } {
   );
   writeConsumerProject(
     checkDir,
-    { queries: 1, definitions: 1, schemas: 1 },
+    { queries: 1, definitions: 1, defined: 1 },
     // What a browser consumer has, and no more; `declaration` as a library exporting its entities emits them.
     {
       target: 'es2025',

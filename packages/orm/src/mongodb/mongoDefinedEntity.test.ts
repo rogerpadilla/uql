@@ -46,7 +46,7 @@ const Essay = defineEntity({
   fields: { id: f.string().id().onInsert(objectId), title: f.string(), writerId: f.string().name('writer') },
 }).relations((rel) => ({ writer: () => rel.manyToOne(Writer, { references: (essay) => essay.writerId }) }));
 
-/** A schema entity is a document collection too: a filled column, a hook, a JSON payload and relations, on MongoDB. */
+/** A defined entity is a document collection too: a filled column, a hook, a JSON payload and relations, on MongoDB. */
 const pool = new MongodbQuerierPool(mongoUri('uql_schema_entity'));
 
 beforeAll(async () => {
@@ -59,7 +59,7 @@ afterAll(async () => {
   await pool.end();
 });
 
-it('should write and read a schema entity, a filled column, hook, JSON payload and relations', async () => {
+it('should write and read a defined entity, a filled column, hook, JSON payload and relations', async () => {
   const shelfId = await pool.insertOne(Shelf, { label: 'Ideas' });
   await pool.insertOne(Note, { body: 'try', shelfId: String(shelfId) });
   const [note] = await pool.findMany(Note, { $populate: { shelf: { $required: true } } });
@@ -90,8 +90,8 @@ it('should read an aggregate over a relation as a column', async () => {
   ]);
 });
 
-/** Keyed by `ObjectId`s, a schema's foreign key is stored as one, so a lookup on `_id` finds its rows both ways. */
-it("should store a schema's foreign key to an ObjectId key as an ObjectId", async () => {
+/** Keyed by `ObjectId`s, a defined entity's foreign key is stored as one, so a lookup on `_id` finds its rows both ways. */
+it("should store a defined entity's foreign key to an ObjectId key as an ObjectId", async () => {
   const writerId = objectId();
   await pool.insertOne(Writer, { id: writerId, name: 'Ada' });
   await pool.insertMany(Essay, [

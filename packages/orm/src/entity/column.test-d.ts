@@ -1,6 +1,6 @@
 /**
- * What each column builder offers and refuses. The row a schema derives from them is pinned in
- * `schemaEntity.test-d.ts`, the property a decorator checks against them in `entityDecorator.test-d.ts`.
+ * What each column builder offers and refuses. The row a defined entity derives from them is pinned in
+ * `definedEntity.test-d.ts`, the property a decorator checks against them in `entityDecorator.test-d.ts`.
  * Type-checked by `bun run ts` only.
  */
 import { expectTypeOf } from 'vitest';

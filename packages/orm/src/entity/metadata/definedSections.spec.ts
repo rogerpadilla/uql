@@ -3,7 +3,7 @@ import { sql } from '../../util/sql.js';
 import { f } from '../column.js';
 import { defineEntity, getEntities, getMeta, removeEntity } from './definition.js';
 
-describe('a schema entity', () => {
+describe('a defined entity', () => {
   it('should register its columns and every section on first read', () => {
     const Author = defineEntity({ name: 'Author', fields: { id: f.number().id(), name: f.string() } }).relations(
       (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
@@ -59,7 +59,7 @@ describe('a schema entity', () => {
     removeEntity(Author);
   });
 
-  it('should refuse a relation to an abstract base at run time, which a schema built from data reaches', () => {
+  it('should refuse a relation to an abstract base at run time, which an entity defined from data reaches', () => {
     const Base = defineEntity({ name: 'Base', abstract: true, fields: { id: f.number().id() } });
     const Holder = defineEntity({ name: 'Holder', fields: { id: f.number().id(), baseId: f.number() } }).relations(
       (rel) => ({

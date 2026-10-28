@@ -1,6 +1,8 @@
 import ts from 'typescript';
 import { call, flag, flagOrCall, type OptionMethod } from './columnMethods.js';
 import { type Finding, formatFindings, locationAt } from './context.js';
+import { FOREIGN_KEY_IN_DEFINED, NO_KEY_TYPE, nameClash, ON_DELETE_ON_RELATION } from './definedMessages.js';
+import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS } from './definedOptions.js';
 import {
   applyEdits,
   type Edit,
@@ -13,8 +15,6 @@ import {
 } from './edits.js';
 import { importEdits } from './imports.js';
 import { isCallback, paramFor } from './keyMaps.js';
-import { FOREIGN_KEY_IN_SCHEMA, NO_KEY_TYPE, nameClash, ON_DELETE_ON_RELATION } from './schemaMessages.js';
-import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS } from './schemaOptions.js';
 import {
   type ChainMethod,
   chainOf,
@@ -291,9 +291,9 @@ export function isBuilder(node: ts.Expression): boolean {
   return identifierText(chainOf(node).root) === 'f';
 }
 
-/** The options a schema's first call keeps. */
+/** The options a defined entity's first call keeps. */
 const FIRST_CALL: ReadonlySet<string | undefined> = new Set(FIRST_CALL_OPTIONS);
-/** Every key a schema's `defineEntity` options may state, as its first call or as a section. */
+/** Every key `defineEntity`'s options may state, as its first call or as a section. */
 const SCHEMA_KEYS: ReadonlySet<string | undefined> = new Set([
   ...FIRST_CALL,
   ...CHAINED_OPTIONS,
@@ -302,14 +302,14 @@ const SCHEMA_KEYS: ReadonlySet<string | undefined> = new Set([
 ]);
 
 /** `defineEntity({ fields: {...}, relations, ... })` as its first call and a chain of sections. */
-function schemaEdits(call: ts.CallExpression, findings: Finding[], used: Set<string>): Edit[] {
+function definedEdits(call: ts.CallExpression, findings: Finding[], used: Set<string>): Edit[] {
   const options = objectLiteral(call.arguments[0]);
   const fields = options && objectLiteral(propertyValue(options, 'fields'));
   const chained = options?.properties.some((prop) => !FIRST_CALL.has(keyOf(prop)));
-  if (!options || !fields || (!chained && fields.properties.every((prop) => isSchemaColumn(prop)))) {
+  if (!options || !fields || (!chained && fields.properties.every((prop) => isDefinedColumn(prop)))) {
     return [];
   }
-  const param = schemaParam(call);
+  const param = definedParam(call);
   const unknown = options.properties.filter((prop) => !SCHEMA_KEYS.has(keyOf(prop)));
   if (unknown.length) {
     findings.push({
@@ -323,7 +323,7 @@ function schemaEdits(call: ts.CallExpression, findings: Finding[], used: Set<str
   const aggregates = propertyValue(options, 'aggregates');
   const read = fields.properties.map((prop) => ({
     prop,
-    column: ts.isPropertyAssignment(prop) ? schemaColumn(prop.initializer) : undefined,
+    column: ts.isPropertyAssignment(prop) ? definedColumn(prop.initializer) : undefined,
   }));
   const { joins, inferred } = joinsOf(relations, targetsOf(read), param);
   const targets: Targets = {
@@ -396,8 +396,8 @@ function schemaEdits(call: ts.CallExpression, findings: Finding[], used: Set<str
   ];
 }
 
-/** The parameter a schema's callbacks are named after: its `name` where that is a literal, else its variable's. */
-function schemaParam(call: ts.CallExpression): string {
+/** The parameter a defined entity's callbacks are named after: its `name` where that is a literal, else its variable's. */
+function definedParam(call: ts.CallExpression): string {
   const options = objectLiteral(call.arguments[0]);
   const name = options && /^'(.+)'$/.exec(propertyValue(options, 'name')?.getText() ?? '')?.[1];
   return paramFor(name ?? identifierText(variableOf(call)));
@@ -406,8 +406,8 @@ function schemaParam(call: ts.CallExpression): string {
 /** A column's foreign key as written: its target's text, and the delete action it states. */
 type ForeignKey = { readonly target: string; readonly onDelete: string | undefined };
 
-/** A schema column as its builder with no foreign key, and the foreign key it named, or why it cannot be written. */
-type SchemaColumn = { readonly builder: string; readonly key?: ForeignKey } | { readonly message: string };
+/** A defined column as its builder with no foreign key, and the foreign key it named, or why it cannot be written. */
+type DefinedColumn = { readonly builder: string; readonly key?: ForeignKey } | { readonly message: string };
 
 /** The foreign keys' claims so far: the member names taken, the relations added, and each to-one's options written. */
 type Claims = {
@@ -416,7 +416,7 @@ type Claims = {
   readonly options: ReadonlyMap<ts.CallExpression, readonly string[]>;
 };
 
-/** Where a schema's foreign keys move: the to-one joining on each column, the reference each inferred join writes. */
+/** Where a defined entity's foreign keys move: the to-one joining on each column, the reference each inferred join writes. */
 type Targets = {
   readonly param: string;
   readonly rel: string;
@@ -427,8 +427,8 @@ type Targets = {
 /** Whether a claim went through, and what it left, or why it did not. */
 type Outcome = { readonly claims: Claims; readonly problem?: string };
 
-/** A schema column's builder off its options or chain, its `references` and `onDelete` taken out to move to a relation. */
-function schemaColumn(node: ts.Expression): SchemaColumn {
+/** A defined column's builder off its options or chain, its `references` and `onDelete` taken out to move to a relation. */
+function definedColumn(node: ts.Expression): DefinedColumn {
   if (isBuilder(node)) {
     const methods = chainMethods(node);
     const references = methods.get('references');
@@ -437,7 +437,7 @@ function schemaColumn(node: ts.Expression): SchemaColumn {
     }
     const target = targetOf(references.call.arguments[0]);
     if (identifierText(references.receiver) === 'f' || !target) {
-      return { message: target ? NO_KEY_TYPE : FOREIGN_KEY_IN_SCHEMA };
+      return { message: target ? NO_KEY_TYPE : FOREIGN_KEY_IN_DEFINED };
     }
     const onDelete = methods.get('onDelete');
     const cut = [references, ...(onDelete ? [onDelete] : [])].map((method) => ({
@@ -457,7 +457,7 @@ function schemaColumn(node: ts.Expression): SchemaColumn {
   const references = options.get('references');
   const target = references && targetOf(references);
   if (references && !target) {
-    return { message: FOREIGN_KEY_IN_SCHEMA };
+    return { message: FOREIGN_KEY_IN_DEFINED };
   }
   if (target && !options.has('type')) {
     return { message: NO_KEY_TYPE };
@@ -480,7 +480,7 @@ function targetOf(getter: ts.Expression | undefined): string | undefined {
 }
 
 /** Each column's foreign key target, for the columns naming one. */
-function targetsOf(read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: SchemaColumn }[]) {
+function targetsOf(read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: DefinedColumn }[]) {
   return new Map(
     read.flatMap(({ prop, column }) =>
       column && 'key' in column && column.key ? [[prop.name?.getText(), column.key.target] as const] : [],
@@ -488,9 +488,9 @@ function targetsOf(read: readonly { readonly prop: ts.ObjectLiteralElementLike; 
   );
 }
 
-/** The schema's columns' foreign keys claimed in turn, the problem of each column by its name node. */
+/** The defined entity's columns' foreign keys claimed in turn, the problem of each column by its name node. */
 function claimColumns(
-  read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: SchemaColumn }[],
+  read: readonly { readonly prop: ts.ObjectLiteralElementLike; readonly column?: DefinedColumn }[],
   start: Claims,
   targets: Targets,
 ): { readonly claims: Claims; readonly problems: ReadonlyMap<ts.Node, string> } {
@@ -520,7 +520,7 @@ function claimKey(name: ts.PropertyName, { target, onDelete }: ForeignKey, claim
   }
   const relation = ts.isIdentifier(name) ? /^(.+?)(?:Id|_id)$/.exec(key)?.[1] : undefined;
   if (!relation || claims.named.has(relation) || !targets.insertable) {
-    return { claims, problem: FOREIGN_KEY_IN_SCHEMA };
+    return { claims, problem: FOREIGN_KEY_IN_DEFINED };
   }
   const written = [
     `references: (${targets.param}) => ${targets.param}.${key}`,
@@ -551,7 +551,7 @@ function movedOnDelete(relation: ts.CallExpression, onDelete: string, claims: Cl
     : { claims: { ...claims, options: new Map(claims.options).set(relation, [...current, written]) } };
 }
 
-/** The relation calls a schema's `relations` returns, one per relation. */
+/** The relation calls a defined entity's `relations` returns, one per relation. */
 function relationCalls(relations: ts.Expression | undefined): ts.CallExpression[] {
   return objectProperties(returnedLiteral(relations)).flatMap((prop) => {
     const relation = ts.isArrowFunction(prop.initializer) ? prop.initializer.body : undefined;
@@ -681,8 +681,8 @@ function appendedEntries(literal: ts.ObjectLiteralExpression, entries: readonly 
   return { start: at, end: at, text: entries.map((entry) => `${separator}${entry}`).join('') };
 }
 
-/** Whether a schema column is a builder naming no foreign key, which a schema's `fields` keep as they are. */
-function isSchemaColumn(prop: ts.ObjectLiteralElementLike): boolean {
+/** Whether a defined column is a builder naming no foreign key, which a defined entity's `fields` keep as they are. */
+function isDefinedColumn(prop: ts.ObjectLiteralElementLike): boolean {
   return (
     ts.isPropertyAssignment(prop) && isBuilder(prop.initializer) && !chainMethods(prop.initializer).has('references')
   );
@@ -843,7 +843,7 @@ function entityEdits(cls: ts.ClassLikeDeclaration, findings: Finding[]): Edit[] 
   });
 }
 
-/** A schema's computed map as what its section returns: each a column `as()` its SQL. */
+/** A defined entity's computed map as what its section returns: each a column `as()` its SQL. */
 function computedSection(value: ts.Expression, param: string): string | undefined {
   const map = objectLiteral(value);
   const entries = map?.properties.map((prop) => {
@@ -879,7 +879,7 @@ export const BUILDER_NAMES: ReadonlySet<string> = new Set(['f', 'Computed']);
 const REWRITES = /@(?:Field|Id)\(|\bdefineEntity\(\s*\{|@Entity\(\s*\{/;
 
 /**
- * Writes entity definitions as column builders, `@Field(f.string().nullable())`, and a schema as its columns and a
+ * Writes entity definitions as column builders, `@Field(f.string().nullable())`, and a defined entity as its columns and a
  * chain of sections. Read off the text the other rewrites produced, so it only moves what is written; whatever it
  * cannot write faithfully is left as it is and reported.
  */
@@ -903,9 +903,9 @@ export function toBuilders(
       edits.push(...entityEdits(node, findings));
     }
     if (ts.isCallExpression(node) && identifierText(node.expression) === 'defineEntity') {
-      const schema = schemaEdits(node, findings, used);
-      if (schema.length) {
-        edits.push(...schema);
+      const defined = definedEdits(node, findings, used);
+      if (defined.length) {
+        edits.push(...defined);
         return;
       }
     }
@@ -931,19 +931,19 @@ export function toBuilders(
 }
 
 /**
- * A schema's statement, `const X = defineEntity({...})`, its call written as a chain and the builders it writes, or why
+ * A defined entity's statement, `const X = defineEntity({...})`, its call written as a chain and the builders it writes, or why
  * it cannot be.
  */
-export function chainedSchema(
+export function chainedEntity(
   text: string,
 ): { readonly text: string; readonly builders: ReadonlySet<string> } | { readonly reasons: readonly string[] } {
-  const source = ts.createSourceFile('/schema.ts', text, ts.ScriptTarget.Latest, true);
+  const source = ts.createSourceFile('/entity.ts', text, ts.ScriptTarget.Latest, true);
   const findings: Finding[] = [];
   const used = new Set<string>();
   const edits: Edit[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && identifierText(node.expression) === 'defineEntity') {
-      edits.push(...schemaEdits(node, findings, used));
+      edits.push(...definedEdits(node, findings, used));
       return;
     }
     ts.forEachChild(node, visit);
