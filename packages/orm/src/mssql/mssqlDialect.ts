@@ -7,7 +7,7 @@ import {
   relationTermKey,
   isolationSetBefore,
 } from '../dialect/abstractSqlDialect.js';
-import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS, OUTPUT_TABLE } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS, OUTPUT_ALIAS, OUTPUT_TABLE } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import {
   skippablePath,
@@ -25,13 +25,14 @@ import { generatesKey, soleId } from '../entity/metadata/definition.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { QuerySql } from '../type/index.js';
 import type {
+  FieldKey,
+  ReportedWrite,
   EntityMeta,
   SavepointCommand,
   FieldOptions,
   Query,
-  QueryConflictPaths,
+  QueryUpsert,
   QueryContext,
-  QueryOptions,
   QueryPager,
   SqlDialectFeatures,
   SqlValues,
@@ -44,8 +45,8 @@ import type {
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
-import { isExactDecimal, jsonPathKeys } from '../util/field.util.js';
-import { assertNonNegativeInteger, isOperatorMap, RETURNED_ID } from '../util/index.js';
+import { isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
+import { assertNonNegativeInteger, definedEntries, isOperatorMap, keySet, RETURNED_ID } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -67,11 +68,10 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
-  writeReturning: false,
+  reportsWrites: ['insert', 'update', 'delete', 'upsert'],
   nullsSortLowest: true,
   nullsOrdering: 'case',
   textScoreIndexes: false,
-  orderedUpsertReturning: false,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
@@ -200,11 +200,30 @@ export class MsSqlDialect extends MergeSqlDialect {
     super.pager(ctx, opts, sorted);
   }
 
-  override insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryOptions): void {
-    this.writeRows(ctx, getMeta(entity), payload, () => {
-      super.insert(ctx, entity, payload, opts);
+  override insert<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    payload: E | E[],
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
+    const meta = getMeta(entity);
+    const id = returning ? undefined : soleId(meta);
+    const column = this.escapeId(RETURNED_ID);
+    if (id) {
+      ctx.append(
+        `DECLARE ${OUTPUT_TABLE} TABLE (${column} ${canonicalToSql(resolveColumnCanonicalType(id.field), this)}); `,
+      );
+    }
+    const terms = this.identityInserted(ctx, meta, payload, () => {
+      const inserted = super.insert(ctx, entity, payload, returning);
       ctx.append(';');
+      return inserted;
     });
+    // Uncounted, so the batch reports the rows written alone.
+    if (id) {
+      ctx.append(` SET NOCOUNT ON; SELECT ${column} FROM ${OUTPUT_TABLE}; SET NOCOUNT OFF;`);
+    }
+    return terms;
   }
 
   /** The table to toggle, or nothing when no record writes a key the engine would have generated. */
@@ -258,48 +277,72 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   override returningId<E>(meta: EntityMeta<E>): string {
     const expression = this.returningIdExpression(meta);
-    return expression ? this.mergeReturning(expression) : '';
+    return expression ? `OUTPUT ${expression} INTO ${OUTPUT_TABLE}` : '';
   }
 
   override upsert<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
-  ): void {
-    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload, update));
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
+    return this.identityInserted(ctx, getMeta(entity), payload, () =>
+      super.upsert(ctx, entity, q, payload, update, returning),
+    );
   }
 
   /**
-   * A statement writing rows, `write`, wrapped in what SQL Server needs around one. The table variable its
-   * `OUTPUT` fills, typed as the id column is, and the read handing that back, uncounted so the batch
-   * reports the rows written alone; none on a composite key, which has no id to hand back. And `SET
-   * IDENTITY_INSERT` where a row states a key the engine would generate, turned off in the same batch.
+   * `OUTPUT` the columns `returning` reads `INTO` a table variable typed as they are, every stored one where it names an
+   * inlined field, then the fields read off it as off the table. Through a table, as `OUTPUT` straight back to the
+   * client fails on a table carrying a trigger.
    */
-  private writeRows<E>(ctx: QueryContext, meta: EntityMeta<E>, payload: E | E[], write: () => void): void {
-    const id = soleId(meta);
-    const column = this.escapeId(RETURNED_ID);
-    const identity = this.identityInsertTarget(meta, payload);
-    if (id) {
-      ctx.append(
-        `DECLARE ${OUTPUT_TABLE} TABLE (${column} ${canonicalToSql(resolveColumnCanonicalType(id.field), this)}); `,
-      );
+  protected override reportedWrite<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    returning: readonly FieldKey<E>[] | undefined,
+    write: ReportedWrite,
+    render: (afterTarget: string) => void,
+  ): readonly SelectTerm[] {
+    if (!returning) {
+      return super.reportedWrite(ctx, entity, returning, write, render);
     }
+    const source = write === 'delete' ? 'DELETED' : 'INSERTED';
+    const meta = getMeta(entity);
+    const named = new Set<string>(returning);
+    const fields = definedEntries(meta.fields);
+    const inlined = fields.some(([key, field]) => named.has(key) && isInlinedExpression(field));
+    const columns = fields
+      .filter(([key, field]) => !isInlinedExpression(field) && (inlined || named.has(key)))
+      .map(([key, field]) => ({
+        name: this.escapedColumnName(meta, key),
+        type: canonicalToSql(resolveColumnCanonicalType(field), this),
+      }));
+    const names = columns.map(({ name }) => name).join(', ');
+    ctx.append(`DECLARE ${OUTPUT_TABLE} TABLE (${columns.map(({ name, type }) => `${name} ${type}`).join(', ')}); `);
+    render(`OUTPUT ${columns.map(({ name }) => `${source}.${name}`).join(', ')} INTO ${OUTPUT_TABLE} (${names})`);
+    const terms = this.selectTerms(ctx, entity, keySet(returning), { prefix: OUTPUT_ALIAS });
+    ctx.append(`; SELECT ${this.termsSql(terms)} FROM ${OUTPUT_TABLE} ${this.escapeId(OUTPUT_ALIAS)}`);
+    return terms;
+  }
+
+  /** `write` between `SET IDENTITY_INSERT` on and off, where a row states a key the engine would generate. */
+  private identityInserted<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    payload: E | E[],
+    write: () => readonly SelectTerm[],
+  ): readonly SelectTerm[] {
+    const identity = this.identityInsertTarget(meta, payload);
     if (identity) {
       ctx.append(`SET IDENTITY_INSERT ${identity} ON; `);
     }
-    write();
+    const terms = write();
     if (identity) {
       ctx.append(` SET IDENTITY_INSERT ${identity} OFF;`);
     }
-    if (id) {
-      ctx.append(` SET NOCOUNT ON; SELECT ${column} FROM ${OUTPUT_TABLE}; SET NOCOUNT OFF;`);
-    }
-  }
-
-  protected override mergeReturning(expression: string): string {
-    return `OUTPUT ${expression} INTO ${OUTPUT_TABLE}`;
+    return terms;
   }
 
   /** A row lock is a hint on the table here, which `rowLocks.placement` says instead of a trailing clause. */

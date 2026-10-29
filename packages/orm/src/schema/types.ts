@@ -8,7 +8,9 @@ import type {
   PrimaryKeySchema,
   StoredDefinition,
 } from '../type/migration.js';
+import type { JsonScalar } from '../type/utility.js';
 import type { IndexFacet } from './indexDifferences.js';
+import type { SqlExpression } from './sqlExpression.js';
 
 /**
  * Type categories universal across SQL dialects.
@@ -118,6 +120,12 @@ export const INDEX_TYPES = [
 export type IndexType = (typeof INDEX_TYPES)[number];
 
 /**
+ * A column's default as the schema holds it, from either side: a literal, an object or a JSON column's
+ * value as the JSON text the catalogue reports, or an `SqlExpression` for SQL.
+ */
+export type ColumnDefault = JsonScalar | bigint | Date | null | SqlExpression;
+
+/**
  * Column node in the schema graph.
  * Represents a single column in a database table.
  */
@@ -128,8 +136,7 @@ export interface ColumnNode {
   readonly type: CanonicalType;
   /** Whether the column allows NULL values */
   readonly nullable: boolean;
-  /** The column's default: a literal value, or an `SqlExpression` for SQL. */
-  readonly defaultValue?: unknown;
+  readonly defaultValue?: ColumnDefault;
   /** Whether this column is part of the primary key */
   readonly isPrimaryKey: boolean;
   /** Whether this column auto-increments */

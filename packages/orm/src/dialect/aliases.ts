@@ -52,6 +52,9 @@ export const CURSOR_ALIAS = `${OWNED_PREFIX}_cursor`;
 /** The SQL Server table variable an `OUTPUT` fills. */
 export const OUTPUT_TABLE = `@${OWNED_PREFIX}_output`;
 
+/** What SQL Server's report of a write's rows reads {@link OUTPUT_TABLE} as, the table its fields are projected off. */
+export const OUTPUT_ALIAS = `${OWNED_PREFIX}_output`;
+
 /** The field a MongoDB `$sort` by `$text` reads `textScore` from where it projects none, taken back out after. */
 export const TEXT_SCORE_ALIAS = `${OWNED_PREFIX}_text_score`;
 

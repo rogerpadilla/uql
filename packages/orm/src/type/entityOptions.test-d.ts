@@ -3,7 +3,7 @@
  * mismatch is a compile error rather than a wrong column. Type-checked by `bun run ts` only.
  */
 import { Entity, f, Field, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import type { FieldKey, Json, MethodKey, RelationKey } from '../type/index.js';
+import type { FieldKey, Json, MethodKey, RelationKey, StandardSchemaV1 } from '../type/index.js';
 import { sql } from '../util/index.js';
 
 declare function expectType<T>(value: T): void;
@@ -91,7 +91,7 @@ class Generated {
       .softDelete(() => Date.now()),
   )
   deletedEpoch?: number | null;
-  @Field(f.jsonb().nullable().default('{}')) settings?: Json<{ theme?: string }> | null;
+  @Field(f.jsonb().nullable().default({})) settings?: Json<{ theme?: string }> | null;
   @Field(f.jsonb().nullable().default({ theme: 'dark' })) theme?: Json<{ theme?: string }> | null;
   @Field(f.jsonb().nullable().default([])) tags?: Json<string[]> | null;
   @Field(
@@ -222,3 +222,20 @@ export class EnumKeyed {
   // @ts-expect-error a String key cannot hold a numeric member
   @Field(f.enum(['a', 2]).id()) id?: 'a' | 2;
 }
+
+declare const channelSchema: StandardSchemaV1<unknown, { id: string; name: string }>;
+declare const namesSchema: StandardSchemaV1<unknown, readonly string[]>;
+
+// A JSON column's default is a document its payload admits.
+f.jsonb(channelSchema).default({ id: 'general', name: 'General' });
+f.jsonb(namesSchema).default([]);
+f.jsonb(channelSchema).default(sql`jsonb_build_object('id', 'general', 'name', 'General')`);
+// An untyped one stores whatever document it is given, a string a JSON string.
+f.jsonb().default('draft');
+
+// @ts-expect-error a document missing what its payload requires
+f.jsonb(channelSchema).default({});
+// @ts-expect-error nor a string, which is a JSON string, not the object its text spells
+f.jsonb(channelSchema).default('{}');
+// @ts-expect-error nor a document of another shape
+f.jsonb(namesSchema).default([1]);

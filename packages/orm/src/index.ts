@@ -10,7 +10,7 @@ export { filledKey, idKey, isSqlQuerier, versionKey } from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
 export { sortOf } from './util/query.util.js';
 export { DefaultLogger } from './util/logger.js';
-export { currentDate, currentTime, currentTimestamp, raw, refs, sql, uuid, uuidv7 } from './util/sql.js';
+export { currentDate, currentTime, currentTimestamp, raw, refs, sql, tableOf, uuid, uuidv7 } from './util/sql.js';
 export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './util/triggerWrite.js';
 export {
   type QueryErrorKind,

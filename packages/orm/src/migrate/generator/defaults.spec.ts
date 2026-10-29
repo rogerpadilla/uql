@@ -1,27 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../../dialect/index.js';
+import { Entity, f, Field } from '../../entity/index.js';
 import { MariaDialect } from '../../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
-import { SqlExpression } from '../../schema/sqlExpression.js';
+import { SqlExpression, schemaDefault } from '../../schema/sqlExpression.js';
 import type { TypeCategory } from '../../schema/types.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
+import type { Json } from '../../type/index.js';
 import { currentDate, currentTime, currentTimestamp, uuid, uuidv7, sql } from '../../util/sql.js';
 import { DIALECT_DEFAULTS, formatDefaultValue } from '../ddl/defaultSql.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('Default value expressions', () => {
   const fmt = (dialect: AbstractSqlDialect, value: unknown, columnType?: string): string =>
-    formatDefaultValue(value, dialect, columnType);
+    formatDefaultValue(
+      schemaDefault(value, (sql) => dialect.compileDdl(sql)),
+      dialect,
+      columnType,
+    );
   const postgres = new PostgresDialect();
   const mysql = new MySqlDialect();
   const mariadb = new MariaDialect();
   const sqlite = new SqliteDialect();
   const cockroach = new CockroachDialect();
   const mssql = new MsSqlDialect();
+
+  it('should refuse a non-finite number as a default, which no SQL literal holds', () => {
+    expect(() => fmt(postgres, Number.NaN)).toThrow('a default cannot be NaN');
+    expect(() => fmt(postgres, Number.POSITIVE_INFINITY)).toThrow('a default cannot be Infinity');
+  });
 
   /** The clock each engine's statements read, which writes a timestamp uql reads back as it stored it. */
   it('should render the timestamp kinds as the text a bound Date is written as', () => {
@@ -31,6 +42,22 @@ describe('Default value expressions', () => {
     expect(fmt(sqlite, currentTimestamp)).toBe("(strftime('%Y-%m-%d %H:%M:%f', 'now'))");
     expect(fmt(sqlite, currentDate)).toBe("(strftime('%Y-%m-%d 00:00:00.000', 'now'))");
     expect(fmt(sqlite, currentTime)).toBe('CURRENT_TIME');
+  });
+
+  // Written as the value it is, a string or a number would land in a JSON column as text or a number, which no engine casts to JSON alike.
+  it("should write a JSON column's default as the JSON text of its document, a string or a number included", () => {
+    @Entity({ name: 'DocDefaults' })
+    class DocDefaults {
+      @Field(f.number().id()) id?: number;
+      @Field(f.jsonb().nullable().default({ a: 1 })) settings?: Json<{ a?: number }> | null;
+      @Field(f.jsonb().nullable().default('draft')) state?: Json<string> | null;
+      @Field(f.jsonb().nullable().default(1)) level?: Json<number> | null;
+    }
+    const statement = new SqlSchemaGenerator(postgres).generateCreateSchema([DocDefaults]).join('\n');
+
+    expect(statement).toContain(`"settings" JSONB DEFAULT '{"a":1}'`);
+    expect(statement).toContain(`"state" JSONB DEFAULT '"draft"'`);
+    expect(statement).toContain(`"level" JSONB DEFAULT '1'`);
   });
 
   /** The reason the kinds are symbolic: one migration, three spellings. */
@@ -141,17 +168,23 @@ describe('Default value expressions', () => {
   it('should not report drift for SQL the engine reprints as it was declared', () => {
     const generator = new SqlSchemaGenerator(postgres);
 
-    expect(generator.defaultsEqual(currentTimestamp, SqlExpression.raw('(CURRENT_TIMESTAMP)'))).toBe(true);
-    expect(generator.defaultsEqual(uuid, SqlExpression.raw('(gen_random_uuid())'))).toBe(true);
-    expect(generator.defaultsEqual({}, '{}')).toBe(true);
-    expect(generator.defaultsEqual(currentTimestamp, SqlExpression.raw('(CURRENT_DATE)'))).toBe(false);
+    expect(
+      generator.defaultsEqual(SqlExpression.named('currentTimestamp'), SqlExpression.raw('(CURRENT_TIMESTAMP)')),
+    ).toBe(true);
+    expect(generator.defaultsEqual(SqlExpression.named('uuid'), SqlExpression.raw('(gen_random_uuid())'))).toBe(true);
+    expect(generator.defaultsEqual('{}', '{}')).toBe(true);
+    expect(generator.defaultsEqual(SqlExpression.named('currentTimestamp'), SqlExpression.raw('(CURRENT_DATE)'))).toBe(
+      false,
+    );
   });
 
   /** The reprints engines differ in, each taken out on its own engine: see `columnDefault.test.ts`. */
   it('should read SQL alike past case, spacing, wrapping parentheses and an empty argument list', () => {
     const generator = new SqlSchemaGenerator(cockroach);
 
-    expect(generator.defaultsEqual(currentTimestamp, SqlExpression.raw('(current_timestamp())'))).toBe(true);
+    expect(
+      generator.defaultsEqual(SqlExpression.named('currentTimestamp'), SqlExpression.raw('(current_timestamp())')),
+    ).toBe(true);
     expect(
       generator.defaultsEqual(SqlExpression.raw("coalesce(NULL, 'a')"), SqlExpression.raw("((coalesce(NULL,'a')))")),
     ).toBe(true);
@@ -165,7 +198,7 @@ describe('Default value expressions', () => {
     const generator = new SqlSchemaGenerator(postgres);
 
     expect(generator.defaultsEqual('CURRENT_TIMESTAMP', SqlExpression.raw('(CURRENT_TIMESTAMP)'))).toBe(false);
-    expect(generator.defaultsEqual(currentTimestamp, 'CURRENT_TIMESTAMP')).toBe(false);
+    expect(generator.defaultsEqual(SqlExpression.named('currentTimestamp'), 'CURRENT_TIMESTAMP')).toBe(false);
   });
 
   /** A SQL value holds only what a plain value cannot express. */

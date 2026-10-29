@@ -43,8 +43,8 @@ The pool's first argument is the driver's own config; set an acquire timeout the
 
 Two forms, mixable per entity, producing the same queries and types:
 
-- **Decorators**: a named class type, base classes carrying fields and relations, and column-level foreign keys (`f.references`), so entities may reference each other in any order. Each field is written twice (builder and property), and it needs the TC39 decorator transform.
-- **`defineEntity`**: the row type is derived, nothing written twice; no transform, so it fits projects on legacy decorators (NestJS, Angular), and it can be built at run time. Cheaper to type-check. Relations come last, and the row type needs a `type X = InstanceType<typeof X>` alias.
+- **Decorators**: a named class type, and column-level foreign keys (`f.references`), so entities may reference each other in any order. Slightly stricter: a property may be typed narrower than its column (a branded id), and `mappedBy` must name a relation or foreign key at compile time. Each field is written twice (builder and property), and it needs the TC39 decorator transform.
+- **`defineEntity`**: the row type is derived, nothing written twice; no transform, so it fits projects on legacy decorators (NestJS, Angular), and it can be built at run time. Cheaper to type-check. Relations come last, and the row type needs a `type X = InstanceType<typeof X>` alias. A shared set of fields spreads into `fields`.
 
 `uql-codemod` cannot convert one form into the other. Details: https://uql-orm.dev/entities/define-entity.md
 
@@ -88,15 +88,15 @@ export class Post {
 
 - A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal(precision?, scale?)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other type, and `f.references(() => Target)` for a foreign key typed as the target's key. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's.
 - A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the single-column key and version uql fills. A NOT NULL field a default fills (`.default()`, `.onInsert()`) stays `!` and is listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
-- `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included.
+- `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond on every engine. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
 - A JSON column's property is `Json<T>`: `settings?: Json<{ theme?: string }> | null`. A plain object type reads as a relation, which `$where`, `$sort` and the update operators refuse.
-- `mappedBy` and `references` may be left out where only one member fits. `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names the junction entity. `cascade: true` writes related rows in the same transaction; an update replaces a to-many's rows.
+- `mappedBy` and `references` may be left out where only one member fits. `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names the junction entity. `cascade: true` writes related rows with their row, in one transaction on SQL and, on MongoDB, inside one the caller opens; an update replaces a to-many's rows.
 - A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring entity options but no table is `@Entity({ abstract: true, ... }) abstract class`, which cannot be queried.
-- Optimistic lock: `@Field(f.version())` with `[versionKey]?: 'version'` on the class. An update must carry the version it read; a stale one throws `UqlOptimisticLockError`.
+- Optimistic lock: `@Field(f.version())` with `[versionKey]?: 'version'` on the class. An update, and an upsert or save of a row that exists, must carry the version it read; a stale one throws `UqlOptimisticLockError`.
 - Computed fields are `readonly`: ``@Computed((u) => f.string().as(sql`${u.first} || ' ' || ${u.last}`))``, `.stored()` for a generated column, or a relation aggregate, `@Computed((user) => user.posts.count())`.
 - Indexes, checks, filters and triggers are `@Entity` options, each entry made by the helper the callback is handed. A partial index's predicate is a query: `indexes: (post, index) => [index([post.authorId], { where: { archived: { $ne: true } } })]`. A JSON path is indexed off the column's ref, `index([user.settings.theme])`: https://uql-orm.dev/entities/indexes.md
-- Triggers run in the database: `triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })]`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. They skip uql's fills and entity filters. MongoDB has none: https://uql-orm.dev/entities/triggers.md
+- Triggers run in the database: `triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })]`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. They skip entity filters and run no JavaScript: an insert fills an `.onInsert()` value or SQL, but an `insertInto` names every required column a callback fills (`.onInsert(() => crypto.randomUUID())`) where no database default does. MongoDB has none: https://uql-orm.dev/entities/triggers.md
 - Hooks are methods with `this` bound to the payload: `@BeforeInsert()`, `@AfterInsert()`, and the same pairs for update, upsert and delete, plus `@AfterLoad()`. Changes to `this` in a before-hook are written. `upsert*` runs only the upsert pair, and `save*` the upsert pair for a row carrying its key. Each receives `{ querier, onCommit }`: send mail from `onCommit`, never straight from an after-hook.
 - **MongoDB:** a `f.number()` key left to the database is refused, since MongoDB only generates ObjectIds. Declare it a string, or give it an `.onInsert()` generator.
 
@@ -139,7 +139,7 @@ export const Book = defineEntity({
 
 - Columns are the same builders. No `!`, `?` or brands to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union.
 - `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `hooks`, then `relations` last; only a `filters` reading through relations follows it.
-- A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares derived fields: aggregates over a to-many, or expressions mixing them with columns.
+- A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.
 - A hook is a function of the row and `{ querier, onCommit }`. Behaviour is a plain function of the row (`label(author: Author)`): a row reads back as a plain object, so a method would never be there.
 
@@ -215,14 +215,16 @@ const users = await pool.findMany(User, {
 ### Writes
 
 - Without options, inserts and upserts resolve to ids, updates and deletes to a count. A last argument `{ returning: { id: true } }` resolves to those rows instead.
-- `upsertOne(Entity, { email: true }, row, update?)`: a conflicting row takes `update` (an update payload), else the payload but keeping its own key.
+- `upsertOne(Entity, { $conflict: { email: true }, $where? }, row, update?)`: a conflicting row matching `$where` takes `update` (an update payload), else the payload but keeping its own key; one not matching stays as it is. `upsertInto` in a trigger takes the same query. On MySQL and MariaDB, a `$where` may read only one column the update sets.
 - `updateMany` and `deleteMany` that name no rows (no `$where` holding a value, no `$limit`) throw. Pass `{ unfiltered: true }` to mean the whole table.
 - Update operators: `{ stock: { $inc: -1 } }` or `$mul`, with NULL counted as 0. A guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$pull`, `$set`, `$push`, `$addToSet`, then `$unset`, applied in that order; `$set` and `$unset` take dotted paths and create parents: `settings: { $set: { 'billing.plan': 'pro' } }`.
 
 ### Raw SQL and errors
 
 - ``pool.all`SELECT ... WHERE id = ${id}` `` for a `SELECT`, ``pool.run`...` `` for a write. Interpolated values bind: a scalar, `null` or a list, never `undefined` or a plain object. `sql` builds a fragment, `sql.join(fragments, ' AND ')` joins them, and `sql.text(s)` runs trusted SQL held in a string: never user input.
+- An operator compares a field with another column through its ref, wherever it takes a value: `{ effectiveTo: { $gt: rate.effectiveFrom } }` off `refs(Rate)` or a check's refs, `$between`, `$in` and `$ne` alike, on every engine, MongoDB included. A JSON path compared with one reads as that column's type. A ref names a column of the entity in scope: one of another entity is refused, and reads off its own alias, `refs(Other, 'o')`.
 - A condition no operator expresses is a `sql` fragment beside the others, naming columns through `refs()`, never by string: ``const item = refs(Item); $where: { $and: [{ companyId: 1 }, sql`${item.price} * ${item.stock} > ${10000}`] }``. SQL databases only.
+- SQL reading another table names it with `tableOf`, its columns off refs read under an alias, so a rename reaches them: ``const o = refs(Order, 'o'); sql`(SELECT ${o.state} FROM ${tableOf(o)} WHERE ${o.checkoutId} = ${checkout.id} LIMIT 1)` ``. Two aliases read one table twice.
 - `queryErrorKind(err)` names a failure the same on every engine: `uniqueViolation`, `foreignKeyViolation`, `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage`, `security`. Catch by kind, not by driver code.
 
 ## Aggregates

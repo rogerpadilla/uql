@@ -2,7 +2,7 @@ import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
-import type { CheckSchema, TriggerSchema } from '../../schema/types.js';
+import type { CheckSchema, ColumnDefault, TriggerSchema } from '../../schema/types.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnRenames,
@@ -237,7 +237,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 
   /** Parses a default as the catalogue reports it: to its literal value, or through {@link sqlDefault} if SQL. */
-  protected abstract parseDefaultValue(defaultValue: string | null): unknown;
+  protected abstract parseDefaultValue(defaultValue: string | null): ColumnDefault | undefined;
 
   /**
    * A SQL default, wrapped in parentheses, or the value uql exports that it spells (`currentTimestamp`), so it

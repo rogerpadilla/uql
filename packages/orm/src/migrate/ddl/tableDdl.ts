@@ -143,7 +143,10 @@ export class TableDdl {
    * ` DEFAULT <sql>`, or nothing where the column declares none. Empty rather than `DEFAULT NULL`, so
    * an absent default stays absent - `defaultValue: null` is the way to ask for one.
    */
-  protected defaultClause(column: { readonly defaultValue?: unknown; readonly type: string }): string {
+  protected defaultClause(column: {
+    readonly defaultValue?: ColumnSchema['defaultValue'];
+    readonly type: string;
+  }): string {
     return column.defaultValue === undefined
       ? ''
       : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;

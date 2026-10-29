@@ -642,8 +642,8 @@ describe('EntityCodeGenerator', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('test', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-        { name: 'config', type: { category: 'json' }, defaultValue: { a: 1 } },
-        { name: 'tags', type: { category: 'json' }, defaultValue: ['tag1'] },
+        { name: 'config', type: { category: 'json' }, defaultValue: '{"a":1}' },
+        { name: 'tags', type: { category: 'json' }, defaultValue: '["tag1"]' },
         { name: 'val', type: { category: 'string' }, defaultValue: null },
         { name: 'expr', type: { category: 'timestamp' }, defaultValue: 'CURRENT_TIMESTAMP' },
         { name: 'bool_val', type: { category: 'boolean' }, defaultValue: true },
@@ -661,6 +661,41 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain(".default('CURRENT_TIMESTAMP')");
       expect(result.code).toContain('.default(true)');
       expect(result.code).toContain('.default(123)');
+    });
+
+    it('should write a JSON default whose text is itself a JSON string as SQL, which the runtime takes as stored', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('test', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'code', type: { category: 'json' }, defaultValue: '"123"' },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('test');
+      assertDefined(result);
+
+      expect(result.code).toContain(`.default(sql\`'"123"'\`)`);
+      expect(result.code).toMatch(/import \{[^}]*\bsql\b[^}]*\} from 'uql-orm'/);
+    });
+
+    /** A JSON column's default comes back from the database as its text, which an entity declares as the document. */
+    it('should write a JSON default read back as text as the document it is', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('doc', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'settings', type: { category: 'json' }, defaultValue: '{"theme": "dark"}' },
+          { name: 'state', type: { category: 'json' }, defaultValue: '"draft"' },
+          { name: 'loose', type: { category: 'json' }, defaultValue: 'not json' },
+        ]),
+      );
+      const result = new EntityCodeGenerator(ast).generateForTable('doc');
+      assertDefined(result);
+
+      expect(result.code).toContain('.default({"theme":"dark"})');
+      expect(result.code).toContain(`.default("draft")`);
+      expect(result.code).toContain(".default('not json')");
     });
 
     /** A literal is text, whatever it spells; SQL is what an entity declares SQL with, imported with it. */

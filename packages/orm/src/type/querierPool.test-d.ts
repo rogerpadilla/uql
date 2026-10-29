@@ -42,7 +42,7 @@ export async function sqlPoolExposesRawExecutors() {
 async function write(db: UniversalQuerier) {
   await db.insertOne(Article, { id: 1, title: 'a' });
   await db.updateMany(Article, { $where: { id: 1 } }, { title: 'b' });
-  await db.upsertOne(Article, { id: true }, { id: 1, title: 'a' });
+  await db.upsertOne(Article, { $conflict: { id: true } }, { id: 1, title: 'a' });
   await db.saveMany(Article, [{ id: 1, title: 'a' }]);
   await db.deleteMany(Article, { $where: { id: 1 } });
   await db.restoreMany(Article, { $where: { id: 1 } });

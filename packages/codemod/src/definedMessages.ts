@@ -2,7 +2,7 @@
 export const nameClash = (name: string) => `'${name}' is already named here, and the codemod writes it`;
 
 /** Why a defined column's foreign key is refused: no relation joins on it, and none can be written for it. */
-export const FOREIGN_KEY_IN_DEFINED =
+export const UNJOINED_FOREIGN_KEY =
   "references another entity, and no relation can be named for it: declare one in '.relations()', as 'rel.manyToOne(Target, { references: (row) => row.key })'";
 
 /** Why a joined column's `onDelete` is refused: its relation states another, or takes options the codemod cannot write into. */

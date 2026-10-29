@@ -3,6 +3,8 @@ import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ColumnNode } from '../../schema/types.js';
 import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
+import { jsonDocument } from '../../util/object.util.js';
+import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
 import { quoted, sqlTag } from './sourceLiteral.js';
 
 /** What a field of the column contributes, given the property it maps to, which decides whether a `name` is needed. */
@@ -29,7 +31,10 @@ const METHOD_SOURCE = {
       ? []
       : [col.isAutoIncrement ? '.autoIncrement()' : '.autoIncrement(false)'],
   isUnique: (col) => (col.isUnique ? ['.unique()'] : []),
-  defaultValue: (col) => (col.defaultValue === undefined ? [] : [`.default(${defaultValueSource(col.defaultValue)})`]),
+  defaultValue: (col) => {
+    const value = defaultSource(col);
+    return value ? [`.default(${value.source})`] : [];
+  },
   // Without this the entity maps to a column named after the property, which for anything the
   // transformer rewrote - every `user_id` - is a column the database does not have.
   name: (col, propertyName) => (propertyName === col.name ? [] : [`.name(${quoted(col.name)})`]),
@@ -71,16 +76,32 @@ export function fieldDecoratorSource(builder: string, col: ColumnNode): string {
 
 /** The uql imports the field's decorator needs besides `Field`, as {@link indexNeedsRaw} tells for an index. */
 export function fieldImports(col: ColumnNode): string[] {
-  const sql = SqlExpression.isExpression(col.defaultValue) ? [sqlDefaultSource(col.defaultValue).name] : [];
-  return [...(col.generatedAs === undefined ? [] : ['sql']), ...sql];
+  const name = defaultSource(col)?.name;
+  return [...(col.generatedAs === undefined ? [] : ['sql']), ...(name ? [name] : [])];
 }
 
-/** A default value as source code: SQL the way an entity declares it, a string single-quoted and escaped. */
-function defaultValueSource(value: unknown): string {
-  if (SqlExpression.isExpression(value)) {
-    return sqlDefaultSource(value).source;
+/**
+ * A column's default as source code, with the name it imports: SQL the way an entity declares it, a JSON column's
+ * text as the document it spells (as SQL where that document is itself JSON text), and any other string quoted.
+ */
+function defaultSource(col: ColumnNode): { readonly source: string; readonly name?: string } | undefined {
+  const value = col.defaultValue;
+  if (value === undefined) {
+    return undefined;
   }
-  return typeof value === 'string' ? quoted(value) : JSON.stringify(value);
+  if (SqlExpression.isExpression(value)) {
+    return sqlDefaultSource(value);
+  }
+  if (col.type.category === 'json' && typeof value === 'string') {
+    const document = jsonDocument(value);
+    if (typeof document === 'string' && jsonDocument(document) !== undefined) {
+      return { source: sqlTag(`'${escapeSingleQuotes(value)}'`), name: 'sql' };
+    }
+    if (document !== undefined) {
+      return { source: JSON.stringify(document) };
+    }
+  }
+  return { source: typeof value === 'string' ? quoted(value) : JSON.stringify(value) };
 }
 
 /**

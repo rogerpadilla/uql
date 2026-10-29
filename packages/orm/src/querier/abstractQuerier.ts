@@ -1,4 +1,4 @@
-import { getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
+import { getMeta, idOf, namesEvery, namesKey, relationOf } from '../entity/index.js';
 import type { KeyedRow } from '../entity/metadata/definition.js';
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
@@ -20,7 +20,8 @@ import type {
   Query,
   QueryAggregate,
   QueryAggregateResult,
-  QueryConflictPaths,
+  QueryConflictKeys,
+  QueryUpsert,
   QueryFilter,
   QueryFindResult,
   QueryKeyset,
@@ -41,6 +42,7 @@ import type {
   PrimaryKey,
   WrittenId,
   RawRow,
+  ReportedWrite,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import {
@@ -52,7 +54,6 @@ import {
   fillOnFields,
   filterFieldKeys,
   getKeys,
-  omitKeys,
   deletionOf,
   hasKeys,
   getRelationRequestSummary,
@@ -73,7 +74,8 @@ import {
   securityConditions,
   someKey,
   targetJoins,
-  whereEach,
+  foundRowAssigned,
+  whereAnd,
   whereIds,
   whereKeysIn,
   whereWith,
@@ -160,19 +162,6 @@ function lockVersion<E extends object>(
 }
 
 /**
- * Refuses a write that cannot carry the lock, rather than writing over whatever the row holds now.
- * An upsert has no portable way to match a version - MySQL's `ON DUPLICATE KEY UPDATE` takes no
- * `WHERE` - and a write the library itself composes has no version to carry.
- */
-function assertUnversioned<E extends object>(meta: EntityMeta<E>, what: string): void {
-  if (meta.version) {
-    throw new UqlUsageError(
-      `cannot ${what} the versioned '${entityName(meta)}': it carries no '${meta.version}' to match, so update it by id`,
-    );
-  }
-}
-
-/**
  * What a versioned update has to be for its lock to hold: one row, named by its id, written by one
  * statement. A filter naming more than one row cannot say which of them the payload's single version
  * belongs to, and anything settled first - a page, a relation write, a filter an engine cannot read in
@@ -198,14 +187,18 @@ function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E
 
 /**
  * Whether an upsert has to read before it writes: `ON CONFLICT` updates a guarded row whatever tenant it belongs
- * to, and writes no relation.
+ * to, writes no relation, and cannot tell a found row it skipped for a stale version.
  */
 function upsertsByReading<E extends object>(
   meta: EntityMeta<E>,
-  rows: readonly E[],
+  rows: readonly object[],
   update: UpdatePayload<E> | undefined,
 ): boolean {
-  return securityConditions(meta).length > 0 || writesRelations(meta, update ? [...rows, update] : rows);
+  return (
+    meta.version !== undefined ||
+    securityConditions(meta).length > 0 ||
+    writesRelations(meta, update ? [...rows, update] : rows)
+  );
 }
 
 /** What an upsert reports of a row: the value a driver answers for a lone key, or the key the read back names. */
@@ -267,8 +260,8 @@ function returnedKeys<E>(
   return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
 }
 
-/** An `UPDATE` and a `DELETE` of one statement each, reporting the rows they wrote with the fields `keys` names. */
-export type WritesReturning = {
+/** Each write as one statement reporting the rows it wrote with the fields `keys` names. */
+export type ReportingWrites = {
   update<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
@@ -282,6 +275,16 @@ export type WritesReturning = {
     opts: QueryOptions,
     keys: readonly FieldKey<E>[],
   ): Promise<E[]>;
+  /** Inserts `rows`, reporting each in their order and placing its key on it, as `internalInsertMany` does. */
+  insert<E extends object>(entity: Type<E>, rows: EntityData<E>[], keys: readonly FieldKey<E>[]): Promise<E[]>;
+  /** The rows of `payload` the upsert writes, in its order, `undefined` for one it kept. */
+  upsert<E extends object>(
+    entity: Type<E>,
+    q: QueryUpsert<E>,
+    payload: E[],
+    update: UpdatePayload<E> | undefined,
+    keys: readonly FieldKey<E>[],
+  ): Promise<(E | undefined)[]>;
 };
 
 /** Whether an update of `row` writes a column, its `onUpdate` fills included: one that writes none sends nothing. */
@@ -626,7 +629,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted']>;
   async insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
-    const [written] = await this.writeReturning(entity, () => this.insertIds(entity, [payload]), opts);
+    const [written] = await this.insertWritten(entity, [payload], opts);
     return written;
   }
 
@@ -636,7 +639,32 @@ export abstract class AbstractQuerier implements Querier {
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted'][]>;
   async insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
-    return this.writeReturning(entity, () => this.insertIds(entity, payload), opts);
+    return this.insertWritten(entity, payload, opts);
+  }
+
+  /**
+   * What an insert reports: the ids, or the rows `returning` asks for, off the insert's own statement where
+   * {@link reportingWrites} can, else read back.
+   */
+  private insertWritten<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+    opts: WriteOptions<E> | undefined,
+  ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
+    const meta = getMeta(entity);
+    const keys = returnedKeys(meta, opts?.returning);
+    const reportingWrites = keys && this.reportingWrites(meta, 'insert');
+    if (!keys || !reportingWrites || !payload.length) {
+      return this.writtenOrReadBack(entity, () => this.insertIds(entity, payload), opts);
+    }
+    const read = [...new Set([...keys, ...meta.ids])];
+    return this.inserting(entity, payload, async (rows) =>
+      this.returned(
+        entity,
+        await this.insertRows(entity, rows, (inserted) => reportingWrites.insert(entity, inserted, read)),
+        keys,
+      ),
+    );
   }
 
   /**
@@ -651,19 +679,27 @@ export abstract class AbstractQuerier implements Querier {
       return [];
     }
     const meta = getMeta(entity);
-    const insert = () =>
-      this.hooked(entity, 'Insert', payload, async (rows) => {
-        await this.insertRows(entity, rows);
-        return writtenIds(meta, rows);
-      });
-    return writesRelations(meta, payload) ? this.atomically(insert) : insert();
+    return this.inserting(entity, payload, async (rows) => {
+      await this.insertRows(entity, rows, (inserting) => this.internalInsertMany(entity, inserting));
+      return writtenIds(meta, rows);
+    });
+  }
+
+  /** `insert` of `payload` between the insert hooks, {@link atomically} where it writes relations too. */
+  private inserting<E extends object, T>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+    insert: (rows: E[]) => Promise<T[]>,
+  ): Promise<T[]> {
+    const write = () => this.hooked(entity, 'Insert', payload, insert);
+    return writesRelations(getMeta(entity), payload) ? this.atomically(write) : write();
   }
 
   /**
-   * The ids `write` reports, or, where `opts` asks for `returning`, the rows they name, read back in the same
-   * transaction with only the fields it lists.
+   * The ids `write` reports, or, where `opts` asks for `returning`, the rows they name, read back
+   * {@link atomically} with the write and only the fields it lists.
    */
-  private writeReturning<E extends object>(
+  private writtenOrReadBack<E extends object>(
     entity: Type<E>,
     write: () => Promise<(WrittenId<E> | undefined)[]>,
     opts: WriteOptions<E> | undefined,
@@ -718,16 +754,21 @@ export abstract class AbstractQuerier implements Querier {
 
   /**
    * Writes `rows` and their relations: the to-ones they hold the keys of first, so each row inserts
-   * pointing at its own, then the rows, then their children by the keys the rows got. An insert, and the
-   * insert half of a read upsert.
+   * pointing at its own, then the rows, by `insert`, then their children by the keys the rows got. An insert,
+   * and the insert half of a read upsert. Answers what `insert` reports.
    */
-  private async insertRows<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
+  private async insertRows<E extends object, T>(
+    entity: Type<E>,
+    rows: EntityData<E>[],
+    insert: (rows: EntityData<E>[]) => Promise<T>,
+  ): Promise<T> {
     const meta = getMeta(entity);
     await this.writeHeldReferences(entity, rows);
     fillOnFields(meta, rows, 'onInsert');
     guardWrite(meta, rows, 'insert');
-    await this.internalInsertMany(entity, rows);
+    const inserted = await insert(rows);
     await this.insertChildren(entity, rows);
+    return inserted;
   }
 
   /** Writes `rows`, its columns only, and onto each one the key the database generated for it, where it can tell. */
@@ -782,38 +823,44 @@ export abstract class AbstractQuerier implements Querier {
     if (!keys) {
       return this.updateMatching(entity, q, payload, opts);
     }
-    const { writesReturning } = this;
-    if (writesReturning && this.updatesByFilter(entity, q, payload)) {
-      return this.updateReturning(writesReturning, entity, q, payload, rest, keys);
-    }
-    return this.atomically(async () => {
-      const ids = await this.settleIds(entity, q, rest);
-      await this.updateMatching(entity, q, payload, rest, ids);
-      return this.readBack(entity, ids, keys, rest);
-    });
+    const reportingWrites = this.reportingWrites(meta, 'update');
+    const reporting = (row: object) =>
+      reportingWrites && this.updatesByFilter(entity, q, row) ? reportingWrites : undefined;
+    // Decided again on the row the hooks hand over, which may now write a relation one statement cannot.
+    const write = () =>
+      this.hooked(entity, 'Update', [payload], async ([row]) => {
+        const writes = reporting(row);
+        if (writes) {
+          return this.updateReturning(writes, entity, q, row, rest, keys);
+        }
+        return this.atomically(async () => {
+          const ids = await this.settleIds(entity, q, rest);
+          await this.updateRows(entity, q, row, rest, meta.version, ids);
+          return this.readBack(entity, ids, keys, rest);
+        });
+      });
+    return reporting(payload) ? write() : this.atomically(write);
   }
 
   /**
-   * An update of one statement reporting the rows it wrote, between the update hooks. A payload writing no
-   * column writes nothing, so the rows it names are read instead.
+   * An update of one statement reporting the rows it wrote. A row writing no column writes nothing, so the rows
+   * it names are read instead.
    */
-  private updateReturning<E extends object>(
-    writes: WritesReturning,
+  private async updateReturning<E extends object>(
+    writes: ReportingWrites,
     entity: Type<E>,
     q: QuerySearch<E>,
-    payload: UpdateWrite<E>,
+    row: E,
     opts: QueryOptions,
     keys: readonly FieldKey<E>[],
   ): Promise<Partial<E>[]> {
     const meta = getMeta(entity);
     const read = [...keys, ...meta.ids];
-    return this.hooked(entity, 'Update', [payload], async ([row]) => {
-      await this.prepareUpdate(entity, row);
-      const rows = writesColumns(meta, row)
-        ? await writes.update(entity, q, row, opts, read)
-        : await this.internalFindMany(entity, { ...q, $select: keySet(read) }, opts);
-      return this.returned(entity, rows, keys);
-    });
+    await this.prepareUpdate(entity, row);
+    const rows = writesColumns(meta, row)
+      ? await writes.update(entity, q, row, opts, read)
+      : await this.internalFindMany(entity, { ...q, $select: keySet(read) }, opts);
+    return this.returned(entity, rows, keys);
   }
 
   /**
@@ -925,7 +972,7 @@ export abstract class AbstractQuerier implements Querier {
    * Whether a write has to name the rows `q` matches by their ids: no engine pages or orders an update or
    * delete, and one without {@link DialectFeatures.correlatedWrites} cannot read a relation in its filter.
    */
-  protected settlesWrite<E extends object>(entity: Type<E>, q: QuerySearch<E>): boolean {
+  private settlesWrite<E extends object>(entity: Type<E>, q: QuerySearch<E>): boolean {
     const { dialect } = this;
     return isPagedQuery(q) || (!dialect.features.correlatedWrites && dialect.constrainsRelations(entity, q.$where));
   }
@@ -965,15 +1012,16 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * The rows a write reads before it writes, held until the open transaction ends where the engine has row
    * locks, so a racing writer waits for the commit; outside a transaction a lock would hold nothing. Elsewhere
-   * the transaction is the guard: libSQL and Turso take the write lock at `BEGIN`, SQLite and MongoDB fail the racer.
+   * the transaction is the guard: libSQL and Turso take the write lock at `BEGIN`, SQLite fails the racer, and so
+   * does MongoDB inside a transaction the caller opens.
    */
   private readForWrite<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]> {
     const held = this.dialect.features.rowLocks && this.scopeHere() ? { ...q, $lock: true } : q;
     return this.internalFindMany(entity, held, opts);
   }
 
-  /** How the engine writes rows and reports them in one statement, or `undefined` where a write reads them first. */
-  protected get writesReturning(): WritesReturning | undefined {
+  /** How the engine writes rows of `meta` and reports them in one statement, or `undefined` where `write` reads them. */
+  protected reportingWrites<E>(_meta: EntityMeta<E>, _write: ReportedWrite): ReportingWrites | undefined {
     return undefined;
   }
 
@@ -998,78 +1046,133 @@ export abstract class AbstractQuerier implements Querier {
     const $where = whereWith(meta.softDelete, { $ne: null }, q.$where);
     // No version: a restore only undoes the stamp a delete left, which takes none either, and two of
     // them racing agree on the result anyway. A lock is for content, and a restore writes none.
-    return this.unversionedUpdate(entity, { ...q, $where }, { [meta.softDelete]: null }, withDeleted());
-  }
-
-  /**
-   * An update the library writes of its own, hooked as a caller's is but carrying no version: a restore's
-   * cleared stamp, or a row pointed at the relation just inserted for it.
-   */
-  private unversionedUpdate<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: object,
-    opts?: QueryOptions,
-  ): Promise<number> {
-    return this.hooked(entity, 'Update', [payload], ([row]) => this.updateRows(entity, q, row, opts, undefined));
+    return this.hooked(entity, 'Update', [{ [meta.softDelete]: null }], ([row]) =>
+      this.updateRows(entity, { ...q, $where }, row, withDeleted(), undefined),
+    );
   }
 
   upsertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted']>;
   async upsertOne<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E>,
   ): Promise<unknown> {
-    const [written] = await this.upsertMany(entity, conflictPaths, [payload], update, opts);
+    const [written] = await this.upsertMany(entity, q, [payload], update, opts);
     return written;
   }
 
   upsertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted'][]>;
   async upsertMany<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E>,
   ) {
     const meta = getMeta(entity);
-    assertUnversioned(meta, "'upsert'");
+    const keys = returnedKeys(meta, opts?.returning);
+    const reportingWrites = keys && this.reportingWrites(meta, 'upsert');
     // Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither
-    // the insert's nor the update's pair fits.
-    const upsert = () =>
-      this.hooked(entity, 'Upsert', payload, async (rows) => {
-        const ids = upsertsByReading(meta, rows, update)
-          ? await this.readThenUpsert(entity, conflictPaths, rows, update)
-          : await this.internalUpsertMany(entity, conflictPaths, rows, update);
-        adoptReportedIds(meta, rows, ids);
-        return writtenIds(meta, rows);
-      });
-    return this.writeReturning(entity, upsert, opts);
+    // the insert's nor the update's pair fits. How to write is decided on the rows the hooks hand over.
+    if (!keys || !reportingWrites) {
+      return this.writtenOrReadBack(
+        entity,
+        () => this.hooked(entity, 'Upsert', payload, (rows) => this.upsertIds(entity, q, rows, update)),
+        opts,
+      );
+    }
+    return this.atomically(() =>
+      this.hooked(entity, 'Upsert', payload, async (rows) =>
+        upsertsByReading(meta, rows, update)
+          ? this.readBack(entity, await this.upsertIds(entity, q, rows, update), keys)
+          : this.upsertReturning(reportingWrites, entity, q, rows, update, keys),
+      ),
+    );
+  }
+
+  /** Upserts `rows`, reading first where {@link upsertsByReading} says so, and answers the id each row got. */
+  private async upsertIds<E extends object>(
+    entity: Type<E>,
+    q: QueryUpsert<E>,
+    rows: E[],
+    update: UpdatePayload<E> | undefined,
+  ): Promise<(WrittenId<E> | undefined)[]> {
+    const meta = getMeta(entity);
+    const ids = upsertsByReading(meta, rows, update)
+      ? await this.readThenUpsert(entity, q, rows, update)
+      : await this.internalUpsertMany(entity, q, rows, update);
+    adoptReportedIds(meta, rows, ids);
+    return writtenIds(meta, rows);
+  }
+
+  /**
+   * An upsert of one statement reporting each row as it stands after it: off its `RETURNING` where it wrote the row,
+   * else, where its `$where` or an empty `update` kept it, read by the conflict keys.
+   */
+  private async upsertReturning<E extends object>(
+    writes: ReportingWrites,
+    entity: Type<E>,
+    q: QueryUpsert<E>,
+    rows: E[],
+    update: UpdatePayload<E> | undefined,
+    keys: readonly FieldKey<E>[],
+  ): Promise<Partial<E>[]> {
+    const meta = getMeta(entity);
+    const read = [...new Set([...keys, ...meta.ids, ...getKeys(q.$conflict)])];
+    const written = await writes.upsert(entity, q, rows, update, read);
+    const keptAt = rows.flatMap((_, index) => (written[index] === undefined ? [index] : []));
+    const kept = await this.rowsByConflict(
+      entity,
+      q.$conflict,
+      keptAt.map((index) => rows[index]),
+      read,
+    );
+    const keptBy = new Map(keptAt.map((index, position) => [index, kept[position]]));
+    const stands = rows.map((row, index) => written[index] ?? keptBy.get(index) ?? this.unmatched(entity, q, row));
+    adoptReportedIds(
+      meta,
+      rows,
+      stands.map((row) => idOf(meta, row)),
+    );
+    return this.returned(entity, stands, keys);
+  }
+
+  /**
+   * Refuses a row an upsert wrote or kept that no row matches by its conflict key, as read back: the engine stores
+   * the key otherwise than the row spells it, a uuid in other letters, and a row left out would misalign the rest.
+   */
+  private unmatched<E extends object>(entity: Type<E>, q: QueryUpsert<E>, row: E): never {
+    const named = getKeys(q.$conflict)
+      .map((key) => `'${key}' ${String(row[key])}`)
+      .join(', ');
+    throw new UqlUsageError(
+      `no '${entity.name}' row reads back with ${named}: write the key as ${this.dialect.engineName} stores it`,
+    );
   }
 
   /**
    * An upsert as a read, then writes: the rows the conflict names are read through the filters, those found update
-   * as `updateMany` does and the rest insert, so either branch writes its relations and a guarded row stays its
-   * tenant's. A found row is held until the write, and a row inserted concurrently fails on its key. See
-   * architecture/security-filter-writes.md.
+   * by id as `updateOne` does, a versioned one at its version, and the rest insert, so either branch writes its
+   * relations and a guarded row stays its tenant's. Inside a transaction a found row is held until the write, and
+   * a row inserted concurrently fails on its key. See architecture/security-filter-writes.md.
    */
   private async readThenUpsert<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     rows: E[],
     update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]> {
@@ -1078,32 +1181,41 @@ export abstract class AbstractQuerier implements Querier {
     if (!rows.length) {
       return [];
     }
-    const keys = getKeys(conflictPaths);
     return this.atomically(async () => {
-      const ids = await this.idsByConflict(entity, conflictPaths, rows);
+      const ids = await this.idsByConflict(entity, q.$conflict, rows);
       for (const [index, row] of rows.entries()) {
-        // An empty `update` leaves a found row as it is, as `DO NOTHING` does.
-        if (ids[index] !== undefined && (update === undefined || hasKeys(update))) {
-          const q = { $where: whereEach(keys, (key) => row[key]) };
-          // A copy each, as the update fills its `onUpdate` fields into it; by default, the payload less the found
-          // row's key and the columns it matched on.
-          const assigned = update ? { ...update } : omitKeys(row, [...meta.ids, ...keys]);
-          await this.updateRows(entity, q, assigned, withDeleted(), undefined);
+        const id = ids[index];
+        if (id === undefined) {
+          continue;
+        }
+        const assigned = foundRowAssigned(meta, q.$conflict, row, update);
+        if (assigned) {
+          const $where = q.$where ? whereAnd(whereIds(meta, id), [q.$where]) : whereIds(meta, id);
+          await this.updateRows(entity, { $where }, assigned, withDeleted(), meta.version).catch((error: unknown) => {
+            // Still at its version, so its `$where` excluded it: kept, as an unversioned row is.
+            if (q.$where && error instanceof UqlOptimisticLockError && error.actual === error.expected) {
+              return 0;
+            }
+            throw error;
+          });
         }
       }
       const inserts = rows.filter((_, index) => ids[index] === undefined);
       if (inserts.length) {
-        await this.insertRows(entity, inserts);
+        await this.insertRows(entity, inserts, (inserting) => this.internalInsertMany(entity, inserting));
       }
       // A found row's key is adopted by the caller; an inserted one carries the key its insert wrote.
       return ids;
     });
   }
 
-  /** Upserts `payload`, answering each row's key in payload order, `undefined` for one the engine did not report. */
+  /**
+   * Upserts `payload` as `q` names its rows, answering each row's key in payload order, `undefined` for one the
+   * engine did not report.
+   */
   protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E[],
     update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]>;
@@ -1150,10 +1262,10 @@ export abstract class AbstractQuerier implements Querier {
     }
     const read = [...keys, ...meta.ids];
     // A soft delete stamps the rows, which a `RETURNING` would report stamped rather than as they were.
-    const { writesReturning } = this;
+    const reportingWrites = this.reportingWrites(meta, 'delete');
     const deletion = deletionOf(meta, rest);
-    if (writesReturning && !deletion.stamp && this.deletesByFilter(entity, q)) {
-      return this.returned(entity, await writesReturning.delete(entity, q, rest, read), keys);
+    if (reportingWrites && !deletion.stamp && this.deletesByFilter(entity, q)) {
+      return this.returned(entity, await reportingWrites.delete(entity, q, rest, read), keys);
     }
     // A delete hook receives whole rows; without one, only the keys `returning` names and the ids are read.
     const $select = this.watchesDelete(entity) ? undefined : keySet<E>(read);
@@ -1167,7 +1279,7 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Whether an update is its one statement over `q`: no version to lock, relation to write or page to settle first. */
-  private updatesByFilter<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdateWrite<E>): boolean {
+  private updatesByFilter<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: object): boolean {
     const meta = getMeta(entity);
     return !meta.version && !writesRelations(meta, [payload]) && !this.settlesWrite(entity, q);
   }
@@ -1231,7 +1343,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted']>;
   async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
-    const [written] = await this.writeReturning(entity, () => this.saveIds(entity, [payload]), opts);
+    const [written] = await this.writtenOrReadBack(entity, () => this.saveIds(entity, [payload]), opts);
     return written;
   }
 
@@ -1241,7 +1353,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted'][]>;
   async saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
-    return this.writeReturning(entity, () => this.saveIds(entity, payload), opts);
+    return this.writtenOrReadBack(entity, () => this.saveIds(entity, payload), opts);
   }
 
   /**
@@ -1254,7 +1366,6 @@ export abstract class AbstractQuerier implements Querier {
     payload: readonly EntityWrite<E>[],
   ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    assertUnversioned(meta, "'save'");
     // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
     // passed, which concatenating the branches did not do.
     const toInsert: number[] = [];
@@ -1290,10 +1401,9 @@ export abstract class AbstractQuerier implements Querier {
         }
       }
       if (toUpsert.length) {
-        const conflictPaths = keySet<E>(meta.ids);
         const upserted = await this.upsertMany(
           entity,
-          conflictPaths,
+          { $conflict: keySet<E>(meta.ids) },
           toUpsert.map((index) => payload[index]),
         );
         for (let position = 0; position < toUpsert.length; position++) {
@@ -1693,25 +1803,36 @@ export abstract class AbstractQuerier implements Querier {
     await this.emitHook(entity, 'afterLoad', rows);
   }
 
-  /**
-   * The ids of `rows`, read by the columns an upsert matches them on, soft-deleted rows included since a unique key
-   * holds across both, each read held as {@link readForWrite} holds its rows. A row no found row matches, or two do,
-   * reads none, since a missing id is honest where a guessed one is not; a null key never conflicts, so is not read.
-   */
-  protected async idsByConflict<E extends object>(
+  /** The ids of `rows`, read by the columns an upsert matches them on, as {@link rowsByConflict} reads them. */
+  private async idsByConflict<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    conflictKeys: QueryConflictKeys<E>,
     rows: EntityData<E>[],
   ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    const keys = getKeys(conflictPaths);
-    const named = rows.filter((row) => keys.every((key) => row[key] != null));
+    const found = await this.rowsByConflict(entity, conflictKeys, rows, meta.ids);
+    return found.map((row) => row && idOf(meta, row));
+  }
+
+  /**
+   * The row each of `rows` matches on the columns an upsert matches on, with `select`, soft-deleted rows included
+   * since a unique key holds across both, held as {@link readForWrite} holds its rows. One no row matches, or two do,
+   * reads none, since a missing row is honest where a guessed one is not; a null key never conflicts, so is not read.
+   */
+  private async rowsByConflict<E extends object>(
+    entity: Type<E>,
+    conflictKeys: QueryConflictKeys<E>,
+    rows: readonly EntityData<E>[],
+    select: readonly FieldKey<E>[],
+  ): Promise<(E | undefined)[]> {
+    const keys = getKeys(conflictKeys);
+    const named = rows.filter((row) => namesEvery<E>(row, keys));
     const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
-    const byConflict = new Map<string, WrittenId<E> | undefined>();
-    for (const q of this.keyedReads(keys, distinct, [...meta.ids, ...keys])) {
+    const byConflict = new Map<string, E | undefined>();
+    for (const q of this.keyedReads(keys, distinct, [...new Set([...select, ...keys])])) {
       for (const row of await this.readForWrite(entity, q, withDeleted())) {
         const key = rowKey(row, keys);
-        byConflict.set(key, byConflict.has(key) ? undefined : idOf(meta, row));
+        byConflict.set(key, byConflict.has(key) ? undefined : row);
       }
     }
     return rows.map((row) => byConflict.get(rowKey(row, keys)));
@@ -1723,7 +1844,7 @@ export abstract class AbstractQuerier implements Querier {
    */
   protected async withUnreportedIds<E extends object>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    conflictKeys: QueryConflictKeys<E>,
     payload: EntityData<E>[],
     ids: (UpsertedId<E> | undefined)[],
     kept: readonly boolean[],
@@ -1732,7 +1853,7 @@ export abstract class AbstractQuerier implements Querier {
     if (unplaced.length) {
       const found = await this.idsByConflict(
         entity,
-        conflictPaths,
+        conflictKeys,
         unplaced.map((index) => payload[index]),
       );
       unplaced.forEach((index, position) => {
@@ -1748,8 +1869,9 @@ export abstract class AbstractQuerier implements Querier {
     rows: readonly KeyedRow<E>[],
     select: readonly FieldKey<E>[],
   ): Query<E>[] {
+    const $select = keySet<E>(select);
     return chunk(rows, this.dialect.keyListCapacity(keys.length)).map((batch) => ({
-      $select: keySet<E>(select),
+      $select,
       $where: whereKeysIn(keys, batch),
     }));
   }

@@ -484,7 +484,7 @@ describe('MongoSchemaGenerator validator', () => {
   }
 
   const taskValidator = {
-    $and: [{ priority: { $gte: 0 } }, { priority: { $lte: 9 } }, { status: { $in: ['open', 'closed', null] } }],
+    $and: [{ priority: { $gte: 0 } }, { priority: { $lte: 9 } }, { status: { $in: ['closed', 'open', null] } }],
   };
 
   @Entity()
@@ -517,6 +517,35 @@ describe('MongoSchemaGenerator validator', () => {
   it('should take a lone clause as the validator itself', () => {
     expect(commands(generator.generateCreateSchema([MongoLabel]))).toEqual([
       { action: 'createCollection', name: 'MongoLabel', validator: { tier: { $in: [1, 2, null] } } },
+    ]);
+  });
+
+  it('should enforce a check comparing two fields of the document as an expression', () => {
+    @Entity({ name: 'Window', checks: (window, check) => [check({ closesAt: { $gt: window.opensAt } })] })
+    class Window {
+      @Field(f.string().id()) id?: string;
+      @Field(f.number()) opensAt!: number;
+      @Field(f.number().nullable()) closesAt?: number | null;
+    }
+
+    expect(commands(generator.generateCreateSchema([Window]))).toEqual([
+      {
+        action: 'createCollection',
+        name: 'Window',
+        validator: {
+          $expr: {
+            $and: [
+              {
+                $or: [
+                  { $and: [{ $isNumber: '$closesAt' }, { $isNumber: '$opensAt' }] },
+                  { $eq: [{ $type: '$closesAt' }, { $type: '$opensAt' }] },
+                ],
+              },
+              { $gt: ['$closesAt', '$opensAt'] },
+            ],
+          },
+        },
+      },
     ]);
   });
 
@@ -575,6 +604,21 @@ describe('MongoSchemaGenerator validator', () => {
     expect(commands(generator.generateAlterTable(diff))).toEqual([
       { action: 'collMod', name: 'MongoUser', validator: {} },
     ]);
+  });
+
+  it('should state an enum by its values, whatever order they are declared in', () => {
+    @Entity({ name: 'MongoLabel' })
+    class ReorderedLabel {
+      @Field(f.string().id()) id?: string;
+      @Field(f.enum([2, 1]).nullable()) tier?: 1 | 2 | null;
+    }
+
+    expect(
+      generator.diffSchema(
+        ReorderedLabel,
+        withValidator(createTableNode('MongoLabel'), { tier: { $in: [1, 2, null] } }),
+      ),
+    ).toBeUndefined();
   });
 
   it('should plan nothing where the validator is in sync', () => {

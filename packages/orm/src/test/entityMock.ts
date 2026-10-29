@@ -457,7 +457,7 @@ export class InvoiceLine {
 
 /**
  * Auto-increment PK + a separately-unique conflict column, dedicated to `upsertMany` id-return
- * tests: `code` (not the PK) is the conflict path, so a newly-inserted row's id is only knowable
+ * tests: `code` (not the PK) is the conflict key, so a newly-inserted row's id is only knowable
  * from the database's response, never from the payload itself.
  */
 @Entity()
@@ -591,6 +591,17 @@ export class LooseDoc {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.jsonb().nullable()) doc?: Json | null;
+}
+
+/** A JSON column beside a column of each type its paths hold, for comparing a field with another column. */
+@Entity()
+export class Reading {
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @Field(f.string().nullable()) name?: string | null;
+  @Field(f.number().nullable()) low?: number | null;
+  @Field(f.number().nullable()) high?: number | null;
+  @Field(f.boolean().nullable()) open?: boolean | null;
+  @Field(f.jsonb().nullable()) doc?: Json<{ score?: number; name?: string; open?: boolean }> | null;
 }
 
 /** A reference stored under its relation's name, as Mongoose stores a `ref`. */

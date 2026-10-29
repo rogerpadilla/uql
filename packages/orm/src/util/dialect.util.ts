@@ -17,7 +17,7 @@ import {
   type JsonUpdateOp,
   type OnFieldCallback,
   type QueryAggMap,
-  type QueryConflictPaths,
+  type QueryConflictKeys,
   type QueryGroupMap,
   type QueryOptions,
   QuerySql,
@@ -40,7 +40,6 @@ import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { defaultReadKeys, fieldKeys, isDatabaseWritten, jsonKey, jsonPathKeys } from './field.util.js';
 import { withDeleted } from './filters.util.js';
 import {
-  clone,
   entityName,
   getKeys,
   omitKeys,
@@ -148,34 +147,42 @@ export function deletionOf<E, O extends QueryOptions>(meta: EntityMeta<E>, opts:
   return { stamp: { key, field, value: () => softDeleteValue(field) }, opts };
 }
 
-/** What an upsert of `row` assigns a row it finds: the payload and the `onUpdate` fills, less its key and what it matched on. */
-export function upsertAssigned<E>(
+/**
+ * What the row an upsert of `row` finds takes: a copy of `update`, none for `{}`, which leaves it as `DO NOTHING`
+ * does, and by default the payload less its key and what it matched on.
+ */
+export function foundRowAssigned<E>(
   meta: EntityMeta<E>,
+  conflictKeys: QueryConflictKeys<E>,
   row: EntityData<E>,
-  conflictPaths: QueryConflictPaths<E>,
-): EntityData<E> {
-  const [updated] = fillOnFields(meta, clone(row), 'onUpdate');
-  const kept: readonly string[] = [...meta.ids, ...getKeys(conflictPaths)];
-  const assigned: readonly string[] = filterFieldKeys(meta, updated, 'onUpdate');
-  return omitKeys(
-    updated,
-    getKeys(updated).filter((key) => kept.includes(key) || !assigned.includes(key)),
-  );
+  update: UpdatePayload<E> | undefined,
+): UpdatePayload<E> | undefined {
+  if (update === undefined) {
+    return omitKeys(row, [...meta.ids, ...getKeys(conflictKeys)]);
+  }
+  return hasKeys(update) ? { ...update } : undefined;
 }
 
 /**
  * Whether an upsert of `row` lands under the key it names: it names one and matches on it, so a row it finds
  * has that key too. Elsewhere the key is the found row's, which the upsert reads back.
  */
-export function upsertKeepsOwnKey<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>, row: E): boolean {
-  return namesKey(meta, row) && meta.ids.every((key) => Object.hasOwn(conflictPaths, key));
+export function upsertKeepsOwnKey<E>(meta: EntityMeta<E>, conflictKeys: QueryConflictKeys<E>, row: E): boolean {
+  return namesKey(meta, row) && meta.ids.every((key) => Object.hasOwn(conflictKeys, key));
 }
 
-/** Fills each field `callbackKey` generates on `payload` in place, where the caller left it unset. */
+/**
+ * Where a write runs: a statement uql sends, or a trigger's body, which runs no JavaScript, so a fill there is
+ * only a value or SQL; calling a callback would bake one value into the trigger.
+ */
+export type WriteScope = 'statement' | 'trigger';
+
+/** Fills each field `callbackKey` generates on `payload` in place, where the caller left it unset, as `scope` can. */
 export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   meta: EntityMeta<E>,
   payload: R | R[],
   callbackKey: CallbackKey,
+  scope: WriteScope = 'statement',
 ): R[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = filledKeys(meta, callbackKey);
@@ -184,8 +191,9 @@ export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   }
   for (const it of payloads) {
     for (const key of keys) {
-      if (it[key] === undefined) {
-        it[key] = getFieldCallbackValue(meta.fields[key]![callbackKey]!) as R[typeof key];
+      const fill = meta.fields[key]![callbackKey]!;
+      if (it[key] === undefined && (scope === 'statement' || typeof fill !== 'function')) {
+        it[key] = getFieldCallbackValue(fill) as R[typeof key];
       }
     }
   }

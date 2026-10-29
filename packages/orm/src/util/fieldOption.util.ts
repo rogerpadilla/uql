@@ -8,7 +8,7 @@ import {
   type TsTypeOf,
 } from '../type/index.js';
 import { columnFamily, fieldFamily, isInlinedExpression } from './field.util.js';
-import { getKeys } from './object.util.js';
+import { getKeys, jsonDocument } from './object.util.js';
 import { constantSql } from './sql.js';
 
 /**
@@ -129,6 +129,11 @@ export function fieldOptionConflict(opts: FieldOptions): string | undefined {
     return stray;
   }
   const family = fieldFamily(opts);
+  const spelled =
+    family === 'json' && typeof opts.defaultValue === 'string' ? jsonDocument(opts.defaultValue) : undefined;
+  if (spelled !== undefined) {
+    return `cannot use 'defaultValue': a JSON column defaults to a value, \`${JSON.stringify(spelled)}\`, not to its JSON text \`'${String(opts.defaultValue)}'\``;
+  }
   // Walked in table order, not in the order the field happened to be written, so a field with two
   // conflicts always reports the same one. An option no rule knows is a typo, which `@Field`'s own check
   // reports where it can still be spelled right.

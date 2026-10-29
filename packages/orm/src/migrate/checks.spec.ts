@@ -6,7 +6,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined } from '../test/index.js';
-import type { AbstractType } from '../type/index.js';
+import type { AbstractType, Json } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -84,6 +84,35 @@ describe('check expressions', () => {
       @Field(f.number().id()) id?: number;
     }
     expect(ddl(new PostgresDialect(), Floor)).toContain('CHECK ("balance" >= 0)');
+  });
+
+  it('should compare a column with another through its ref, as a query does', () => {
+    @Entity({
+      checks: (rate, check) => [
+        check({ effectiveTo: { $gt: rate.effectiveFrom } }),
+        check({ fromHour: { $gte: 0, $lt: rate.toHour }, toHour: { $lte: 24 } }),
+      ],
+    })
+    class Rate {
+      @Field(f.number().id()) id?: number;
+      @Field(f.date()) effectiveFrom!: Date;
+      @Field(f.date().nullable()) effectiveTo?: Date | null;
+      @Field(f.number()) fromHour!: number;
+      @Field(f.number()) toHour!: number;
+    }
+    const statement = ddl(new PostgresDialect(), Rate);
+    expect(statement).toContain('CHECK ("effectiveTo" > "effectiveFrom")');
+    expect(statement).toContain('CHECK (("fromHour" >= 0 AND "fromHour" < "toHour") AND "toHour" <= 24)');
+  });
+
+  it('should read a JSON path compared with a column by that column’s type, as a query does', () => {
+    @Entity({ checks: (doc, check) => [check({ 'meta.rank': { $eq: doc.rank } })] })
+    class Ranked {
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().nullable()) rank?: number | null;
+      @Field(f.jsonb().nullable()) meta?: Json<{ rank?: number }> | null;
+    }
+    expect(ddl(new PostgresDialect(), Ranked)).toContain(`::numeric END = "rank")`);
   });
 
   it('should refuse a value left bound, which CREATE TABLE has no placeholder for', () => {
@@ -178,6 +207,28 @@ describe('enum fields', () => {
 
   it('should state a TypeScript string enum by its values, not its member names', () => {
     expect(ddl(new PostgresDialect(), TsEnumInvoice)).toContain(`CHECK ("status" IN ('draft', 'paid'))`);
+  });
+
+  it('should name and state the check by its values, whatever order they are declared in', () => {
+    @Entity({ name: 'Invoice' })
+    class Reordered {
+      @Field(f.number().id()) id?: number;
+      @Field(f.enum(['void', 'draft', 'paid']).nullable()) status?: 'draft' | 'paid' | 'void' | null;
+      @Field(f.string().nullable()) note?: string | null;
+    }
+
+    expect(ddl(new PostgresDialect(), Reordered)).toBe(ddl(new PostgresDialect(), Invoice));
+    expect(ddl(new PostgresDialect(), Reordered)).toContain(`CHECK ("status" IN ('draft', 'paid', 'void'))`);
+  });
+
+  it('should order numeric values as numbers', () => {
+    @Entity({ name: 'Priority' })
+    class Reordered {
+      @Field(f.number().id()) id?: number;
+      @Field(f.enum([10, 2, 1]).nullable()) level?: 1 | 2 | 10 | null;
+    }
+
+    expect(ddl(new PostgresDialect(), Reordered)).toContain(`CHECK ("level" IN (1, 2, 10))`);
   });
 
   it('should emit the same constraint on MariaDB and SQLite', () => {

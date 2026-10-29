@@ -35,6 +35,17 @@ describe('DriftDetector', () => {
       expect(drifts[0].details).toContain('Default mismatch');
     });
 
+    it('should show a date default as its ISO instant, whatever the local zone', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(mockTableNode('events', [{ name: 'at', defaultValue: new Date('2026-01-02T03:04:05.000Z') }]));
+      actual.addTable(mockTableNode('events', [{ name: 'at', defaultValue: new Date('2026-01-03T00:00:00.000Z') }]));
+
+      const [drift] = detectDrift(expected, actual, { dialect: new MySqlDialect() }).drifts;
+      expect(drift.expected).toBe('2026-01-02T03:04:05.000Z');
+      expect(drift.actual).toBe('2026-01-03T00:00:00.000Z');
+    });
+
     /** A check is compared by the name uql installs it under, whose hash moves with its SQL. */
     it('should report a check missing or left behind', () => {
       const expected = new SchemaAST();
@@ -67,8 +78,8 @@ describe('DriftDetector', () => {
       const actual = new SchemaAST();
       expected.addTable(
         mockTableNode('users', [
-          { name: 'settings', defaultValue: { b: 1, a: [1, 2] } },
-          { name: 'tags', defaultValue: ['x'] },
+          { name: 'settings', defaultValue: '{"b":1,"a":[1,2]}' },
+          { name: 'tags', defaultValue: '["x"]' },
           { name: 'at', defaultValue: SqlExpression.named('currentTimestamp') },
         ]),
       );

@@ -14,6 +14,7 @@ import {
   JsonRecord,
   JsonValue,
   LooseDoc,
+  Reading,
   InventoryAdjustment,
   Item,
   ItemAdjustment,
@@ -48,7 +49,7 @@ import type {
   QueryWhere,
   Type,
 } from '../type/index.js';
-import { withDeleted } from '../util/index.js';
+import { refs, withDeleted } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
@@ -313,14 +314,87 @@ export abstract class AbstractQuerierIt<
     expect(await this.querier.deleteOneById(VersionedNote, id, { hardDelete: true })).toBe(1);
   }
 
-  /** Every write that cannot carry the lock says so rather than writing the row unguarded. */
-  async shouldRefuseAVersionedEntityWhereTheLockCannotRide() {
-    await expect(this.querier.saveOne(VersionedNote, { title: 'saved' })).rejects.toThrow(
-      "cannot 'save' the versioned 'VersionedNote'",
+  /** An upsert inserts an absent versioned row, and updates a found one only at the version it carries. */
+  async shouldUpsertAVersionedRowAtItsVersion() {
+    const id = await this.querier.upsertOne(VersionedNote, { $conflict: { id: true } }, { title: 'first' });
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { title: true, version: true } })).toEqual({
+      title: 'first',
+      version: 0,
+    });
+
+    await this.querier.upsertOne(VersionedNote, { $conflict: { id: true } }, { id, title: 'second', version: 0 });
+    const stale = await this.querier
+      .upsertOne(VersionedNote, { $conflict: { id: true } }, { id, title: 'stale', version: 0 })
+      .catch(thrownValue);
+
+    expect(stale).toBeInstanceOf(UqlOptimisticLockError);
+    expect(stale).toMatchObject({ expected: 0, actual: 1 });
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { title: true, version: true } })).toEqual({
+      title: 'second',
+      version: 1,
+    });
+  }
+
+  /** A save writes a found versioned row as an update does, so a stale copy throws rather than overwriting it. */
+  async shouldSaveAVersionedRowAtItsVersion() {
+    const id = await this.querier.saveOne(VersionedNote, { title: 'draft' });
+
+    await this.querier.saveOne(VersionedNote, { id, title: 'published', version: 0 });
+    const stale = await this.querier.saveOne(VersionedNote, { id, title: 'stale', version: 0 }).catch(thrownValue);
+
+    expect(queryErrorKind(stale)).toBe('optimisticLock');
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { title: true, version: true } })).toEqual({
+      title: 'published',
+      version: 1,
+    });
+  }
+
+  /** A uuid reads back as it was written, which matching a read row to its payload by key relies on. */
+  async shouldReadAUuidBackAsWritten() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'keyed' });
+
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { id: true } })).toEqual({ id });
+  }
+
+  /** A found versioned row is written against its version, so an upsert that carries none says so. */
+  async shouldRefuseAVersionedUpsertCarryingNoVersion() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'kept' });
+
+    await expect(
+      this.querier.upsertOne(VersionedNote, { $conflict: { id: true } }, { id, title: 'unversioned' }),
+    ).rejects.toThrow("an update of 'VersionedNote' carries no 'version'");
+  }
+
+  /** A row leaving its conflict key to the database conflicts with none, so it inserts and reports as an insert does. */
+  async shouldUpsertRowsLeavingTheirKeyToTheDatabase() {
+    const rows = await this.querier.upsertMany(
+      User,
+      { $conflict: { id: true } },
+      [{ name: 'a' }, { name: 'b' }],
+      undefined,
+      {
+        returning: { name: true },
+      },
     );
-    await expect(this.querier.upsertOne(VersionedNote, { id: true }, { title: 'upserted' })).rejects.toThrow(
-      "cannot 'upsert' the versioned 'VersionedNote'",
+
+    expect(rows).toEqual([{ name: 'a' }, { name: 'b' }]);
+    expect(await this.querier.count(User)).toBe(2);
+  }
+
+  /** A found versioned row its `$where` excludes stays as it is, as an unversioned one does: no lock error. */
+  async shouldKeepAVersionedRowAnUpsertsWhereExcludes() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'kept' });
+
+    await this.querier.upsertOne(
+      VersionedNote,
+      { $conflict: { id: true }, $where: { title: 'other' } },
+      { id, title: 'changed', version: 0 },
     );
+
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { title: true, version: true } })).toEqual({
+      title: 'kept',
+      version: 0,
+    });
   }
 
   /** The driver's own error, read as it reaches the caller, on every backend MongoDB included. */
@@ -1322,6 +1396,16 @@ export abstract class AbstractQuerierIt<
     return rows.map((it) => it.name).sort();
   }
 
+  /** As {@link categoryNames}, over readings. */
+  private async readingNames($where: QueryWhere<Reading>) {
+    const [rows, tallies] = await Promise.all([
+      this.querier.findMany(Reading, { $select: { id: true, name: true }, $where }),
+      this.querier.aggregate(Reading, { $group: { id: true }, $select: { n: { $count: '*', $where } } }),
+    ]);
+    expectSameRows(rows, tallies);
+    return rows.map((it) => it.name).sort();
+  }
+
   /** As {@link categoryNames}, over companies. */
   private async companyNames($where: QueryWhere<Company>) {
     const [rows, tallies] = await Promise.all([
@@ -2024,6 +2108,27 @@ export abstract class AbstractQuerierIt<
     expect(await this.companyNames({ 'kind.public': { $in: [0, 1] } })).toEqual(['JSON Typed Off', 'JSON Typed On']);
   }
 
+  /**
+   * A field compares with another column of its row as with a value, and a JSON path with a column reads the
+   * path as that column's type: the same rows on every engine, a read and an aggregate's `$where` alike.
+   */
+  async shouldCompareAFieldWithAnotherColumn() {
+    await this.querier.insertMany(Reading, [
+      { name: 'rising', low: 1, high: 2, open: true, doc: { score: 2, name: 'rising', open: true } },
+      { name: 'flat', low: 2, high: 2, open: false, doc: { score: 3, name: 'other', open: true } },
+      { name: 'unbounded', low: 1, high: null, open: null, doc: { score: 9, name: 'x', open: false } },
+    ]);
+    const reading = refs(Reading);
+
+    expect(await this.readingNames({ high: { $gt: reading.low } })).toEqual(['rising']);
+    expect(await this.readingNames({ low: { $between: [reading.low, reading.high] } })).toEqual(['flat', 'rising']);
+    expect(await this.readingNames({ low: { $in: [5, reading.high] } })).toEqual(['flat']);
+    expect(await this.readingNames({ high: reading.low })).toEqual(['flat']);
+    expect(await this.readingNames({ 'doc.score': { $eq: reading.high } })).toEqual(['rising']);
+    expect(await this.readingNames({ 'doc.name': { $eq: reading.name } })).toEqual(['rising']);
+    expect(await this.readingNames({ 'doc.open': { $eq: reading.open } })).toEqual(['rising']);
+  }
+
   /** A fractional operand against a JSON number compares as a fraction, on a path and inside `$elemMatch`. */
   async shouldFindByJsonDotPathFraction() {
     await this.querier.insertOne(Company, { name: 'JSON Rated Low', kind: { rating: 1.4, items: [{ count: 1.4 }] } });
@@ -2038,6 +2143,14 @@ export abstract class AbstractQuerierIt<
       'JSON Rated High',
     ]);
     expect(await this.companyNames({ 'kind.rating': { $not: { $gt: 2 } } })).toEqual(['JSON Rated Low']);
+  }
+
+  /** An element's field compared with a column of the row holding the array: the ref reads the column, never `{}`. */
+  async shouldMatchAJsonElementAgainstAColumnRef() {
+    await this.querier.insertOne(Company, { name: 'Echo', kind: { items: [{ name: 'Echo' }] } });
+    await this.querier.insertOne(Company, { name: 'Other', kind: { items: [{ name: 'Echo' }] } });
+
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { name: refs(Company).name } } })).toEqual(['Echo']);
   }
 
   /**
@@ -2632,7 +2745,11 @@ export abstract class AbstractQuerierIt<
   async shouldKeepTheKeyOfARowAnUpsertFindsByAnotherField() {
     const id = await this.querier.insertOne(Carrier, { code: 'kept', name: 'first' });
 
-    await this.querier.upsertOne(Carrier, { code: true }, { id: 'another', code: 'kept', name: 'second' });
+    await this.querier.upsertOne(
+      Carrier,
+      { $conflict: { code: true } },
+      { id: 'another', code: 'kept', name: 'second' },
+    );
 
     expect(
       await this.querier.findMany(Carrier, { $select: { id: true, name: true }, $where: { code: 'kept' } }),
@@ -2643,9 +2760,13 @@ export abstract class AbstractQuerierIt<
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
 
-    const inserted = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
+    const inserted = await this.querier.upsertOne(
+      TaxCategory,
+      { $conflict: { pk: true } },
+      { pk, name: 'Some Name C' },
+    );
     expect(await this.taxCategoryNames(pk)).toEqual(['Some Name C']);
-    const updated = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
+    const updated = await this.querier.upsertOne(TaxCategory, { $conflict: { pk: true } }, { pk, name: 'Some Name D' });
 
     expect([inserted, updated]).toEqual([pk, pk]);
     expect(await this.taxCategoryNames(pk)).toEqual(['Some Name D']);
@@ -2656,13 +2777,13 @@ export abstract class AbstractQuerierIt<
     const id = '507f1f77bcf86cd799439012';
     const row = { id, name: 'VAT', percentage: 10 };
     const update = { percentage: { $inc: 5 } } as const;
-    await this.querier.upsertOne(Tax, { id: true }, row, update);
+    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, row, update);
     expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toEqual({
       name: 'VAT',
       percentage: 10,
     });
-    await this.querier.upsertOne(Tax, { id: true }, { ...row, name: 'renamed' }, update);
-    await this.querier.upsertMany(Tax, { id: true }, [row], update);
+    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { ...row, name: 'renamed' }, update);
+    await this.querier.upsertMany(Tax, { $conflict: { id: true } }, [row], update);
     expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toEqual({
       name: 'VAT',
       percentage: 20,
@@ -2672,13 +2793,108 @@ export abstract class AbstractQuerierIt<
   /** An empty `update` leaves a conflicting row as it is, `onUpdate` fills included: insert only if absent. */
   async shouldUpsertWithAnEmptyUpdateLeavingTheRowAsItIs() {
     const id = '507f1f77bcf86cd799439013';
-    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT' }, {});
-    const ignored = await this.querier.upsertOne(Tax, { id: true }, { id, name: 'renamed' }, {});
-    const batch = await this.querier.upsertMany(Tax, { id: true }, [{ id, name: 'renamed' }], {});
+    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'VAT' }, {});
+    const ignored = await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'renamed' }, {});
+    const batch = await this.querier.upsertMany(Tax, { $conflict: { id: true } }, [{ id, name: 'renamed' }], {});
     expect([ignored, batch]).toEqual([id, [id]]);
     const stored = await this.querier.findOneById(Tax, id, { $select: { name: true, updatedAt: true } });
     assertDefined(stored);
     expect([stored.name, stored.updatedAt == null]).toEqual(['VAT', true]);
+  }
+
+  /** A found row matching `$where` takes the update, one that does not stays as it is, and the rest insert. */
+  async shouldUpsertOnlyTheFoundRowsItsWhereMatches() {
+    const [low, high, absent] = ['507f1f77bcf86cd799439014', '507f1f77bcf86cd799439015', '507f1f77bcf86cd799439016'];
+    await this.querier.insertMany(Tax, [
+      { id: low, name: 'low', percentage: 10 },
+      { id: high, name: 'high', percentage: 50 },
+    ]);
+    const ids = await this.querier.upsertMany(
+      Tax,
+      { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+      [low, high, absent].map((id) => ({ id, name: 'renamed', percentage: 1 })),
+    );
+    expect(ids).toEqual([low, high, absent]);
+    expect(await this.taxesById([low, high, absent])).toEqual([
+      { id: low, name: 'renamed', percentage: 1 },
+      { id: high, name: 'high', percentage: 50 },
+      { id: absent, name: 'renamed', percentage: 1 },
+    ]);
+  }
+
+  /** `$where` guards an `update` of its own too, `onUpdate` fills included, so a row it skips is not touched at all. */
+  async shouldUpsertWithAnUpdateOnlyWhereTheFoundRowMatches() {
+    const [open, closed] = ['507f1f77bcf86cd799439017', '507f1f77bcf86cd799439018'];
+    await this.querier.insertMany(Tax, [
+      { id: open, name: 'open', percentage: 10 },
+      { id: closed, name: 'closed', percentage: 10 },
+    ]);
+    await this.querier.upsertMany(
+      Tax,
+      { $conflict: { id: true }, $where: { name: 'open' } },
+      [open, closed].map((id) => ({ id, name: 'x' })),
+      { percentage: { $inc: 5 } },
+    );
+    const stored = await this.querier.findMany(Tax, {
+      $select: { id: true, percentage: true, updatedAt: true },
+      $where: { id: [open, closed] },
+      $sort: { name: 1 },
+    });
+    expect(stored.map((it) => [it.id, it.percentage, it.updatedAt == null])).toEqual([
+      [closed, 10, true],
+      [open, 15, false],
+    ]);
+  }
+
+  /** `returning` reports every row as it stands after the upsert: written, inserted, or kept by its `$where`. */
+  async shouldUpsertReturningEachRowAsItStands() {
+    const [counted, kept, absent] = [
+      '507f1f77bcf86cd799439019',
+      '507f1f77bcf86cd79943901a',
+      '507f1f77bcf86cd79943901b',
+    ];
+    await this.querier.insertMany(Tax, [
+      { id: counted, name: 'counted', percentage: 10 },
+      { id: kept, name: 'kept', percentage: 10 },
+    ]);
+
+    const rows = await this.querier.upsertMany(
+      Tax,
+      { $conflict: { id: true }, $where: { name: { $ne: 'kept' } } },
+      [counted, kept, absent].map((id) => ({ id, name: 'counted', percentage: 1 })),
+      { percentage: { $inc: 5 } },
+      { returning: { id: true, name: true, percentage: true } },
+    );
+
+    expect(rows).toEqual([
+      { id: counted, name: 'counted', percentage: 15 },
+      { id: kept, name: 'kept', percentage: 10 },
+      { id: absent, name: 'counted', percentage: 1 },
+    ]);
+  }
+
+  /** An empty `update` writes no found row, so `returning` reads it as it is: get or create, in one call. */
+  async shouldUpsertReturningAFoundRowAnEmptyUpdateKeeps() {
+    const id = '507f1f77bcf86cd79943901c';
+    await this.querier.insertOne(Tax, { id, name: 'existing', percentage: 3 });
+
+    const row = await this.querier.upsertOne(
+      Tax,
+      { $conflict: { id: true } },
+      { id, name: 'new', percentage: 9 },
+      {},
+      { returning: { id: true, name: true } },
+    );
+
+    expect(row).toEqual({ id, name: 'existing' });
+  }
+
+  private async taxesById(ids: readonly string[]) {
+    const rows = await this.querier.findMany(Tax, {
+      $select: { id: true, name: true, percentage: true },
+      $where: { id: [...ids] },
+    });
+    return ids.map((id) => rows.find((row) => row.id === id));
   }
 
   private async adjustmentPrices(inventoryAdjustmentId: InventoryAdjustment['id']) {
@@ -2693,9 +2909,13 @@ export abstract class AbstractQuerierIt<
   /** An upsert writes a row's relations on either branch, as an insert or an update does: a found row's are replaced. */
   async shouldUpsertAndCascadeOneToManyOnEitherBranch() {
     const id = '507f1f77bcf86cd799439041';
-    await this.querier.upsertOne(InventoryAdjustment, { id: true }, { id, itemAdjustments: [{ buyPrice: 5 }] });
+    await this.querier.upsertOne(
+      InventoryAdjustment,
+      { $conflict: { id: true } },
+      { id, itemAdjustments: [{ buyPrice: 5 }] },
+    );
     expect(await this.adjustmentPrices(id)).toEqual([5]);
-    await this.querier.upsertMany(InventoryAdjustment, { id: true }, [
+    await this.querier.upsertMany(InventoryAdjustment, { $conflict: { id: true } }, [
       { id, description: 'found', itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] },
     ]);
     expect(await this.adjustmentPrices(id)).toEqual([7, 9]);
@@ -2714,7 +2934,7 @@ export abstract class AbstractQuerierIt<
     });
     await this.querier.upsertMany(
       InventoryAdjustment,
-      { id: true },
+      { $conflict: { id: true } },
       [
         { id: found, description: 'payload', itemAdjustments: [{ buyPrice: 3 }] },
         { id: inserted, description: 'payload', itemAdjustments: [{ buyPrice: 3 }] },
@@ -2732,7 +2952,12 @@ export abstract class AbstractQuerierIt<
     const id = '507f1f77bcf86cd799439044';
     await this.querier.insertOne(InventoryAdjustment, { id, itemAdjustments: [{ buyPrice: 1 }] });
 
-    await this.querier.upsertOne(InventoryAdjustment, { id: true }, { id }, { itemAdjustments: [{ buyPrice: 2 }] });
+    await this.querier.upsertOne(
+      InventoryAdjustment,
+      { $conflict: { id: true } },
+      { id },
+      { itemAdjustments: [{ buyPrice: 2 }] },
+    );
 
     expect(await this.adjustmentPrices(id)).toEqual([2]);
   }
@@ -2743,7 +2968,7 @@ export abstract class AbstractQuerierIt<
 
     await this.querier.upsertOne(
       InventoryAdjustment,
-      { description: true },
+      { $conflict: { description: true } },
       { description: 'twin', itemAdjustments: [{ buyPrice: 3 }] },
     );
 
@@ -2751,18 +2976,18 @@ export abstract class AbstractQuerierIt<
   }
 
   async shouldUpsertManyEmpty() {
-    expect(await this.querier.upsertMany(TaxCategory, { pk: true }, [])).toEqual([]);
+    expect(await this.querier.upsertMany(TaxCategory, { $conflict: { pk: true } }, [])).toEqual([]);
   }
 
   async shouldUpsertMany() {
     const pks = ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022'];
 
-    const inserted = await this.querier.upsertMany(TaxCategory, { pk: true }, [
+    const inserted = await this.querier.upsertMany(TaxCategory, { $conflict: { pk: true } }, [
       { pk: pks[0], name: 'Upsert A' },
       { pk: pks[1], name: 'Upsert B' },
     ]);
     expect(await this.taxCategoryNames(...pks)).toEqual(['Upsert A', 'Upsert B']);
-    const updated = await this.querier.upsertMany(TaxCategory, { pk: true }, [
+    const updated = await this.querier.upsertMany(TaxCategory, { $conflict: { pk: true } }, [
       { pk: pks[0], name: 'Updated A' },
       { pk: pks[1], name: 'Updated B' },
     ]);
@@ -2779,12 +3004,15 @@ export abstract class AbstractQuerierIt<
     const pk1 = '507f1f77bcf86cd799439031';
     const pk2 = '507f1f77bcf86cd799439032';
 
-    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+    await this.querier.upsertMany(TaxCategory, { $conflict: { pk: true } }, [
       { pk: pk1, name: 'Het A' },
       { pk: pk2, name: 'Het B' },
     ]);
 
-    await this.querier.upsertMany(TaxCategory, { pk: true }, [{ pk: pk1 }, { pk: pk2, name: 'Het B updated' }]);
+    await this.querier.upsertMany(TaxCategory, { $conflict: { pk: true } }, [
+      { pk: pk1 },
+      { pk: pk2, name: 'Het B updated' },
+    ]);
 
     expect(await this.taxCategoryNames(pk1, pk2)).toEqual(['Het A', 'Het B updated']);
   }
@@ -2887,7 +3115,9 @@ export abstract class AbstractQuerierIt<
     const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
     assertDefined(id);
 
-    const result = await asTenant('a', () => this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'final' }));
+    const result = await asTenant('a', () =>
+      this.querier.upsertOne(TenantNote, { $conflict: { id: true } }, { id, title: 'final' }),
+    );
 
     expect(result).toBe(id);
     const row = await asSystem(() =>
@@ -2902,11 +3132,30 @@ export abstract class AbstractQuerierIt<
     assertDefined(id);
 
     await asTenant('a', () =>
-      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { title: 'update' }),
+      this.querier.upsertOne(TenantNote, { $conflict: { id: true } }, { id, title: 'payload' }, { title: 'update' }),
     );
 
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
     expect(row).toEqual({ title: 'update' });
+  }
+
+  /** The read-then-write path a guarded entity takes reads `$where` as the statement does. */
+  async shouldUpsertAGuardedRowOnlyWhereItMatches() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    assertDefined(id);
+
+    for (const title of ['published', 'draft']) {
+      await asTenant('a', () =>
+        this.querier.upsertOne(
+          TenantNote,
+          { $conflict: { id: true }, $where: { title } },
+          { id, title: `was ${title}` },
+        ),
+      );
+    }
+
+    const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
+    expect(row).toEqual({ title: 'was draft' });
   }
 
   async shouldUpsertAGuardedRowWithAnEmptyUpdateLeavingItAsItIs() {
@@ -2914,7 +3163,7 @@ export abstract class AbstractQuerierIt<
     assertDefined(id);
 
     const result = await asTenant('a', () =>
-      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, {}),
+      this.querier.upsertOne(TenantNote, { $conflict: { id: true } }, { id, title: 'payload' }, {}),
     );
 
     expect(result).toBe(id);
@@ -2927,10 +3176,12 @@ export abstract class AbstractQuerierIt<
     const theirs = await asTenant('b', () => this.querier.insertOne(TenantNote, { title: 'theirs' }));
 
     const refused = await asTenant('a', () =>
-      this.querier.upsertMany(TenantNote, { id: true }, [
-        { id: mine, title: 'final' },
-        { id: theirs, title: 'mine now' },
-      ]),
+      this.querier.transaction(() =>
+        this.querier.upsertMany(TenantNote, { $conflict: { id: true } }, [
+          { id: mine, title: 'final' },
+          { id: theirs, title: 'mine now' },
+        ]),
+      ),
     ).catch(thrownValue);
 
     expect(queryErrorKind(refused)).toBe('uniqueViolation');
@@ -2944,7 +3195,7 @@ export abstract class AbstractQuerierIt<
   }
 
   async shouldUpsertNoRowsOfAGuardedEntity() {
-    expect(await asTenant('a', () => this.querier.upsertMany(TenantNote, { id: true }, []))).toEqual([]);
+    expect(await asTenant('a', () => this.querier.upsertMany(TenantNote, { $conflict: { id: true } }, []))).toEqual([]);
   }
 
   async shouldWriteAnyTenantUnderASystemContext() {
@@ -3359,16 +3610,18 @@ export abstract class AbstractQuerierIt<
     expect(await this.querier.count(ShipmentLabel)).toBe(0);
   }
 
-  /** A write that cascades lands whole or not at all, outside a transaction too. */
+  /** A write that cascades lands whole or not at all within the transaction the caller opens. */
   async shouldRollBackAWriteWhoseCascadeFails() {
-    await expect(this.querier.insertOne(Shipment, { name: 'lost', labels: [{ name: 'boom' }] })).rejects.toThrow(
-      'boom',
-    );
+    await expect(
+      this.querier.transaction(() => this.querier.insertOne(Shipment, { name: 'lost', labels: [{ name: 'boom' }] })),
+    ).rejects.toThrow('boom');
     expect(await this.querier.count(Shipment)).toBe(0);
 
     const id = await this.querier.insertOne(Shipment, { name: 'kept' });
     await expect(
-      this.querier.updateOneById(Shipment, id!, { name: 'changed', labels: [{ name: 'boom' }] }),
+      this.querier.transaction(() =>
+        this.querier.updateOneById(Shipment, id!, { name: 'changed', labels: [{ name: 'boom' }] }),
+      ),
     ).rejects.toThrow('boom');
     expect((await this.querier.findOneById(Shipment, id!))?.name).toBe('kept');
   }
@@ -3611,20 +3864,41 @@ export abstract class AbstractQuerierIt<
     const id = await this.querier.insertOne(Shipment, { name: 'archived' });
     await this.querier.deleteOneById(Shipment, id!);
 
-    await this.querier.upsertOne(Shipment, { id: true }, { id, name: 'back', carrier: { code: 'fast', name: 'Fast' } });
+    await this.querier.upsertOne(
+      Shipment,
+      { $conflict: { id: true } },
+      { id, name: 'back', carrier: { code: 'fast', name: 'Fast' } },
+    );
     await this.querier.restoreOneById(Shipment, id!);
 
     const shipment = await this.querier.findOneById(Shipment, id!, { $populate: { carrier: true } });
     expect(shipment).toMatchObject({ name: 'back', carrier: { code: 'fast' } });
   }
 
+  /** A plain upsert, one statement on SQL, updates the soft-deleted row its conflict finds too: never a second one. */
+  async shouldUpsertPlainlyOntoASoftDeletedRow() {
+    const id = await this.querier.insertOne(Shipment, { name: 'archived' });
+    await this.querier.deleteOneById(Shipment, id!);
+
+    await this.querier.upsertOne(Shipment, { $conflict: { id: true } }, { id, name: 'back' });
+    await this.querier.restoreOneById(Shipment, id!);
+
+    expect(await this.querier.findMany(Shipment, { $select: { name: true } })).toEqual([{ name: 'back' }]);
+  }
+
   /** An upsert and a save return the row either branch wrote. */
   async shouldReturnTheRowAnUpsertWrote() {
     await this.querier.insertOne(Carrier, { code: 'fast', name: 'Fast' });
 
-    const updated = await this.querier.upsertOne(Carrier, { code: true }, { code: 'fast', name: 'Faster' }, undefined, {
-      returning: { code: true, name: true },
-    });
+    const updated = await this.querier.upsertOne(
+      Carrier,
+      { $conflict: { code: true } },
+      { code: 'fast', name: 'Faster' },
+      undefined,
+      {
+        returning: { code: true, name: true },
+      },
+    );
     const saved = await this.querier.saveOne(Carrier, { code: 'slow', name: 'Slow' }, { returning: { name: true } });
 
     expect([updated, saved]).toEqual([{ code: 'fast', name: 'Faster' }, { name: 'Slow' }]);

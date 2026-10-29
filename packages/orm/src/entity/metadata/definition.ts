@@ -41,7 +41,7 @@ import {
   RelationAggregate,
   SECTION_ENTRY,
   type SectionEntry,
-  type DerivedFields,
+  type AggregateFields,
   type DefinedEntity,
   SOFT_DELETE_FILTER,
 } from '../../type/index.js';
@@ -283,7 +283,7 @@ type ErasedSections = {
   filters?: EntityOptions<object>['filters'];
   hooks?: { readonly [E in HookEvent]?: readonly HookFunction[] };
   relations?: (rel: RelationBuilder<object>) => ErasedRelations;
-  derived?: (refs: object) => DerivedFields;
+  aggregates?: (refs: object) => AggregateFields;
 };
 
 /** A defined class as the registry reads it, abstract or not. */
@@ -331,10 +331,10 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
   declaredEntities.set(entity, { options, sections: {} });
   for (const section of SECTIONS) {
     Object.defineProperty(entity, section, {
-      value(this: AbstractType<object>, declared: unknown, derived?: unknown) {
+      value(this: AbstractType<object>, declared: unknown, aggregates?: unknown) {
         declareSection(this, section, declared);
-        if (section === 'relations' && derived) {
-          declareSection(this, 'derived', derived);
+        if (section === 'relations' && aggregates) {
+          declareSection(this, 'aggregates', aggregates);
         }
         return this;
       },
@@ -343,7 +343,7 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
   return entity;
 }
 
-/** The sections a defined entity declares as methods. `derived` is no method: `relations` takes it as its second argument. */
+/** The sections a defined entity declares as methods. `aggregates` is no method: `relations` takes it as its second argument. */
 const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'hooks', 'relations'] as const;
 
 /** Records one section of a pending defined entity, refusing a second of it and one declared after the entity was read. */
@@ -374,7 +374,7 @@ function settleEntity(entity: AbstractType<unknown>): void {
   const refs = memberRefs();
   for (const added of [
     fieldsOf(options.name, sections.computed?.(refs) ?? {}),
-    fieldsOf(options.name, readDerived(sections.derived, refs)),
+    fieldsOf(options.name, readAggregates(sections.aggregates, refs)),
   ]) {
     const taken = Object.keys(added).find((key) => key in fields);
     if (taken) {
@@ -439,10 +439,10 @@ function isColumn(field: unknown): field is Column {
   return isRecord(field) && COLUMN_OPTIONS in field;
 }
 
-/** A relation's derived fields, each a thunk read lazily; a value that is no thunk is passed on to be refused. */
-function readDerived(derived: ErasedSections['derived'], refs: object): Record<string, unknown> {
+/** A relation's aggregate fields, each a thunk read lazily; a value that is no thunk is passed on to be refused. */
+function readAggregates(aggregates: ErasedSections['aggregates'], refs: object): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(derived?.(refs) ?? {}).map(([key, read]) => [key, typeof read === 'function' ? read() : read]),
+    Object.entries(aggregates?.(refs) ?? {}).map(([key, read]) => [key, typeof read === 'function' ? read() : read]),
   );
 }
 
@@ -471,7 +471,11 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
     addRelation(
       meta,
       key,
-      relationRegistration<ErasedRow, object>({ ...options, cardinality, entity: () => tableOf<ErasedRow>(target) }),
+      relationRegistration<ErasedRow, object>({
+        ...options,
+        cardinality,
+        entity: () => relationTable<ErasedRow>(target),
+      }),
     );
   }
   // A copy per entity: resolving a relation writes the columns it joins on into it, and those are the resolving
@@ -642,7 +646,12 @@ export type KeyedRow<E> = { readonly [K in keyof E]?: unknown };
 
 /** Whether the row names every column of its primary key, `0` and `''` included. */
 export function namesKey<E>(meta: EntityMeta<E>, row: KeyedRow<E>): boolean {
-  return meta.ids.every((key) => row[key] != null);
+  return namesEvery(row, meta.ids);
+}
+
+/** Whether the row holds a value in each of `keys`, `0` and `''` included: a null one names no row, nor conflicts. */
+export function namesEvery<E>(row: KeyedRow<E>, keys: readonly (keyof E)[]): boolean {
+  return keys.every((key) => row[key] != null);
 }
 
 /** A row's primary key: its value, or a map of every column on a composite, checked at run time. */
@@ -673,7 +682,7 @@ export function getEntities(): Type<object>[] {
 }
 
 /** The class a defined relation targets, refused where it is abstract: a relation needs a table to join. */
-function tableOf<E extends object>(target: AbstractType<E>): Type<E> {
+function relationTable<E extends object>(target: AbstractType<E>): Type<E> {
   if (!isTable(target)) {
     throw new UqlUsageError(`'${target.name}' is abstract: a relation needs a table to join`);
   }

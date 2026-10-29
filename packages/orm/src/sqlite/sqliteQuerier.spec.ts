@@ -76,7 +76,7 @@ describe('insertMany id semantics', () => {
 
     await querier.insertOne(Coupon, { code: 'c0', label: 'old' });
 
-    await querier.upsertMany(Coupon, { code: true }, payload, { label: 'updated' });
+    await querier.upsertMany(Coupon, { $conflict: { code: true } }, payload, { label: 'updated' });
 
     const founds = await querier.findMany(Coupon, { $select: { label: true }, $sort: { code: 1 } });
     expect(founds.map(({ label }) => label)).toEqual(['updated', 'new', 'new', 'new', 'new', 'new']);
@@ -91,7 +91,7 @@ describe('insertMany id semantics', () => {
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: 'old' }));
 
     const ids = await asTenant(() =>
-      querier.upsertMany(TenantNote, { id: true }, [
+      querier.upsertMany(TenantNote, { $conflict: { id: true } }, [
         { id: 'a', title: 'first' },
         { id: 'b', title: 'b' },
         { id: 'c', title: 'c' },
@@ -118,7 +118,7 @@ describe('insertMany id semantics', () => {
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: null }));
 
     await asTenant(() =>
-      querier.upsertMany(TenantNote, { tenantId: true, title: true }, [
+      querier.upsertMany(TenantNote, { $conflict: { tenantId: true, title: true } }, [
         { id: 'b', tenantId: 't', title: null },
         { id: 'c', tenantId: 't', title: null },
       ]),
@@ -176,7 +176,7 @@ describe('insertMany id semantics', () => {
       label: `up ${index}`,
     }));
 
-    await querier.upsertMany(Coupon, { id: true }, payload);
+    await querier.upsertMany(Coupon, { $conflict: { id: true } }, payload);
 
     // 3 bind params per record (id, code, label) -> 2 records per statement -> 4 statements.
     const upsertCalls = executeSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));

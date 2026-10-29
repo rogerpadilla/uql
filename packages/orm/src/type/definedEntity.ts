@@ -96,13 +96,13 @@ type RelationValue<P> = P extends () => DefinedRelation<infer T, infer C, unknow
     : T
   : never;
 
-/** A relation's derived field as its callback declares it: a thunk, so it is read lazily like a relation is. */
-export type DerivedFields = {
+/** A value over the relations as their second callback declares it: a thunk, so it is read lazily like a relation is. */
+export type AggregateFields = {
   readonly [key: string]: () => RelationAggregate<unknown> | Column<{ readonly computed: QuerySql }>;
 };
 
-/** The derived fields a `relations` callback declares, as a row reads them, never written. */
-export type DerivedRow<A> = {
+/** The aggregate fields a `relations` callback declares, as a row reads them, never written. */
+export type AggregateRow<A> = {
   readonly [K in keyof A]-?: A[K] extends () => infer F ? FieldValue<F> : never;
 };
 
@@ -209,10 +209,12 @@ type DefinedSections<Row, Key, Columns, B, Abstract> = {
    * The relations, each read lazily so entities pointing at each other declare in either order, and the values
    * read over the to-many ones, its base's too: `(author) => ({ postCount: () => author.posts.count() })`.
    */
-  relations<const R, const A extends DerivedFields = {}>(
+  relations<const R, const A extends AggregateFields = {}>(
     relations: (rel: RelationBuilder<Columns>) => R,
-    derived?: (refs: RefMap<Columns> & AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>) => A,
-  ): RelatedEntity<Row & RelationRow<R> & DerivedRow<A>, Key, Columns, Abstract>;
+    aggregates?: (
+      refs: RefMap<Columns> & AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>,
+    ) => A,
+  ): RelatedEntity<Row & RelationRow<R> & AggregateRow<A>, Key, Columns, Abstract>;
 };
 
 /** A defined entity's class once its relations are in: its filters may follow, and read through them. */

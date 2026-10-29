@@ -47,6 +47,21 @@ class StampClocks {
   @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly savedAt?: Date | null;
 }
 
+/** A stamp reading a column of its own row: the row as written, on every engine. */
+@Entity({ name: 'StampNext' })
+class StampNext {
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().nullable()) count?: number | null;
+  @Computed((row) =>
+    f
+      .number()
+      .nullable()
+      .as(sql`${row.count} + 1`)
+      .stored(['insert', 'update']),
+  )
+  readonly plus?: number | null;
+}
+
 /** A code held as text, which a test retypes. */
 @Entity({ name: 'StampRetyped' })
 class StampCoded {
@@ -63,7 +78,7 @@ class StampCoded {
 }
 
 describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
-  const pool = syncedPool(connect, [StampNote, StampTouch, StampClocks, StampCoded]);
+  const pool = syncedPool(connect, [StampNote, StampTouch, StampClocks, StampCoded, StampNext]);
 
   /** Sets `column` of the row `id` in `table` to the SQL `value`, a write uql does not make. */
   const updateAround = (table: string, column: string, value: string, id: PrimaryKey | undefined) => {
@@ -72,6 +87,14 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
     return pool()
       .run`UPDATE ${sql.text(escapeId(table))} SET ${sql.text(escapeId(column))} = ${sql.text(value)} WHERE ${sql.text(escapeId('id'))} = ${id}`;
   };
+
+  it('should read the row it stamps, as written', async () => {
+    const id = await pool().insertOne(StampNext, { count: 1 });
+    expect(await pool().findOneById(StampNext, id, { $select: { plus: true } })).toEqual({ plus: 2 });
+
+    await updateAround('StampNext', 'count', '5', id);
+    expect(await pool().findOneById(StampNext, id, { $select: { plus: true } })).toEqual({ plus: 6 });
+  });
 
   // `onUpdate` would stamp only what uql writes; this write goes around it entirely.
   it('should be written by the database on a write uql did not make', async () => {
@@ -114,9 +137,9 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
   // table, on either path of an upsert.
   it('should upsert on a table carrying a trigger, inserting and then updating', async () => {
     const id = 1_000_000;
-    await pool().upsertOne(StampNote, { id: true }, { id, body: 'inserted' });
+    await pool().upsertOne(StampNote, { $conflict: { id: true } }, { id, body: 'inserted' });
     const inserted = await pool().findOneById(StampNote, id, { $select: { body: true, touched: true } });
-    await pool().upsertOne(StampNote, { id: true }, { id, body: 'updated' });
+    await pool().upsertOne(StampNote, { $conflict: { id: true } }, { id, body: 'updated' });
     const updated = await pool().findOneById(StampNote, id, { $select: { body: true } });
     expect([inserted, updated]).toEqual([{ body: 'inserted', touched: 1 }, { body: 'updated' }]);
   });

@@ -923,9 +923,38 @@ export async function f(q: Querier) {
       UQL_ORM_0_99,
     );
 
-    expect(text).toContain('  const id = await q.upsertOne(Object, {}, {});');
-    expect(text).toContain('  const saved = await q.upsertOne(Object, {}, {});');
+    expect(text).toContain('  const id = await q.upsertOne(Object, { $conflict: {} }, {});');
+    expect(text).toContain('  const saved = await q.upsertOne(Object, { $conflict: {} }, {});');
     expect(unresolved).toEqual(["/entities.ts:5: upsertOne() resolves to the id; 'created' and 'changes' are gone"]);
+  });
+
+  it('wraps conflict keys held in a typed variable, whose keys are optional', () => {
+    const { text } = codemodFile(
+      `import type { Querier } from 'uql-orm';
+export async function f(q: Querier, keys: { sku?: true }) {
+  await q.upsertOne(Object, keys, {});
+}
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toContain('  await q.upsertOne(Object, { $conflict: keys }, {});');
+  });
+
+  it('leaves an upsert call of another API alone: a short one, or one spreading its arguments', () => {
+    const { text } = codemodFile(
+      `import type { Querier } from 'uql-orm';
+export async function f(q: Querier, args: [unknown, unknown], keys: { sku: boolean }) {
+  await q.upsertOne(Object, keys);
+  await q.upsertOne(Object, ...args);
+  return q;
+}
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toContain('  await q.upsertOne(Object, keys);');
+    expect(text).toContain('  await q.upsertOne(Object, ...args);');
   });
 
   it('leaves a computed field without a type, since its SQL decides the column', () => {
@@ -1604,16 +1633,19 @@ export const one = raw\`1\`;
   });
 
   it('renames a renamed export, its import and every use of it', () => {
-    const { text, unresolved } = codemodFile(`import { QueryWhereMap, type RelationKeyMap as Keys } from 'uql-orm';
+    const { text, unresolved } =
+      codemodFile(`import { QueryWhereMap, type RelationKeyMap as Keys, type QueryConflictPaths } from 'uql-orm';
 const where: QueryWhereMap<User> = {};
 function other(QueryWhereMap: number) { return QueryWhereMap; }
 type K = Keys<User>;
+type C = QueryConflictPaths<User>;
 `);
 
-    expect(text).toBe(`import { QueryWhere, type KeyMap as Keys } from 'uql-orm';
+    expect(text).toBe(`import { QueryWhere, type KeyMap as Keys, type QueryConflictKeys } from 'uql-orm';
 const where: QueryWhere<User> = {};
 function other(QueryWhereMap: number) { return QueryWhereMap; }
 type K = Keys<User>;
+type C = QueryConflictKeys<User>;
 `);
     expect(unresolved).toEqual([]);
   });
@@ -2398,7 +2430,7 @@ export default defineBuilderMigration({
     ]);
   });
 
-  it("passes an upsert's update itself, wherever the querier comes from", () => {
+  it("names an upsert's conflict keys as its query's $conflict, and passes its update itself, wherever the querier comes from", () => {
     const { text, unresolved } = codemodFile(`declare function upsertInto(...args: unknown[]): void;
 declare const pool: { upsertOne(...args: unknown[]): void; upsertMany(...args: unknown[]): void };
 declare const Tally: unknown;
@@ -2409,20 +2441,21 @@ pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { update: {} });
 upsertInto(Tally, { sku: true }, { sku: 'a' }, { 'update': update });
 `);
 
-    expect(text).toContain("pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { hits: { $inc: 1 } });");
-    expect(text).toContain("pool.upsertMany(Tally, { sku: true }, [{ sku: 'a' }], update);");
-    expect(text).toContain("pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, {});");
-    expect(text).toContain("upsertInto(Tally, { sku: true }, { sku: 'a' }, update);");
+    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { hits: { $inc: 1 } });");
+    expect(text).toContain("pool.upsertMany(Tally, { $conflict: { sku: true } }, [{ sku: 'a' }], update);");
+    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, {});");
+    expect(text).toContain("upsertInto(Tally, { $conflict: { sku: true } }, { sku: 'a' }, update);");
     expect(unresolved).toEqual([]);
   });
 
-  it('leaves an upsert already passing its update alone, so a second run changes nothing', () => {
+  it('leaves an upsert already passing its query and update alone, so a second run changes nothing', () => {
     const body = `declare const pool: { upsertOne(...args: unknown[]): void };
 declare const Tally: unknown;
 declare const update: object;
-pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { hits: { $inc: 1 } });
-pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, update);
-pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, {});
+declare const q: object;
+pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { hits: { $inc: 1 } });
+pool.upsertOne(Tally, { $conflict: { sku: true }, $where: { hits: 0 } }, { sku: 'a' }, update);
+pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, {});
 `;
     const { text, unresolved } = codemodFile(body);
 
@@ -2607,7 +2640,7 @@ declare const q: { upsertOne(entity: unknown, data: unknown, unique: unknown, op
 q.upsertOne(Item, { id: 1 }, ['id'], { update: { stock: raw\`1 + 1\` } });
 `);
 
-    expect(text).toContain("q.upsertOne(Item, { id: 1 }, ['id'], { stock: sql`1 + 1` });");
+    expect(text).toContain("q.upsertOne(Item, { $conflict: { id: 1 } }, ['id'], { stock: sql`1 + 1` });");
   });
 
   it('renames a raw inside a statement value, which the statement keeps as written', () => {

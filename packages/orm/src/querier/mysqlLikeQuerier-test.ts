@@ -15,7 +15,11 @@ export class MySqlLikeQuerierIt extends VectorQuerierIt {
     const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
     const before = await this.selectsSent();
 
-    const id = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
+    const id = await this.querier.upsertOne(
+      Coupon,
+      { $conflict: { code: true } },
+      { code: 'EXISTING', label: 'Updated' },
+    );
 
     expect([id, (await this.selectsSent()) - before]).toEqual([existingId, 0]);
   }

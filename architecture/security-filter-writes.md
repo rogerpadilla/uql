@@ -19,9 +19,9 @@ Hibernate `@TenantId`, acts_as_tenant, django-multitenant and Postgres RLS land 
 
 - **One resolver**, `securityConditions(meta)`: reads AND it in, writes guard with it, so the two cannot disagree.
 - **One call site per write**, `guardWrite` in the querier's `insertRows` and `updateRows`, after the `before` hooks and under every caller: cascades, relation saves, `/http`, NestJS.
-- **The upsert reuses `idsByConflict`** and runs in one transaction, so no dialect renders anything new and MongoDB behaves as SQL. It costs two or three statements, only where the condition is not `{}`.
+- **The upsert reuses `idsByConflict`** and runs in a transaction, on MongoDB the one the caller opens, so no dialect renders anything new. It costs two or three statements, only where the condition is not `{}`.
 
-**Rejected: a guarded upsert per dialect** (`DO UPDATE ... WHERE`, `MERGE ... WHEN MATCHED AND`, MySQL's `IF()`). Atomic, but four renderings, and a skipped row is silent everywhere but Postgres. The read holds the rows it finds until the write (SQLite and MongoDB fail a racing writer instead), so the read-then-write loses only two concurrent upserts of one new key, where the second fails on the key: closed and retryable.
+**Rejected: a guarded upsert per dialect** (`DO UPDATE ... WHERE`, `MERGE ... WHEN MATCHED AND`, MySQL's `IF()`). Atomic, but four renderings, and a skipped row is silent everywhere but Postgres. The read holds the rows it finds until the write (SQLite fails a racing writer instead, and so does MongoDB inside a transaction the caller opens), so the read-then-write loses only two concurrent upserts of one new key, where the second fails on the key: closed and retryable. The `$where` upsert now renders these for a condition the caller names; a guard still reads first, so a row it skips is not silent.
 
 ## Open
 

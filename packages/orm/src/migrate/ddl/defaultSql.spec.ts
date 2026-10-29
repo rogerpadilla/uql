@@ -17,8 +17,8 @@ describe('sameDefault', () => {
   /** A `jsonb` column reprints its document; text that holds no JSON document still compares letter for letter. */
   it('should compare a JSON document as JSON, and other text as it is written', () => {
     const postgres = new PostgresDialect();
-    expect(sameDefault({ b: 1, a: [1, 2] }, '{"a": [1, 2], "b": 1}', postgres)).toBe(true);
-    expect(sameDefault(['x'], '["y"]', postgres)).toBe(false);
+    expect(sameDefault('{"b":1,"a":[1,2]}', '{"a": [1, 2], "b": 1}', postgres)).toBe(true);
+    expect(sameDefault('["x"]', '["y"]', postgres)).toBe(false);
     expect(sameDefault('42', '42.0', postgres)).toBe(false);
     expect(sameDefault('CURRENT_TIMESTAMP', 'current_timestamp', postgres)).toBe(false);
   });
@@ -52,6 +52,15 @@ describe('SQL values', () => {
     const compile = (sql: QuerySql) => postgres.compileDdl(sql);
     expect(schemaDefault(sql`now()`, compile)).toEqual(SqlExpression.parenthesized('now()'));
     expect(schemaDefault('CURRENT_TIMESTAMP', compile)).toBe('CURRENT_TIMESTAMP');
+  });
+
+  /** The text the catalogue reports back, so a declared document and an introspected one compare alike. */
+  it('should hold a document, or any value of a JSON column, as its JSON text', () => {
+    const compile = (sql: QuerySql) => postgres.compileDdl(sql);
+    expect(schemaDefault({ a: [1] }, compile)).toBe('{"a":[1]}');
+    expect(schemaDefault('draft', compile, true)).toBe('"draft"');
+    expect(schemaDefault(1, compile, true)).toBe('1');
+    expect(schemaDefault(null, compile, true)).toBe(null);
   });
 
   /** What lets drift compare a declared value with the catalogue, and `generate:from-db` name it. */

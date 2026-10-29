@@ -2,6 +2,23 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.108.0] - 2026-10-29
+
+- **Breaking:** an upsert takes its conflict keys as a query, `upsertMany(Job, { $conflict: { key: true } }, rows, update)`, and its `$where` names which found rows take the update, `{ $conflict: { key: true }, $where: { status: 'failed' } }`, in one statement on every SQL engine. `upsertInto` alike; `QueryConflictPaths` is `QueryConflictKeys`. `npx uql-codemod` rewrites both.
+- **Breaking:** on MongoDB, an upsert with an `update` or a `$where`, and an `updateMany` or `deleteMany` that reads ids first, cascades or runs hooks, opens no transaction of its own: run it in `transaction()` to make it all-or-none. Nothing else needs a replica set.
+- **Breaking:** a JSON column's default is a document: `.default('draft')` stores the JSON string `"draft"`, and JSON text such as `.default('{}')` is refused with the value to write instead. `generate:from-db` writes the document.
+- `returning` is one statement, `RETURNING` or `OUTPUT`, for an insert, an upsert, an update and a delete on PostgreSQL, CockroachDB, SQLite and SQL Server, and all but an update on MariaDB; an upsert reads back only a row its `$where` or an empty `update` kept.
+- `saveOne`, `saveMany`, `upsertOne` and `upsertMany` take a versioned entity: a stale row throws `UqlOptimisticLockError`, as `updateOne` does.
+- Every `$where` operator that takes a value takes a ref to another column, `check({ effectiveTo: { $gt: rate.effectiveFrom } })`, on every engine, MongoDB included. A ref of another entity than the one in scope is refused: read it off its own alias, `refs(Other, 'o')`.
+- `tableOf(Entity)` names a table in raw SQL, and `refs(Entity, 'o')` reads its columns under that alias, following renames and the naming strategy.
+- A trigger's `insertInto` and `upsertInto` fill `.onInsert()` values as an insert does, and `tsc` and `sync` refuse a row leaving out a required column no default fills.
+- An enum's check and MongoDB's validator list its values sorted, so reordering them changes nothing; the next migration renames each enum check declared out of order once.
+- `DerivedFields` and `DerivedRow` are `AggregateFields` and `AggregateRow`. A custom SQL dialect has no `getComparisonKey`.
+- **Fixed:** a multi-row insert or upsert matches each id, and each row `returning` reports, to its row by key, never by the order the engine lists them in, which none promises; rows whose key a database default fills, `.default(uuid)`, insert one per statement.
+- **Fixed:** on SQLite and SQL Server, `returning` reports the value a stamp restates after the write, and a stamp's SQL reading a column of its own row syncs and reads the row being written on every engine.
+- **Fixed:** on SQL Server, a uuid reads back lowercase, as written, so an upsert or save matching by a uuid finds its row.
+- **Fixed:** on MongoDB, an upsert updates the soft-deleted document its conflict key finds, where it inserted a duplicate.
+
 ## [0.107.3] - 2026-10-28
 
 - The `uql-orm` skill is shorter and covers every `$where` operator (`$exists`, `$text`, `$all`, `$size`, `$elemMatch`, `$near`, the case-insensitive text forms), relation filters, filters for soft delete and tenants, hooks, pool options and `sql` conditions over `refs()`.

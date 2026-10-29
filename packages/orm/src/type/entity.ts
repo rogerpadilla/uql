@@ -94,8 +94,13 @@ type FilledKey<E> = SoleIdKey<E> | VersionKey<E> | (BrandNames<E, typeof filledK
 export type EntityWrite<E> = EntityData<E, Exclude<WritableKey<E>, FilledKey<E>>> &
   ([FilledKey<E>] extends [never] ? unknown : { [P in WritableKey<E> & FilledKey<E>]?: E[P] });
 
-/** A row a trigger's body writes: each writable field its value, or SQL - a row's ref most often. */
-export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F]?: E[K] | SqlFor<QuerySql, E[K]> };
+/**
+ * A row a trigger's body inserts: an {@link EntityWrite}, the same fields required, each its value or SQL
+ * holding one, a row's ref most often.
+ */
+export type WriteRow<E> = {
+  readonly [K in keyof EntityWrite<E>]: EntityWrite<E>[K] | SqlFor<QuerySql, EntityWrite<E>[K]>;
+};
 
 /**
  * The property an entity brands with {@link versionKey} as its optimistic lock, `never` where it
@@ -491,14 +496,24 @@ export type FieldOptions<V = unknown> = {
 export type OnFieldCallback<V = unknown> = V | QuerySql | (() => V | QuerySql);
 
 /**
- * What a column may default to: its value, or on a JSON column the document it stores, `[]`, or its SQL text,
- * `'{}'`. The erased `FieldOptions` takes them all, so every field's options stay assignable to it.
+ * What a column may default to: its value, or on a JSON column a document its payload admits, any document on
+ * an untyped one, a string being a JSON string. The erased `FieldOptions` takes them all, so every field's
+ * options stay assignable to it.
  */
 export type DdlDefault<V, T = NonNullable<V>> =
-  IsJsonColumn<T> extends true ? JsonDdlDefault : [TsTypeOf<FieldType>] extends [T] ? JsonDdlDefault | T : T;
+  IsJsonColumn<T> extends true
+    ? unknown extends JsonDocument<T>
+      ? JsonDdlDefault
+      : NonNullable<JsonDocument<T>>
+    : [TsTypeOf<FieldType>] extends [T]
+      ? JsonDdlDefault | T
+      : T;
 
-/** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list included, or its text. */
-type JsonDdlDefault = Scalar | Record<string, unknown> | readonly unknown[];
+/** The document a JSON column declared as `T` stores: its payload, or a list of them for `Json<P>[]`. */
+type JsonDocument<T> = IsJson<T> extends true ? UnwrapJson<T> : readonly UnwrapJson<NonNullable<Unpacked<T>>>[];
+
+/** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list or a scalar included. */
+type JsonDdlDefault = JsonScalar | Record<string, unknown> | readonly unknown[];
 
 /** The TypeScript type a declared `type` implies: a decorator checks the property against it, a defined entity derives it. */
 export type TsTypeOf<T> = T extends StringConstructor

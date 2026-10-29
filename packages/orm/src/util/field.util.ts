@@ -70,7 +70,9 @@ export function isInlinedExpression<F extends FieldOptions>(field: F): field is 
 
 /** Whether the entity puts anything on its table the database runs: an authored trigger, or a stamp. */
 export function hasTriggers<E>(meta: EntityMeta<E>): boolean {
-  return Boolean(meta.triggers?.length) || definedEntries(meta.fields).some(([, field]) => stampEvents(field));
+  return (
+    Boolean(meta.triggers?.length) || definedEntries(meta.fields).some(([, field]) => stampEvents(field) !== undefined)
+  );
 }
 
 /**
@@ -124,6 +126,31 @@ export function fieldFamily(field: FieldOptions): ColumnFamily | undefined {
 /** Whether the column is NOT NULL: every column is, a key included, unless it declares `nullable()`. */
 export function declaresNotNull(field: FieldOptions): boolean {
   return field.nullable !== true;
+}
+
+/** Whether a row holds nothing in `column` unless written: required, with no default, and not one the engine fills. */
+export function lacksValue(column: {
+  readonly nullable: boolean;
+  readonly defaultValue?: unknown;
+  readonly generatedAs?: string;
+  readonly isAutoIncrement: boolean;
+}): boolean {
+  return !column.nullable && column.defaultValue === undefined && !column.generatedAs && !column.isAutoIncrement;
+}
+
+/**
+ * {@link lacksValue} for an insert leaving the field out, where a computed column, a stamp its trigger fills included,
+ * holds a value too, unlike on the rows a migration finds.
+ */
+export function lacksValueOnInsert(field: FieldOptions, soleKey: boolean): boolean {
+  return (
+    !isDatabaseWritten(field) &&
+    lacksValue({
+      nullable: !declaresNotNull(field),
+      defaultValue: field.defaultValue,
+      isAutoIncrement: isAutoIncrement(field, soleKey),
+    })
+  );
 }
 
 /** Whether `key` is a field of `meta`, as opposed to a relation, a JSON path or an unknown key. */

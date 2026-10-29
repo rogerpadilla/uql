@@ -10,6 +10,7 @@ export {
   fieldOf,
   idOf,
   keyOf,
+  namesEvery,
   namesKey,
   relationOf,
   soleIdOf,

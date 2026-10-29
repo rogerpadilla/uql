@@ -7,7 +7,7 @@ import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
-import type { IndexNode, TableNode, TriggerSchema } from '../schema/types.js';
+import type { ColumnDefault, IndexNode, TableNode, TriggerSchema } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined, mockSqlTableNode, mockTableNode, sqlTypeOf } from '../test/index.js';
 import type { ColumnSchema, SchemaDiff } from '../type/index.js';
@@ -1352,7 +1352,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   });
 
   /** `DefaultsEntity` as it stands in the database, with `status`'s stored default under test. */
-  function defaultsTableNode(statusDefault: unknown) {
+  function defaultsTableNode(statusDefault: ColumnDefault | undefined) {
     return mockSqlTableNode('DefaultsEntity', [
       { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
       { name: 'status', sql: 'VARCHAR', length: 20, defaultValue: statusDefault },

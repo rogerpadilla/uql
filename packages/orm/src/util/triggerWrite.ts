@@ -1,6 +1,6 @@
 import {
   type EntityPredicate,
-  type QueryConflictPaths,
+  type QueryUpsert,
   type QuerySql,
   type TriggerWrite,
   TriggerWriteSql,
@@ -20,16 +20,17 @@ export function insertInto<E extends object>(entity: AbstractType<E>, row: Write
 }
 
 /**
- * A row inserted by a trigger's body, or what its conflict paths find taking `update` instead, as `upsertOne`
- * does: `upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, { count: { $inc: 1 } })`.
+ * A row inserted by a trigger's body, or what `q.$conflict` finds taking `update` instead where it matches
+ * `q.$where`, as `upsertOne` does: `upsertInto(Tally, { $conflict: { postId: true } }, { postId: newRow.id, count: 1 },
+ * { count: { $inc: 1 } })`.
  */
 export function upsertInto<E extends object>(
   entity: AbstractType<E>,
-  conflictPaths: QueryConflictPaths<E>,
+  q: QueryUpsert<E> & { readonly $where?: EntityPredicate<E> },
   row: WriteRow<E>,
   update?: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
 ): QuerySql {
-  return written({ kind: 'upsert', entity, conflictPaths, row, update });
+  return written({ kind: 'upsert', entity, q, row, update });
 }
 
 /** The rows `q.$where` names updated by a trigger's body: `updateTable(Post, { $where: { id: newRow.postId } }, set)`. */

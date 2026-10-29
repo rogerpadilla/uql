@@ -20,7 +20,7 @@ import {
   parseGroupMap,
   textSearchFields,
   deletionOf,
-  upsertAssigned,
+  foundRowAssigned,
 } from './dialect.util.js';
 import { withDeleted } from './filters.util.js';
 import { sql } from './sql.js';
@@ -525,35 +525,26 @@ describe('fillOnFields', () => {
   });
 });
 
-describe('upsertAssigned', () => {
+describe('foundRowAssigned', () => {
   @Entity()
-  class Stamped {
+  class Coded {
     @Field(f.number().id()) id?: number;
     @Field(f.string().nullable()) code?: string | null;
     @Field(f.string().nullable()) name?: string | null;
-    @Field(
-      f
-        .number()
-        .nullable()
-        .onInsert(() => calls.push('onInsert')),
-    )
-    createdAt?: number | null;
-    @Field(
-      f
-        .number()
-        .nullable()
-        .onUpdate(() => 7),
-    )
-    updatedAt?: number | null;
   }
-  const calls: string[] = [];
-  const meta = getMeta(Stamped);
+  const meta = getMeta(Coded);
+  const row = { id: 1, code: 'a', name: 'n' };
 
-  it('should assign a found row the payload and the onUpdate fills, less its key and what it matched on', () => {
-    calls.length = 0;
+  it('should assign a found row the payload less its key and what it matched on', () => {
+    expect(foundRowAssigned(meta, { code: true }, row, undefined)).toEqual({ name: 'n' });
+  });
 
-    expect(upsertAssigned(meta, { id: 1, code: 'a', name: 'n' }, { code: true })).toEqual({ name: 'n', updatedAt: 7 });
-    expect(calls).toEqual([]);
+  it('should assign a copy of the update, and nothing for an empty one', () => {
+    const update = { name: 'u' };
+
+    expect(foundRowAssigned(meta, { code: true }, row, update)).not.toBe(update);
+    expect(foundRowAssigned(meta, { code: true }, row, update)).toEqual(update);
+    expect(foundRowAssigned(meta, { code: true }, row, {})).toBeUndefined();
   });
 });
 

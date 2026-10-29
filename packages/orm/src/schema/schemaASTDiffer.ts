@@ -5,7 +5,7 @@ import { type IndexChange, pairedIndexChanges } from './indexDifferences.js';
 import { matchByKey, pairUnique } from './matchByKey.js';
 import type { SchemaAST } from './schemaAST.js';
 import { writtenDefault } from './sqlExpression.js';
-import type { CanonicalType, ColumnFacet } from './types.js';
+import type { CanonicalType, ColumnDefault, ColumnFacet } from './types.js';
 import type {
   ColumnDiff,
   ColumnNode,
@@ -34,7 +34,7 @@ export interface DiffOptions {
    */
   normalizeType?: (type: CanonicalType) => CanonicalType;
   /** Whether two defaults are one value, as the dialect that reprinted them can tell: `'a'::character varying` is `'a'`. */
-  defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
+  defaultsEqual?: (expected: ColumnDefault | undefined, actual: ColumnDefault | undefined) => boolean;
 }
 
 const DEFAULT_OPTIONS: Required<DiffOptions> = {
@@ -313,6 +313,9 @@ function relationshipKey(rel: RelationshipNode): string {
  * Compares two defaults exactly as written, for when no dialect renders them: SQL must match to the letter.
  * Migrations and drift use the generator's equality instead, which knows how its engine reprints SQL.
  */
-export function defaultsEqualAsWritten(expected: unknown, actual: unknown): boolean {
+export function defaultsEqualAsWritten(
+  expected: ColumnDefault | undefined,
+  actual: ColumnDefault | undefined,
+): boolean {
   return writtenDefault(expected ?? '') === writtenDefault(actual ?? '');
 }

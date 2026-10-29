@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { call, flag, flagOrCall, type OptionMethod } from './columnMethods.js';
 import { type Finding, formatFindings, locationAt } from './context.js';
-import { FOREIGN_KEY_IN_DEFINED, NO_KEY_TYPE, nameClash, ON_DELETE_ON_RELATION } from './definedMessages.js';
+import { UNJOINED_FOREIGN_KEY, NO_KEY_TYPE, nameClash, ON_DELETE_ON_RELATION } from './definedMessages.js';
 import { CHAINED_OPTIONS, FIRST_CALL_OPTIONS } from './definedOptions.js';
 import {
   applyEdits,
@@ -437,7 +437,7 @@ function definedColumn(node: ts.Expression): DefinedColumn {
     }
     const target = targetOf(references.call.arguments[0]);
     if (identifierText(references.receiver) === 'f' || !target) {
-      return { message: target ? NO_KEY_TYPE : FOREIGN_KEY_IN_DEFINED };
+      return { message: target ? NO_KEY_TYPE : UNJOINED_FOREIGN_KEY };
     }
     const onDelete = methods.get('onDelete');
     const cut = [references, ...(onDelete ? [onDelete] : [])].map((method) => ({
@@ -457,7 +457,7 @@ function definedColumn(node: ts.Expression): DefinedColumn {
   const references = options.get('references');
   const target = references && targetOf(references);
   if (references && !target) {
-    return { message: FOREIGN_KEY_IN_DEFINED };
+    return { message: UNJOINED_FOREIGN_KEY };
   }
   if (target && !options.has('type')) {
     return { message: NO_KEY_TYPE };
@@ -520,7 +520,7 @@ function claimKey(name: ts.PropertyName, { target, onDelete }: ForeignKey, claim
   }
   const relation = ts.isIdentifier(name) ? /^(.+?)(?:Id|_id)$/.exec(key)?.[1] : undefined;
   if (!relation || claims.named.has(relation) || !targets.insertable) {
-    return { claims, problem: FOREIGN_KEY_IN_DEFINED };
+    return { claims, problem: UNJOINED_FOREIGN_KEY };
   }
   const written = [
     `references: (${targets.param}) => ${targets.param}.${key}`,

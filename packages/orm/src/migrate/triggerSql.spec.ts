@@ -8,9 +8,9 @@ import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { idKey } from '../type/index.js';
+import { filledKey, idKey } from '../type/index.js';
 import type { EntityTriggerMeta, Json } from '../type/index.js';
-import { sql, refs } from '../util/sql.js';
+import { currentTimestamp, sql, refs } from '../util/sql.js';
 import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { dropTrigger, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
@@ -360,6 +360,16 @@ describe('the where guard', () => {
     expect(statement).toContain('NEW."body" IS NOT NULL');
   });
 
+  it('should compare a column of the row with another through its ref', () => {
+    const post = refs(Post);
+    const statement = render(new PostgresDialect(), {
+      ...stamp,
+      of: undefined,
+      where: { $new: { body: { $ne: post.searchVector } } },
+    }).join('\n');
+    expect(statement).toContain('WHEN (NEW."body" <> NEW."searchVector")');
+  });
+
   it('should stand alone where the trigger watches no columns', () => {
     const statement = render(new PostgresDialect(), { ...archived, of: undefined }).join('\n');
     expect(statement).toContain('WHEN (NEW."body" IS NOT NULL)');
@@ -671,9 +681,37 @@ describe('a write in the body, to another table', () => {
     @Field(f.number().nullable()) postId?: number | null;
   }
 
+  @Entity({ name: 'PriceAudit' })
+  class PriceAudit {
+    @Field(f.number().id()) id?: number;
+    @Field(f.number()) variantId!: number;
+    @Field(f.number()) amount!: number;
+    @Field(f.number().default(0)) attempts!: number;
+    @Field(f.string().nullable()) note?: string | null;
+    [filledKey]?: 'attempts';
+    @Computed(() =>
+      f
+        .date()
+        .as(sql`now()`)
+        .stored(['insert']),
+    )
+    readonly stampedAt!: Date;
+  }
+
+  @Entity({ name: 'StateAudit' })
+  class StateAudit {
+    @Field(f.number().id()) id?: number;
+    @Field(f.number().unique()) postId!: number;
+    @Field(f.string().onInsert('open')) state!: string;
+    @Field(f.date().onInsert(currentTimestamp)) at!: Date;
+    [filledKey]?: 'state' | 'at';
+  }
+
   afterAll(() => {
     removeEntity(WriteAudit);
     removeEntity(UuidAudit);
+    removeEntity(PriceAudit);
+    removeEntity(StateAudit);
   });
 
   const inserted: EntityTriggerMeta<Post> = {
@@ -755,6 +793,30 @@ describe('a write in the body, to another table', () => {
     expect(render(dialect, deleted).join('\n')).toContain(statement);
   });
 
+  /** A fill a trigger can write, SQL or a value, lands on every write it makes, however the update is spelled. */
+  it("should stamp an onUpdate fill on a trigger's update and on an upsert with an update", () => {
+    @Entity({ name: 'TouchedAudit' })
+    class TouchedAudit {
+      @Field(f.number().id()) id?: number;
+      @Field(f.number().unique()) postId!: number;
+      @Field(f.number().nullable()) hits?: number | null;
+      @Field(f.date().nullable().onUpdate(currentTimestamp)) touchedAt?: Date | null;
+    }
+    const updated = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => updateTable(TouchedAudit, { $where: { postId: newRow.id } }, { hits: { $inc: 1 } }),
+    }).join('\n');
+    const upserted = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) =>
+        upsertInto(TouchedAudit, { $conflict: { postId: true } }, { postId: newRow.id }, { hits: { $inc: 1 } }),
+    }).join('\n');
+    removeEntity(TouchedAudit);
+
+    expect(updated).toContain('"touchedAt" = CURRENT_TIMESTAMP');
+    expect(upserted).toContain('"touchedAt" = CURRENT_TIMESTAMP');
+  });
+
   it('should take a counter where the engine fires per row', () => {
     const statement = render(new PostgresDialect(), {
       on: 'afterInsert',
@@ -824,7 +886,46 @@ describe('a write in the body, to another table', () => {
         run: (newRow) => insertInto(UuidAudit, { postId: newRow.id }),
       }),
     ).toThrow(
-      `'UuidAudit.id' is filled on insert by uql, which a trigger does not run: name it, or give it a defaultValue`,
+      `a trigger's insert into 'UuidAudit' leaves out 'id', required with no default and no onInsert a trigger can write, a value or SQL: name it, or give it a default`,
+    );
+  });
+
+  // The database refuses it on every write that fires the trigger, long after `sync` installed it.
+  it('should refuse an insert leaving out a required column with no default, naming each', () => {
+    expect(() =>
+      // @ts-expect-error the type refuses it too; this is the guard for a row typed loosely
+      render(new PostgresDialect(), { on: 'afterInsert', run: () => insertInto(PriceAudit, { note: 'x' }) }),
+    ).toThrow(
+      `a trigger's insert into 'PriceAudit' leaves out 'variantId', 'amount', required with no default and no onInsert a trigger can write, a value or SQL: name it, or give it a default`,
+    );
+  });
+
+  it('should leave to the database a generated key, a default, a nullable column and a stamp', () => {
+    const statement = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => insertInto(PriceAudit, { variantId: newRow.id, amount: 1 }),
+    }).join('\n');
+    expect(statement).toContain('INSERT INTO "PriceAudit" ("variantId", "amount") VALUES (NEW."id", 1);');
+  });
+
+  it('should fill what an insert fills on insert, where it is a value or SQL', () => {
+    const statement = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => insertInto(StateAudit, { postId: newRow.id }),
+    }).join('\n');
+    expect(statement).toContain(
+      `INSERT INTO "StateAudit" ("postId", "state", "at") VALUES (NEW."id", 'open', CURRENT_TIMESTAMP);`,
+    );
+  });
+
+  // As `upsertOne` does: a value filled on insert is the new row's, and a row found keeps its own.
+  it('should fill on insert what an upsert inserts, and assign a row it finds none of it', () => {
+    const statement = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => upsertInto(StateAudit, { $conflict: { postId: true } }, { postId: newRow.id }),
+    }).join('\n');
+    expect(statement).toContain(
+      `INSERT INTO "StateAudit" ("postId", "state", "at") VALUES (NEW."id", 'open', CURRENT_TIMESTAMP) ON CONFLICT ("postId") DO NOTHING;`,
     );
   });
 
@@ -916,11 +1017,34 @@ describe('a deferred trigger, which fires at commit', () => {
 describe('an upsert in the body, to another table', () => {
   const tally = (update?: Parameters<typeof upsertInto<Tally>>[3]): EntityTriggerMeta<Post> => ({
     on: 'afterInsert',
-    run: (newRow) => upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, update),
+    run: (newRow) => upsertInto(Tally, { $conflict: { postId: true } }, { postId: newRow.id, count: 1 }, update),
   });
   const counted = tally({ count: { $inc: 1 } });
 
-  it('should take the incoming row on a conflict, less the conflict paths, as each engine reads it', () => {
+  // As `upsertOne` reads it: a found row takes the update only where `$where` holds of it.
+  it('should update a found row only where its $where holds, as each engine spells it', () => {
+    const capped: EntityTriggerMeta<Post> = {
+      on: 'afterInsert',
+      run: (newRow) =>
+        upsertInto(
+          Tally,
+          { $conflict: { postId: true }, $where: { count: { $lt: 10 } } },
+          { postId: newRow.id, count: 1 },
+          { count: 5 },
+        ),
+    };
+    expect(render(new PostgresDialect(), capped).join('\n')).toContain(
+      'ON CONFLICT ("postId") DO UPDATE SET "count" = 5 WHERE "Tally"."count" < 10;',
+    );
+    expect(render(new MySqlDialect(), capped).join('\n')).toContain(
+      'ON DUPLICATE KEY UPDATE `count` = CASE WHEN `Tally`.`count` < 10 THEN 5 ELSE `Tally`.`count` END;',
+    );
+    expect(render(new MsSqlDialect(), capped).join('\n')).toContain(
+      'WHEN MATCHED AND "Tally"."count" < 10 THEN UPDATE SET "count" = 5',
+    );
+  });
+
+  it('should take the incoming row on a conflict, less the conflict keys, as each engine reads it', () => {
     expect(render(new PostgresDialect(), tally()).join('\n')).toContain(
       'INSERT INTO "Tally" ("postId", "count") VALUES (NEW."id", 1) ON CONFLICT ("postId") DO UPDATE SET "count" = EXCLUDED."count";',
     );
@@ -991,5 +1115,11 @@ describe('namesAny', () => {
 
   it('should find the column after a longer identifier containing it', () => {
     expect(namesAny('NEW.left_at_utc, NEW.left_at', ['left_at'])).toBe(true);
+  });
+
+  it('should read a name as written, not as a pattern, and find none of no columns', () => {
+    expect(namesAny('NEW."a.b"', ['a.b'])).toBe(true);
+    expect(namesAny('NEW."axb"', ['a.b'])).toBe(false);
+    expect(namesAny('NEW."id"', [])).toBe(false);
   });
 });

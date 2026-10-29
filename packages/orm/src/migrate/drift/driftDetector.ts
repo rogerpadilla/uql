@@ -2,8 +2,9 @@ import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { type DiffOptions, diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
-import { SqlExpression, sqlExpressionText, writtenDefault } from '../../schema/sqlExpression.js';
+import { SqlExpression, sqlExpressionText } from '../../schema/sqlExpression.js';
 import type {
+  ColumnDefault,
   ColumnDiff,
   IndexDiff,
   RelationshipDiff,
@@ -291,9 +292,16 @@ function relationshipDrift(change: RelationshipDiff): Drift {
   };
 }
 
-/** A default as a report shows it: SQL as its SQL, a JSON document as JSON rather than `[object Object]`. */
-function shownDefault(value: unknown): string {
-  return value == null ? 'NULL' : SqlExpression.isExpression(value) ? sqlExpressionText(value) : writtenDefault(value);
+/** A default as a report shows it: SQL as its SQL, a literal as written. */
+function shownDefault(value: ColumnDefault | undefined): string {
+  if (value == null) {
+    return 'NULL';
+  }
+  return SqlExpression.isExpression(value)
+    ? sqlExpressionText(value)
+    : value instanceof Date
+      ? value.toISOString()
+      : String(value);
 }
 
 /** Both actions spelled out, so a side that left one unstated reads the same as one that stated the default. */

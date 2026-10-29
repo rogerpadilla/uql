@@ -103,13 +103,14 @@ describe.each(engines)('vector index (%s)', { timeout: provisioningTimeout }, (_
 
   /**
    * Searched at 90.4 degrees. An approximate index may return any of the five nearest rows in any order, so the
-   * test asserts that, not the exact ids.
+   * test asserts that, not the exact ids. Inserted out of angle order: in order, MariaDB's HNSW graph is a chain
+   * a search can stall in at the far end.
    */
   it('should return near rows through the index, tuned, and keep a filter beside it', async () => {
     await migrator(cosine).sync({ force: true });
     await pool.insertMany(
       cosine,
-      Array.from({ length: 360 }, (_, n) => ({ id: n + 1, vec: at(n + 1) })),
+      Array.from({ length: 360 }, (_, n) => ((n * 137) % 360) + 1).map((id) => ({ id, vec: at(id) })),
     );
 
     const found = await pool.transaction((querier) =>

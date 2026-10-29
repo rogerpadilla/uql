@@ -14,8 +14,8 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../test/index.js';
-import type { UpdatePayload } from '../type/index.js';
-import { sql } from '../util/index.js';
+import type { Json, UpdatePayload } from '../type/index.js';
+import { refs, sql } from '../util/index.js';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from './abstractSqlDialect-spec.js';
 
 /**
@@ -23,7 +23,27 @@ import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from './abstractSqlDi
  * `ON CONFLICT` upserts, `= ANY($1)` sets, the `jsonb` operators, `BEGIN [ISOLATION LEVEL ...]`.
  * `MySqlFamilySpec` is the same shape for MySQL and MariaDB.
  */
+/** A uuid column beside a JSON one, which compare only as text: Postgres has no `text = uuid`. */
+@Entity()
+class OwnedDoc {
+  @Field(f.number().id()) id?: number;
+  @Field(f.uuid().nullable()) ownerId?: string | null;
+  @Field(f.jsonb().nullable()) meta?: Json<{ owner?: string }> | null;
+}
+
 export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
+  protected override textRef(column: string): string {
+    return `${column}::text`;
+  }
+
+  /** A ref read as text beside a JSON path, which a typed column would refuse: `text = uuid` has no operator. */
+  shouldCompareAJsonPathWithARefAsText() {
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.find(ctx, OwnedDoc, { $select: { id: true }, $where: { 'meta.owner': refs(OwnedDoc).ownerId } }),
+    );
+    expect(statement).toContain(`= "ownerId"::text`);
+  }
+
   /** How this engine types a config literal, and the function reading a search's text. */
   protected readonly textConfigCast: string = '::regconfig';
   protected readonly textQueryFn: string = 'WEBSEARCH_TO_TSQUERY';
@@ -205,7 +225,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         User,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
           name: 'Some Name',
@@ -214,14 +234,31 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "User" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = $1 RETURNING "id" "id"`,
+      `INSERT INTO "User" ("id", "name", "createdAt") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = $4`,
     );
-    expect(values).toEqual([expect.any(Number), '1', 'Some Name', 123]);
+    expect(values).toEqual(['1', 'Some Name', 123, expect.any(Number)]);
+  }
+
+  /** A found row takes the update only where `$where` holds of it, read through the table's name. */
+  shouldUpsertOnlyWhereTheFoundRowMatches() {
+    const { sql: statement, values } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Tax,
+        { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+        { id: 'a', name: 'x', percentage: 1 },
+      ),
+    );
+    expect(statement).toBe(
+      'INSERT INTO "Tax" ("id", "name", "percentage", "createdAt") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET ' +
+        '"name" = EXCLUDED."name", "percentage" = EXCLUDED."percentage", "updatedAt" = $5 WHERE "Tax"."percentage" < $6',
+    );
+    expect(values).toEqual(['a', 'x', 1, expect.any(Number), expect.any(Number), 20]);
   }
 
   override shouldUpsertMany() {
     const { sql: statement, values } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, User, { id: true }, [
+      this.dialect.upsert(ctx, User, { $conflict: { id: true } }, [
         {
           id: '1',
           name: 'Name A',
@@ -235,14 +272,14 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(statement).toMatch(
-      /^INSERT INTO "User" .*VALUES \(\$2, \$3, \$4\), \(\$5, \$6, \$7\) ON CONFLICT \("id"\) DO UPDATE SET.*RETURNING/,
+      /^INSERT INTO "User" .*VALUES \(\$1, \$2, \$3\), \(\$4, \$5, \$6\) ON CONFLICT \("id"\) DO UPDATE SET /,
     );
     expect(values).toHaveLength(7);
   }
 
   /**
-   * Each fallback (non-`EXCLUDED`) update column formats its value in a context of its own, whose
-   * placeholders still follow the ones before it: with two such columns, each binds its own value.
+   * Each fallback (non-`EXCLUDED`) update column binds its own value, numbered after the rows: with two such
+   * columns, each binds its own.
    */
   shouldUpsertWithTwoFallbackUpdateColumns() {
     @Entity({ name: 'UpsertFallbackWidget' })
@@ -266,12 +303,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     }
 
     const { sql: statement, values } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, UpsertFallbackWidget, { email: true }, { email: 'a@b.com' }),
+      this.dialect.upsert(ctx, UpsertFallbackWidget, { $conflict: { email: true } }, { email: 'a@b.com' }),
     );
     expect(statement).toBe(
-      `INSERT INTO "UpsertFallbackWidget" ("email") VALUES ($3) ON CONFLICT ("email") DO UPDATE SET "updatedAt" = $1, "version" = $2 RETURNING "id" "id"`,
+      `INSERT INTO "UpsertFallbackWidget" ("email") VALUES ($1) ON CONFLICT ("email") DO UPDATE SET "updatedAt" = $2, "version" = $3`,
     );
-    expect(values).toEqual([111, 'v2', 'a@b.com']);
+    expect(values).toEqual(['a@b.com', 111, 'v2']);
   }
 
   /** A RETURNING clause on every insert, unlike the base's `firstId` (MySQL) expectation. */
@@ -586,7 +623,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         Profile,
-        { pk: true },
+        { $conflict: { pk: true } },
         {
           pk: '1',
           picture: 'image.jpg',
@@ -594,9 +631,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "user_profile" ("pk", "image", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("pk") DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = $1 RETURNING "pk" "id"`,
+      `INSERT INTO "user_profile" ("pk", "image", "createdAt") VALUES ($1, $2, $3) ON CONFLICT ("pk") DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = $4`,
     );
-    expect(values).toEqual([expect.any(Number), '1', 'image.jpg', expect.any(Number)]);
+    expect(values).toEqual(['1', 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
@@ -604,7 +641,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         User,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
           email: 'a@b.com',
@@ -612,9 +649,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "User" ("id", "email", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $1 RETURNING "id" "id"`,
+      `INSERT INTO "User" ("id", "email", "createdAt") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $4`,
     );
-    expect(values).toEqual([expect.any(Number), '1', 'a@b.com', expect.any(Number)]);
+    expect(values).toEqual(['1', 'a@b.com', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableId() {
@@ -622,7 +659,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         UserWithNonUpdatableId,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: 1,
           name: 'Some Name',
@@ -630,7 +667,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"`,
+      `INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name"`,
     );
     expect(values).toEqual([1, 'Some Name']);
   }
@@ -640,15 +677,13 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         ItemTag,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
         },
       ),
     );
-    expect(statement).toBe(
-      `INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"`,
-    );
+    expect(statement).toBe(`INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING`);
     expect(values).toEqual(['1']);
   }
 
@@ -657,7 +692,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         ItemTag,
-        { itemId: true, tagId: true },
+        { $conflict: { itemId: true, tagId: true } },
         {
           itemId: '1',
           tagId: '2',
@@ -665,7 +700,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"`,
+      `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING`,
     );
     expect(values).toEqual(['1', '2', anyUuid]);
   }
@@ -675,7 +710,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         User,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
           name: 'Some Name',
@@ -683,9 +718,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toMatch(
-      /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*\$2, \$3, \$4.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = \$1.*$/,
+      /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*\$1, \$2, \$3.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = \$4.*$/,
     );
-    expect(values).toEqual([expect.any(Number), '1', 'Some Name', expect.any(Number)]);
+    expect(values).toEqual(['1', 'Some Name', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithComputedField() {
@@ -693,7 +728,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         Item,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
           name: 'Some Item',
@@ -702,9 +737,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toBe(
-      `INSERT INTO "Item" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = $1 RETURNING "id" "id"`,
+      `INSERT INTO "Item" ("id", "name", "createdAt") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = $4`,
     );
-    expect(values).toEqual([expect.any(Number), '1', 'Some Item', expect.any(Number)]);
+    expect(values).toEqual(['1', 'Some Item', expect.any(Number), expect.any(Number)]);
   }
 
   override shouldFind$regex() {

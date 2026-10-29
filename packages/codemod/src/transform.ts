@@ -574,18 +574,31 @@ function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
 const UPSERT_CALLS: ReadonlySet<string> = new Set(['upsertOne', 'upsertMany', 'upsertInto']);
 
 /**
- * Rewrites an upsert's options holding `update` alone into that update, its fourth argument now. Read wherever it is
- * called, since a querier is seldom imported from uql where it is used. Any other fourth argument is already an
- * update, `{}` included, so a second run changes nothing.
+ * Rewrites an upsert's conflict keys into its query's `$conflict`, `{ $conflict: { sku: true } }`, and its options
+ * holding `update` alone into that update, its fourth argument now. Read wherever it is called, since a querier is
+ * seldom imported from uql where it is used. A query already naming `$conflict`, or typed with one, is left as it is,
+ * and any other fourth argument is already an update, `{}` included, so a second run changes nothing.
  */
 function rewriteUpsertCall(call: ts.CallExpression, ctx: Context): void {
   const callee = call.expression;
   const name = identifierText(ts.isPropertyAccessExpression(callee) ? callee.name : callee);
+  if (!name || !UPSERT_CALLS.has(name)) {
+    return;
+  }
+  const keys = call.arguments[1];
+  if (call.arguments.length >= 3 && keys && isConflictKeys(keys, ctx)) {
+    ctx.edits.push(replaced(keys, ['{ $conflict: ', original(keys), ' }']));
+  }
   const options = call.arguments[3];
   const update = options && upsertUpdate(options);
-  if (name && UPSERT_CALLS.has(name) && update) {
+  if (update) {
     ctx.edits.push(replaced(options, [original(update)]));
   }
+}
+
+/** Whether `keys` is the old conflict map, `{ sku: true }`: an argument of its own, not yet a query naming `$conflict`. */
+function isConflictKeys(keys: ts.Expression, ctx: Context): boolean {
+  return !ts.isSpreadElement(keys) && !ctx.checker.getTypeAtLocation(keys).getProperty('$conflict');
 }
 
 /** The value of options holding `update` alone, `{ update: value }` or `{ update }`. */

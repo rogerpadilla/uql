@@ -34,8 +34,8 @@ class DefaultNote {
       .default({ b: 1, a: [1, 2] }),
   )
   settings?: Json<{ a: number[]; b: number }> | null;
-  /** The same, as the text the column stores. */
-  @Field(f.jsonb().nullable().default('{"b":1,"a":2}')) written?: Json<{ a: number; b: number }> | null;
+  /** A JSON string, stored as the JSON text `"draft"`. */
+  @Field(f.jsonb().nullable().default('draft')) state?: Json<string> | null;
 }
 
 /** The SQL defaults alone, on a table a test drops them from. */
@@ -63,7 +63,7 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
     expect(row.spelled).toBe('CURRENT_TIMESTAMP');
     expect(Math.abs(Number(row.createdAt) - Date.now())).toBeLessThan(60_000);
     expect(row.derived).toBe('a');
-    expect([row.tags, row.settings, row.written]).toEqual([[], { a: [1, 2], b: 1 }, { a: 2, b: 1 }]);
+    expect([row.tags, row.settings, row.state]).toEqual([[], { a: [1, 2], b: 1 }, 'draft']);
     // The clock in the text and digits a bound `Date` takes, so the row matches itself read back.
     expect(await pool().count(DefaultNote, { $where: { id, createdAt: row.createdAt } })).toBe(1);
   });

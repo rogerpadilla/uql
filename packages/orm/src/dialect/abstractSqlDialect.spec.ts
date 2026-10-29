@@ -3,7 +3,7 @@ import { Computed, Entity, f, Field, getMeta } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
-import { memberRefs, sql, refs } from '../util/index.js';
+import { memberRefs, sql, refs, tableOf } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 import { MYSQL_FEATURES } from './mysqlLikeSqlDialect.js';
 
@@ -234,7 +234,7 @@ describe('AbstractSqlDialect', () => {
 
   it('should bind the onUpdate value an upsert payload leaves out', () => {
     const ctx = dialect.createContext();
-    dialect.upsert(ctx, User, { id: true }, { id: '1', name: 'John' });
+    dialect.upsert(ctx, User, { $conflict: { id: true } }, { id: '1', name: 'John' });
     expect(ctx.sql).toContain('DO UPDATE SET `name` = EXCLUDED.`name`, `updatedAt` = ?');
     expect(ctx.values).toEqual(['1', 'John', expect.any(Number), expect.any(Number)]);
   });
@@ -481,6 +481,61 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, { value: sql`${refs(RefLedger).creditLimit}`, prefix: 'l' });
       expect(ctx.sql).toBe('`l`.`creditLimit`');
+    });
+
+    it('should qualify the column by the alias the refs were read under, whatever is in scope', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`${refs(RefLedger, 'l').creditLimit}`, prefix: 'other' });
+      expect(ctx.sql).toBe('`l`.`creditLimit`');
+    });
+
+    it('should name the table, under the alias its refs were read with', () => {
+      const ledger = refs(RefLedger, 'l');
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, {
+        value: sql`SELECT ${ledger.label} FROM ${tableOf(ledger)} WHERE ${ledger.id} = ${1}`,
+      });
+      expect(ctx.sql).toBe('SELECT `l`.`display_label` FROM `RefLedger` `l` WHERE `l`.`id` = ?');
+    });
+
+    it('should name the table of an entity as its statement does', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`SELECT 1 FROM ${tableOf(RefLedger)}` });
+      expect(ctx.sql).toBe('SELECT 1 FROM `RefLedger`');
+    });
+
+    // Answered with a ref, a symbol would make the map look iterable or primitive to whatever probes it.
+    it('should answer no symbol but the table it keeps', () => {
+      expect(Reflect.get(refs(RefLedger), Symbol.iterator)).toBeUndefined();
+      expect(Reflect.get(memberRefs<RefLedger>(), Symbol.toPrimitive)).toBeUndefined();
+    });
+
+    it("should refuse a definition's refs, which name no table", () => {
+      expect(() => tableOf(memberRefs<RefLedger>())).toThrow(
+        "tableOf takes an entity or the refs() read off one, not a definition's refs",
+      );
+    });
+
+    it('should tell two reads of one table apart by their aliases', () => {
+      const [model, person] = [refs(RefLedger, 'model'), refs(RefLedger, 'person')];
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, {
+        value: sql`FROM ${tableOf(model)} JOIN ${tableOf(person)} ON ${person.id} = ${model.id}`,
+      });
+      expect(ctx.sql).toBe('FROM `RefLedger` `model` JOIN `RefLedger` `person` ON `person`.`id` = `model`.`id`');
+    });
+
+    it('should name the table the way the dialect does, its schema included', () => {
+      @Entity({ schema: 'books' })
+      class LedgerEntry {
+        @Field(f.number().id()) id?: number;
+        @Field(f.number().nullable()) transactionId?: number | null;
+      }
+      const entry = refs(LedgerEntry, 'e');
+      const snake = new TestSqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+      const ctx = snake.createContext();
+      snake.getRawValue(ctx, { value: sql`FROM ${tableOf(entry)} WHERE ${entry.transactionId} = 1` });
+      expect(ctx.sql).toBe('FROM `books`.`ledger_entry` `e` WHERE `e`.`transaction_id` = 1');
     });
 
     it('should render an inlined computed field as its expression', () => {

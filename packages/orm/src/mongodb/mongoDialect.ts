@@ -61,7 +61,7 @@ import type {
   AbstractType,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/query.js';
-import { QuerySql } from '../type/querySql.js';
+import { ColumnRef, QuerySql, REF_ENTITY, REF_KEY } from '../type/querySql.js';
 import {
   aggregateOf,
   isSelectList,
@@ -252,8 +252,8 @@ export const mongoDialectFeatures: DialectFeatures = {
   supportsUnsigned: false,
   serverSideCursors: false,
   correlatedWrites: false,
-  rowLocks: false, // its concurrency control is the transaction plus atomic document updates
-  writeReturning: false,
+  rowLocks: false, // its concurrency control is atomic document updates, plus a transaction the caller opens
+  reportsWrites: [],
   nullsSortLowest: true,
 };
 
@@ -272,6 +272,40 @@ function assertNoRaw<T>(value: T, place: RawPlace): asserts value is Exclude<T, 
   if (value instanceof QuerySql) {
     throw rawRefusal(place);
   }
+}
+
+/** Whether a field's condition compares it with SQL anywhere, a ref most often: in a list or under an operator. */
+function holdsSql(value: unknown): boolean {
+  if (value instanceof QuerySql) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some((element) => element instanceof QuerySql);
+  }
+  return (isOperatorObject(value) || isJsonObject(value)) && Object.values(value).some(holdsSql);
+}
+
+/**
+ * A field's condition split into what only an expression states, a comparison with SQL (a ref most often) or a
+ * bounded `$size`, where MongoDB's own takes a number alone, and the rest, which a query operator matches on the
+ * field's index; a value that is SQL is all the first.
+ */
+function splitExpressed(val: unknown): { readonly expressed?: unknown; readonly rest?: unknown } {
+  if (!isOperatorObject(val)) {
+    return holdsSql(val) ? { expressed: val } : { rest: val };
+  }
+  const expressed: [string, unknown][] = [];
+  const rest: [string, unknown][] = [];
+  for (const [op, operand] of Object.entries(val)) {
+    (holdsSql(operand) || (op === '$size' && isRecord(operand)) ? expressed : rest).push([op, operand]);
+  }
+  if (!expressed.length) {
+    return { rest: val };
+  }
+  return {
+    expressed: Object.fromEntries(expressed),
+    rest: rest.length ? Object.fromEntries(rest) : undefined,
+  };
 }
 
 /** How a declared column type reads in a message: `Number`, `uuid` - not its whole source. */
@@ -296,7 +330,7 @@ const KEY_OPERATORS: ReadonlySet<string> = new Set([
 const MAX_NUM_CANDIDATES = 10_000;
 
 /** Adds `expr` to `filter`'s `$expr`, `AND`ed with any already there. */
-function andExpr(filter: Record<string, unknown>, expr: Record<string, unknown>): void {
+function andExpr(filter: Record<string, unknown>, expr: unknown): void {
   filter['$expr'] = filter['$expr'] ? { $and: [filter['$expr'], expr] } : expr;
 }
 
@@ -342,12 +376,15 @@ function anyElement(ref: string, test: unknown): Record<string, unknown> {
 
 /**
  * Whether `ref` holds a value of `operand`'s type, the only one a query's ordering compares it with: an
- * expression orders across types, every string above a number and a null below it.
+ * expression orders across types, every string above a number and a null below it. Another field, `other`,
+ * may hold a number of another width, an int against a double, which still compares.
  */
-function sameType(ref: string, operand: unknown): Record<string, unknown> {
-  return typeof operand === 'number' || typeof operand === 'bigint'
-    ? { $isNumber: ref }
-    : { $eq: [{ $type: ref }, { $type: literal(operand) }] };
+function sameType(ref: string, operand: unknown, other: unknown): Record<string, unknown> {
+  if (typeof operand === 'number' || typeof operand === 'bigint') {
+    return { $isNumber: ref };
+  }
+  const typed = { $eq: [{ $type: ref }, { $type: other }] };
+  return operand instanceof ColumnRef ? { $or: [{ $and: [{ $isNumber: ref }, { $isNumber: other }] }, typed] } : typed;
 }
 
 /** Whether the string at `ref` matches `regex`. Any other value matches none, where `$regexMatch` would fail. */
@@ -482,7 +519,6 @@ export class MongoDialect extends AbstractDialect {
         }
         andExpr(filter, this.relationExpression(meta, key, val, lookup));
       } else {
-        assertNoRaw(val, '$where');
         this.assertKnownPathRoot(meta, key);
         if (aggregateOf(meta.fields[key])) {
           if (!lookup) {
@@ -492,24 +528,16 @@ export class MongoDialect extends AbstractDialect {
         }
         const keyed = this.holdsKeys(meta, key);
         key = this.pathOf(meta, key);
-        if (!isOperatorObject(val)) {
-          const wire = keyed ? this.toWireId(val) : val;
-          filter[key] = Array.isArray(wire) ? { $in: wire } : wire;
-          continue;
+        const { expressed, rest } = splitExpressed(val);
+        if (expressed !== undefined) {
+          andExpr(filter, this.fieldExpression(`$${key}`, expressed, this.operandOf(meta, keyed, '$where')));
         }
-        const operators = (ops: Record<string, unknown>) => {
-          const native = this.transformOperators(ops);
-          return keyed ? this.toWireOperands(native) : native;
-        };
-        // MongoDB's `$size` takes only a number, so bounds become an `$expr` beside the other operators.
-        const { $size: size, ...ops } = val;
-        if (!isRecord(size)) {
-          filter[key] = operators(val);
-        } else {
-          andExpr(filter, arraySize(`$${key}`, size));
-          if (hasKeys(ops)) {
-            filter[key] = operators(ops);
-          }
+        if (isOperatorObject(rest)) {
+          const operators = this.transformOperators(rest);
+          filter[key] = keyed ? this.toWireOperands(operators) : operators;
+        } else if (expressed === undefined) {
+          const wire = keyed ? this.toWireId(rest) : rest;
+          filter[key] = Array.isArray(wire) ? { $in: wire } : wire;
         }
       }
     }
@@ -1801,8 +1829,8 @@ export class MongoDialect extends AbstractDialect {
         return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
       }
       const val: unknown = where[key];
-      assertNoRaw(val, 'an aggregate $where');
       if (meta.relations[key]) {
+        assertNoRaw(val, 'an aggregate $where');
         return this.relationExpression(meta, key, val, lookup);
       }
       if (key.startsWith('$')) {
@@ -1810,24 +1838,24 @@ export class MongoDialect extends AbstractDialect {
       }
       this.assertKnownPathRoot(meta, key);
       this.appendAggregateField(meta, key, lookup);
-      const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : undefined;
-      return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
+      const read = this.operandOf(meta, this.holdsKeys(meta, key), 'an aggregate $where');
+      return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, read);
     });
     return allOf(terms);
   }
 
   /**
    * One field's condition as an expression, read as {@link transformOperators} reads it in a query: a value
-   * it equals, a list it is in, or operators. `wire` converts what a key field is compared with.
+   * it equals, a list it is in, or operators. `read` reads what the field is compared with.
    */
-  private fieldExpression(ref: string, val: unknown, wire = (value: unknown) => value): unknown {
-    const equals = (value: unknown) => (value === null ? isNullExpr(ref) : { $eq: [ref, literal(wire(value))] });
+  private fieldExpression(ref: string, val: unknown, read: (value: unknown) => unknown = literal): unknown {
+    const equals = (value: unknown) => (value === null ? isNullExpr(ref) : { $eq: [ref, read(value)] });
     const within = (op: string, values: unknown) => ({
-      $in: [{ $ifNull: [ref, null] }, literal(wire(inOperands(op, values)))],
+      $in: [{ $ifNull: [ref, null] }, inOperands(op, values).map(read)],
     });
-    const ordered = (op: string, operand: unknown) => {
-      const value = wire(operand);
-      return { $and: [sameType(ref, value), { [op]: [ref, literal(value)] }] };
+    const ordered = (op: string, value: unknown) => {
+      const other = read(value);
+      return { $and: [sameType(ref, value, other), { [op]: [ref, other] }] };
     };
     if (!isOperatorObject(val)) {
       return Array.isArray(val) ? within('$in', val) : equals(val);
@@ -1843,7 +1871,7 @@ export class MongoDialect extends AbstractDialect {
         case '$ne':
           return { $not: [equals(operand)] };
         case '$not':
-          return { $not: [this.fieldExpression(ref, operand, wire)] };
+          return { $not: [this.fieldExpression(ref, operand, read)] };
         case '$gt':
         case '$gte':
         case '$lt':
@@ -1861,13 +1889,14 @@ export class MongoDialect extends AbstractDialect {
         case '$isNotNull':
           return (op === '$isNull') === Boolean(operand) ? equals(null) : { $not: [equals(null)] };
         case '$regex':
+          assertNoRaw(operand, '$where');
           return regexMatch(ref, String(operand));
         case '$size':
           return arraySize(ref, operand);
         case '$all':
-          return this.allHeld(ref, inOperands(op, operand));
+          return this.allHeld(ref, inOperands(op, operand), read);
         case '$elemMatch':
-          return this.allHeld(ref, [operand]);
+          return this.allHeld(ref, [operand], read);
         case '$near':
           throw nearRefusal();
         default:
@@ -1878,29 +1907,49 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
+   * How what a field of `meta` is compared with reads in an expression, the one reader of it on every path: a ref
+   * as the field it names, of the same document; any other SQL refused; a value as itself, a key's in its wire form.
+   */
+  private operandOf<E>(meta: EntityMeta<E>, keyed: boolean, place: RawPlace): (value: unknown) => unknown {
+    return (value) => {
+      if (!(value instanceof ColumnRef)) {
+        assertNoRaw(value, place);
+        return literal(keyed ? this.toWireId(value) : value);
+      }
+      const owner = value[REF_ENTITY];
+      if (owner && owner !== meta.entity) {
+        throw new UqlUsageError(
+          `MongoDB compares a field of '${entityName(meta)}' with another of its own document, not of '${entityName(getMeta(owner))}'`,
+        );
+      }
+      return `$${this.pathOf(meta, value[REF_KEY])}`;
+    };
+  }
+
+  /**
    * What `ref` satisfies to hold `value`, as {@link held} reads it in a query: an array each of its
    * elements, an object each of its keys as a path, anything else as a field condition.
    */
-  private heldExpression(ref: string, value: unknown): unknown {
+  private heldExpression(ref: string, value: unknown, read: (value: unknown) => unknown): unknown {
     if (Array.isArray(value)) {
-      return this.allHeld(ref, value);
+      return this.allHeld(ref, value, read);
     }
     if (isJsonObject(value)) {
-      return allOf(Object.entries(value).map(([key, item]) => this.heldExpression(`${ref}.${key}`, item)));
+      return allOf(Object.entries(value).map(([key, item]) => this.heldExpression(`${ref}.${key}`, item, read)));
     }
-    return this.fieldExpression(ref, value);
+    return this.fieldExpression(ref, value, read);
   }
 
   /**
    * `$all`, as {@link allHolding} reads it: the array at `ref` has an element holding each value, a scalar
    * by `$in`, which stops at the first match where testing each element would map them all.
    */
-  private allHeld(ref: string, values: readonly unknown[]): unknown {
+  private allHeld(ref: string, values: readonly unknown[], read: (value: unknown) => unknown): unknown {
     return allOf(
       values.map((value) =>
         isOperatorMap(value) || Array.isArray(value)
-          ? anyElement(ref, this.heldExpression('$$this', value))
-          : { $cond: [{ $isArray: ref }, { $in: [literal(value), ref] }, false] },
+          ? anyElement(ref, this.heldExpression('$$this', value, read))
+          : { $cond: [{ $isArray: ref }, { $in: [read(value), ref] }, false] },
       ),
     );
   }

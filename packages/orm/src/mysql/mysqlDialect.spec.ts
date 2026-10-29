@@ -1,10 +1,20 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
-import { Entity, f, Field } from '../entity/index.js';
-import { anyUuid, Company, Coupon, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
-import type { QueryConflictPaths } from '../type/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
+import { anyUuid, Company, Coupon, createSpec, Item, MeasureUnitCategory, Reading, User, Tax } from '../test/index.js';
+import type { QueryConflictKeys } from '../type/index.js';
+import { sql } from '../util/sql.js';
 import { MySqlDialect } from './mysqlDialect.js';
+
+/** A field read through SQL, which names the columns it reads only to the engine. */
+@Entity()
+class Shouted {
+  @Field(f.string().id()) id?: string;
+  @Field(f.string()) first?: string;
+  @Field(f.number()) age?: number;
+  @Computed((row) => f.string().as(sql`${row.first} || '!'`)) readonly shout?: string;
+}
 
 export class MySqlDialectSpec extends MySqlFamilySpec {
   constructor() {
@@ -21,13 +31,102 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
 
   protected override readonly elemSelect = 'SELECT /*+ NO_SEMIJOIN() */ 1';
 
+  /**
+   * `ON DUPLICATE KEY UPDATE` takes no `WHERE`: each column takes its value only where `$where` holds, the one it
+   * reads set last, since MySQL assigns left to right, a later assignment reading an earlier one's value.
+   */
+  /** A write MySQL cannot report is refused rather than sent with a `RETURNING` the server rejects. */
+  shouldRefuseToReportAWriteItCannot() {
+    expect(() =>
+      this.exec((ctx) => this.dialect.update(ctx, Tax, { $where: { id: 'a' } }, { name: 'x' }, undefined, ['name'])),
+    ).toThrow("MySQL reports no rows of a write's update: read them back instead");
+  }
+
+  shouldUpsertOnlyWhereTheFoundRowMatches() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Tax,
+        { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+        { id: 'a', name: 'x', percentage: 1 },
+      ),
+    );
+    const guarded = (column: string, value: string) =>
+      `\`${column}\` = CASE WHEN \`Tax\`.\`percentage\` < ? THEN ${value} ELSE \`Tax\`.\`${column}\` END`;
+    expect(sql).toBe(
+      'INSERT INTO `Tax` (`id`, `name`, `percentage`, `createdAt`) VALUES (?, ?, ?, ?) AS `_uql_new` ON DUPLICATE KEY UPDATE ' +
+        [
+          guarded('name', '`_uql_new`.`name`'),
+          guarded('updatedAt', '?'),
+          guarded('percentage', '`_uql_new`.`percentage`'),
+        ].join(', '),
+    );
+    expect(values).toEqual(['a', 'x', 1, expect.any(Number), 20, 20, expect.any(Number), 20]);
+  }
+
+  // Read off the query, not its SQL: the JSON path's `name` is no column, so only `low` is set last.
+  shouldUpsertWhereAJsonPathNamesAColumnTheUpdateSets() {
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Reading,
+        { $conflict: { id: true }, $where: { 'doc.name': 'a', low: { $lt: 5 } } },
+        { id: 'r', name: 'x', low: 1 },
+      ),
+    );
+    expect(statement).toMatch(/ON DUPLICATE KEY UPDATE `name` = CASE WHEN .+ END, `low` = CASE WHEN .+ END$/);
+  }
+
+  shouldRefuseAnUpsertWhereReadingWhatItCannotSee() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.upsert(
+          ctx,
+          Tax,
+          { $conflict: { id: true }, $where: { $and: [sql`1 = 1`] } },
+          { id: 'a', name: 'x', percentage: 1 },
+        ),
+      ),
+    ).toThrow(
+      "an upsert's $where on MySQL may read, through its SQL, 'name', 'percentage', 'updatedAt', which its update sets too: the engine sets them one by one, each later one reading the others as already set",
+    );
+  }
+
+  shouldRefuseAnUpsertWhereReadingAnInlinedField() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.upsert(
+          ctx,
+          Shouted,
+          { $conflict: { id: true }, $where: { shout: 'a!' } },
+          { id: 'a', first: 'x', age: 5 },
+        ),
+      ),
+    ).toThrow("an upsert's $where on MySQL may read, through its SQL, 'first', 'age', which its update sets too");
+  }
+
+  shouldRefuseAnUpsertWhereReadingTwoColumnsItsUpdateSets() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.upsert(
+          ctx,
+          Tax,
+          { $conflict: { id: true }, $where: { percentage: 1, name: 'a' } },
+          { id: 'a', name: 'x', percentage: 1 },
+        ),
+      ),
+    ).toThrow(
+      "an upsert's $where on MySQL reads 'name', 'percentage', which its update sets too: the engine sets them one by one, each later one reading the others as already set",
+    );
+  }
+
   /** The inserted row is read through its alias here; `VALUES(col)` is deprecated since MySQL 8.0.20. */
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
         ctx,
         User,
-        { email: true },
+        { $conflict: { email: true } },
         {
           name: 'Some Name',
           email: 'someemail@example.com',
@@ -43,14 +142,18 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
 
   /** One row's generated key comes back in the header for a found row too, assigned through `LAST_INSERT_ID`. */
   shouldUpsertOneRowAssigningItsKeyThroughLastInsertId() {
-    const one = this.exec((ctx) => this.dialect.upsert(ctx, Coupon, { code: true }, { code: 'a', label: 'x' }));
+    const one = this.exec((ctx) =>
+      this.dialect.upsert(ctx, Coupon, { $conflict: { code: true } }, { code: 'a', label: 'x' }),
+    );
     const many = this.exec((ctx) =>
-      this.dialect.upsert(ctx, Coupon, { code: true }, [
+      this.dialect.upsert(ctx, Coupon, { $conflict: { code: true } }, [
         { code: 'a', label: 'x' },
         { code: 'b', label: 'y' },
       ]),
     );
-    const nothing = this.exec((ctx) => this.dialect.upsert(ctx, Coupon, { code: true }, { code: 'a' }, {}));
+    const nothing = this.exec((ctx) =>
+      this.dialect.upsert(ctx, Coupon, { $conflict: { code: true } }, { code: 'a' }, {}),
+    );
 
     expect(one.sql).toMatch(/ ON DUPLICATE KEY UPDATE `Coupon`\.`id` = LAST_INSERT_ID\(`Coupon`\.`id`\), `label` = /);
     expect(many.sql).not.toMatch(/LAST_INSERT_ID/);
@@ -232,7 +335,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
    */
   shouldUpsertWithNothingToUpdate() {
     const ctx = this.dialect.createContext();
-    const conflictPaths = {
+    const conflictKeys = {
       id: true,
       companyId: true,
       creatorId: true,
@@ -241,9 +344,9 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       name: true,
       email: true,
       password: true,
-    } satisfies QueryConflictPaths<User>;
+    } satisfies QueryConflictKeys<User>;
 
-    this.dialect.upsert(ctx, User, conflictPaths, { name: 'John' });
+    this.dialect.upsert(ctx, User, { $conflict: conflictKeys }, { name: 'John' });
 
     expect(ctx.sql).toContain('INSERT IGNORE');
   }

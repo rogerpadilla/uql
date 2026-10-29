@@ -5,6 +5,7 @@ import {
   jsonArraySlotArgs,
   jsonSetCall,
   jsonCompareMode,
+  literalMode,
   jsonElemExists,
   jsonPath,
   jsonRemoveCall,
@@ -16,7 +17,13 @@ import {
 describe('jsonCompareMode', () => {
   /** `every` holds over nothing, so an empty set would otherwise read as all-boolean and compare as JSON. */
   it('should compare an empty set as text', () => {
-    expect(jsonCompareMode([])).toBe('text');
+    expect(jsonCompareMode([], literalMode)).toBe('text');
+  });
+
+  it('should compare as one mode only where every operand asks for it', () => {
+    expect(jsonCompareMode([true, false], literalMode)).toBe('json');
+    expect(jsonCompareMode([1, 2], literalMode)).toBe('numeric');
+    expect(jsonCompareMode([1, 'a'], literalMode)).toBe('text');
   });
 });
 

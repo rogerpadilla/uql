@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { encodeFloat32s } from '../dialect/vectorCast.js';
-import { Company, ItemTag, MeasureUnitCategory, VectorItem } from '../test/index.js';
+import { Company, ItemTag, MeasureUnitCategory, VectorItem, Tax } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
@@ -20,6 +20,14 @@ export class MariaDialectSpec extends MySqlFamilySpec {
   }
 
   protected override readonly elemSelect = 'SELECT 1';
+
+  /** MariaDB's upsert takes a `RETURNING`, which reports each row as it stands, a found one too. */
+  shouldReportAnUpsertWithItsReturning() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, Tax, { $conflict: { id: true } }, [{ id: 'a', name: 'x' }], undefined, ['name']),
+    );
+    expect(sql).toMatch(/ ON DUPLICATE KEY UPDATE .* RETURNING `name`$/);
+  }
 
   shouldFilterByJsonDotNotation() {
     const ctx = this.dialect.createContext();
@@ -87,8 +95,24 @@ export class MariaDialectSpec extends MySqlFamilySpec {
     },
   };
 
+  shouldUpsertOnlyWhereTheFoundRowMatches() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Tax,
+        { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+        { id: 'a', name: 'x', percentage: 1 },
+      ),
+    );
+    expect(sql).toContain(
+      'ON DUPLICATE KEY UPDATE `name` = CASE WHEN `Tax`.`percentage` < ? THEN VALUE(`name`) ELSE `Tax`.`name` END, ' +
+        '`updatedAt` = CASE WHEN `Tax`.`percentage` < ? THEN ? ELSE `Tax`.`updatedAt` END, ' +
+        '`percentage` = CASE WHEN `Tax`.`percentage` < ? THEN VALUE(`percentage`) ELSE `Tax`.`percentage` END',
+    );
+  }
+
   shouldUpsertWithNoUpdateFields() {
-    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: '123' }));
+    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { $conflict: { id: true } }, { id: '123' }));
     expect(sql).toContain('INSERT IGNORE');
   }
 

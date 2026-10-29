@@ -1,11 +1,8 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import { SqlExpression, schemaDefault, writtenDefault } from '../../schema/sqlExpression.js';
+import { SqlExpression, writtenDefault } from '../../schema/sqlExpression.js';
+import type { ColumnDefault } from '../../schema/types.js';
 import { SQL_VALUE_NAMES, type SqlDialectName } from '../../type/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
-
-/** A default in schema form, its SQL compiled with no entity to read: a migration's names no field. */
-const ddlDefault = (value: unknown, dialect: AbstractSqlDialect): unknown =>
-  schemaDefault(value, (sql) => dialect.compileDdl(sql));
 
 /** How one engine renders a DDL default. A new per-dialect rule is a field here, not a second table. */
 type DialectDefaults = {
@@ -41,8 +38,12 @@ export const DIALECT_DEFAULTS: Readonly<Record<SqlDialectName, DialectDefaults>>
  * else as a literal, so `true` is `1` where booleans are integers. `columnType` decides only whether
  * the result needs wrapping, which MySQL demands on its large types whatever the value.
  */
-export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, columnType?: string): string {
-  const sql = defaultLiteral(ddlDefault(value, dialect), dialect, columnType);
+export function formatDefaultValue(
+  value: ColumnDefault | undefined,
+  dialect: AbstractSqlDialect,
+  columnType?: string,
+): string {
+  const sql = defaultLiteral(value, dialect, columnType);
   const { wrapTypes } = DIALECT_DEFAULTS[dialect.dialectName];
   return columnType !== undefined && wrapTypes?.test(columnType) ? `(${sql})` : sql;
 }
@@ -51,10 +52,13 @@ export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, 
  * Whether a stored default matches the declared one. A literal never matches SQL, even SQL that spells it,
  * and two SQL defaults match when the dialect renders them alike once {@link reprinted} normalizes them.
  */
-export function sameDefault(desired: unknown, current: unknown, dialect: AbstractSqlDialect): boolean {
+export function sameDefault(
+  want: ColumnDefault | undefined,
+  have: ColumnDefault | undefined,
+  dialect: AbstractSqlDialect,
+): boolean {
   // Both spellings of "no default" are one fact: MariaDB reports `null` where MySQL reports nothing.
-  if (desired == null || current == null) return desired == null && current == null;
-  const [want, have] = [ddlDefault(desired, dialect), ddlDefault(current, dialect)];
+  if (want == null || have == null) return want == null && have == null;
   if (SqlExpression.isExpression(want) || SqlExpression.isExpression(have)) {
     return (
       SqlExpression.isExpression(want) &&
@@ -67,7 +71,7 @@ export function sameDefault(desired: unknown, current: unknown, dialect: Abstrac
 }
 
 /** A boolean as the engine stores it: the integer {@link defaultLiteral} writes where it has no booleans. */
-const storedLiteral = (value: unknown, dialect: AbstractSqlDialect): unknown =>
+const storedLiteral = (value: ColumnDefault, dialect: AbstractSqlDialect): ColumnDefault =>
   typeof value === 'boolean' && dialect.booleanLiteral !== 'native' ? Number(value) : value;
 
 /**
@@ -100,11 +104,10 @@ function reprinted(sql: string): string {
 
 /**
  * Quoting is the dialect's `escape`, so a backslash in a default is escaped the way the engine reads
- * it - MySQL takes `'a\b'` as a backspace where Postgres takes it literally. Only the cases `escape`
- * cannot serve stay here: a boolean is `1` where booleans are integers, and a plain object or array
- * is JSON rather than the throw and the IN-list `escape` gives them.
+ * it - MySQL takes `'a\b'` as a backspace where Postgres takes it literally. Only the case `escape`
+ * cannot serve stays here: a boolean is `1` where booleans are integers.
  */
-function defaultLiteral(value: unknown, dialect: AbstractSqlDialect, columnType?: string): string {
+function defaultLiteral(value: ColumnDefault | undefined, dialect: AbstractSqlDialect, columnType?: string): string {
   if (value === undefined || value === null) {
     return 'NULL';
   }
@@ -114,7 +117,7 @@ function defaultLiteral(value: unknown, dialect: AbstractSqlDialect, columnType?
   if (typeof value === 'boolean') {
     return dialect.booleanLiteral === 'native' ? (value ? 'TRUE' : 'FALSE') : value ? '1' : '0';
   }
-  return dialect.escape(typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value);
+  return dialect.escape(value);
 }
 
 /** A raw expression's own SQL, else the engine's spelling of the value it names. */

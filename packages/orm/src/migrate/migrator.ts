@@ -27,6 +27,7 @@ import type {
   SyncOptions,
   AbstractType,
 } from '../type/index.js';
+import { lacksValue } from '../util/field.util.js';
 import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
 import { sql } from '../util/sql.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
@@ -44,7 +45,6 @@ import {
 } from './migrationTarget.js';
 import {
   dropped,
-  lacksValue,
   newlyRequired,
   nonEmpty,
   rollbackDiff,

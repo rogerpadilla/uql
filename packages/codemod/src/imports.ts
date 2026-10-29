@@ -82,6 +82,7 @@ export const SQL_TAG = 'sql';
  */
 const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: string }>([
   ['QueryWhereMap', { to: 'QueryWhere' }],
+  ['QueryConflictPaths', { to: 'QueryConflictKeys' }],
   ['IndexColumnSchema', { to: 'IndexEntry' }],
   ['IndexColumnModifiers', { to: 'IndexEntryModifiers' }],
   ['RelationKeyMap', { to: 'KeyMap' }],

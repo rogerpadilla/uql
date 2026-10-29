@@ -174,9 +174,9 @@ type QueryAggregateFnResult<E, Fn> =
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 /** An aggregate's row for the query `Q`: each grouped column with its entity type, each alias with its path's, each computed one with its aggregate's. */
-export type QueryAggregateResult<E, Q> = AggregateRow<E, AggregateGroup<Q>, AggregateSelect<Q>>;
+export type QueryAggregateResult<E, Q> = AggregateResultRow<E, AggregateGroup<Q>, AggregateSelect<Q>>;
 
-type AggregateRow<E, G, A> = Simplify<
+type AggregateResultRow<E, G, A> = Simplify<
   Pick<E, GroupedKeys<G> & FieldKey<E>> & {
     -readonly [K in Exclude<NamedKeys<G>, FieldKey<E>>]: GroupRefValue<E, G[K]>;
   } & {
@@ -238,13 +238,13 @@ type ClosedAggregateQuery<E, G, A> = {
   readonly $select?: { readonly [K in keyof A]: K extends keyof G ? never : QueryAggregateFn<E> };
 
   /** Filtering after grouping, by a result column, each value typed as that column is. */
-  readonly $having?: HavingOf<AggregateRow<E, G, A>>;
+  readonly $having?: HavingOf<AggregateResultRow<E, G, A>>;
 
   /**
    * Sort the aggregated results by a grouped column or a computed alias - an aggregate's rows are
    * its groups, so any other entity field names a value the statement never produced.
    */
-  readonly $sort?: SortOf<AggregateRow<E, G, A>>;
+  readonly $sort?: SortOf<AggregateResultRow<E, G, A>>;
 } & QueryPager;
 
 /**

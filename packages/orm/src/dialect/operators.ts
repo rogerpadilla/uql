@@ -1,4 +1,6 @@
 import {
+  ColumnRef,
+  type EntityMeta,
   type QueryCompareOp,
   type QueryGroupOp,
   type QueryJoinOp,
@@ -11,10 +13,13 @@ import {
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOp,
+  REF_ENTITY,
+  REF_KEY,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
-import { getKeys, hasKeys, isWhereMap, someKey } from '../util/object.util.js';
+import { aggregateOf, isInlinedExpression } from '../util/field.util.js';
+import { getKeys, hasKeys, isOperatorKey, isRecord, isWhereMap, someKey } from '../util/object.util.js';
 import { escapeRegExp } from '../util/string.util.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 
@@ -59,6 +64,42 @@ export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
         : !(isWhereMap(where[key]) && !hasKeys(where[key])),
     )
   );
+}
+
+/**
+ * The fields of `meta` a `$where` reads, through every group: each key, a JSON path by its column, and each ref to
+ * one of `meta`'s own. `undefined` where it reads what the query does not show: raw SQL, a field computed by it, a
+ * relation or its aggregate, a `$` key.
+ */
+export function fieldsRead<E>(meta: EntityMeta<E>, where: QueryWhere<E>): ReadonlySet<string> | undefined {
+  const read = new Set<string>();
+  const readsOperand = (value: unknown): boolean => {
+    if (value instanceof ColumnRef) {
+      if ((value[REF_ENTITY] ?? meta.entity) === meta.entity) {
+        read.add(value[REF_KEY]);
+      }
+      return true;
+    }
+    if (value instanceof QuerySql) {
+      return false;
+    }
+    return !(isRecord(value) || Array.isArray(value)) || Object.values(value).every(readsOperand);
+  };
+  const readsClause = (clause: QueryWhere<E> | QuerySql): boolean =>
+    !(clause instanceof QuerySql) &&
+    getKeys(clause).every((key) => {
+      if (isGroupOp(key)) {
+        return groupClauses(key, clause[key]).every(readsClause);
+      }
+      const [root] = key.split('.');
+      const field = meta.fields[root];
+      if (isOperatorKey(key) || meta.relations[root] || aggregateOf(field) || (field && isInlinedExpression(field))) {
+        return false;
+      }
+      read.add(root);
+      return readsOperand(clause[key]);
+    });
+  return readsClause(where) ? read : undefined;
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   Profile,
   TaxCategory,
   User,
+  Tax,
 } from '../test/index.js';
 import { sql } from '../util/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
@@ -55,7 +56,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         TaxCategory,
-        { pk: true },
+        { $conflict: { pk: true } },
         {
           pk: 'a',
           name: 'Some Name D',
@@ -65,14 +66,30 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(statement).toMatch(
-      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.* RETURNING `pk` `id`$/,
+      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
     );
     expect(values).toEqual(['a', 'Some Name D', 1, 1]);
   }
 
+  shouldUpsertOnlyWhereTheFoundRowMatches() {
+    const { sql: statement, values } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Tax,
+        { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+        { id: 'a', name: 'x', percentage: 1 },
+      ),
+    );
+    expect(statement).toBe(
+      'INSERT INTO `Tax` (`id`, `name`, `percentage`, `createdAt`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET ' +
+        '`name` = EXCLUDED.`name`, `percentage` = EXCLUDED.`percentage`, `updatedAt` = ? WHERE `Tax`.`percentage` < ?',
+    );
+    expect(values).toEqual(['a', 'x', 1, expect.any(Number), expect.any(Number), 20]);
+  }
+
   override shouldUpsertMany() {
     const { sql: statement, values } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, User, { email: true }, [
+      this.dialect.upsert(ctx, User, { $conflict: { email: true } }, [
         {
           name: 'Name A',
           email: 'a@example.com',
@@ -86,7 +103,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(statement).toMatch(
-      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET.* RETURNING `id` `id`$/,
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET.*$/,
     );
     expect(values).toHaveLength(9);
   }
@@ -96,7 +113,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         Profile,
-        { pk: true },
+        { $conflict: { pk: true } },
         {
           pk: '1',
           picture: 'image.jpg',
@@ -114,7 +131,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         User,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
           email: 'a@b.com',
@@ -178,13 +195,13 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(
         ctx,
         ItemTag,
-        { id: true },
+        { $conflict: { id: true } },
         {
           id: '1',
         },
       ),
     );
-    expect(statement).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING RETURNING `id` `id`');
+    expect(statement).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING');
     expect(values).toEqual(['1']);
   }
 

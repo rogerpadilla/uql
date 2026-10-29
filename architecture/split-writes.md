@@ -25,6 +25,8 @@ A statement is `{ sql, values }`. A driver answers two methods: `execute(sql, va
 
 One statement runs alone everywhere. A list asks for a transaction only where it is a split write, `runStatements(statements, atomic)`: an `insertMany` sent as two or more statements, an `upsertMany` of two or more upserts, and a vector search tuned by `SET LOCAL` outside a transaction, which the setting needs. A stream tuned so is refused outside one instead, since its transaction would stay open for the whole loop.
 
+On MongoDB, an `upsertMany` with an `update` or a `$where` inserts the absent documents, then updates the found ones: two `bulkWrite`s, atomic only inside a `transaction()` the caller opens. Any other `insertMany` or `upsertMany` is one command, which MongoDB applies a document at a time, as it does an `updateMany`; a `transaction()` makes it all or none.
+
 `runStatements` is the outermost step a statement takes, in this order: a list with no `executeBatch` where two or more write opens its transaction, whose `BEGIN` waits on the querier's queue; then the queue is taken, the connection made, and the driver runs the statement, the list in turn, or the list as one request, timed as one.
 
 The `SET LOCAL`s tuning a vector search lead its read's list. An upsert's read-back of ids by its conflict columns follows its statements, for the rows they placed no id on and that do not keep their own key: where the engine cannot report ids in order (MySQL reports one row's own, assigning a found row's key through `LAST_INSERT_ID`), or the upsert assigns nothing and so may skip rows. `findManyAndCount`'s count for an empty page stays where it is, after the page, as deciding it up front would add a count to every paged call. `atomically` remains only where the writes depend on a read; on D1 those run unguarded, and `transaction()` stays refused there.
@@ -44,5 +46,4 @@ HTTP needs only `fetch`, and no session outlives the querier that opened it, so 
 ## Not in this change
 
 - **One request on Postgres, MySQL and SQL Server.** Each runs `runStatements` as a transaction over one connection, where round trips are cheap. `pg`'s pipelining can send `BEGIN`, the statements and `COMMIT` in one round trip, but it refuses cursors and answers a failed list's `COMMIT` as resolved; mysql2's multiple statements leave a failed transaction open. Either would be a driver concern, behind the same method.
-- **An atomic MongoDB `upsertMany` with an `update`.** Its two calls a row run in turn, row by row; `client.bulkWrite` is not transactional.
 - **Dependent writes in one request.** A cascade inserting children needs the parent's id, unless every key is generated client-side (`onInsert`). Planning that is possible but is a separate step, worth taking only when a profile asks for it.

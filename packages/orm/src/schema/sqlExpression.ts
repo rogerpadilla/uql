@@ -1,6 +1,8 @@
 import { QuerySql, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
-import { isRecord } from '../util/object.util.js';
+import { byCodeUnit, isJsonScalar, isRecord, jsonDocument } from '../util/object.util.js';
 import { SQL_VALUES } from '../util/sql.js';
+import { UqlUsageError } from '../util/uqlError.js';
+import type { ColumnDefault } from './types.js';
 
 const EXPRESSION: unique symbol = Symbol('sqlExpression');
 
@@ -31,35 +33,42 @@ const NAME_OF: ReadonlyMap<unknown, SqlValueName> = new Map(SQL_VALUE_NAMES.map(
 
 /**
  * A default in schema form: a value uql exports (`currentTimestamp`) becomes its kind, so each engine spells it
- * for the column it fills; other `raw` becomes the SQL `compile` renders, parenthesized; a literal is kept.
+ * for the column it fills; other `raw` the SQL `compile` renders, parenthesized; a document, or any value of a
+ * `json` column, its JSON text, which is how the database reports it back; another literal is kept.
  */
-export function schemaDefault(value: unknown, compile: (sql: QuerySql) => string): unknown {
+export function schemaDefault(
+  value: unknown,
+  compile: (sql: QuerySql) => string,
+  json = false,
+): ColumnDefault | undefined {
   const name = NAME_OF.get(value);
   if (name) {
     return SqlExpression.named(name);
   }
-  return value instanceof QuerySql ? SqlExpression.parenthesized(compile(value)) : value;
+  if (value instanceof QuerySql) {
+    return SqlExpression.parenthesized(compile(value));
+  }
+  if (value === undefined || value === null || SqlExpression.isExpression(value)) {
+    return value;
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new UqlUsageError(`a default cannot be ${value}: no SQL literal holds it`);
+  }
+  return !json && (isJsonScalar(value) || typeof value === 'bigint' || value instanceof Date)
+    ? value
+    : JSON.stringify(value);
 }
 
 /**
- * A default as text to compare: numbers as their digits, other text as written, and objects (SQL included) and text
- * holding a JSON object or list as JSON with its keys in order, equal as documents, since `jsonb` reprints them.
+ * A default as text to compare: numbers as their digits, other text as written, and SQL and text holding a JSON
+ * object or list as JSON with its keys in order, equal as documents, since `jsonb` reprints them.
  */
-export function writtenDefault(value: unknown): string {
+export function writtenDefault(value: ColumnDefault): string {
   const document = typeof value === 'string' ? jsonDocument(value) : value;
   return typeof document === 'object' && document !== null ? JSON.stringify(document, keysInOrder) : String(value);
 }
 
-/** What `text` spells as JSON, or nothing where it is no JSON at all. */
-function jsonDocument(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
 /** A `JSON.stringify` replacer writing each object's keys in order. */
 function keysInOrder(_key: string, value: unknown): unknown {
-  return isRecord(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1))) : value;
+  return isRecord(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => byCodeUnit(a, b))) : value;
 }

@@ -6,7 +6,7 @@ import { sqlPools, syncedPool } from '../../test/sqlPools.js';
 import { Author, label } from './definedFixture/author.js';
 import { Book } from './definedFixture/book.js';
 
-describe.each(sqlPools('test_schema'))('a defined entity on %s', (_engine, connect) => {
+describe.each(sqlPools('test_defined'))('a defined entity on %s', (_engine, connect) => {
   const pool = syncedPool(connect, [Author, Book]);
 
   it('should write and read rows, its defaults, computed column, version, hook and relations', async () => {

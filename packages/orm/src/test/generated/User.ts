@@ -12,7 +12,7 @@ export class User {
   @Field(f.column('text').nullable())
   name?: string | null;
 
-  @Field(f.column('jsonb').default('{}'))
+  @Field(f.column('jsonb').default({}))
   settings?: Json;
 
   @Field(f.column('int').nullable().name('manager_id'))

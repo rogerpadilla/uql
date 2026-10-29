@@ -1,6 +1,6 @@
 /**
  * `UpdatePayload` (typo'd fields, `sql()` values, `$inc`/`$mul`, relations as their own entity shape) and
- * `QueryConflictPaths`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
+ * `QueryConflictKeys`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { versionKey } from '../index.js';
@@ -78,29 +78,29 @@ export async function arithmeticSafety() {
   // @ts-expect-error a string column's ref is no step
   await querier.updateOneById(Counter, 1, { hits: { $inc: counter.label } });
   // @ts-expect-error an upsert writes whole rows, with no update operator
-  await querier.upsertOne(Counter, { id: true }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
+  await querier.upsertOne(Counter, { $conflict: { id: true } }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
 
   // A conflicting row takes the fourth argument as `updateMany` takes an update, operators and relations included.
   const row = { id: 1, label: 'x', total: 1n };
-  await querier.upsertOne(Counter, { id: true }, row, { hits: { $inc: 1 } });
-  await querier.upsertMany(Counter, { id: true }, [row], { total: { $inc: 1n } });
+  await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { hits: { $inc: 1 } });
+  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { total: { $inc: 1n } });
   // @ts-expect-error it is checked as an update is: 'hit' is not a field of Counter
-  await querier.upsertOne(Counter, { id: true }, row, { hit: { $inc: 1 } });
+  await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { hit: { $inc: 1 } });
   // @ts-expect-error and only a numeric field increments there too
-  await querier.upsertOne(Counter, { id: true }, row, { label: { $inc: 1 } });
-  await querier.upsertMany(Counter, { id: true }, [row], { owner: { id: 1, name: 'Acme' } });
+  await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { label: { $inc: 1 } });
+  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { owner: { id: 1, name: 'Acme' } });
   // @ts-expect-error a relation's value is checked against its own entity's fields
-  await querier.upsertMany(Counter, { id: true }, [row], { owner: { id: 1, naem: 'Acme' } });
+  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { owner: { id: 1, naem: 'Acme' } });
 }
 
 export async function conflictPathSafety() {
-  await querier.upsertOne(Employee, { id: true }, { id: 1, name: 'x', salary: 1 });
-  await querier.upsertMany(Employee, { name: true }, [{ id: 1, name: 'x', salary: 1 }]);
+  await querier.upsertOne(Employee, { $conflict: { id: true } }, { id: 1, name: 'x', salary: 1 });
+  await querier.upsertMany(Employee, { $conflict: { name: true } }, [{ id: 1, name: 'x', salary: 1 }]);
 
   // @ts-expect-error 'ide' is not a field of Employee
-  await querier.upsertOne(Employee, { ide: true }, { id: 1, name: 'x', salary: 1 });
+  await querier.upsertOne(Employee, { $conflict: { ide: true } }, { id: 1, name: 'x', salary: 1 });
   // @ts-expect-error 'ide' is not a field of Employee
-  await querier.upsertMany(Employee, { ide: true }, [{ id: 1, name: 'x', salary: 1 }]);
+  await querier.upsertMany(Employee, { $conflict: { ide: true } }, [{ id: 1, name: 'x', salary: 1 }]);
 }
 
 /** A write takes an entity's fields and relations, never its methods: a lifecycle hook is behaviour. */
@@ -142,10 +142,10 @@ export async function writePayloadsExcludeBehaviour(querier: Querier) {
   // A batch is only read, never changed in place, so a `readonly` one is taken as it is.
   const batch: readonly { title: string }[] = [{ title: 'a' }];
   await querier.insertMany(Hooked, batch);
-  await querier.upsertMany(Hooked, { title: true }, batch);
+  await querier.upsertMany(Hooked, { $conflict: { title: true } }, batch);
   await querier.saveMany(Hooked, batch);
   await querier.saveOne(Hooked, { title: 'Hello' });
-  await querier.upsertOne(Hooked, { title: true }, { title: 'Hello' });
+  await querier.upsertOne(Hooked, { $conflict: { title: true } }, { title: 'Hello' });
   // relations are persistable data, so they stay in the payload
   await querier.insertOne(Hooked, { title: 'Hello', tags: [{ id: 1, name: 'x' }] });
   await querier.insertOne(Tagged, { tags: [{ name: 'x' }], owner: { name: 'y' } });

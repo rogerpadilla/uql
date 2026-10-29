@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { Computed, Entity, f, Field } from '../entity/index.js';
+import { getMeta } from '../entity/index.js';
 import type { FieldOptions } from '../type/index.js';
-import { aggregateField, columnFamily, declaresNotNull, isAutoIncrement, isIntegerColumn } from './field.util.js';
-import { memberRefs } from './sql.js';
+import {
+  aggregateField,
+  columnFamily,
+  declaresNotNull,
+  hasTriggers,
+  isAutoIncrement,
+  isIntegerColumn,
+} from './field.util.js';
+import { memberRefs, sql } from './sql.js';
 
 describe('columnFamily', () => {
   it('should place the constructors', () => {
@@ -114,5 +123,30 @@ describe('aggregateField', () => {
   it('should declare a count and a sum NOT NULL', () => {
     expect(declaresNotNull(aggregateField(items.count()))).toBe(true);
     expect(declaresNotNull(aggregateField(items.sum((item) => item.amount)))).toBe(true);
+  });
+});
+
+describe('hasTriggers', () => {
+  @Entity({ name: 'PlainLevel' })
+  class PlainLevel {
+    @Field(f.number().id()) id?: number;
+  }
+
+  @Entity({ name: 'StampedLevel' })
+  class StampedLevel {
+    @Field(f.number().id()) id?: number;
+    @Computed(() =>
+      f
+        .number()
+        .nullable()
+        .as(sql`1`)
+        .stored(['update']),
+    )
+    readonly touched?: number | null;
+  }
+
+  it('should tell an entity with a stamp from one without', () => {
+    expect(hasTriggers(getMeta(StampedLevel))).toBe(true);
+    expect(hasTriggers(getMeta(PlainLevel))).toBe(false);
   });
 });

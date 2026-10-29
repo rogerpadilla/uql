@@ -111,7 +111,7 @@ export async function find() {
 export async function write() {
   await querier.insertOne(Movie, { title: 'Heat', rating: 8, studioId: 1 });
   await querier.updateMany(Movie, { $where: { studioId: 1 } }, { title: 'Heat', rating: 9 });
-  await querier.upsertOne(Movie, { title: true }, { title: 'Heat', rating: 8 });
+  await querier.upsertOne(Movie, { $conflict: { title: true } }, { title: 'Heat', rating: 8 });
 }
 
 export async function aggregate() {

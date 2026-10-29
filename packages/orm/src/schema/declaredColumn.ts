@@ -1,5 +1,5 @@
 import type { Except, FieldMeta, QuerySql } from '../type/index.js';
-import { declaresNotNull, isAutoIncrement } from '../util/field.util.js';
+import { declaresNotNull, fieldFamily, isAutoIncrement } from '../util/field.util.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
 import { schemaDefault } from './sqlExpression.js';
 import type { ColumnNode } from './types.js';
@@ -20,7 +20,7 @@ export function declaredColumn(
     name,
     type: resolveColumnCanonicalType(field),
     nullable: !declaresNotNull(field),
-    defaultValue: schemaDefault(field.defaultValue, compile),
+    defaultValue: schemaDefault(field.defaultValue, compile, fieldFamily(field) === 'json'),
     isPrimaryKey: field.isId === true,
     isAutoIncrement: isAutoIncrement(field, soleKey),
     isUnique: field.unique ?? false,

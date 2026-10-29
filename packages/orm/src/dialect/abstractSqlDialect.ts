@@ -1,5 +1,5 @@
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
-import { generatesKey, soleId, valueFieldOf } from '../entity/metadata/definition.js';
+import { generatesKey, ownsSoleKey, valueFieldOf } from '../entity/metadata/definition.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -24,7 +24,8 @@ import {
   type QueryAggregateOp,
   type QueryBuildFn,
   type QueryComparisonOptions,
-  type QueryConflictPaths,
+  type QueryConflictKeys,
+  type QueryUpsert,
   type QueryContext,
   type QueryContextOptions,
   type QueryCount,
@@ -35,6 +36,9 @@ import {
   type QueryPager,
   type QueryPopulate,
   QuerySql,
+  REF_ENTITY,
+  REF_KEY,
+  ColumnRef,
   renderSql,
   type QuerySqlFnOptions,
   type QuerySearch,
@@ -61,9 +65,16 @@ import {
   type TriggerWrite,
   type AbstractType,
   type UpdatePayload,
+  type ReportedWrite,
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
-import { ancestorPaths, isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
+import {
+  ancestorPaths,
+  isExactDecimal,
+  isInlinedExpression,
+  jsonPathKeys,
+  lacksValueOnInsert,
+} from '../util/field.util.js';
 import {
   RETURNED_ID,
   isSelectList,
@@ -73,6 +84,9 @@ import {
   definedEntries,
   escapeSqlId,
   fillOnFields,
+  hasTriggers,
+  type WriteScope,
+  foundRowAssigned,
   filterFieldKeys,
   getInsertFieldKeys,
   getKeys,
@@ -114,10 +128,9 @@ import {
   type SortDirection,
   aggregateOf,
   sql,
-  refs,
   columnRef,
+  refOwner,
   throwUnknownAggregateColumn,
-  upsertAssigned,
 } from '../util/index.js';
 import { cachedIn, isJsonScalar } from '../util/object.util.js';
 import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
@@ -138,6 +151,8 @@ import {
   type JsonKeyWrite,
   chainedCall,
   jsonCompareMode,
+  literalMode,
+  jsonTypeMode,
   jsonElemExists,
   jsonPath,
   jsonRemoveCall,
@@ -224,6 +239,9 @@ type SortWalk = QuerySortOptions & { readonly distinct?: boolean; readonly rankT
 
 /** A sort term of a relation's rows as their aggregate orders by it: the column carrying it out. */
 export type SortRef = SortOrder & { readonly ref: string };
+
+/** What a row an upsert finds takes: its `SET` list, empty for none, and the condition it takes it under, or empty. */
+export type ConflictUpdate = { readonly assignments: string; readonly condition: string };
 
 /**
  * One column of a read's projection: the key its row answers under, none for a raw expression written
@@ -363,11 +381,20 @@ function chain(parts: readonly string[], op: 'AND' | 'OR'): string {
  * How `op` reads a JSON value: an ordered comparison as a number, an equality as its operand compares,
  * and a pattern or a null check as text.
  */
-function jsonOperatorMode(op: QueryWhereFieldOp, value: unknown): JsonAccessMode {
+function jsonOperatorMode(op: QueryWhereFieldOp, value: unknown, scope: QuerySqlFnOptions): JsonAccessMode {
   if (ORDERED_OPS.has(op)) {
     return 'numeric';
   }
-  return EQUALITY_OPS.has(op) ? jsonCompareMode(value) : 'text';
+  return EQUALITY_OPS.has(op) ? jsonCompareMode(value, (operand) => operandMode(operand, scope)) : 'text';
+}
+
+/** The mode an operand asks for: a ref by its column's declared type, as an index over the path reads it; else its own. */
+function operandMode(operand: unknown, scope: QuerySqlFnOptions): JsonAccessMode {
+  if (!(operand instanceof ColumnRef)) {
+    return literalMode(operand);
+  }
+  const key = operand[REF_KEY];
+  return jsonTypeMode(getMeta(refOwner(operand[REF_ENTITY], key, scope)).fields[key]?.type);
 }
 
 /** `$group` aggregate operator to SQL function name, over ops `resolveAggregateOp` has already allowlisted. */
@@ -496,8 +523,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** A `sql()` rendered in place, an operand or a projected term: bound, the driver would get the object. */
-  protected rawFragment(ctx: QueryContext, value: QuerySql, prefix?: string, entity?: AbstractType<unknown>): string {
-    return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value, prefix, entity }));
+  protected rawFragment(ctx: QueryContext, value: QuerySql, scope: QuerySqlFnOptions = {}): string {
+    return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { ...scope, value }));
   }
 
   /**
@@ -514,9 +541,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       .filter((part) => part !== '');
   }
 
-  addValue(ctx: QueryContext, value: unknown): string {
+  /** `value` bound, or SQL rendered where it stands, in `scope` where a field is compared with it, so a ref names its column as the field is named. */
+  addValue(ctx: QueryContext, value: unknown, scope?: QuerySqlFnOptions): string {
     if (value instanceof QuerySql) {
-      return this.rawFragment(ctx, value);
+      return this.rawFragment(ctx, value, scope);
     }
     if (ctx.inlineValues) {
       return this.escape(this.normalizeValue(value));
@@ -554,11 +582,35 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * ` RETURNING` the fields `keys` names, after an `UPDATE` or `DELETE` this context holds, projected and read as
-   * a read's are: the terms its rows answer under. Only where `features.writeReturning`.
+   * Whether a `write` of `meta`'s rows reports them as written: where the engine's `write` reports rows, and no trigger
+   * or stamp can change the row after it, on an engine whose trigger cannot assign to its row.
    */
-  returning<E>(ctx: QueryContext, entity: AbstractType<E>, keys: readonly FieldKey<E>[]): readonly SelectTerm[] {
-    const terms = this.selectTerms(ctx, entity, keySet(keys));
+  reportsWrite<E>(meta: EntityMeta<E>, write: ReportedWrite): boolean {
+    const { reportsWrites, triggers } = this.features;
+    return reportsWrites.includes(write) && (triggers.assignsRow || !hasTriggers(meta));
+  }
+
+  /**
+   * The `write` `render` appends, reporting the fields `returning` names of each row it writes, projected and read
+   * as a read's are: the terms its rows answer under, none where it names none. `render` takes what goes between the
+   * target and its rows; here nothing, as a ` RETURNING` follows the write. Refused where the engine's `write`
+   * reports no rows, which `features.reportsWrites` says.
+   */
+  protected reportedWrite<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    returning: readonly FieldKey<E>[] | undefined,
+    write: ReportedWrite,
+    render: (afterTarget: string) => void,
+  ): readonly SelectTerm[] {
+    if (returning && !this.features.reportsWrites.includes(write)) {
+      throw new UqlUsageError(`${this.engineName} reports no rows of a write's ${write}: read them back instead`);
+    }
+    render('');
+    if (!returning) {
+      return [];
+    }
+    const terms = this.selectTerms(ctx, entity, keySet(returning));
     ctx.append(` RETURNING ${this.termsSql(terms)}`);
     return terms;
   }
@@ -566,7 +618,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** What the returned row is read off, for an engine that names it: SQL Server's `INSERTED.`. */
   protected readonly returnedRowPrefix: string = '';
 
-  /** `<id column> AS` {@link RETURNED_ID} on its own, for a statement composing a `RETURNING` list of several items. */
+  /** `<id column> AS` {@link RETURNED_ID}, as a clause reporting an insert's id lists it. */
   protected returningIdExpression<E>(meta: EntityMeta<E>): string {
     const [idKey] = meta.ids;
     return meta.ids.length === 1
@@ -629,7 +681,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     return keys.map((key) =>
       key instanceof QuerySql
-        ? { sql: this.rawFragment(ctx, key, opts.prefix), key: key[RAW_ALIAS] }
+        ? { sql: this.rawFragment(ctx, key, { prefix: opts.prefix }), key: key[RAW_ALIAS] }
         : this.fieldTerm(ctx, meta, key, opts),
     );
   }
@@ -788,7 +840,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** A projection's list of terms. */
-  private termsSql(terms: readonly SelectTerm[]): string {
+  protected termsSql(terms: readonly SelectTerm[]): string {
     return terms.map((term) => this.termSql(term)).join(', ');
   }
 
@@ -858,7 +910,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * in front of the name, or the read takes an alias of its own. See {@link resolveTableAlias} for why
    * the prefix cannot be the qualified path.
    */
-  protected tableRef<E>(meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): { alias: string; ref: string } {
+  tableRef<E>(meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): { alias: string; ref: string } {
     const name = this.escapedTableName(meta);
     const aliased = !!this.resolveSchema(meta) || alias !== this.resolveTableAlias(meta);
     return { alias, ref: aliased ? `${name} ${this.escapeId(alias, true)}` : name };
@@ -988,23 +1040,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): void {
     const meta = getMeta(entity);
 
-    if (val instanceof QuerySql) {
-      if (key === '$exists' || key === '$nexists') {
-        ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
-        // The read's alias: the enclosing statement declares one, and Postgres forbids reaching past
-        // it to the qualified name it aliased.
-        const alias = opts.prefix ?? this.resolveTableAlias(meta);
-        this.getRawValue(ctx, {
-          value: val,
-          prefix: alias,
-          escapedPrefix: this.escapeId(alias, true, true),
-        });
-        ctx.append(')');
-        return;
-      }
-      this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
-      ctx.append(' = ');
-      this.getRawValue(ctx, { ...opts, value: val });
+    if ((key === '$exists' || key === '$nexists') && val instanceof QuerySql) {
+      // The read's alias: the enclosing statement declares one, and Postgres forbids reaching past
+      // it to the qualified name it aliased.
+      const alias = opts.prefix ?? this.resolveTableAlias(meta);
+      const subquery = this.rawFragment(ctx, val, { prefix: alias });
+      ctx.append(`${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${subquery})`);
       return;
     }
 
@@ -1019,9 +1060,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
-    const jsonDot = this.resolveJsonDotPath(meta, key, opts.prefix);
+    const jsonDot = this.resolveJsonDotPath(meta, key, opts);
     if (jsonDot) {
-      ctx.append(this.jsonConditions(ctx, this.jsonPathTarget(jsonDot), val));
+      ctx.append(this.jsonConditions(ctx, this.jsonPathTarget(jsonDot), val, { ...opts, entity }));
       return;
     }
 
@@ -1105,13 +1146,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `${fold ? `LOWER(${operand})` : operand} ${matchOp} ${ph} ESCAPE ${this.escape('\\')}`;
   }
 
+  /** What a column is read off: the qualifier already escaped, else the alias in scope escaped with its dot. */
+  private qualifierOf(opts: Pick<QueryRenderOptions, 'prefix' | 'escapedPrefix'>): string {
+    return opts.escapedPrefix ?? this.escapeId(opts.prefix, true, true);
+  }
+
   /** Builds `prefix.column` from an already-resolved field, through the same memo writes use. */
   private columnWithPrefix(
     key: string,
     field: FieldOptions | undefined,
     opts: Pick<QueryRenderOptions, 'prefix' | 'escapedPrefix'>,
   ): string {
-    return (opts.escapedPrefix ?? this.escapeId(opts.prefix, true, true)) + this.escapedColumnOf(key, field);
+    return this.qualifierOf(opts) + this.escapedColumnOf(key, field);
   }
 
   /**
@@ -1138,7 +1184,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   private inlinedOperand<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, prefix: string | undefined) {
     const field = meta.fields[key];
     return field && isInlinedExpression(field)
-      ? this.rawFragment(ctx, columnRef(meta.entity, key), prefix ?? this.resolveTableAlias(meta), meta.entity)
+      ? this.rawFragment(ctx, columnRef(meta.entity, key), {
+          prefix: prefix ?? this.resolveTableAlias(meta),
+          entity: meta.entity,
+        })
       : undefined;
   }
 
@@ -1170,8 +1219,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return this.vectorNearCondition(ctx, getMeta(entity), key, val, opts.prefix);
     }
     const field = this.resolveOperandField(ctx, entity, key, opts);
+    const scope = { ...opts, entity };
     const condition =
-      this.operatorCondition(ctx, field, op, val) ?? this.jsonArrayCondition(ctx, { base: field, path: '' }, op, val);
+      this.operatorCondition(ctx, field, op, val, (value) => this.addValue(ctx, value, scope)) ??
+      this.jsonArrayCondition(ctx, { base: field, path: '' }, op, val, scope);
     return orRefuse(condition, `unknown operator: ${op}`);
   }
 
@@ -1243,10 +1294,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     slot: JsonSlot,
     op: QueryWhereFieldOp,
     val: unknown,
+    scope: QuerySqlFnOptions,
   ): string | undefined {
     switch (op) {
       case '$all':
-        return this.jsonAll(ctx, slot, val as readonly unknown[]);
+        return this.jsonAll(ctx, slot, val as readonly unknown[], scope);
       case '$size':
         return this.sizeCondition(
           ctx,
@@ -1254,7 +1306,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           val as number | QuerySizeComparisonOps,
         );
       case '$elemMatch':
-        return this.jsonElemMatch(ctx, slot, val as Record<string, unknown>);
+        return this.jsonElemMatch(ctx, slot, val as Record<string, unknown>, scope);
       default:
         return undefined;
     }
@@ -1266,42 +1318,64 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** Every operator `target` is compared with, `AND`-joined. */
-  private jsonConditions(ctx: QueryContext, target: JsonTarget, val: unknown): string {
+  private jsonConditions(ctx: QueryContext, target: JsonTarget, val: unknown, scope: QuerySqlFnOptions): string {
     return conjunction(
-      whereOperators(val, 'unknown operator').map(([op, value]) => this.jsonCondition(ctx, target, op, value)),
+      whereOperators(val, 'unknown operator').map(([op, value]) => this.jsonCondition(ctx, target, op, value, scope)),
     );
   }
 
-  private jsonCondition(ctx: QueryContext, target: JsonTarget, op: QueryWhereFieldOp, value: unknown): string {
+  private jsonCondition(
+    ctx: QueryContext,
+    target: JsonTarget,
+    op: QueryWhereFieldOp,
+    value: unknown,
+    scope: QuerySqlFnOptions,
+  ): string {
     if (op === '$not') {
-      return `NOT (${this.jsonConditions(ctx, target, value)})`;
+      return `NOT (${this.jsonConditions(ctx, target, value, scope)})`;
     }
-    const array = this.jsonArrayCondition(ctx, target.slot, op, value);
+    const array = this.jsonArrayCondition(ctx, target.slot, op, value, scope);
     if (array !== undefined) {
       return array;
     }
-    const mode = jsonOperatorMode(op, value);
+    const mode = jsonOperatorMode(op, value, scope);
     const operand = target.read(mode);
     // Only a boolean compares as a JSON value, so the set holds two at most, and MySQL documents `IN()`
     // as unsupported on JSON values: the comparisons are spelled out.
     if (mode === 'json' && (op === '$in' || op === '$nin')) {
       const negate = op === '$nin';
       const comparisons = inOperands(op, value).map(
-        (val) => `${operand} ${negate ? '<>' : '='} ${this.jsonScalarParam(ctx, val)}`,
+        (val) => `${operand} ${negate ? '<>' : '='} ${this.jsonOperand(ctx, val, mode, scope)}`,
       );
       return `(${comparisons.join(negate ? ' AND ' : ' OR ')})`;
     }
-    const condition = this.operatorCondition(ctx, operand, op, value, (val) => this.jsonOperand(ctx, val, mode));
+    const condition = this.operatorCondition(ctx, operand, op, value, (val) => this.jsonOperand(ctx, val, mode, scope));
     return orRefuse(condition, `unknown operator: ${op}`);
   }
 
-  /** A bound operand of a JSON comparison, read the way `mode` reads the value it is compared with. */
-  private jsonOperand(ctx: QueryContext, value: unknown, mode: JsonAccessMode): string {
+  /**
+   * An operand of a JSON comparison, read the way `mode` reads the path it is compared with. SQL in `json` mode
+   * is a boolean column's ref, which no engine casts to JSON alike, so its value picks the JSON literal.
+   */
+  private jsonOperand(ctx: QueryContext, value: unknown, mode: JsonAccessMode, scope: QuerySqlFnOptions): string {
+    if (value instanceof QuerySql) {
+      const column = this.rawFragment(ctx, value, scope);
+      if (mode !== 'json') {
+        return mode === 'text' ? this.textOperand(column) : column;
+      }
+      const arms = [true, false].map((it) => `WHEN ${this.addValue(ctx, it)} THEN ${this.jsonScalarParam(ctx, it)}`);
+      return `CASE ${column} ${arms.join(' ')} END`;
+    }
     if (mode === 'json') {
       return this.jsonScalarParam(ctx, value);
     }
     const placeholder = this.addValue(ctx, value);
     return mode === 'numeric' ? this.numericCast(placeholder) : placeholder;
+  }
+
+  /** A column compared with a JSON path's text, as it compares: as it is, where the engine converts it. */
+  protected textOperand(column: string): string {
+    return column;
   }
 
   /** The JSON value at `slot`, as an array operator reads it. */
@@ -1314,17 +1388,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `JSON_CONTAINS` read one: a scalar equal, an array each of its elements, an object each of its keys.
    * Plain JSON goes to {@link jsonContains}; an operator anywhere in it is matched element by element.
    */
-  private jsonAll(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
-    return holdsOperator(values) ? this.jsonElemsHold(ctx, slot, values) : this.jsonContains(ctx, slot, values);
+  private jsonAll(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[], scope: QuerySqlFnOptions): string {
+    return holdsOperator(values) ? this.jsonElemsHold(ctx, slot, values, scope) : this.jsonContains(ctx, slot, values);
   }
 
   /** `$all` over plain JSON, which an engine with containment of its own spells natively, for an index to serve. */
   protected jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
-    return this.jsonElemsHold(ctx, slot, values);
+    return this.jsonElemsHold(ctx, slot, values, {});
   }
 
   /** One `EXISTS` per value, over the elements of the array at `slot`: a scalar equal, anything else held. */
-  private jsonElemsHold(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+  private jsonElemsHold(
+    ctx: QueryContext,
+    slot: JsonSlot,
+    values: readonly unknown[],
+    scope: QuerySqlFnOptions,
+  ): string {
     const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     const from = this.jsonElemFrom(slot, alias);
     const element: JsonTarget = {
@@ -1334,7 +1413,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const conditions = values.map((value) => {
       const holds =
         isOperatorMap(value) || Array.isArray(value)
-          ? this.jsonHolds(ctx, element, value)
+          ? this.jsonHolds(ctx, element, value, scope)
           : [this.jsonElemEquals(ctx, slot, alias, value)];
       return jsonElemExists(from, holds, this.jsonElemHint);
     });
@@ -1345,16 +1424,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * What the JSON `target` reads satisfies to hold `value`: an array each of its elements, an object each
    * of its keys as a path, and an operator map or a scalar compared as a path is.
    */
-  private jsonHolds(ctx: QueryContext, target: JsonTarget, value: unknown): string[] {
+  private jsonHolds(ctx: QueryContext, target: JsonTarget, value: unknown, scope: QuerySqlFnOptions): string[] {
     if (Array.isArray(value)) {
-      return [this.jsonAll(ctx, target.slot, value)];
+      return [this.jsonAll(ctx, target.slot, value, scope)];
     }
     if (!isJsonObject(value)) {
-      return [this.jsonConditions(ctx, target, value)];
+      return [this.jsonConditions(ctx, target, value, scope)];
     }
     const { base, path } = target.slot;
     return Object.entries(value).flatMap(([key, item]) =>
-      this.jsonHolds(ctx, this.jsonPathTarget({ base, path: path ? `${path}.${key}` : key }), item),
+      this.jsonHolds(ctx, this.jsonPathTarget({ base, path: path ? `${path}.${key}` : key }), item, scope),
     );
   }
 
@@ -1365,7 +1444,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** The JSON array at `slot` contains at least one of `values`, each as `$all` reads it. */
   protected jsonAny(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
-    const anyOf = values.map((value) => this.jsonAll(ctx, slot, [value]));
+    const anyOf = values.map((value) => this.jsonContains(ctx, slot, [value]));
     return `(${chain(anyOf, 'OR')})`;
   }
 
@@ -1398,7 +1477,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * itself. An element equal to one value, or to one of several, is containment whatever the operator
    * says, which compares by JSON type and is what an array index serves.
    */
-  protected jsonElemMatch(ctx: QueryContext, slot: JsonSlot, match: Record<string, unknown>): string {
+  protected jsonElemMatch(
+    ctx: QueryContext,
+    slot: JsonSlot,
+    match: Record<string, unknown>,
+    scope: QuerySqlFnOptions,
+  ): string {
     const keys = Object.keys(match);
     if (keys.some(isOperatorKey) && !keys.every(isOperatorKey)) {
       throw new UqlUsageError(`$elemMatch cannot mix operators with field names: ${keys.join(', ')}`);
@@ -1406,12 +1490,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const single = keys.length === 1;
     const { $eq: equal, $in: within } = match;
     if (single && isJsonScalar(equal)) {
-      return this.jsonAll(ctx, slot, [equal]);
+      return this.jsonAll(ctx, slot, [equal], scope);
     }
     if (single && Array.isArray(within) && within.length > 0 && within.every(isJsonScalar)) {
       return this.jsonAny(ctx, slot, within);
     }
-    return this.jsonAll(ctx, slot, [match]);
+    return this.jsonAll(ctx, slot, [match], scope);
   }
 
   /** The optimizer hint a `$elemMatch` subquery opens with, where the engine plans one wrong without it. */
@@ -1426,16 +1510,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return this.rawFragment(ctx, value);
     }
     return this.jsonCast(this.addValue(ctx, JSON.stringify(value)));
-  }
-
-  /** {@link resolveOperandField}, appended. */
-  getComparisonKey<E>(
-    ctx: QueryContext,
-    entity: AbstractType<E>,
-    key: FieldKey<E>,
-    opts: QueryRenderOptions = {},
-  ): void {
-    ctx.append(this.resolveOperandField(ctx, entity, key, opts));
   }
 
   /** Appends the `ORDER BY`, reporting whether there was one - which {@link pager} needs on the
@@ -1578,7 +1652,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const expr = this.inlinedOperand(ctx, meta, key, prefix) ?? this.columnWithPrefix(key, field, { prefix });
       return [{ expr, output: false }];
     }
-    const json = this.resolveJsonDotPath(meta, key, prefix);
+    const json = this.resolveJsonDotPath(meta, key, { prefix });
     if (!json) {
       return [{ expr: this.escapeId(key), output: true }];
     }
@@ -1939,24 +2013,38 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * The clause that returns the written ids, shared by every insert and upsert. It is `''` on an engine whose
+   * The clause that returns an insert's ids. It is `''` on an engine whose
    * statement cannot return them, and on a composite key, which has no id to ask for.
    */
   protected insertedIdReturning<E>(meta: EntityMeta<E>): string {
     return this.insertIdSource === 'returning' ? this.returningId(meta) : '';
   }
 
-  insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryRenderOptions): void {
-    const returning = this.insertedIdReturning(getMeta(entity));
-
-    if (returning && this.returningPosition === 'afterTarget') {
-      this.appendInsertValues(ctx, entity, payload, returning);
-      return;
+  /**
+   * An insert of `payload` reporting each row's id, or the fields `returning` names, as its write reports
+   * them: the terms it answers under, none for the id alone.
+   */
+  insert<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    payload: E | E[],
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
+    if (returning) {
+      return this.reportedWrite(ctx, entity, returning, 'insert', (afterTarget) =>
+        this.appendInsertValues(ctx, entity, payload, afterTarget),
+      );
+    }
+    const idReturning = this.insertedIdReturning(getMeta(entity));
+    if (idReturning && this.returningPosition === 'afterTarget') {
+      this.appendInsertValues(ctx, entity, payload, idReturning);
+      return [];
     }
     this.appendInsertValues(ctx, entity, payload);
-    if (returning) {
-      ctx.append(` ${returning}`);
+    if (idReturning) {
+      ctx.append(` ${idReturning}`);
     }
+    return [];
   }
 
   /**
@@ -2059,16 +2147,24 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: QueryRenderOptions,
-  ): void {
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
-    ctx.append(`UPDATE ${this.escapedTableName(meta)} SET `);
-    this.appendAssignments(ctx, meta, this.updateEntries(meta, payload));
-    this.search(ctx, entity, q, opts);
+    return this.reportedWrite(ctx, entity, returning, 'update', (afterTarget) => {
+      ctx.append(`UPDATE ${this.escapedTableName(meta)} SET `);
+      this.appendAssignments(ctx, meta, this.updateEntries(meta, payload));
+      ctx.append(afterTarget && ` ${afterTarget}`);
+      this.search(ctx, entity, q, opts);
+    });
   }
 
-  /** What an update assigns: the payload's fields, `onUpdate` fills included. */
-  private updateEntries<E>(meta: EntityMeta<E>, payload: UpdatePayload<E>): [string, unknown][] {
-    const [filled] = fillOnFields(meta, payload, 'onUpdate');
+  /** What an update assigns: the payload's fields, the `onUpdate` fills `scope` can write included. */
+  private updateEntries<E>(
+    meta: EntityMeta<E>,
+    payload: UpdatePayload<E>,
+    scope: WriteScope = 'statement',
+  ): [string, unknown][] {
+    const [filled] = fillOnFields(meta, payload, 'onUpdate', scope);
     return filterFieldKeys(meta, filled, 'onUpdate').map((key) => [key, filled[key]]);
   }
 
@@ -2081,18 +2177,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     meta: EntityMeta<E>,
     entries: readonly [string, unknown][],
     qualifier = '',
+    guard?: QueryBuildFn,
   ): void {
     entries.forEach(([key, value], i) => {
       if (i > 0) {
         ctx.append(', ');
       }
-      this.appendAssignment(ctx, meta, key, value, qualifier);
+      this.appendAssignment(ctx, meta, key, value, qualifier, guard);
     });
   }
 
   /**
    * `col = value`, a JSON operator or a `$inc`/`$mul` spelled as the engine's. What reads the table, the operators
-   * and the refs in SQL alike, reads it through `qualifier`.
+   * and the refs in SQL alike, reads it through `qualifier`. With a `guard`, the column takes the value only where
+   * that condition holds, and keeps its own elsewhere.
    */
   private appendAssignment<E>(
     ctx: QueryContext,
@@ -2100,15 +2198,36 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     key: string,
     value: unknown,
     qualifier = '',
+    guard?: QueryBuildFn,
+  ): void {
+    const escapedCol = this.escapedColumnName(meta, key);
+    ctx.append(`${escapedCol} = `);
+    if (!guard) {
+      this.appendAssignedValue(ctx, meta, key, value, qualifier);
+      return;
+    }
+    ctx.append('CASE WHEN ');
+    guard(ctx);
+    ctx.append(' THEN ');
+    this.appendAssignedValue(ctx, meta, key, value, qualifier);
+    ctx.append(` ELSE ${qualifier}${escapedCol} END`);
+  }
+
+  /** What {@link appendAssignment} sets its column to. */
+  private appendAssignedValue<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    value: unknown,
+    qualifier: string,
   ): void {
     const field = meta.fields[key];
-    const escapedCol = this.escapedColumnName(meta, key);
-    const current = `${qualifier}${escapedCol}`;
+    const current = `${qualifier}${this.escapedColumnName(meta, key)}`;
     if (isJsonUpdateOp(value)) {
-      this.formatJsonUpdate(ctx, escapedCol, value, field, current);
+      ctx.append(this.jsonUpdate(ctx, value, field, current));
     } else if (isFieldUpdateOp(value)) {
       const [op, operand] = fieldUpdateOf(key, value);
-      ctx.append(`${escapedCol} = COALESCE(${current}, 0) ${SQL_ARITHMETIC[op]} `);
+      ctx.append(`COALESCE(${current}, 0) ${SQL_ARITHMETIC[op]} `);
       if (operand instanceof QuerySql) {
         ctx.append('(');
         this.getRawValue(ctx, { value: operand, escapedPrefix: qualifier });
@@ -2117,10 +2236,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ctx.addValue(operand);
       }
     } else if (value instanceof QuerySql) {
-      ctx.append(`${escapedCol} = `);
       this.getRawValue(ctx, { value, escapedPrefix: qualifier });
     } else {
-      ctx.append(`${escapedCol} = `);
       this.formatPersistableValue(ctx, field, value);
     }
   }
@@ -2138,37 +2255,27 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(write.entity);
     const table = this.escapedTableName(meta);
     if (write.kind === 'insert' || write.kind === 'upsert') {
-      const unfilled = definedEntries(meta.fields).find(
-        ([key, field]) =>
-          field.onInsert !== undefined && field.defaultValue === undefined && write.row[key] === undefined,
-      );
-      if (unfilled) {
+      const [row] = fillOnFields<object, Record<string, unknown>>(meta, { ...write.row }, 'onInsert', 'trigger');
+      const unfilled = definedEntries(meta.fields)
+        .filter(([key, field]) => row[key] === undefined && lacksValueOnInsert(field, ownsSoleKey(meta, key)))
+        .map(([key]) => key);
+      if (unfilled.length) {
         throw new UqlUsageError(
-          `'${meta.name}.${unfilled[0]}' is filled on insert by uql, which a trigger does not run: ` +
-            'name it, or give it a defaultValue',
+          `a trigger's insert into '${meta.name}' leaves out ${unfilled.map((key) => `'${key}'`).join(', ')}, ` +
+            'required with no default and no onInsert a trigger can write, a value or SQL: name it, or give it a default',
         );
       }
-      const entries = this.writtenEntries(meta, write.row);
+      const entries = this.writtenEntries(meta, row);
       if (write.kind === 'insert') {
         this.appendTriggerInsert(ctx, meta, entries, rows);
         ctx.append(';');
         return;
       }
-      const { conflictPaths, update } = write;
-      // What a conflicting row takes, none filled in JavaScript: the incoming row less the conflict paths, or `update`.
-      const assigned =
-        update === undefined
-          ? entries
-              .filter(([key]) => !conflictPaths[key])
-              .map(([key]): [string, unknown] => [key, this.incoming(meta, key)])
-          : hasKeys(update)
-            ? this.writtenEntries(meta, update)
-            : [];
+      const { q, update } = write;
+      const assigned = this.foundRowEntries(meta, q.$conflict, write.row, update, 'trigger');
       this.refuseAccumulating(meta, assigned, rows);
-      const assignments = this.buildFragment(ctx, (fragmentCtx) =>
-        this.appendAssignments(fragmentCtx, meta, assigned, `${table}.`),
-      );
-      this.appendTriggerUpsert(ctx, meta, conflictPaths, entries, assignments, rows);
+      const found = this.foundRowUpdate(ctx, write.entity, assigned, q.$where);
+      this.appendTriggerUpsert(ctx, meta, q.$conflict, entries, found, rows);
       return;
     }
     assertWhere(meta, write.where);
@@ -2179,7 +2286,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       );
     }
     if (write.kind === 'update') {
-      const entries = this.writtenEntries(meta, write.set);
+      const entries = this.triggerUpdateEntries(meta, write.set);
       this.refuseAccumulating(meta, entries, rows);
       ctx.append(`UPDATE ${table} SET `);
       this.appendAssignments(ctx, meta, entries);
@@ -2234,23 +2341,28 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     });
   }
 
-  /** A trigger's upsert: its insert, then what a conflicting row takes, `assignments`, or nothing where empty. */
+  /** A trigger's upsert: its insert, then what a conflicting row takes, `found`, or nothing where it assigns none. */
   protected appendTriggerUpsert<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    conflictKeys: QueryConflictKeys<E>,
     entries: readonly [string, unknown][],
-    assignments: string,
+    found: ConflictUpdate,
     rows?: TriggerRows,
   ): void {
     this.appendTriggerInsert(ctx, meta, entries, rows);
-    ctx.append(`${this.onConflict(meta, conflictPaths, assignments)};`);
+    ctx.append(`${this.onConflict(meta, conflictKeys, found)};`);
   }
 
-  /** ` ON CONFLICT (keys) DO UPDATE SET ...`, or `DO NOTHING` with nothing to assign. */
-  private onConflict<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>, assignments: string): string {
-    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    return ` ON CONFLICT (${keys}) ${assignments ? `DO UPDATE SET ${assignments}` : 'DO NOTHING'}`;
+  /** ` ON CONFLICT (keys) DO UPDATE SET ... WHERE ...`, or `DO NOTHING` with nothing to assign. */
+  private onConflict<E>(
+    meta: EntityMeta<E>,
+    conflictKeys: QueryConflictKeys<E>,
+    { assignments, condition }: ConflictUpdate,
+  ): string {
+    const keys = this.conflictKeysSql(meta, conflictKeys);
+    const update = `DO UPDATE SET ${assignments}${condition && ` WHERE ${condition}`}`;
+    return ` ON CONFLICT (${keys}) ${assignments ? update : 'DO NOTHING'}`;
   }
 
   /**
@@ -2259,6 +2371,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected refusal(message: string, _rows?: TriggerRows): string {
     return `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = ${message};`;
+  }
+
+  /** What a trigger's update assigns: the values it names, and the `onUpdate` fills a trigger can write, a value or SQL. */
+  private triggerUpdateEntries<E>(meta: EntityMeta<E>, values: UpdatePayload<E>): [string, unknown][] {
+    const [filled] = fillOnFields(meta, { ...values }, 'onUpdate', 'trigger');
+    return this.writtenEntries(meta, filled);
   }
 
   /** The values a write names, refusing one the entity has no column for. */
@@ -2275,25 +2393,24 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * `INSERT ... ON CONFLICT ... DO UPDATE/NOTHING RETURNING`. The assignments are built before the insert
-   * fills `onInsert` columns, which must stay out of them, and their values bound after it, where a `?` reads them.
+   * `INSERT ... ON CONFLICT ... DO UPDATE/NOTHING RETURNING`, the id, or the fields `returning` names as
+   * {@link insert} reports them. What a found row takes is read before the insert fills `onInsert` columns, which must
+   * stay out of it, and written after the rows, in the order the statement reads its values.
    */
   upsert<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
-  ): void {
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
-    const updateCtx = this.upsertUpdateBindsInPlace ? ctx : this.createContext();
-    const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
-    const returning = this.returningIdExpression(meta);
-    this.appendInsertValues(ctx, entity, payload);
-    ctx.append(`${this.onConflict(meta, conflictPaths, assignments)}${returning ? ` RETURNING ${returning}` : ''}`);
-    if (updateCtx !== ctx) {
-      ctx.pushValue(...updateCtx.values);
-    }
+    const entries = this.conflictEntries(entity, q, payload, update);
+    return this.reportedWrite(ctx, entity, returning, 'upsert', () => {
+      this.appendInsertValues(ctx, entity, payload);
+      ctx.append(this.onConflict(meta, q.$conflict, this.foundRowUpdate(ctx, entity, entries, q.$where)));
+    });
   }
 
   /**
@@ -2302,32 +2419,108 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   upsertAssignments<E>(
     entity: AbstractType<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     row: E,
     update?: UpdatePayload<E>,
   ): { readonly binds: number; readonly assigns: boolean } {
     const ctx = this.createContext();
-    const assignments = this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, row, update);
+    const { assignments } = this.conflictUpdate(ctx, entity, q, row, update);
     return { binds: ctx.values.length, assigns: assignments !== '' };
   }
 
   /**
-   * Whether an upsert of `rows` rows that assigns a found row something reports each row's sole key in order, so
-   * nothing reads them back: `RETURNING`, in order on an engine answering so, and for one row on any; the header,
-   * for one row's generated key, a found row's too, since the upsert assigns it through `LAST_INSERT_ID`.
+   * What a row an upsert finds takes: `update` where given, else the incoming row less the conflict keys, and what
+   * `onUpdate` fills, under `q.$where`. An empty `update` leaves the row as it is, its fills included.
    */
-  upsertReportsIds<E>(meta: EntityMeta<E>, rows: number): boolean {
-    const id = soleId(meta);
-    if (!id) {
-      return false;
-    }
-    return this.insertIdSource === 'returning'
-      ? rows === 1 || this.features.orderedUpsertReturning
-      : rows === 1 && generatesKey(meta);
+  protected conflictUpdate<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: QueryUpsert<E>,
+    payload: E | E[],
+    update?: UpdatePayload<E>,
+  ): ConflictUpdate {
+    return this.foundRowUpdate(ctx, entity, this.conflictEntries(entity, q, payload, update), q.$where);
   }
 
-  /** Whether the upsert's assignments bind straight into the statement, as numbered `$n` placeholders can. */
-  protected readonly upsertUpdateBindsInPlace: boolean = false;
+  /** The columns a row an upsert finds takes, read off the payload before the insert fills it. */
+  protected conflictEntries<E>(
+    entity: AbstractType<E>,
+    q: QueryUpsert<E>,
+    payload: E | E[],
+    update?: UpdatePayload<E>,
+  ): [string, unknown][] {
+    return this.foundRowEntries(getMeta(entity), q.$conflict, Array.isArray(payload) ? payload[0] : payload, update);
+  }
+
+  /**
+   * What a row an upsert of `row` finds takes, {@link foundRowAssigned}, with the `onUpdate` fills: by default, each
+   * payload column as the incoming row has it, and no fill of what it matched on. In a trigger, an update as written
+   * and the fills a trigger can write.
+   */
+  private foundRowEntries<E>(
+    meta: EntityMeta<E>,
+    conflictKeys: QueryConflictKeys<E>,
+    row: EntityData<E>,
+    update: UpdatePayload<E> | undefined,
+    scope: WriteScope = 'statement',
+  ): [string, unknown][] {
+    const assigned = foundRowAssigned(meta, conflictKeys, row, update);
+    if (!assigned) {
+      return [];
+    }
+    if (update) {
+      return scope === 'trigger' ? this.triggerUpdateEntries(meta, assigned) : this.updateEntries(meta, assigned);
+    }
+    const matched = new Set<string>([...meta.ids, ...getKeys(conflictKeys)]);
+    return this.updateEntries(meta, assigned, scope).flatMap(([key, value]): [string, unknown][] =>
+      matched.has(key) ? [] : [[key, Object.hasOwn(row, key) ? this.incoming(meta, key) : value]],
+    );
+  }
+
+  /**
+   * `entries` as a row an upsert finds takes them: its `SET` list, empty for none, and the condition it takes it
+   * under, `where` read off that row through the table's name, empty where it always does.
+   */
+  protected foundRowUpdate<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    entries: readonly [string, unknown][],
+    where: QueryWhere<E> | undefined,
+  ): ConflictUpdate {
+    const assignments = this.foundRowAssignments(ctx, entity, entries);
+    const condition =
+      assignments && where
+        ? this.buildFragment(ctx, (fragment) => this.foundRowCondition(fragment, entity, where))
+        : '';
+    return { assignments, condition };
+  }
+
+  /** `entries` as the `SET` list of a row an upsert finds, each read through the table's name, under `guard` if any. */
+  protected foundRowAssignments<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    entries: readonly [string, unknown][],
+    guard?: QueryBuildFn,
+  ): string {
+    const meta = getMeta(entity);
+    const qualifier = `${this.escapedTableName(meta)}.`;
+    return this.buildFragment(ctx, (fragment) => this.appendAssignments(fragment, meta, entries, qualifier, guard));
+  }
+
+  /** `where` as the row an upsert found holds it, its columns read through the table's name. */
+  protected foundRowCondition<E>(ctx: QueryContext, entity: AbstractType<E>, where: QueryWhere<E>): void {
+    const escapedPrefix = `${this.escapedTableName(getMeta(entity))}.`;
+    this.renderWhere(ctx, entity, where, { clause: false, escapedPrefix, operand: true });
+  }
+
+  /**
+   * Whether an upsert of `rows` rows that assigns a found row something names its row's generated key in the header,
+   * a found row's too, since the upsert assigns it through `LAST_INSERT_ID`: one row's only. An engine with
+   * `RETURNING` reports its keys there instead.
+   */
+  upsertReportsIds<E>(meta: EntityMeta<E>, rows: number): boolean {
+    return this.insertIdSource === 'firstId' && rows === 1 && generatesKey(meta);
+  }
 
   /** How an upsert's assignment reads `column` of the row that was being inserted. */
   protected upsertIncoming(column: string): string {
@@ -2340,53 +2533,32 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return sql(() => this.upsertIncoming(column));
   }
 
-  /**
-   * What a conflicting row takes: `update` where given, else the incoming row less the conflict paths, and what
-   * `onUpdate` fills. An empty `update` leaves the row as it is, its fills included: nothing to assign.
-   */
-  protected getUpsertUpdateAssignments<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E | E[],
-    update?: UpdatePayload<E>,
-  ): string {
-    const entries = update
-      ? hasKeys(update)
-        ? this.updateEntries(meta, update)
-        : []
-      : this.conflictEntries(meta, conflictPaths, Array.isArray(payload) ? payload[0] : payload);
-    const qualifier = `${this.escapedTableName(meta)}.`;
-    return this.buildFragment(ctx, (fragmentCtx) => this.appendAssignments(fragmentCtx, meta, entries, qualifier));
-  }
-
-  /** What a found row takes by default: each payload column as the incoming row has it, and the `onUpdate` fills. */
-  private conflictEntries<E>(
-    meta: EntityMeta<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    row: EntityData<E>,
-  ): [string, unknown][] {
-    const always = upsertAssigned(meta, row, conflictPaths);
-    return getKeys(always).map((key) => [key, Object.hasOwn(row, key) ? this.incoming(meta, key) : always[key]]);
-  }
-
-  protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
-    return getKeys(conflictPaths)
+  protected conflictKeysSql<E>(meta: EntityMeta<E>, conflictKeys: QueryConflictKeys<E>): string {
+    return getKeys(conflictKeys)
       .map((key) => this.escapedColumnName(meta, key))
       .join(', ');
   }
 
-  delete<E>(ctx: QueryContext, entity: AbstractType<E>, q: QuerySearch<E>, opts: QueryRenderOptions = {}): void {
+  delete<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: QuerySearch<E>,
+    opts: QueryRenderOptions = {},
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
     const tableName = this.escapedTableName(meta);
     const { stamp, opts: read } = deletionOf(meta, opts);
-    if (stamp) {
-      ctx.append(`UPDATE ${tableName} SET `);
-      this.appendAssignment(ctx, meta, stamp.key, stamp.value());
-    } else {
-      ctx.append(`DELETE FROM ${tableName}`);
-    }
-    this.search(ctx, entity, q, read);
+    return this.reportedWrite(ctx, entity, returning, stamp ? 'update' : 'delete', (afterTarget) => {
+      if (stamp) {
+        ctx.append(`UPDATE ${tableName} SET `);
+        this.appendAssignment(ctx, meta, stamp.key, stamp.value());
+      } else {
+        ctx.append(`DELETE FROM ${tableName}`);
+      }
+      ctx.append(afterTarget && ` ${afterTarget}`);
+      this.search(ctx, entity, q, read);
+    });
   }
 
   escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string {
@@ -2539,21 +2711,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * `"col" = <expr>` for a JSON update, folded to one write per path, on an empty document in place of a NULL
-   * column where one writes a key. Each write reads `current`, the column as stored.
+   * A JSON update's expression, folded to one write per path, on an empty document in place of a NULL column
+   * where one writes a key. Each write reads `current`, the column as stored.
    */
-  protected formatJsonUpdate(
+  private jsonUpdate(
     ctx: QueryContext,
-    escapedCol: string,
     value: JsonUpdateOp | JsonArrayUpdateOp,
-    field?: FieldOptions,
-    current = escapedCol,
-  ): void {
+    field: FieldOptions | undefined,
+    current: string,
+  ): string {
     const update = foldJson(value);
     if ('array' in update) {
       const slot = { base: current, path: '' };
-      ctx.append(`${escapedCol} = ${this.jsonOrStored(slot, this.jsonArrayWrite(ctx, slot, update.array))}`);
-      return;
+      return this.jsonOrStored(slot, this.jsonArrayWrite(ctx, slot, update.array));
     }
     const writes = update.object;
     const arrays = Object.entries(writes.arrays);
@@ -2578,8 +2748,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           writes.set,
         )
       : withArrays;
-    const expr = writes.unset.length > 0 ? this.jsonUnset(ctx, withSet, writes.unset) : withSet;
-    ctx.append(`${escapedCol} = ${expr}`);
+    return writes.unset.length > 0 ? this.jsonUnset(ctx, withSet, writes.unset) : withSet;
   }
 
   /**
@@ -2705,18 +2874,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   getRawValue(ctx: QueryContext, opts: QuerySqlFnOptions & { value: QuerySql }) {
-    const { value, prefix = '', escapedPrefix } = opts;
-    renderSql(value, {
-      ...opts,
-      ctx,
-      dialect: this,
-      prefix,
-      escapedPrefix: escapedPrefix ?? this.escapeId(prefix, true, true),
-    });
+    const { value, prefix = '' } = opts;
+    renderSql(value, { ...opts, ctx, dialect: this, prefix, escapedPrefix: this.qualifierOf(opts) });
   }
 
   /** A `column.path` key of `meta`'s JSON field as the path it names, shared by `where` and `sort`; else `undefined`. */
-  protected resolveJsonDotPath<E>(meta: EntityMeta<E>, key: string, prefix?: string): JsonSlot | undefined {
+  protected resolveJsonDotPath<E>(
+    meta: EntityMeta<E>,
+    key: string,
+    opts: Pick<QueryRenderOptions, 'prefix' | 'escapedPrefix'>,
+  ): JsonSlot | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -2727,8 +2894,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return undefined;
     }
     const colName = this.resolveColumnName(root, field);
-    const prefixed = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    return { base: prefixed, path: jsonPathKeys(key.slice(dotIndex + 1)).join('.') };
+    return {
+      base: this.qualifierOf(opts) + this.escapeId(colName),
+      path: jsonPathKeys(key.slice(dotIndex + 1)).join('.'),
+    };
   }
 
   /**
@@ -2888,7 +3057,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const { where: $where, page } = aggregate;
     // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
     const { field } = aggregate;
-    const read = field ? refs(entity)[field as FieldKey<object>] : sql`1`;
+    const read = field ? columnRef(entity, field) : sql`1`;
     const query = {
       ...page,
       $select: [read.as(AGGREGATE_VALUE_ALIAS)],

@@ -133,3 +133,24 @@ it('should leave an enum its type holds', () => {
   expect(fieldOptionConflict({ type: Number, enum: [1, 2] })).toBeUndefined();
   expect(fieldOptionConflict({ type: 'uuid', enum: ['a'] })).toBeUndefined();
 });
+
+// A string is a JSON string, so text that is JSON itself is ambiguous: written as the value, it means what it says.
+it("should refuse a JSON column's default written as the JSON text of a value", () => {
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: '{}' })).toBe(
+    "cannot use 'defaultValue': a JSON column defaults to a value, `{}`, not to its JSON text `'{}'`",
+  );
+  expect(fieldOptionConflict({ type: 'json', defaultValue: ' [1, 2]' })).toBe(
+    "cannot use 'defaultValue': a JSON column defaults to a value, `[1,2]`, not to its JSON text `' [1, 2]'`",
+  );
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: '0' })).toBe(
+    "cannot use 'defaultValue': a JSON column defaults to a value, `0`, not to its JSON text `'0'`",
+  );
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: 'null' })).toBe(
+    "cannot use 'defaultValue': a JSON column defaults to a value, `null`, not to its JSON text `'null'`",
+  );
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: '"x"' })).toBe(
+    'cannot use \'defaultValue\': a JSON column defaults to a value, `"x"`, not to its JSON text `\'"x"\'`',
+  );
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: 'draft' })).toBeUndefined();
+  expect(fieldOptionConflict({ type: 'jsonb', defaultValue: {} })).toBeUndefined();
+});

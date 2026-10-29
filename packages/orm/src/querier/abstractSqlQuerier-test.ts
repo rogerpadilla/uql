@@ -102,8 +102,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldUpsertWithSqlOverTheRowAlreadyThere() {
     const id = '507f1f77bcf86cd799439014';
     const update = { percentage: sql`${refs(Tax).percentage} * 2` };
-    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, update);
-    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, update);
+    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'VAT', percentage: 5 }, update);
+    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'VAT', percentage: 5 }, update);
     expect(await this.querier.findOneById(Tax, id, { $select: { percentage: true } })).toMatchObject({
       percentage: 10,
     });
@@ -260,7 +260,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     try {
       const upserted = await this.querier.upsertOne(
         InventoryAdjustment,
-        { id: true },
+        { $conflict: { id: true } },
         { id, description: 'found', itemAdjustments: [{ buyPrice: 7 }] },
         undefined,
         { returning: { description: true } },
@@ -653,13 +653,13 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * `code`, not the key, is the conflict path, so a row's id is only the database's to report: on an
+   * `code`, not the key, is the conflict key, so a row's id is only the database's to report: on an
    * engine with no ordered `RETURNING` it is read back by that column. Every backend reports each one.
    */
   async shouldUpsertManyReturnIdsForNonPkConflictPath() {
     const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
 
-    const result = await this.querier.upsertMany(Coupon, { code: true }, [
+    const result = await this.querier.upsertMany(Coupon, { $conflict: { code: true } }, [
       { code: 'BRAND-NEW', label: 'New' },
       { code: 'EXISTING', label: 'Updated' },
     ]);
@@ -670,7 +670,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
   async shouldUpsertManyReportIdsInPayloadOrder() {
-    const ids = await this.querier.upsertMany(Coupon, { code: true }, [
+    const ids = await this.querier.upsertMany(Coupon, { $conflict: { code: true } }, [
       { code: 'A', label: 'x' },
       { code: 'B' },
       { code: 'C', label: 'y' },
@@ -708,7 +708,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     const ids = await this.querier.insertMany(Coupon, rows);
     await this.querier.upsertMany(
       Coupon,
-      { code: true },
+      { $conflict: { code: true } },
       rows.map(({ code }) => ({ code, label: 'upserted' })),
     );
     const updated = await this.querier.updateMany(
@@ -766,7 +766,11 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldUpsertOneReportTheIdOfTheRowItUpdated() {
     const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
 
-    const id = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
+    const id = await this.querier.upsertOne(
+      Coupon,
+      { $conflict: { code: true } },
+      { code: 'EXISTING', label: 'Updated' },
+    );
 
     expect(id).toBe(existingId);
   }
@@ -1119,7 +1123,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldUpsertOnAWholeCompositeKey() {
     await this.querier.insertOne(Cohort, { year: 2026, track: 'a', title: 'old' });
 
-    await this.querier.upsertMany(Cohort, { year: true, track: true }, [
+    await this.querier.upsertMany(Cohort, { $conflict: { year: true, track: true } }, [
       { year: 2026, track: 'a', title: 'new' },
       { year: 2026, track: 'b', title: 'added' },
     ]);

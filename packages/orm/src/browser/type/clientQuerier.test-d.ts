@@ -75,6 +75,14 @@ export async function rawIsServerOnly() {
   // @ts-expect-error nor a raw comparison
   await client.findMany(Article, { $where: { title: sql`lower(title)` } });
 
+  await server.findMany(Article, { $where: { id: { $gt: sql`1`, $between: [sql`1`, 2], $in: [sql`1`] } } });
+  // @ts-expect-error nor a raw operand
+  await client.findMany(Article, { $where: { id: { $gt: sql`1` } } });
+  // @ts-expect-error nor a raw bound
+  await client.findMany(Article, { $where: { id: { $between: [sql`1`, 2] } } });
+  // @ts-expect-error nor a raw member of a list
+  await client.findMany(Article, { $where: { id: { $in: [sql`1`] } } });
+
   await server.findMany(Article, { $where: { $exists: sql`SELECT 1` } });
   // @ts-expect-error nor a raw sub-query
   await client.findMany(Article, { $where: { $exists: sql`SELECT 1` } });

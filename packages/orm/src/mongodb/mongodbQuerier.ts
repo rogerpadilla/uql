@@ -1,16 +1,19 @@
 import type {
   AggregationCursor,
+  AnyBulkWriteOperation,
   ClientSession,
   Document,
+  Filter,
   FindCursor,
   MongoClient,
+  OptionalId,
   OptionalUnlessRequiredId,
   Sort,
   UpdateFilter,
 } from 'mongodb';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { getMeta, soleIdOf } from '../entity/index.js';
+import { getMeta, namesEvery, soleIdOf } from '../entity/index.js';
 import type { UpsertedId } from '../querier/abstractQuerier.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type {
@@ -21,7 +24,8 @@ import type {
   PrimaryKey,
   Query,
   QueryAggregate,
-  QueryConflictPaths,
+  QueryUpsert,
+  QueryWhere,
   QueryPage,
   QueryOptions,
   QueryPager,
@@ -32,7 +36,17 @@ import type {
   AbstractType,
   UpdatePayload,
 } from '../type/index.js';
-import { clone, getKeys, deletionOf, hasKeys, hasTriggers, whereEach, upsertKeepsOwnKey } from '../util/index.js';
+import {
+  clone,
+  deletionOf,
+  foundRowWhere,
+  foundRowAssigned,
+  getKeys,
+  hasKeys,
+  hasTriggers,
+  upsertKeepsOwnKey,
+  withDeleted,
+} from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 import type { MongoDialect } from './mongoDialect.js';
@@ -245,24 +259,38 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     opts?: QueryOptions,
   ) {
     refuseTriggers(entity);
-    const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
-    const filter = this.dialect.where(entity, qm.$where, opts);
-    const update = this.dialect.getUpdateFilter<E>(persistable);
+    const { filter, update } = this.updateOperation(entity, qm.$where, payload, opts);
     const { matchedCount } = await this.execute('internalUpdateMany', (session) =>
       this.collection(entity).updateMany(filter, update, { session }),
     );
     return matchedCount;
   }
 
+  /** The filter and update of an update of the documents matching `where` with `payload`, its `onUpdate` fills included. */
+  private updateOperation<E extends Document>(
+    entity: Type<E>,
+    where: QueryWhere<E> | undefined,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): { filter: Filter<E>; update: UpdateFilter<E> } {
+    const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
+    return { filter: this.dialect.where(entity, where, opts), update: this.dialect.getUpdateFilter<E>(persistable) };
+  }
+
   /**
    * What an upsert writes, as SQL's does: a found document takes the payload and the `onUpdate` fills, and only
    * an inserted one the `onInsert` fills and the key, which is immutable, so in `$set` it would refuse every match.
+   * Updating a found document `apart`, it writes only an inserted one.
    */
-  private upsertUpdate<E extends Document>(meta: EntityMeta<E>, payload: E): UpdateFilter<E> {
-    const updated: Document = this.dialect.getPersistable(meta, clone(payload), 'onUpdate');
+  private upsertUpdate<E extends Document>(meta: EntityMeta<E>, payload: E, apart: boolean): UpdateFilter<E> {
     const inserted: Document = this.dialect.getPersistable(meta, clone(payload), 'onInsert');
-    const insertOnly = Object.fromEntries(Object.entries(inserted).filter(([column]) => !(column in updated)));
     const update: Document = {};
+    if (apart) {
+      update['$setOnInsert'] = inserted;
+      return update;
+    }
+    const updated: Document = this.dialect.getPersistable(meta, clone(payload), 'onUpdate');
+    const insertOnly = Object.fromEntries(Object.entries(inserted).filter(([column]) => !(column in updated)));
     if (hasKeys(updated)) {
       update['$set'] = updated;
     }
@@ -272,81 +300,56 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     return update;
   }
 
-  private buildConflictFilter<E extends Document>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    item: EntityData<E>,
-  ) {
-    return this.dialect.where(
-      entity,
-      whereEach(getKeys(conflictPaths), (key) => item[key]),
-    );
-  }
-
-  /**
-   * An upsert of `row` whose found document takes `update`, which no single call pairs with inserting the payload:
-   * `$setOnInsert` and `$inc` on one field conflict. So the row inserts if absent, and a document it found, a
-   * concurrent one included, then takes `update`.
-   */
-  private async upsertWithUpdate<E extends Document>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    row: E,
-    update: UpdatePayload<E>,
-  ): Promise<PrimaryKey | undefined> {
-    const persistable = this.dialect.getPersistable(getMeta(entity), clone(row), 'onInsert');
-    const filter = this.buildConflictFilter(entity, conflictPaths, row);
-    const res = await this.execute('upsertMany', (session) =>
-      this.collection(entity).findOneAndUpdate(
-        filter,
-        { $setOnInsert: persistable },
-        { upsert: true, returnDocument: 'after', includeResultMetadata: true, session },
-      ),
-    );
-    // `updatedExisting` is false where the document was inserted; an empty `update` leaves a found one
-    // as it is, as `DO NOTHING` does.
-    if (res.lastErrorObject?.['updatedExisting'] && hasKeys(update)) {
-      await this.internalUpdateMany(entity, { $where: whereEach(getKeys(conflictPaths), (key) => row[key]) }, update);
-    }
-    return this.dialect.fromWireId(res.value?._id) as PrimaryKey | undefined;
-  }
-
   protected override async internalUpsertMany<E extends Document>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E[],
     update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]> {
     refuseTriggers(entity);
-    if (update) {
-      const ids: (UpsertedId<E> | undefined)[] = [];
-      for (const row of payload) {
-        ids.push(await this.upsertWithUpdate(entity, conflictPaths, row, update));
-      }
-      return ids;
-    }
     if (!payload.length) {
       return [];
     }
+    // A found document is updated apart from the insert when the upsert has an update of its own, as `$setOnInsert`
+    // and `$inc` on one field conflict in one operation, or a `$where`. The two batches are not atomic on their own:
+    // a transaction the caller opens makes them so.
+    const apart = update !== undefined || q.$where !== undefined;
     const meta = getMeta(entity);
-    const kept = payload.map((row) => upsertKeepsOwnKey(meta, conflictPaths, row));
-    const operations = payload.map((item) => ({
-      updateOne: {
-        filter: this.buildConflictFilter(entity, conflictPaths, item),
-        update: this.upsertUpdate(meta, item),
-        upsert: true,
-      },
-    }));
-    const res = await this.execute('upsertMany', (session) =>
-      this.collection(entity).bulkWrite(operations, { session }),
+    const conflictKeys = q.$conflict;
+    const kept = payload.map((row) => upsertKeepsOwnKey(meta, conflictKeys, row));
+    // A row naming no conflict key conflicts with none, so it inserts, as `ON CONFLICT` inserts it; a soft-deleted
+    // document conflicts as any other does, its unique key holding across both.
+    const keys = getKeys(conflictKeys);
+    const upserts = payload.map((row): AnyBulkWriteOperation<E> =>
+      !namesEvery(row, keys)
+        ? { insertOne: { document: this.dialect.getPersistable(meta, clone(row), 'onInsert') as OptionalId<E> } }
+        : {
+            updateOne: {
+              filter: this.dialect.where(entity, foundRowWhere({ $conflict: conflictKeys }, row), withDeleted()),
+              update: this.upsertUpdate(meta, row, apart),
+              upsert: true,
+            },
+          },
     );
-    // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
+    const res = await this.execute('upsertMany', (session) => this.collection(entity).bulkWrite(upserts, { session }));
+    // `upsertedIds` and `insertedIds` name only the documents inserted, keyed by operation index, so each lands on
     // its own row; an updated document's `_id` is read back by the conflict fields instead.
     const reported = payload.map((_, index) => {
-      const id = res.upsertedIds[index];
+      const id = res.upsertedIds[index] ?? res.insertedIds[index];
       return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
     });
-    return this.withUnreportedIds(entity, conflictPaths, payload, reported, kept);
+    const updates: AnyBulkWriteOperation<E>[] = apart
+      ? payload.flatMap((row, index) => {
+          const assigned = reported[index] === undefined && foundRowAssigned(meta, conflictKeys, row, update);
+          return assigned
+            ? [{ updateOne: this.updateOperation(entity, foundRowWhere(q, row), assigned, withDeleted()) }]
+            : [];
+        })
+      : [];
+    if (updates.length) {
+      await this.execute('upsertMany', (session) => this.collection(entity).bulkWrite(updates, { session }));
+    }
+    return this.withUnreportedIds(entity, conflictKeys, payload, reported, kept);
   }
 
   protected override async internalDeleteMany<E extends Document>(
@@ -385,6 +388,11 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
   get db() {
     return this.conn.db();
+  }
+
+  /** Runs `write` as its steps: a multi-step write is atomic only inside a transaction the caller opens. */
+  protected override atomically<T>(write: () => Promise<T>): Promise<T> {
+    return write();
   }
 
   protected override async openTransaction(_opts?: TransactionOptions) {

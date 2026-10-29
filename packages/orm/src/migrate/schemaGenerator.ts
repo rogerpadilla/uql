@@ -7,8 +7,9 @@ import type { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import {
-  type ColumnNode,
   type CheckSchema,
+  type ColumnDefault,
+  type ColumnNode,
   DEFAULT_FOREIGN_KEY_ACTION,
   type ForeignKeyAction,
   type IndexNode,
@@ -441,7 +442,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /** Whether a column's stored default is the one the entity declares, as this engine reprints it. */
-  readonly defaultsEqual = (desired: unknown, current: unknown): boolean => sameDefault(desired, current, this.dialect);
+  readonly defaultsEqual = (desired: ColumnDefault | undefined, current: ColumnDefault | undefined): boolean =>
+    sameDefault(desired, current, this.dialect);
 
   generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string[] {
     // Every key, of any width, as one named constraint, so a later `DROP` has something to name. Except where

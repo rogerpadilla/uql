@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest';
+import { getMeta } from '../entity/index.js';
+import { Reading, Tax, User } from '../test/index.js';
 import type { QueryWhere } from '../type/index.js';
-import { sql } from '../util/sql.js';
-import { likePattern, likeLiteral, likeRegex, namesRows, sizeComparisons } from './operators.js';
+import { memberRefs, refs, sql } from '../util/sql.js';
+import { fieldsRead, likePattern, likeLiteral, likeRegex, namesRows, sizeComparisons } from './operators.js';
 
 class Row {
   id?: number;
@@ -75,4 +77,27 @@ it('should read a $size as the comparisons of a length, the same on every engine
   expect(() => sizeComparisons('2')).toThrow('$size expects a number or bounds, got string');
   expect(() => sizeComparisons({})).toThrow('$size needs at least one comparison');
   expect(() => sizeComparisons({ $like: 1 })).toThrow('unsupported $size comparison operator: $like');
+});
+
+// Read off the query: a JSON path is its column, a ref to the row its field, and what the query does not show unknown.
+it('should name the fields a $where reads, or none where it reads what it does not show', () => {
+  const reading = getMeta(Reading);
+  const read = (where: QueryWhere<Reading>) => {
+    const fields = fieldsRead(reading, where);
+    return fields && [...fields];
+  };
+  expect(read({ 'doc.name': 'a', $or: [{ low: { $lt: refs(Reading).high } }, { $not: [{ open: true }] }] })).toEqual([
+    'doc',
+    'low',
+    'high',
+    'open',
+  ]);
+  expect(read({ name: { $in: [refs(Tax).name] } })).toEqual(['name']);
+  // A definition's ref names no entity: it is the row's own.
+  expect(read({ low: { $lt: memberRefs<Reading>().high } })).toEqual(['low', 'high']);
+  expect(read({ $and: [sql`1 = 1`] })).toBeUndefined();
+  expect(read({ name: sql`'a'` })).toBeUndefined();
+  expect(read({ $exists: sql`SELECT 1` })).toBeUndefined();
+  expect(fieldsRead(getMeta(Tax), { category: { name: 'a' } })).toBeUndefined();
+  expect(fieldsRead(getMeta(User), {})).toEqual(new Set());
 });

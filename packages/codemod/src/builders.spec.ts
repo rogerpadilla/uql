@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toBuilders } from './builders.js';
-import { FOREIGN_KEY_IN_DEFINED as FOREIGN_KEY, NO_KEY_TYPE, ON_DELETE_ON_RELATION } from './definedMessages.js';
+import { UNJOINED_FOREIGN_KEY as FOREIGN_KEY, NO_KEY_TYPE, ON_DELETE_ON_RELATION } from './definedMessages.js';
 
 const build = (text: string) => {
   const { text: written, unresolved } = toBuilders('/entities.ts', text, { taken: new Set() });

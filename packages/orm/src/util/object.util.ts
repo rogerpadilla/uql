@@ -5,6 +5,11 @@ export function isJsonScalar(value: unknown): value is JsonScalar {
   return typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value);
 }
 
+/** Orders two strings by code unit, or two numbers by value, the order every engine sorts text by, so names and JSON keys agree across them. */
+export function byCodeUnit<T extends string | number>(a: T, b: T): number {
+  return a < b ? -1 : 1;
+}
+
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {
     return value;
@@ -123,4 +128,13 @@ export function isScalarId(value: unknown): boolean {
 /** Whether `value` is a plain object naming columns, the one shape a `$where` takes. */
 export function isWhereMap(value: unknown): value is Record<string, unknown> {
   return !Array.isArray(value) && !isScalarId(value);
+}
+
+/** What `text` spells as JSON, or nothing where it is no JSON at all. */
+export function jsonDocument(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }

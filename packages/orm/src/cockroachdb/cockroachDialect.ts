@@ -25,13 +25,9 @@ export class CockroachDialect extends PgLikeSqlDialect {
     ['vector', 'vector_search_beam_size'],
   ]);
 
-  /**
-   * An upsert batch mixing an update and an insert returns the update first, and nulls sort lowest,
-   * whereas Postgres sorts them highest (both verified on v26).
-   */
+  /** Nulls sort lowest, whereas Postgres sorts them highest (verified on v26). */
   override readonly features: SqlDialectFeatures = {
     ...PG_FEATURES,
-    orderedUpsertReturning: false,
     nullsSortLowest: true,
     triggers: { ...PG_FEATURES.triggers, fires: 'eachRowIf', deferrable: false },
     namedLocks: false,

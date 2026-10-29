@@ -41,6 +41,9 @@ export const SQL_TEXT: unique symbol = Symbol('sqlText');
 export const SQL_VALUE_TYPE: unique symbol = Symbol('sqlValueType');
 /** The member a ref names. A symbol, as each of a ref's own keys is, so every string key is the data's. */
 export const REF_KEY: unique symbol = Symbol('refKey');
+
+/** The entity a {@link ColumnRef} was read off, where it names one: a definition's refs name none. */
+export const REF_ENTITY: unique symbol = Symbol('refEntity');
 /** The dotted path a {@link JsonPathRef} reads down its column's document. */
 export const JSON_PATH: unique symbol = Symbol('jsonPath');
 /** Keys the phantom a {@link JsonPathRef} carries the value at its path in. */
@@ -93,10 +96,12 @@ export function renderSql(statement: QuerySql, opts: QuerySqlRenderOptions): voi
 export class ColumnRef<K extends string = string, V = unknown> extends QuerySql {
   declare readonly [SQL_VALUE_TYPE]?: V;
   readonly [REF_KEY]: K;
+  readonly [REF_ENTITY]?: AbstractType<unknown>;
 
-  constructor(key: K, value: QuerySqlFn) {
+  constructor(key: K, value: QuerySqlFn, entity?: AbstractType<unknown>) {
     super(value);
     this[REF_KEY] = key;
+    this[REF_ENTITY] = entity;
   }
 }
 

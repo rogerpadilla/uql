@@ -1,7 +1,7 @@
 import { Computed, Entity, f, Field, ManyToOne } from '../entity/index.js';
 import { memberRefs, sql } from '../util/sql.js';
-import { deleteFrom, insertInto, refuse, updateTable } from '../util/triggerWrite.js';
-import type { RefMap, TriggerOptions } from './index.js';
+import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
+import { filledKey, type RefMap, type TriggerOptions } from './index.js';
 
 @Entity()
 class Post {
@@ -139,6 +139,26 @@ const logOld = (_newRow: unknown, oldRow: RefMap<Post>) => sql`PERFORM log(${old
     on: 'afterDelete',
     run: (_newRow, oldRow) => deleteFrom(PostAudit, { $where: { $or: [{ postId: oldRow.id }, { status: 'orphan' }] } }),
   }) satisfies TriggerOptions<Post>;
+
+@Entity()
+class VariantPrice {
+  @Field(f.number().id()) id?: number;
+  @Field(f.number()) variantId!: number;
+  @Field(f.number()) amount!: number;
+  @Field(f.number().default(0)) hits!: number;
+  [filledKey]?: 'hits';
+}
+
+// An insert names what an insert payload must: a required column, unless a default fills it.
+(post: RefMap<Post>) => insertInto(VariantPrice, { variantId: post.id, amount: 1 });
+(post: RefMap<Post>) =>
+  upsertInto(VariantPrice, { $conflict: { variantId: true } }, { variantId: post.id, amount: 1, hits: 2 });
+
+// @ts-expect-error a required column left out, which the database refuses on every write firing the trigger
+() => insertInto(VariantPrice, { amount: 1 });
+
+// @ts-expect-error an upsert inserts it too
+() => upsertInto(VariantPrice, { $conflict: { amount: true } }, { amount: 1 }, { amount: 2 });
 
 // @ts-expect-error a field the table has not got
 () => insertInto(PostAudit, { nope: 1 });

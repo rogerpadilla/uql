@@ -131,16 +131,51 @@ export const SQL_VALUES: Readonly<Record<SqlValueName, QuerySql>> = {
 
 /**
  * The fields of `entity` as {@link ColumnRef}s, each rendering inside `sql` as its column: named the way
- * the dialect names it, so the naming strategy and `.name()` apply, and qualified by the alias
- * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
+ * the dialect names it, so the naming strategy and `.name()` apply, and qualified by `alias`, or else by the
+ * alias in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
  */
-export function refs<E>(entity: AbstractType<E>): RefMap<E> {
-  return refMap<RefMap<E>>((key) => columnRef(entity, key));
+export function refs<E>(entity: AbstractType<E>, alias?: string): RefMap<E> {
+  const qualifier = alias === undefined ? undefined : { alias };
+  return refMap<RefMap<E>>(
+    (key) => columnRef(entity, key, qualifier),
+    () => tableSql(entity, alias),
+  );
 }
 
-/** A map answering each string key with `ref(key)`, typed as the caller's map, whose keys say what it holds. */
-function refMap<T>(ref: (key: string) => unknown): T {
-  return new Proxy({}, { get: (_, key) => ref(String(key)) }) as T;
+/**
+ * The table `source` names, an entity or the refs read off one under their alias, `"order" "o"`, for raw SQL
+ * reading another table than its statement's: `sql`SELECT ${o.state} FROM ${tableOf(o)}``, `o = refs(Order, 'o')`.
+ */
+export function tableOf<E>(source: AbstractType<E> | RefMap<E>): QuerySql {
+  if (typeof source === 'function') {
+    return tableSql(source);
+  }
+  const table: unknown = Reflect.get(source, TABLE);
+  if (!(table instanceof QuerySql)) {
+    throw new UqlUsageError(`tableOf takes an entity or the refs() read off one, not a definition's refs`);
+  }
+  return table;
+}
+
+/** `entity`'s table as its statements name it, under `alias` where one is given. */
+function tableSql(entity: AbstractType<unknown>, alias?: string): QuerySql {
+  return sql(({ ctx, dialect }) => {
+    ctx.append(dialect.tableRef(getMeta(entity), alias).ref);
+  });
+}
+
+/** Where a refs map keeps the table it reads, for {@link tableOf}: a symbol, so no field can shadow it. */
+const TABLE: unique symbol = Symbol('table');
+
+/**
+ * A map answering each string key with `ref(key)`, typed as the caller's map, whose keys say what it holds, and
+ * {@link TABLE} with what renders the table where it reads one. No other symbol, so nothing probing it sees more.
+ */
+function refMap<T>(ref: (key: string) => unknown, table?: () => QuerySql): T {
+  return new Proxy(
+    {},
+    { get: (_, key) => (key === TABLE ? table?.() : typeof key === 'string' ? ref(key) : undefined) },
+  ) as T;
 }
 
 /**
@@ -219,35 +254,61 @@ function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
  * {@link refs} are, so each names its own column wherever it renders, a write to another table included.
  * Columns only: a relation's aggregate is a subquery, and a trigger fires on one row, not over a table.
  */
-export function rowRefs<E>(entity: AbstractType<E>, qualifier: TriggerRowName): RefMap<E> {
-  return new Proxy({}, { get: (_, key) => columnRef(entity, String(key), qualifier) }) as RefMap<E>;
+export function rowRefs<E>(entity: AbstractType<E>, row: TriggerRowName): RefMap<E> {
+  return refMap<RefMap<E>>((key) => columnRef(entity, key, { row }));
 }
 
+/** What a ref reads its column off instead of the alias in scope: a trigger's row, `NEW` or `OLD`, or a table's alias. */
+type Qualifier =
+  | { readonly row: TriggerRowName; readonly alias?: never }
+  | { readonly alias: string; readonly row?: never };
+
 /**
- * One field as SQL, against its own entity or, read off a definition, the entity rendering it. A
- * `qualifier` names the row it reads from, `NEW` or `OLD`, instead of the alias in scope.
+ * One field as SQL, against its own entity or, read off a definition, the entity rendering it, read off the
+ * alias in scope unless a `qualifier` names another.
  */
-export function columnRef(entity: AbstractType<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
-  return new ColumnRef(key, (opts) => {
-    const owner = entity ?? opts.entity;
-    if (!owner) {
-      throw new UqlUsageError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
-    }
-    renderColumn(getMeta(owner), key, { ...opts, entity: owner }, qualifier);
-  });
+export function columnRef(entity: AbstractType<unknown> | undefined, key: string, qualifier?: Qualifier): ColumnRef {
+  return new ColumnRef(
+    key,
+    (opts) => {
+      const owner = refOwner(entity, key, opts);
+      const scope = opts.entity;
+      if (!qualifier && scope && scope !== owner && !(scope.prototype instanceof owner)) {
+        throw new UqlUsageError(
+          `a ref of '${owner.name}' cannot render against '${scope.name}', the table in scope: ` +
+            `read it off its own alias, refs(${owner.name}, 'alias')`,
+        );
+      }
+      renderColumn(getMeta(owner), key, { ...opts, entity: owner }, qualifier);
+    },
+    entity,
+  );
+}
+
+/** The entity a ref of `key` reads its column of: its own, or, read off a definition, the entity in scope. */
+export function refOwner(
+  entity: AbstractType<unknown> | undefined,
+  key: string,
+  scope: { readonly entity?: AbstractType<unknown> },
+): AbstractType<unknown> {
+  const owner = entity ?? scope.entity;
+  if (!owner) {
+    throw new UqlUsageError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
+  }
+  return owner;
 }
 
 /**
  * A field's column, or the expression an inlined computed one stands for, as a `$where` on it reads it.
- * Under a `qualifier` the column is read off that row rather than off the alias in scope, and the row is
+ * Under a `qualifier` the column is read off that row or alias rather than off the alias in scope. A row is
  * written verbatim: it is a record the engine declares, not an identifier to quote and case-fold.
  */
-function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderOptions, qualifier?: string): void {
-  const scope = qualifier === undefined ? opts : { ...opts, escapedPrefix: `${qualifier}.` };
+function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderOptions, qualifier?: Qualifier): void {
+  const scope = qualifier ? { ...opts, ...qualifiedBy(qualifier, opts) } : opts;
   const field = meta.fields[key];
   if (field && isInlinedExpression(field)) {
     // A relation aggregate is a subquery correlated to a table in scope, and a trigger's row is not one.
-    if (qualifier !== undefined && aggregateOf(field)) {
+    if (qualifier?.row && aggregateOf(field)) {
       throw new UqlUsageError(
         `'${entityName(meta)}.${key}' reads a relation, which a trigger's row cannot: it fires on one row, ` +
           'with no table in scope to correlate a subquery to. Name the columns it is derived from instead.',
@@ -257,6 +318,14 @@ function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QuerySqlRenderO
     return;
   }
   scope.ctx.append(scope.escapedPrefix + scope.dialect.escapeId(scope.dialect.columnOf(meta, key), true));
+}
+
+/** The prefix a `qualifier` reads columns off, as the render options spell one. */
+function qualifiedBy(
+  { row, alias }: Qualifier,
+  { dialect }: QuerySqlRenderOptions,
+): Partial<Pick<QuerySqlRenderOptions, 'prefix' | 'escapedPrefix'>> {
+  return row ? { escapedPrefix: `${row}.` } : { prefix: alias, escapedPrefix: dialect.escapeId(alias, true, true) };
 }
 
 /**

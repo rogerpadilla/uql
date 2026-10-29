@@ -134,7 +134,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   /** Upserted on a field that is not the key, so only the database knows the id it minted. */
   async shouldReportTheIdAnUpsertMinted() {
-    const id = await this.querier.upsertOne(Ticket, { subject: true }, { subject: 'upserted' });
+    const id = await this.querier.upsertOne(Ticket, { $conflict: { subject: true } }, { subject: 'upserted' });
 
     expect(id).toMatch(/^[0-9a-f]{24}$/);
     expect(await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'upserted' } })).toEqual({
@@ -146,8 +146,8 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldUpsertADocumentByItsKeyAlone() {
     const id = '65f0c0ffee0000000000beef';
 
-    const inserted = await this.querier.upsertOne(Ticket, { id: true }, { id });
-    const found = await this.querier.upsertOne(Ticket, { id: true }, { id });
+    const inserted = await this.querier.upsertOne(Ticket, { $conflict: { id: true } }, { id });
+    const found = await this.querier.upsertOne(Ticket, { $conflict: { id: true } }, { id });
 
     expect([inserted, found]).toEqual([id, id]);
     expect(await this.querier.findMany(Ticket, {})).toEqual([{ id }]);
@@ -164,7 +164,10 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldReportEveryIdAnUpsertManyWrote() {
     const existingId = await this.querier.insertOne(Ticket, { subject: 'kept' });
 
-    const ids = await this.querier.upsertMany(Ticket, { subject: true }, [{ subject: 'kept' }, { subject: 'fresh' }]);
+    const ids = await this.querier.upsertMany(Ticket, { $conflict: { subject: true } }, [
+      { subject: 'kept' },
+      { subject: 'fresh' },
+    ]);
 
     const fresh = await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'fresh' } });
     expect(ids).toEqual([existingId, fresh?.id]);

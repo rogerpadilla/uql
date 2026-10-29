@@ -3,7 +3,7 @@ import type {
   Captured,
   CursorPage,
   Query,
-  QueryConflictPaths,
+  QueryUpsert,
   QueryFilter,
   QueryFindResult,
   QueryKeyset,
@@ -186,22 +186,22 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
   ): Promise<WriteResults<E, S, V>['affectedMany']>;
 
   /**
-   * Insert or update a record by its conflict paths; resolves to its id, or the row `returning` reads back. A
-   * conflicting row takes the payload less those paths, or `update` as `updateMany` takes one: `{ uses: { $inc: 1 } }`
-   * counts, and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
+   * Insert or update a record by `q.$conflict`'s keys; resolves to its id, or the row `returning` reads back. A
+   * conflicting row matching `q.$where` takes the payload less those keys, or `update` as `updateMany` takes one:
+   * `{ uses: { $inc: 1 } }` counts, and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
    */
   upsertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,
   ): Promise<WriteResults<E, S, V>['inserted']>;
 
-  /** Insert or update records by their conflict paths, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
+  /** Insert or update records by `q.$conflict`'s keys, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
   upsertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
     opts?: WriteOptions<E, S, V>,

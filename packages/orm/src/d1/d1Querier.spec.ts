@@ -106,7 +106,7 @@ describe('D1Querier', () => {
 
     const ids = await d1.upsertMany(
       Coupon,
-      { code: true },
+      { $conflict: { code: true } },
       Array.from({ length: 60 }, (_, index) => ({ code: `c${index}`, label: 'x' })),
     );
 
@@ -132,7 +132,7 @@ describe('D1Querier', () => {
     mockStmt.all.mockResolvedValue(result([], { changes: 1 }));
 
     await withContext({ tenantId: 't' }, () =>
-      d1.upsertMany(TenantNote, { id: true }, [
+      d1.upsertMany(TenantNote, { $conflict: { id: true } }, [
         { id: 'a', title: 'a' },
         { id: 'b', title: 'b' },
       ]),

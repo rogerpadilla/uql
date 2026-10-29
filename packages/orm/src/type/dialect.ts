@@ -1,11 +1,15 @@
-import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
+import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
+import type { EntityMeta, EntityPredicate, FieldKey, UpdatePayload } from './entity.js';
 import type { EngineName } from './querier.js';
-import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
+import type { Query, QueryPage, QueryRenderOptions, QuerySearch, QueryUpsert, RelationQuery } from './query.js';
 import type { QueryAggregate, QueryAggregateOp } from './queryAggregate.js';
 import type { QuerySqlRenderOptions } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { AbstractType } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
+
+/** A write a statement of which can report the rows it wrote. */
+export type ReportedWrite = 'insert' | 'update' | 'delete' | 'upsert';
 
 /** The values the database computes that uql exports by name: `currentTimestamp`, `uuid`, ... */
 export const SQL_VALUE_NAMES = ['currentTimestamp', 'currentDate', 'currentTime', 'uuid', 'uuidv7'] as const;
@@ -148,11 +152,10 @@ export interface DialectFeatures {
    */
   readonly correlatedWrites: boolean;
   /**
-   * Whether an `UPDATE` and a `DELETE` report the rows they wrote (`RETURNING`), so a write `returning` them
-   * in one statement reads them off it: the Postgres and SQLite families. MariaDB returns from a `DELETE`
-   * only, and SQL Server's `OUTPUT` fails on a table with a trigger, so both read their rows first.
+   * The writes whose statement reports the rows it wrote, `RETURNING` or SQL Server's `OUTPUT`, so a write
+   * `returning` them reads them off it. MySQL reports none, MariaDB every write but `UPDATE`, the others all four.
    */
-  readonly writeReturning: boolean;
+  readonly reportsWrites: readonly ReportedWrite[];
   /**
    * What the engine's row locks can do, or `false` where it has none: the SQLite family locks the
    * database and MongoDB has no row lock at all, so both refuse `$lock` rather than ignoring it. One
@@ -198,8 +201,6 @@ export interface SqlDialectFeatures extends DialectFeatures {
    * again would read `'123'` as `123`.
    */
   readonly jsonArrivesDecoded: boolean;
-  /** Whether a multi-row upsert's `RETURNING` lists its rows in payload order; where not, the ids are read back. */
-  readonly orderedUpsertReturning: boolean;
   /** Whether a JSON aggregate takes an `ORDER BY` of its own; where not, a relation's rows keep their derived table's order. */
   readonly orderedJsonAggregates: boolean;
   /** Whether the engine has pgvector's `halfvec` and `sparsevec`; elsewhere both map onto `vector`. */
@@ -296,7 +297,7 @@ export type TriggerWrite =
   | {
       readonly kind: 'upsert';
       readonly entity: AbstractType<object>;
-      readonly conflictPaths: Readonly<Record<string, unknown>>;
+      readonly q: QueryUpsert<object>;
       readonly row: Readonly<Record<string, unknown>>;
       readonly update?: Readonly<Record<string, unknown>>;
     }
@@ -354,8 +355,16 @@ export interface SqlQueryDialect {
   /** A count of the records matching the filter, or of those a page of it takes. */
   count<E>(ctx: QueryContext, entity: AbstractType<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void;
 
-  /** An insert of one record or many. */
-  insert<E>(ctx: QueryContext, entity: AbstractType<E>, payload: E | E[], opts?: QueryRenderOptions): void;
+  /**
+   * Each write reports the fields `returning` names of the rows it writes, where {@link DialectFeatures.reportsWrites}
+   * has it, answering the terms they read as; an insert naming none reports each id instead.
+   */
+  insert<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    payload: E | E[],
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[];
 
   /** An update of the records the query matches. */
   update<E>(
@@ -364,22 +373,30 @@ export interface SqlQueryDialect {
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: QueryRenderOptions,
-  ): void;
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[];
 
-  /** An upsert of one record or many by their conflict paths, a conflicting row taking `update` where given. */
+  /** An upsert of one record or many as `q` names its rows, a conflicting row taking `update` where given. */
   upsert<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
-  ): void;
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[];
 
   /** A write in a trigger's body; `rows` are what a set-based engine's body reads, narrowed to the ones it fires for. */
   triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void;
 
   /** A delete of the records the query matches, a soft delete where the entity has one. */
-  delete<E>(ctx: QueryContext, entity: AbstractType<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;
+  delete<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    q: QuerySearch<E>,
+    opts?: QueryRenderOptions,
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[];
 
   /**
    * escape an identifier.
@@ -416,6 +433,12 @@ export interface SqlQueryDialect {
    * The column a field of `meta` is stored in, named the way this dialect names columns.
    */
   columnOf<E>(meta: EntityMeta<E>, key: string): string;
+
+  /**
+   * The table of `meta` as a FROM names it, through the naming strategy and under its schema, and the alias its
+   * columns are read off: `alias`, else the table's own.
+   */
+  tableRef<E>(meta: EntityMeta<E>, alias?: string): { alias: string; ref: string };
 
   /**
    * Build an aggregate query.

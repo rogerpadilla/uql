@@ -1,4 +1,4 @@
-import type { FieldOptions, FieldType } from '../type/index.js';
+import { type FieldOptions, type FieldType, QuerySql } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
 import { columnFamily, declaresNotNull, jsonPathKeys } from '../util/field.util.js';
 import { isOperatorKey, someKey } from '../util/object.util.js';
@@ -121,23 +121,26 @@ export function jsonElemExists(from: string, conditions: readonly string[], hint
 export type JsonAccessMode = 'json' | 'numeric' | 'text';
 
 /**
- * How a JSON path compares for equality against `value`: `numeric` casts (so `1` equals `1.0`), `json`
- * compares JSON values (the only portable boolean), and `text` compares as extracted, also for mixed
- * operands.
+ * How a JSON path compares for equality against `value`, each operand in the mode `modeOf` reads it, a ref by its
+ * column's type: `numeric` casts (so `1` equals `1.0`), `json` compares JSON values (the only portable boolean), and
+ * `text` compares as extracted, also for mixed operands.
  */
-export function jsonCompareMode(value: unknown): JsonAccessMode {
+export function jsonCompareMode(value: unknown, modeOf: (operand: unknown) => JsonAccessMode): JsonAccessMode {
   const operands = Array.isArray(value) ? value : [value];
-  if (operands.length === 0) {
-    return 'text';
-  }
-  if (operands.every((operand) => typeof operand === 'boolean')) {
+  const mode = operands.length ? modeOf(operands[0]) : 'text';
+  return operands.every((operand) => modeOf(operand) === mode) ? mode : 'text';
+}
+
+/** The mode one operand asks for by its type in JavaScript, as {@link jsonTypeMode} reads a declared one. */
+export function literalMode(operand: unknown): JsonAccessMode {
+  if (typeof operand === 'boolean') {
     return 'json';
   }
-  return operands.every((operand) => typeof operand === 'number') ? 'numeric' : 'text';
+  return typeof operand === 'number' ? 'numeric' : 'text';
 }
 
 /** The mode a declared type asks for, {@link jsonCompareMode}'s twin: an index over a path is reached only by a comparison extracting it alike. */
-export function jsonTypeMode(type: FieldType): JsonAccessMode {
+export function jsonTypeMode(type: FieldType | undefined): JsonAccessMode {
   const family = columnFamily(type);
   if (family === 'numeric') {
     return 'numeric';
@@ -145,8 +148,11 @@ export function jsonTypeMode(type: FieldType): JsonAccessMode {
   return family === 'boolean' ? 'json' : 'text';
 }
 
-/** Whether `value` asks for more than JSON containment: an operator map anywhere in it. */
+/** Whether `value` asks for more than JSON containment: an operator map or SQL, a ref included, anywhere in it. */
 export function holdsOperator(value: unknown): boolean {
+  if (value instanceof QuerySql) {
+    return true;
+  }
   if (Array.isArray(value)) {
     return value.some(holdsOperator);
   }

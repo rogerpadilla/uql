@@ -316,7 +316,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     // success on a missing row. `createdAt` rides the insert arm only, so an existing row keeps its own.
     expect(this.execute).toHaveBeenNthCalledWith(
       4,
-      'INSERT INTO `ItemAdjustment` (`id`, `buyPrice`, `updatedAt`, `inventoryAdjustmentId`, `createdAt`) VALUES (?, ?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `buyPrice` = EXCLUDED.`buyPrice`, `updatedAt` = EXCLUDED.`updatedAt`, `inventoryAdjustmentId` = EXCLUDED.`inventoryAdjustmentId` RETURNING `id` `id`',
+      'INSERT INTO `ItemAdjustment` (`id`, `buyPrice`, `updatedAt`, `inventoryAdjustmentId`, `createdAt`) VALUES (?, ?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `buyPrice` = EXCLUDED.`buyPrice`, `updatedAt` = EXCLUDED.`updatedAt`, `inventoryAdjustmentId` = EXCLUDED.`inventoryAdjustmentId` RETURNING `id`',
       ['1', 1, 1, anyUuid, expect.any(Number)],
     );
 

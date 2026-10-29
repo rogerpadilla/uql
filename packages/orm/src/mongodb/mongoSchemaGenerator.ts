@@ -22,7 +22,7 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../type/vector.js';
-import { declaredIndexes, renderIndex } from '../util/ddlExpression.util.js';
+import { declaredIndexes, renderIndex, sortedEnum } from '../util/ddlExpression.util.js';
 import { findVectorIndex, fulltextConfig, fulltextWeights, indexedDistance } from '../util/dialect.util.js';
 import { entryKeys, entryModifiers, renamedEntry } from '../util/indexEntry.util.js';
 import { definedEntries, hasKeys } from '../util/object.util.js';
@@ -134,7 +134,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     const clauses = [
       ...(meta.checks ?? []).map(({ where }) => this.checkFilter(where, meta.entity, collectionName)),
       ...definedEntries(meta.fields).flatMap(([key, field]) =>
-        field.enum ? [{ [this.columnOf(meta, key)]: { $in: [...field.enum, null] } }] : [],
+        field.enum ? [{ [this.columnOf(meta, key)]: { $in: [...sortedEnum(field.enum), null] } }] : [],
       ),
     ].filter(hasKeys);
     return clauses.length > 1 ? { $and: clauses } : clauses[0];

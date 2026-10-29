@@ -62,11 +62,10 @@ export const PG_FEATURES: SqlDialectFeatures = {
   serverSideCursors: true,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: false, placement: 'suffix' },
-  writeReturning: true,
+  reportsWrites: ['insert', 'update', 'delete', 'upsert'],
   nullsSortLowest: false,
   nullsOrdering: 'clause',
   textScoreIndexes: false,
-  orderedUpsertReturning: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: true,
@@ -149,8 +148,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     blob: (expr) => `${this.escape(BYTES_PREFIX)} || ENCODE(${expr}, 'hex')`,
   } satisfies CarriedFields;
 
-  /** `$N` placeholders carry their own index, so the upsert's assignments need no scratch context. */
-  protected override readonly upsertUpdateBindsInPlace = true;
+  /** A typed column as text, which a JSON path's text compares with: Postgres converts neither side of `text = uuid`. */
+  protected override textOperand(column: string): string {
+    return `${column}::text`;
+  }
+
   override readonly maxBindValues: number = 65535;
 
   override readonly vectorMetrics = PG_VECTOR_METRICS;
@@ -333,8 +335,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * One array parameter, which a context that inlines values has none of: it lists them instead. The
-   * array takes its type from `operand`, so it needs none of the casts `bind` would give each value.
+   * One array parameter, which a context that inlines values has none of, nor a list holding SQL: those list them
+   * instead. The array takes its type from `operand`, so it needs none of the casts `bind` gives each value.
    */
   protected override formatIn(
     ctx: QueryContext,
@@ -343,7 +345,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     negate: boolean,
     bind: (value: unknown) => string,
   ): string {
-    if (!values.length || ctx.inlineValues) {
+    if (!values.length || ctx.inlineValues || values.some((value) => value instanceof QuerySql)) {
       return super.formatIn(ctx, operand, values, negate, bind);
     }
     const ph = this.addValue(ctx, values);

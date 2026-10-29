@@ -146,7 +146,52 @@ describe('MongodbQuerier writes to an entity with triggers', () => {
     const { querier } = createRecordingQuerier();
     await expect(querier.updateOneById(Triggered, 1, { body: 'b' })).rejects.toThrow(/declares triggers/);
     await expect(querier.deleteOneById(Triggered, 1)).rejects.toThrow(/declares triggers/);
-    await expect(querier.upsertOne(Triggered, { id: true }, { id: 1, body: 'c' })).rejects.toThrow(/declares triggers/);
+    await expect(querier.upsertOne(Triggered, { $conflict: { id: true } }, { id: 1, body: 'c' })).rejects.toThrow(
+      /declares triggers/,
+    );
+  });
+
+  // Inserting first, a document another writer inserted meanwhile still takes the update, as `ON CONFLICT` gives it.
+  it('should insert what is absent, then update only what it found, in two batches with no transaction of its own', async () => {
+    const { querier } = createRecordingQuerier();
+    let open = false;
+    const start = vi.spyOn(ClientSession.prototype, 'startTransaction').mockImplementation(() => {
+      open = true;
+    });
+    vi.spyOn(ClientSession.prototype, 'inTransaction').mockImplementation(() => open);
+    const commit = vi.spyOn(ClientSession.prototype, 'commitTransaction').mockImplementation(async () => {
+      open = false;
+    });
+    const bulkWrite = vi
+      .spyOn(Collection.prototype, 'bulkWrite')
+      .mockResolvedValueOnce({ upsertedIds: { 1: 2 }, insertedIds: {} } as never)
+      .mockResolvedValueOnce({ upsertedIds: {}, insertedIds: {} } as never);
+
+    await querier.upsertMany(Author, { $conflict: { id: true }, $where: { name: 'a' } }, [
+      { id: 1, name: 'x' },
+      { id: 2, name: 'y' },
+      { id: 3, name: 'z' },
+    ]);
+
+    expect([start.mock.calls.length, commit.mock.calls.length]).toEqual([0, 0]);
+    const [[inserts], [updates]] = bulkWrite.mock.calls;
+    expect(inserts).toEqual(
+      [1, 2, 3].map((id) => ({
+        updateOne: {
+          filter: { _id: id },
+          update: { $setOnInsert: expect.objectContaining({ _id: id }) },
+          upsert: true,
+        },
+      })),
+    );
+    expect(updates).toEqual(
+      [
+        [1, 'x'],
+        [3, 'z'],
+      ].map(([id, name]) => ({
+        updateOne: { filter: { _id: id, $and: [{ name: 'a' }] }, update: [{ $set: { name: { $literal: name } } }] },
+      })),
+    );
   });
 
   it('should refuse a write to an entity with a stamp, which is a trigger too', async () => {
@@ -448,6 +493,15 @@ describe('MongodbQuerier relation conditions', () => {
 
     expect(await querier.updateMany(Post, { $where: { author: { name: 'ada' } } }, { authorId: 9 })).toBe(2);
     expect(updateMany.mock.calls[0][0]).toEqual({ _id: { $in: [1, 2] } });
+  });
+
+  it('should open no transaction of its own for an update that reads its ids first', async () => {
+    const { querier } = createRecordingQuerier([{ _id: 1 }, { _id: 2 }]);
+    const start = vi.spyOn(ClientSession.prototype, 'startTransaction');
+    vi.spyOn(Collection.prototype, 'updateMany').mockResolvedValue(updateResult(2));
+
+    await querier.updateMany(Post, { $where: { author: { name: 'ada' } } }, { authorId: 9 });
+    expect(start).not.toHaveBeenCalled();
   });
 });
 

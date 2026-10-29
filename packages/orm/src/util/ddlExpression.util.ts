@@ -1,7 +1,7 @@
 import type { CheckSchema, EnumValues } from '../schema/types.js';
 import type { EntityIndexMeta, EntityMeta, IndexEntry, IndexKnobs, IndexSchema, QuerySql } from '../type/index.js';
 import { indexEntryNamePart, renderIndexColumn } from './indexEntry.util.js';
-import { definedEntries } from './object.util.js';
+import { byCodeUnit, definedEntries } from './object.util.js';
 import { sql } from './sql.js';
 import { derivedIndexName, ownedName } from './sql.util.js';
 
@@ -82,11 +82,19 @@ export function enumCheck(
   }
   const statement = sql(({ ctx, dialect }) => {
     ctx.append(`${dialect.escapeId(name)} IN (`);
-    values.forEach((value, i) => {
+    sortedEnum(values).forEach((value, i) => {
       ctx.append(i ? ', ' : '');
       ctx.addValue(value);
     });
     ctx.append(')');
   });
   return [ownedCheck(table, name, render(statement))];
+}
+
+/**
+ * An enum's values as every engine's constraint states them, numbers by value and text by code unit (an enum
+ * holds one or the other), so a constraint, and the name hashed from it, follow which values there are.
+ */
+export function sortedEnum(values: EnumValues): EnumValues {
+  return values.toSorted(byCodeUnit);
 }

@@ -232,7 +232,7 @@ describe('writing composite rows', () => {
   it('should upsert on the whole key, inserting what is new and updating what is not', async () => {
     await pool.insertMany(Attempt, [{ studentId: 1, task: 'essay', score: 'B' }]);
 
-    await pool.upsertMany(Attempt, { studentId: true, task: true }, [
+    await pool.upsertMany(Attempt, { $conflict: { studentId: true, task: true } }, [
       { studentId: 1, task: 'essay', score: 'A' },
       { studentId: 1, task: 'viva', score: 'C' },
     ]);
@@ -247,7 +247,9 @@ describe('writing composite rows', () => {
   it('should report the stored key of a row an upsert found by a unique column of its own', async () => {
     await pool.insertMany(Seat, [{ tenant: 'acme', code: 'kept', email: 'a@x.test', label: 'first' }]);
 
-    const [id] = await pool.upsertMany(Seat, { email: true }, [{ tenant: 'acme', email: 'a@x.test', label: 'second' }]);
+    const [id] = await pool.upsertMany(Seat, { $conflict: { email: true } }, [
+      { tenant: 'acme', email: 'a@x.test', label: 'second' },
+    ]);
 
     expect(id).toEqual({ tenant: 'acme', code: 'kept' });
     expect(await pool.findOneById(Seat, { tenant: 'acme', code: 'kept' })).toMatchObject({ label: 'second' });

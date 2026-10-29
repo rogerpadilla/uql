@@ -1,4 +1,5 @@
 import type { Alteration, Change, ColumnChange, ColumnSchema, IndexEntry, SchemaDiff } from '../type/index.js';
+import { lacksValue } from '../util/field.util.js';
 import { renamedEntry } from '../util/indexEntry.util.js';
 
 /** Each change's end on `side`, where it has one: what a drop half removes (`from`), or an add half creates (`to`). */
@@ -29,11 +30,6 @@ export function newlyRequired(
   changes: readonly Change<ColumnSchema>[] = [],
 ): { readonly from?: ColumnSchema; readonly to: ColumnSchema }[] {
   return changes.flatMap(({ from, to }) => (to && !to.nullable && (!from || from.nullable) ? [{ from, to }] : []));
-}
-
-/** Whether a row already in the table would hold nothing in `column`: required, with no default, and not one the engine fills. */
-export function lacksValue(column: ColumnSchema): boolean {
-  return !column.nullable && column.defaultValue === undefined && !column.generatedAs && !column.isAutoIncrement;
 }
 
 /** Whether an engine that rebuilds tables makes `change` no other way: a column changed in place, or a stored generated one added. */

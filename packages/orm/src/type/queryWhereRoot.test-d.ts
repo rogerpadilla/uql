@@ -112,6 +112,18 @@ export async function columnRefs() {
   await querier.findMany(Person, { $where: { age: sql`${person.age} + 1` } });
   await querier.updateOneById(Person, 1, { age: sql`${person.age} + 1` });
 
+  // Every operator a value of the field takes takes SQL holding one, a ref to a column of its type above all.
+  await querier.findMany(Person, {
+    $where: {
+      age: { $gt: person.id, $lte: sql`${person.id} * 2`, $between: [0, person.id], $ne: person.id },
+      id: { $in: [1, person.age], $nin: [person.age] },
+    },
+  });
+  // @ts-expect-error a ref holding text is no bound for a number
+  await querier.findMany(Person, { $where: { age: { $gt: person.name } } });
+  // @ts-expect-error nor inside `$between`
+  await querier.findMany(Person, { $where: { age: { $between: [0, person.name] } } });
+
   class Membership {
     id?: number;
     person?: Person;

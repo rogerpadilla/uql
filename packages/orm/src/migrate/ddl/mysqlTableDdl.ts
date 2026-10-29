@@ -1,5 +1,5 @@
 import type { ColumnSchema } from '../../type/index.js';
-import { lacksValue } from '../schemaChange.js';
+import { lacksValue } from '../../util/field.util.js';
 import { dropIndexOnTable, TableDdl } from './tableDdl.js';
 
 /** Table DDL for the MySQL family: `MODIFY COLUMN`, inline comments, and dedicated clauses to drop a key. */

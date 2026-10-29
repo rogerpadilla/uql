@@ -84,7 +84,7 @@ class CompatibleStillCompiles {
   // An exact decimal reads as its text.
   @Field(f.decimal(30, 2).nullable()) exact?: string | null;
   // A JSON column defaults with the SQL literal it stores.
-  @Field(f.jsonb().nullable().default('{}')) settings?: Json<{ theme?: string }> | null;
+  @Field(f.jsonb().nullable().default({})) settings?: Json<{ theme?: string }> | null;
   @Computed(() =>
     f
       .number()

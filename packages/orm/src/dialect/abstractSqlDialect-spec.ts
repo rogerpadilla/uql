@@ -5,6 +5,7 @@ import { parseQueryParams } from '../http/query.js';
 import {
   anyUuid,
   Company,
+  Reading,
   InventoryAdjustment,
   InvoiceLine,
   Item,
@@ -570,7 +571,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.upsert(
         ctx,
         User,
-        { email: true },
+        { $conflict: { email: true } },
         {
           name: 'Some Name',
           email: 'someemail@example.com',
@@ -586,7 +587,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldUpsertMany() {
     const { sql: statement, values } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, User, { email: true }, [
+      this.dialect.upsert(ctx, User, { $conflict: { email: true } }, [
         {
           name: 'Name A',
           email: 'a@example.com',
@@ -2248,6 +2249,86 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       `SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt ${e}hotness${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)}`,
     );
     expect(res.values).toEqual(['something']);
+  }
+
+  /** Every operator a value goes to takes SQL in its place, a ref to another column of the row most often. */
+  /** A ref of another entity has no table in scope to read: refused, as MongoDB refuses it, never read off this one's. */
+  shouldRefuseARefOfAnotherEntity() {
+    expect(() =>
+      this.exec((ctx) => this.dialect.find(ctx, Item, { $select: { id: true }, $where: { name: refs(Tax).name } })),
+    ).toThrow("a ref of 'Tax' cannot render against 'Item'");
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $select: { id: true }, $where: { tax: { name: refs(Item).name } } }),
+      ),
+    ).toThrow("a ref of 'Item' cannot render against 'Tax'");
+  }
+
+  shouldCompareAFieldWithAnotherColumn() {
+    const e = this.dialect.escapeIdChar;
+    const item = refs(Item);
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: {
+          salePrice: { $gt: item.createdAt, $lte: sql`${item.createdAt} * 2` },
+          updatedAt: { $between: [0, item.createdAt], $ne: item.createdAt },
+          createdAt: { $in: [1, item.updatedAt] },
+        },
+      }),
+    );
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE (${e}salePrice${e} > ${e}createdAt${e} AND ${e}salePrice${e} <= ${e}createdAt${e} * 2)` +
+        ` AND (${e}updatedAt${e} BETWEEN ${this.ph(1)} AND ${e}createdAt${e} AND ${e}updatedAt${e} <> ${e}createdAt${e})` +
+        ` AND ${e}createdAt${e} IN (${this.ph(2)}, ${e}updatedAt${e})`,
+    );
+    expect(res.values).toEqual([0, 1]);
+  }
+
+  /** A ref compared with names its column the way the field beside it is named, in a joined read and a relation's subquery. */
+  shouldQualifyAColumnComparedWithLikeTheFieldItQualifies() {
+    const e = this.dialect.escapeIdChar;
+    const tax = refs(Tax);
+    const { sql: joined } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: { tax: { $select: { id: true }, $required: true, $where: { percentage: { $gt: tax.createdAt } } } },
+      }),
+    );
+    expect(joined).toContain(`${e}tax${e}.${e}percentage${e} > ${e}tax${e}.${e}createdAt${e}`);
+
+    const { sql: related } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $where: { tax: { percentage: { $gt: tax.createdAt } } } }),
+    );
+    expect(related).toMatch(new RegExp(`(\\S+)\\.${e}percentage${e} > \\1\\.${e}createdAt${e}`));
+  }
+
+  /** A column as a JSON path's text is compared with it: as it is, where the engine converts it. */
+  protected textRef(column: string): string {
+    return column;
+  }
+
+  /** A JSON path compared with a column reads the path the way it reads it compared with a value of the column's type. */
+  shouldReadAJsonPathByTheTypeOfTheColumnItIsComparedWith() {
+    const e = this.dialect.escapeIdChar;
+    const row = refs(Reading);
+    /** The path read and what it is compared with, either side of the last ` = `. */
+    const sides = (where: QueryWhere<Reading>) => {
+      const ctx = this.dialect.createContext();
+      this.dialect.where(ctx, Reading, where);
+      const at = ctx.sql.lastIndexOf(' = ');
+      return [ctx.sql.slice(0, at), ctx.sql.slice(at + 3)];
+    };
+    const [score] = sides({ 'doc.score': { $eq: 1 } });
+    const [name] = sides({ 'doc.name': { $eq: 'x' } });
+    const [open] = sides({ 'doc.open': { $eq: true } });
+
+    expect(sides({ 'doc.score': { $eq: row.low } })).toEqual([score, `${e}low${e}`]);
+    expect(sides({ 'doc.name': { $eq: row.name } })).toEqual([name, this.textRef(`${e}name${e}`)]);
+    expect(sides({ 'doc.open': { $eq: row.open } })).toEqual([
+      open,
+      expect.stringMatching(new RegExp(`^CASE ${e}open${e} WHEN .+ THEN .+ WHEN .+ THEN .+ END$`)),
+    ]);
   }
 
   shouldFind$whereRaw() {

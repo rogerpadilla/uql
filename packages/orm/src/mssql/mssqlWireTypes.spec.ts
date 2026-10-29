@@ -26,6 +26,15 @@ describe('decodeWireTypes', () => {
     expect(decodeWireTypes([{ id: '9007199254740993' }], columns)).toEqual([{ id: '9007199254740993' }]);
   });
 
+  /** SQL Server prints a `UNIQUEIDENTIFIER` in capitals, where every other engine reads a uuid back as written. */
+  it('should decode a UNIQUEIDENTIFIER to lowercase', () => {
+    const columns = columnsOf({ id: 'UniqueIdentifier', name: 'NVarChar' });
+
+    expect(decodeWireTypes([{ id: '01A188A5-6B08-77E7-B72C-9C470CB429B5', name: 'A' }], columns)).toEqual([
+      { id: '01a188a5-6b08-77e7-b72c-9c470cb429b5', name: 'A' },
+    ]);
+  });
+
   it('should return the rows untouched when no column needs decoding', () => {
     const rows = [{ n: 1 }];
 

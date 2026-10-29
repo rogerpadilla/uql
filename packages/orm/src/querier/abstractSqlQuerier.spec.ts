@@ -7,7 +7,7 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Coupon } from '../test/entityMock.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryWhere, RawRow } from '../type/index.js';
-import { sql } from '../util/sql.js';
+import { sql, uuid } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -148,18 +148,171 @@ describe('AbstractQuerier logger', () => {
   });
 });
 
-describe('AbstractSqlQuerier returning', () => {
+/** An insert whose `RETURNING` answers fewer rows than it wrote, which a driver must never do silently. */
+describe('AbstractSqlQuerier insert report count', () => {
+  class ShortReportingQuerier extends StubSqlQuerier {
+    protected override async execute(query: string): Promise<SqlExecution> {
+      return query.startsWith('INSERT') ? { rows: [] } : super.execute(query);
+    }
+  }
+
+  it('should refuse an insert whose report names fewer rows than it wrote', async () => {
+    await expect(
+      new ShortReportingQuerier(undefined, new SqliteDialect({})).insertMany(
+        HydratedParent,
+        [{ name: 'a' }, { name: 'b' }],
+        { returning: { name: true } },
+      ),
+    ).rejects.toThrow("reported 0 of the 2 'HydratedParent' rows its insert wrote");
+  });
+});
+
+/** A row an upsert wrote or kept that no read matches by its key is refused, not dropped from what it reports. */
+describe('AbstractSqlQuerier upsert report match', () => {
+  it('should refuse a row it cannot match back by its conflict key', async () => {
+    await expect(
+      new StubSqlQuerier().upsertOne(HydratedParent, { $conflict: { id: true } }, { id: 1, name: 'a' }, undefined, {
+        returning: { name: true },
+      }),
+    ).rejects.toThrow("no 'HydratedParent' row reads back with 'id' 1");
+  });
+
+  it('should refuse a null conflict key it cannot tell apart from another', async () => {
+    const querier = new StubSqlQuerier();
+    querier.rows = [{ id: 1, name: null }];
+    await expect(
+      querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { name: null }], undefined, {
+        returning: { id: true },
+      }),
+    ).rejects.toThrow("a row's 'name' is null");
+  });
+});
+
+/** No engine promises the order its `RETURNING` lists the rows written, so each is placed by its key, never by position. */
+describe('AbstractSqlQuerier rows reported out of order', () => {
+  class ReversingQuerier extends StubSqlQuerier {
+    reported: RawRow[] = [];
+    protected override async execute(query: string): Promise<SqlExecution> {
+      return query.startsWith('INSERT') ? { rows: this.reported.toReversed() } : super.execute(query);
+    }
+  }
+
+  @Entity()
+  class DefaultedKey {
+    @Field(f.uuid().id().default(uuid))
+    id?: string;
+    @Field(f.string())
+    name!: string;
+  }
+
+  const reversing = (reported: RawRow[], dialect?: AbstractSqlDialect) => {
+    const querier = new ReversingQuerier(undefined, dialect);
+    querier.reported = reported;
+    return querier;
+  };
+
+  it('should place the keys the engine generated in the order it listed the rows', async () => {
+    const querier = reversing([{ id: 1 }, { id: 2 }]);
+
+    expect(await querier.insertMany(HydratedParent, [{ name: 'a' }, { name: 'b' }])).toEqual([1, 2]);
+  });
+
+  it('should place a returned row by the key the engine generated', async () => {
+    const querier = reversing([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ]);
+
+    expect(
+      await querier.insertMany(HydratedParent, [{ name: 'a' }, { name: 'b' }], { returning: { id: true, name: true } }),
+    ).toEqual([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ]);
+  });
+
+  it('should place a returned row by the key it was written with', async () => {
+    const querier = reversing([
+      { id: 7, name: 'a' },
+      { id: 3, name: 'b' },
+    ]);
+
+    expect(
+      await querier.insertMany(
+        HydratedParent,
+        [
+          { id: 7, name: 'a' },
+          { id: 3, name: 'b' },
+        ],
+        { returning: { name: true } },
+      ),
+    ).toEqual([{ name: 'a' }, { name: 'b' }]);
+  });
+
+  it('should write one row per statement where the key the database defaults orders nothing', async () => {
+    const querier = new StubSqlQuerier(undefined, new PostgresDialect());
+
+    await querier.insertMany(DefaultedKey, [{ name: 'a' }, { name: 'b' }]);
+
+    expect(querier.statements).toEqual([
+      'BEGIN',
+      'INSERT INTO "DefaultedKey" ("name") VALUES ($1) RETURNING "id" "id"',
+      'INSERT INTO "DefaultedKey" ("name") VALUES ($1) RETURNING "id" "id"',
+      'COMMIT',
+    ]);
+  });
+
+  it('should place keys past 2^53, which arrive as their text, in the order the engine numbered them', async () => {
+    const querier = reversing([{ id: '9007199254740992' }, { id: '9007199254740993' }]);
+
+    expect(await querier.insertMany(HydratedParent, [{ name: 'a' }, { name: 'b' }])).toEqual([
+      '9007199254740992',
+      '9007199254740993',
+    ]);
+  });
+
+  it('should return the one row a statement wrote where the database defaulted its key', async () => {
+    const querier = reversing([{ id: 'u1', name: 'a' }], new PostgresDialect());
+
+    expect(await querier.insertMany(DefaultedKey, [{ name: 'a' }], { returning: { id: true, name: true } })).toEqual([
+      { id: 'u1', name: 'a' },
+    ]);
+  });
+
+  it('should report no id for an upserted row with a null conflict key, which nothing matches it by', async () => {
+    const querier = reversing([{ id: 1, name: null }]);
+
+    expect(await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }])).toEqual([
+      undefined,
+    ]);
+  });
+
+  it("should place an upsert's ids by the conflict key of each row", async () => {
+    const querier = reversing([
+      { id: 1, name: 'a' },
+      { id: 2, name: 'b' },
+    ]);
+
+    expect(
+      await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: 'a' }, { name: 'b' }]),
+    ).toEqual([1, 2]);
+  });
+});
+
+describe('AbstractSqlQuerier returning by reading back', () => {
+  const querier = () => new StubSqlQuerier(undefined, new MySqlDialect());
+
   /** A key the driver did not report cannot name the row to read back, which `returning` needs. */
   it('should refuse to return a row whose key the driver did not report', async () => {
-    await expect(
-      new StubSqlQuerier().insertOne(HydratedParent, { name: 'a' }, { returning: { name: true } }),
-    ).rejects.toThrow('did not report for every row');
+    await expect(querier().insertOne(HydratedParent, { name: 'a' }, { returning: { name: true } })).rejects.toThrow(
+      'did not report for every row',
+    );
   });
 
   /** A row gone before it is read back, which a trigger can do, is not returned. */
   it('should return nothing for a written row it cannot read back', async () => {
     expect(
-      await new StubSqlQuerier().insertOne(HydratedParent, { id: 1, name: 'a' }, { returning: { name: true } }),
+      await querier().insertOne(HydratedParent, { id: 1, name: 'a' }, { returning: { name: true } }),
     ).toBeUndefined();
   });
 });
@@ -179,10 +332,10 @@ describe('AbstractSqlQuerier row locks', () => {
   it('should read back the ids an upsert did not report with no lock and no transaction', async () => {
     const querier = new RecordingSqlQuerier(new PostgresDialect());
 
-    await querier.upsertMany(HydratedParent, { name: true }, [{ name: 'a' }]);
+    await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: 'a' }]);
 
     expect(querier.statements).toEqual([
-      'INSERT INTO "HydratedParent" ("name") VALUES ($1) ON CONFLICT ("name") DO NOTHING RETURNING "id" "id"',
+      'INSERT INTO "HydratedParent" ("name") VALUES ($1) ON CONFLICT ("name") DO NOTHING RETURNING "id", "name"',
       'SELECT "id", "name" FROM "HydratedParent" WHERE "name" = ANY($1)',
     ]);
   });
@@ -377,7 +530,7 @@ describe('AbstractSqlQuerier upsert ids', () => {
     const querier = new StubSqlQuerier(undefined, new MySqlDialect({}));
     querier.rows = [{ id: 5, code: 'a' }];
 
-    expect(await querier.upsertOne(Coupon, { code: true }, { code: 'a', label: 'x' })).toBe(5);
+    expect(await querier.upsertOne(Coupon, { $conflict: { code: true } }, { code: 'a', label: 'x' })).toBe(5);
   });
 });
 

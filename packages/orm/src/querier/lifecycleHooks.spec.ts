@@ -341,6 +341,40 @@ class Tome {
   }
 }
 
+/** Its hooks hand the write a relation the payload did not carry, which the write still has to land. */
+@Entity()
+class HookedAuthor {
+  @Field(f.number().id())
+  id?: number;
+
+  @Field(f.string().nullable())
+  name?: string | null;
+
+  @OneToMany({ entity: () => HookedTome, mappedBy: (tome) => tome.author, cascade: 'persist' })
+  tomes?: HookedTome[];
+
+  @BeforeUpdate()
+  @BeforeUpsert()
+  addTome(this: HookedAuthor) {
+    this.tomes = [{ title: 'hooked' }];
+  }
+}
+
+@Entity()
+class HookedTome {
+  @Field(f.number().id())
+  id?: number;
+
+  @Field(f.string().nullable())
+  title?: string | null;
+
+  @Field(f.references(() => HookedAuthor).nullable())
+  authorId?: number | null;
+
+  @ManyToOne({ entity: () => HookedAuthor, references: (tome) => tome.authorId })
+  author?: HookedAuthor;
+}
+
 const TABLES = {
   Book: '`id` INTEGER PRIMARY KEY, `title` TEXT, `slug` TEXT',
   Plain: '`id` INTEGER PRIMARY KEY, `title` TEXT',
@@ -357,6 +391,8 @@ const TABLES = {
   ShelvedBook: '`id` INTEGER PRIMARY KEY, `shelfId` INTEGER, `title` TEXT',
   Author: '`id` INTEGER PRIMARY KEY, `name` TEXT',
   Tome: '`id` INTEGER PRIMARY KEY, `title` TEXT, `authorId` INTEGER',
+  HookedAuthor: '`id` INTEGER PRIMARY KEY, `name` TEXT',
+  HookedTome: '`id` INTEGER PRIMARY KEY, `title` TEXT, `authorId` INTEGER',
 };
 
 const pool = new SqliteQuerierPool(':memory:');
@@ -439,7 +475,7 @@ describe('lifecycle hooks', () => {
     const payload = [{ code: 'a' }, { code: 'b' }];
 
     await querier.insertMany(Stamped, payload);
-    await querier.upsertOne(Stamped, { code: true }, { code: 'c' });
+    await querier.upsertOne(Stamped, { $conflict: { code: true } }, { code: 'c' });
 
     expect(log).toEqual(['afterInsert:1:7', 'afterInsert:2:7', 'afterUpsert:3']);
     expect(payload).toEqual([{ code: 'a' }, { code: 'b' }]);
@@ -581,6 +617,22 @@ describe('lifecycle hooks', () => {
     await querier.updateOneById(Author, authorId, { tomes: [{ title: 'c' }] });
 
     expect(log).toEqual([]);
+  });
+
+  it('should write a relation a hook adds, whether the write reports its rows or not', async () => {
+    const id = await querier.insertOne(HookedAuthor, { name: 'Ann' });
+
+    await querier.updateMany(HookedAuthor, { $where: { id } }, { name: 'Bea' }, { returning: { name: true } });
+    expect(await querier.findMany(HookedTome, { $select: { title: true, authorId: true } })).toEqual([
+      { title: 'hooked', authorId: id },
+    ]);
+
+    await querier.upsertOne(HookedAuthor, { $conflict: { id: true } }, { id, name: 'Cy' }, undefined, {
+      returning: { name: true },
+    });
+    expect(await querier.findMany(HookedTome, { $select: { title: true, authorId: true } })).toEqual([
+      { title: 'hooked', authorId: id },
+    ]);
   });
 
   it('should run inherited hooks first, then each own hook in declaration order', async () => {
@@ -727,7 +779,7 @@ describe('lifecycle hooks', () => {
    * nothing at all was how an audit trail silently skipped this path.
    */
   it('should run upsert hooks, and neither the insert nor the update ones, for an upsert', async () => {
-    await querier.upsertOne(Book, { id: true }, { id: 1, title: 'Upserted' });
+    await querier.upsertOne(Book, { $conflict: { id: true } }, { id: 1, title: 'Upserted' });
 
     expect(log).toEqual(['beforeUpsert:Upserted', 'afterUpsert:Upserted']);
     expect(await querier.findMany(Book, { $select: { title: true, slug: true } })).toEqual([

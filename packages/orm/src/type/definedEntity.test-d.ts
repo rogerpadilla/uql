@@ -36,7 +36,7 @@ export const Author = defineEntity({
       topStock: () => author.books.max((book) => book.stock),
       // @ts-expect-error a sum reads a numeric column, and a title is text
       titleSum: () => author.books.sum((book) => book.title),
-      // A derived field may combine an own column with an aggregate, as a `dueBy` does.
+      // An aggregate field may combine an own column with an aggregate, as a `dueBy` does.
       stockGap: () =>
         f
           .number()

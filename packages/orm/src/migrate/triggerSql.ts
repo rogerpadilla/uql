@@ -18,6 +18,7 @@ import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
 import { sql, refs, rowRefs } from '../util/sql.js';
 import { ownedName, splitQualifiedName } from '../util/sql.util.js';
+import { escapeRegExp } from '../util/string.util.js';
 import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -285,19 +286,23 @@ function stampBody<E extends object>(
   newRow: RefMap<E>,
 ): QuerySql {
   const { entity } = meta;
-  if (dialect.features.triggers.assignsRow) {
+  const { triggers } = dialect.features;
+  // Its own row's columns read off the row being written: the incoming record, or the table the `UPDATE` restates.
+  const rowPrefix = triggers.assignsRow ? `${rowNames(dialect).$new}.` : `${dialect.escapedTableName(meta)}.`;
+  const stamped = dialect.compileDdl(value, entity, { escapedPrefix: rowPrefix });
+  const expression = sql(() => stamped);
+  if (triggers.assignsRow) {
     const target = newRow[key];
-    return dialect.features.triggers.body === 'function' ? sql`${target} := ${value};` : sql`SET ${target} = ${value};`;
+    return triggers.body === 'function' ? sql`${target} := ${expression};` : sql`SET ${target} = ${expression};`;
   }
   const table = refs(entity);
   const keyed = meta.ids.map((id) => sql`${table[id]} = ${newRow[id]}`);
   // Read through the write's own qualifier, as `keyed` is: `inserted` holds the same column name.
-  const stamped = dialect.compileDdl(value, entity);
   const differs = sql(({ ctx, escapedPrefix }) =>
     ctx.append(dialect.neExpr(`${escapedPrefix}${dialect.escapedColumnName(meta, key)}`, stamped)),
   );
   const where = { $and: [...keyed, differs] };
-  const restated = written({ kind: 'update', entity, set: { [key]: value }, where });
+  const restated = written({ kind: 'update', entity, set: { [key]: expression }, where });
   const { reentryGuard } = dialect.features.triggers;
   return reentryGuard ? sql`${sql(() => reentryGuard)}\n${restated}` : restated;
 }
@@ -351,18 +356,10 @@ function rowsFrom<E>(
   return { from, where: filter || undefined };
 }
 
-const IDENTIFIER_CHAR = /[\p{L}\p{N}_$]/u;
-
 /** Whether `statement` names any of `columns` as a whole identifier, quoted or not, in any case. */
 export function namesAny(statement: string, columns: readonly string[]): boolean {
-  const text = statement.toLowerCase();
-  return columns.some((column) => {
-    const name = column.toLowerCase();
-    for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) {
-      if (!IDENTIFIER_CHAR.test(text.charAt(at - 1)) && !IDENTIFIER_CHAR.test(text.charAt(at + name.length))) {
-        return true;
-      }
-    }
-    return false;
-  });
+  const names = columns.map(escapeRegExp).join('|');
+  return (
+    columns.length > 0 && new RegExp(`(?<![\\p{L}\\p{N}_$])(?:${names})(?![\\p{L}\\p{N}_$])`, 'iu').test(statement)
+  );
 }

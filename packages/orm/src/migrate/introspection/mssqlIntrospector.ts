@@ -1,4 +1,4 @@
-import type { CheckSchema } from '../../schema/types.js';
+import type { CheckSchema, ColumnDefault } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { sql } from '../../util/sql.js';
 import {
@@ -168,7 +168,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * The engine reprints a default from its own parse tree: all of it in one pair of parentheses, and a
    * number in a second, so `((0))`, `((1)+(2))`, `(N'x')` and `(getdate())`.
    */
-  protected parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): ColumnDefault | undefined {
     if (defaultValue === null) {
       return undefined;
     }

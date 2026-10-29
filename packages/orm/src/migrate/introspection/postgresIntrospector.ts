@@ -1,5 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { type CheckSchema, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
+import { type CheckSchema, type ColumnDefault, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { sql } from '../../util/sql.js';
@@ -283,7 +283,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * writes a string containing a quote in escape syntax (`e'it\'s'`). Other casts are dropped, and a
    * default that is not a literal is SQL, such as `now()` or `nextval(...)`.
    */
-  protected parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): ColumnDefault | undefined {
     if (!defaultValue) {
       return undefined;
     }

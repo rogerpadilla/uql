@@ -418,12 +418,12 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.def
     trigger({
       on: 'afterInsert',
       name: 'last',
-      run: (newRow) => upsertInto(TgLast, { sku: true }, { sku: newRow.sku, qty: newRow.qty }),
+      run: (newRow) => upsertInto(TgLast, { $conflict: { sku: true } }, { sku: newRow.sku, qty: newRow.qty }),
     }),
     trigger({
       on: 'afterInsert',
       name: 'first',
-      run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, {}),
+      run: (newRow) => upsertInto(TgFirst, { $conflict: { sku: true } }, { sku: newRow.sku, qty: newRow.qty }, {}),
     }),
   ],
 })
@@ -452,7 +452,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
   const qtyOf = async (entity: typeof TgLast | typeof TgFirst, sku: string) =>
     (await pool().findMany(entity, { $select: { qty: true }, $where: { sku } })).map((row) => row.qty);
 
-  it('should insert a row, and on its conflict paths take the incoming one', async () => {
+  it('should insert a row, and on its conflict keys take the incoming one', async () => {
     await pool().insertOne(TgSale, { sku: 'a', qty: 1 });
     await pool().insertOne(TgSale, { sku: 'a', qty: 5 });
     expect(await qtyOf(TgLast, 'a')).toEqual([5]);
@@ -471,7 +471,8 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
     trigger({
       on: 'afterInsert',
       name: 'count',
-      run: (newRow) => upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
+      run: (newRow) =>
+        upsertInto(TgCount, { $conflict: { sku: true } }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
     }),
     trigger({
       on: 'afterInsert',
@@ -479,7 +480,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
       run: (newRow) =>
         upsertInto(
           TgTotal,
-          { sku: true },
+          { $conflict: { sku: true } },
           { sku: newRow.sku, total: newRow.qty },
           { total: sql`${refs(TgTotal).total} + ${newRow.qty}` },
         ),

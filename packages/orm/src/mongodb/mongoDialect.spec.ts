@@ -37,7 +37,7 @@ import {
   type QueryWhere,
   type AbstractType,
 } from '../type/index.js';
-import { sql } from '../util/index.js';
+import { refs, sql } from '../util/index.js';
 import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
@@ -482,6 +482,67 @@ class MongoDialectSpec implements Spec {
     );
     expect(() => this.dialect.where(Item, { name: sql`lower(code)` })).toThrow(
       'sql() in $where is not supported on MongoDB',
+    );
+    expect(() => this.dialect.where(Item, { salePrice: { $gt: sql`1` } })).toThrow(
+      'sql() in $where is not supported on MongoDB',
+    );
+    // @ts-expect-error a query type refuses SQL under `$regex`; an untyped caller must still be refused
+    expect(() => this.dialect.where(Item, { name: { $regex: sql`'a'` } })).toThrow(
+      'sql() in $where is not supported on MongoDB',
+    );
+  }
+
+  /** A field compared with another of its document is an expression, as an aggregate's `$where` reads it. */
+  shouldCompareAFieldWithAnotherOfItsDocument() {
+    const item = refs(Item);
+    expect(this.dialect.where(Item, { salePrice: { $gt: item.createdAt }, code: 'a' })).toEqual({
+      code: 'a',
+      $expr: {
+        $and: [
+          {
+            $or: [
+              { $and: [{ $isNumber: '$salePrice' }, { $isNumber: '$createdAt' }] },
+              { $eq: [{ $type: '$salePrice' }, { $type: '$createdAt' }] },
+            ],
+          },
+          { $gt: ['$salePrice', '$createdAt'] },
+        ],
+      },
+    });
+    expect(this.dialect.where(Item, { salePrice: { $in: [1, item.createdAt] } })).toEqual({
+      $expr: { $in: [{ $ifNull: ['$salePrice', null] }, [1, '$createdAt']] },
+    });
+  }
+
+  /** Only the operators comparing with another field go to the expression; the rest stay a filter the index serves. */
+  shouldKeepTheValueOperatorsOfAFieldComparedWithAnother() {
+    expect(this.dialect.where(Item, { salePrice: { $gte: 0, $lt: refs(Item).createdAt } })).toEqual({
+      salePrice: { $gte: 0 },
+      $expr: {
+        $and: [
+          {
+            $or: [
+              { $and: [{ $isNumber: '$salePrice' }, { $isNumber: '$createdAt' }] },
+              { $eq: [{ $type: '$salePrice' }, { $type: '$createdAt' }] },
+            ],
+          },
+          { $lt: ['$salePrice', '$createdAt'] },
+        ],
+      },
+    });
+  }
+
+  shouldRefuseSqlInAnAggregateWhere() {
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $select: { n: { $count: '*', $where: { salePrice: { $gt: sql`1` } } } },
+      }),
+    ).toThrow('sql() in an aggregate $where is not supported on MongoDB');
+  }
+
+  shouldRefuseComparingAFieldWithOneOfAnotherCollection() {
+    expect(() => this.dialect.where(Item, { name: { $eq: refs(Tax).name } })).toThrow(
+      "MongoDB compares a field of 'Item' with another of its own document, not of 'Tax'",
     );
   }
 
@@ -1325,7 +1386,7 @@ class MongoDialectSpec implements Spec {
     const anyElement = (ref: string, test: unknown) => ({
       $cond: [{ $isArray: ref }, { $anyElementTrue: [{ $map: { input: ref, in: test } }] }, false],
     });
-    const within = (ref: string, values: unknown[]) => ({ $in: [{ $ifNull: [ref, null] }, lit(values)] });
+    const within = (ref: string, values: unknown[]) => ({ $in: [{ $ifNull: [ref, null] }, values.map(lit)] });
 
     expect(counting({ code: { $eq: 'a' } })).toEqual(counted({ $eq: ['$code', lit('a')] }));
     expect(counting({ code: '$name' })).toEqual(counted({ $eq: ['$code', lit('$name')] }));

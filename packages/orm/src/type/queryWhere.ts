@@ -118,7 +118,7 @@ export type QueryGroupOp = QueryJoinOp | QueryNegateOp;
  * Strips `null` from picked operators since array size is always numeric.
  */
 export type QuerySizeComparisonOps = {
-  [K in QueryHavingOp | '$between']?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
+  [K in QueryHavingOp | '$between']?: NonNullable<QueryWhereFieldOperatorMap<number, never>[K]>;
 };
 
 /**
@@ -128,17 +128,23 @@ export type QuerySizeComparisonOps = {
  * checks it again at run time.
  */
 export type QueryVectorNear = QueryVectorQuery &
-  AtLeastOne<{ [K in QueryOrderedOp]: NonNullable<QueryWhereFieldOperatorMap<number>[K]> }>;
+  AtLeastOne<{ [K in QueryOrderedOp]: NonNullable<QueryWhereFieldOperatorMap<number, never>[K]> }>;
+
+/**
+ * What an operator compares a field of type `T` with: a value of it, or SQL holding one, a ref to another
+ * column most often, `{ effectiveTo: { $gt: rate.effectiveFrom } }`. The wire's `never` keeps it a value.
+ */
+export type QueryOperand<T, Sql = QuerySql> = ExpandScalar<T> | SqlFor<Sql, T>;
 
 export type QueryWhereFieldOperatorMap<T, Sql = QuerySql> = {
   /**
    * whether a value is equal to the given value.
    */
-  $eq?: ExpandScalar<T> | null;
+  $eq?: QueryOperand<T, Sql> | null;
   /**
    * whether a value is not equal to the given value.
    */
-  $ne?: ExpandScalar<T> | null;
+  $ne?: QueryOperand<T, Sql> | null;
   /**
    * negates the given comparison for a single field.
    * @see {@link QueryWhereRootOperator.$not} for root-level clause negation.
@@ -147,24 +153,24 @@ export type QueryWhereFieldOperatorMap<T, Sql = QuerySql> = {
   /**
    * whether a value is less than the given value.
    */
-  $lt?: ExpandScalar<T>;
+  $lt?: QueryOperand<T, Sql>;
   /**
    * whether a value is less than or equal to the given value.
    */
-  $lte?: ExpandScalar<T>;
+  $lte?: QueryOperand<T, Sql>;
   /**
    * whether a value is greater than the given value.
    */
-  $gt?: ExpandScalar<T>;
+  $gt?: QueryOperand<T, Sql>;
   /**
    * whether a value is greater than or equal to the given value.
    */
-  $gte?: ExpandScalar<T>;
+  $gte?: QueryOperand<T, Sql>;
   /**
    * whether a value is between two values (inclusive). Shorthand for $gte + $lte.
    * @example { age: { $between: [18, 65] } }
    */
-  $between?: readonly [ExpandScalar<T>, ExpandScalar<T>];
+  $between?: readonly [QueryOperand<T, Sql>, QueryOperand<T, Sql>];
   /**
    * whether a string begins with the given text, taken literally (case sensitive).
    */
@@ -206,11 +212,11 @@ export type QueryWhereFieldOperatorMap<T, Sql = QuerySql> = {
   /**
    * whether a value matches any of the given values.
    */
-  $in?: readonly ExpandScalar<T>[];
+  $in?: readonly QueryOperand<T, Sql>[];
   /**
    * whether a value does not match any of the given values.
    */
-  $nin?: readonly ExpandScalar<T>[];
+  $nin?: readonly QueryOperand<T, Sql>[];
   /**
    * whether a value is null.
    * @example { deletedAt: { $isNull: true } }

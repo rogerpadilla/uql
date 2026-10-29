@@ -27,11 +27,12 @@ export class MariaDialect extends MysqlLikeSqlDialect {
 
   /**
    * Unlike MySQL: `VECTOR(n)` takes its dimension and binds as packed float32 bytes, every column of a
-   * vector index has to be NOT NULL, `CREATE INDEX` takes `IF NOT EXISTS`, and a lock cannot be narrowed
-   * to one table of a join.
+   * vector index has to be NOT NULL, `CREATE INDEX` takes `IF NOT EXISTS`, a lock cannot be narrowed
+   * to one table of a join, and every write but an `UPDATE` takes a `RETURNING`.
    */
   override readonly features: SqlDialectFeatures = {
     ...MYSQL_FEATURES,
+    reportsWrites: ['insert', 'delete', 'upsert'],
     vectorSupportsLength: true,
     vectorBytes: true,
     vectorIndexRequiresNotNull: true,

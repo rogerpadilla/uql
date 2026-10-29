@@ -1,6 +1,6 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
-import type { CheckSchema } from '../../schema/types.js';
+import type { CheckSchema, ColumnDefault } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { sql } from '../../util/sql.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
@@ -179,7 +179,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * column takes. That one comes with a charset introducer and every quote and backslash escaped again:
    * `_utf8mb4\'x\'`.
    */
-  protected parseDefaultValue(defaultValue: string | null, extra = ''): unknown {
+  protected parseDefaultValue(defaultValue: string | null, extra = ''): ColumnDefault | undefined {
     if (defaultValue === null) {
       return undefined;
     }

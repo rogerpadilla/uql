@@ -53,7 +53,7 @@ class NeonQuerierIt extends PostgresQuerierIt {
 
   async shouldSendASplitWriteAsOneHttpTransaction() {
     await using querier = await this.neonPool.getQuerier();
-    const traffic = await this.sessions(() => querier.upsertMany(Tax, { id: true }, splitRows()));
+    const traffic = await this.sessions(() => querier.upsertMany(Tax, { $conflict: { id: true } }, splitRows()));
 
     expect(traffic).toEqual({ http: 1, opened: 0, ended: 0 });
     expect(await querier.count(Tax)).toBe(2);
@@ -76,7 +76,7 @@ class NeonQuerierIt extends PostgresQuerierIt {
     const during = await this.sessions(() =>
       querier.transaction(async () => {
         await querier.all`SELECT 1 AS one`;
-        await querier.upsertMany(Tax, { id: true }, splitRows());
+        await querier.upsertMany(Tax, { $conflict: { id: true } }, splitRows());
       }),
     );
     const after = await this.sessions(() => querier.all`SELECT 4 AS four`);
@@ -110,7 +110,7 @@ class NeonQuerierIt extends PostgresQuerierIt {
       await querier.all`SELECT 1 AS one`;
     });
 
-    const traffic = await this.sessions(() => querier.upsertMany(Tax, { id: true }, splitRows()));
+    const traffic = await this.sessions(() => querier.upsertMany(Tax, { $conflict: { id: true } }, splitRows()));
 
     expect(traffic).toEqual({ http: 1, opened: 0, ended: 0 });
   }

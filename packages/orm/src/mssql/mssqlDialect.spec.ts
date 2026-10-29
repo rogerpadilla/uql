@@ -1,7 +1,18 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, f, Field } from '../entity/index.js';
-import { Company, createSpec, Invoice, Item, MeasureUnitCategory, TaxCategory, TypedRow, User } from '../test/index.js';
+import { Computed, Entity, f, Field } from '../entity/index.js';
+import {
+  Company,
+  createSpec,
+  Invoice,
+  Item,
+  MeasureUnitCategory,
+  Reading,
+  TaxCategory,
+  TypedRow,
+  User,
+  Tax,
+} from '../test/index.js';
 import { idKey, type QueryLockWait } from '../type/index.js';
 import { sql } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
@@ -13,6 +24,15 @@ class StockLevel {
   @Field(f.number().id()) warehouseId?: number;
   @Field(f.number().id()) productId?: number;
   @Field(f.number().nullable()) quantity?: number | null;
+}
+
+/** An inlined field, whose SQL reads the row's other columns. */
+@Entity()
+class Shout {
+  @Field(f.number().id()) id?: number;
+  @Field(f.string()) first!: string;
+  @Field(f.number().nullable()) age?: number | null;
+  @Computed((row) => f.string().as(sql`${row.first} + '!'`)) readonly shout?: string;
 }
 
 /**
@@ -181,31 +201,114 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
    */
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, User, { email: true }, { name: 'a', email: 'a@b.c', id: '1' }),
+      this.dialect.upsert(ctx, User, { $conflict: { email: true } }, { name: 'a', email: 'a@b.c', id: '1' }),
     );
     expect(sql).toBe(
-      'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); MERGE INTO "User" WITH (HOLDLOCK) USING (VALUES (@p2, @p3, @p4, @p5)) AS "_uql_src"' +
+      'MERGE INTO "User" WITH (HOLDLOCK) USING (VALUES (@p2, @p3, @p4, @p5)) AS "_uql_src"' +
         ' ("name", "email", "id", "createdAt") ON "User"."email" = "_uql_src"."email"' +
         ' WHEN MATCHED THEN UPDATE SET "name" = "_uql_src"."name", "updatedAt" = @p1' +
         ' WHEN NOT MATCHED THEN INSERT ("name", "email", "id", "createdAt")' +
-        ' VALUES ("_uql_src"."name", "_uql_src"."email", "_uql_src"."id", "_uql_src"."createdAt")' +
-        ' OUTPUT INSERTED."id" "id" INTO @_uql_output; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
+        ' VALUES ("_uql_src"."name", "_uql_src"."email", "_uql_src"."id", "_uql_src"."createdAt");',
     );
     expect(values.length).toBe(5);
   }
 
+  /** `OUTPUT` sits after the `SET` list, `INTO` a table its fields are then read off, whatever triggers the table has. */
+  shouldReportAnUpdateThroughATableVariable() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.update(ctx, StockLevel, { $where: { warehouseId: 1 } }, { quantity: 2 }, undefined, ['quantity']),
+    );
+    expect(sql).toBe(
+      'DECLARE @_uql_output TABLE ("quantity" BIGINT);' +
+        ' UPDATE "StockLevel" SET "quantity" = @p1' +
+        ' OUTPUT INSERTED."quantity" INTO @_uql_output ("quantity") WHERE "warehouseId" = @p2;' +
+        ' SELECT "_uql_output"."quantity" FROM @_uql_output "_uql_output"',
+    );
+  }
+
+  /** A JSON path in a MERGE's `$where` reads the target's column, which the source names too where the rows write it. */
+  shouldQualifyAJsonPathOfAnUpsertWhere() {
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Reading,
+        { $conflict: { id: true }, $where: { 'doc.name': 'a' } },
+        { id: 'r', name: 'x', doc: { name: 'b' } },
+      ),
+    );
+    expect(statement).toContain('OPENJSON("Reading"."doc", ');
+  }
+
+  /** A delete reports the rows as they were, off `DELETED`. */
+  shouldReportADeleteOffTheDeletedRows() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.delete(ctx, StockLevel, { $where: { warehouseId: 1 } }, {}, ['productId']),
+    );
+    expect(sql).toBe(
+      'DECLARE @_uql_output TABLE ("productId" BIGINT);' +
+        ' DELETE FROM "StockLevel"' +
+        ' OUTPUT DELETED."productId" INTO @_uql_output ("productId") WHERE "warehouseId" = @p1;' +
+        ' SELECT "_uql_output"."productId" FROM @_uql_output "_uql_output"',
+    );
+  }
+
+  /** The `MERGE`'s own terminator ends it before the read of what it reported, and none is doubled. */
+  shouldReportAnUpsertThroughATableVariable() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        StockLevel,
+        { $conflict: { warehouseId: true, productId: true } },
+        { warehouseId: 1, productId: 2, quantity: 3 },
+        undefined,
+        ['quantity'],
+      ),
+    );
+    expect(sql).toBe(
+      'DECLARE @_uql_output TABLE ("quantity" BIGINT);' +
+        ' MERGE INTO "StockLevel" WITH (HOLDLOCK) USING (VALUES (@p1, @p2, @p3)) AS "_uql_src" ("warehouseId", "productId", "quantity")' +
+        ' ON "StockLevel"."warehouseId" = "_uql_src"."warehouseId" AND "StockLevel"."productId" = "_uql_src"."productId"' +
+        ' WHEN MATCHED THEN UPDATE SET "quantity" = "_uql_src"."quantity"' +
+        ' WHEN NOT MATCHED THEN INSERT ("warehouseId", "productId", "quantity") VALUES ("_uql_src"."warehouseId", "_uql_src"."productId", "_uql_src"."quantity")' +
+        ' OUTPUT INSERTED."quantity" INTO @_uql_output ("quantity");' +
+        ' SELECT "_uql_output"."quantity" FROM @_uql_output "_uql_output"',
+    );
+  }
+
+  /** An inlined field reads its SQL off the table variable, so every stored column goes into it. */
+  shouldReportAnInlinedFieldOffEveryStoredColumn() {
+    const { sql } = this.exec((ctx) => this.dialect.delete(ctx, Shout, { $where: { id: 1 } }, {}, ['shout']));
+    expect(sql).toContain(
+      'OUTPUT DELETED."id", DELETED."first", DELETED."age" INTO @_uql_output ("id", "first", "age")',
+    );
+  }
+
+  /** `MERGE` matches a found row only where `$where` holds of it too. */
+  shouldUpsertOnlyWhereTheFoundRowMatches() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        Tax,
+        { $conflict: { id: true }, $where: { percentage: { $lt: 20 } } },
+        { id: 'a', name: 'x', percentage: 1 },
+      ),
+    );
+    expect(sql).toContain(
+      'ON "Tax"."id" = "_uql_src"."id" WHEN MATCHED AND "Tax"."percentage" < @p2 THEN UPDATE SET "name" = "_uql_src"."name", ' +
+        '"percentage" = "_uql_src"."percentage", "updatedAt" = @p1 WHEN NOT MATCHED THEN INSERT',
+    );
+  }
+
   override shouldUpsertMany() {
     const { sql } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, User, { email: true }, [
+      this.dialect.upsert(ctx, User, { $conflict: { email: true } }, [
         { name: 'a', email: 'a@b.c', id: '1' },
         { name: 'b', email: 'b@b.c', id: '2' },
       ]),
     );
     expect(sql).toContain('USING (VALUES (@p2, @p3, @p4, @p5), (@p6, @p7, @p8, @p9))');
     expect(
-      sql.endsWith(
-        ' OUTPUT INSERTED."id" "id" INTO @_uql_output; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
-      ),
+      sql.endsWith('VALUES ("_uql_src"."name", "_uql_src"."email", "_uql_src"."id", "_uql_src"."createdAt");'),
     ).toBe(true);
   }
 
@@ -363,7 +466,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
 
   // A `MERGE` naming an identity key inserts it too, where the engine refuses it just the same.
   shouldToggleIdentityInsertForAnUpsertNamingAKey() {
-    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, Invoice, { id: true }, { id: 5, description: 'a' }));
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, Invoice, { $conflict: { id: true } }, { id: 5, description: 'a' }),
+    );
     expect(sql).toContain('SET IDENTITY_INSERT "Invoice" ON; MERGE INTO "Invoice"');
     expect(sql).toContain('; SET IDENTITY_INSERT "Invoice" OFF;');
   }
@@ -411,7 +516,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     this.dialect.triggerWrite(upsert, {
       kind: 'upsert',
       entity: Enrolment,
-      conflictPaths: { studentId: true, courseId: true },
+      q: { $conflict: { studentId: true, courseId: true } },
       row: { studentId: 1, courseId: 2, grade: 'A' },
     });
     expect(upsert.sql).toBe(
@@ -425,7 +530,12 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** `OUTPUT` names one id column, so a composite key merges with nothing to report. */
   shouldMergeACompositeKeyWithNoOutputClause() {
     const ctx = this.dialect.createContext();
-    this.dialect.upsert(ctx, Enrolment, { studentId: true, courseId: true }, { studentId: 1, courseId: 2, grade: 'A' });
+    this.dialect.upsert(
+      ctx,
+      Enrolment,
+      { $conflict: { studentId: true, courseId: true } },
+      { studentId: 1, courseId: 2, grade: 'A' },
+    );
     expect(ctx.sql).not.toContain('OUTPUT');
     expect(ctx.sql).toMatch(/;$/);
   }

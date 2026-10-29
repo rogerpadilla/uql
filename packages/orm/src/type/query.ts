@@ -89,10 +89,14 @@ export type QueryCount<E, Sql = QuerySql, R extends keyof E = ToManyRelationKey<
   [K in R]?: BooleanLike | QueryFilter<RelationTarget<E[K]>, Sql>;
 };
 
+/** The fields of a unique key an upsert finds a row by, `{ email: true }`, as `$select` names them. */
+export type QueryConflictKeys<E> = QuerySelect<E, FieldKey<E>, true>;
+
 /**
- * query conflict paths - subset of field keys used to detect upsert conflicts.
+ * The rows an upsert writes: a row `$conflict`'s keys find, `{ email: true }`, takes the update where it matches
+ * `$where`, as `updateMany` reads one, `{ status: ['done', 'failed'] }`, and stays as it is elsewhere; the rest insert.
  */
-export type QueryConflictPaths<E> = QuerySelect<E, FieldKey<E>, true>;
+export type QueryUpsert<E, Sql = QuerySql> = QueryFilter<E, Sql> & { readonly $conflict: QueryConflictKeys<E> };
 
 /**
  * Options to populate a relation declared as `V`, by its cardinality.

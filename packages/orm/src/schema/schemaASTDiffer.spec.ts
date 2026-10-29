@@ -6,7 +6,7 @@ import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
 import { columnRenameCandidates, columnRenames, diffSchemas, tableRenameCandidates } from './schemaASTDiffer.js';
 import { SqlExpression } from './sqlExpression.js';
-import type { ColumnNode, IndexNode, RelationshipNode } from './types.js';
+import type { ColumnDefault, ColumnNode, IndexNode, RelationshipNode } from './types.js';
 
 /** What two schemas alike differ by. */
 const NO_DIFFERENCES = {
@@ -712,7 +712,7 @@ describe('SchemaASTDiffer', () => {
   describe('Utility Functions', () => {
     /** No dialect renders them here, so SQL is alike only to the letter, and never a literal that spells it. */
     it('should compare defaults as written where no dialect is given', () => {
-      const diffOf = (expected: unknown, actual: unknown) => {
+      const diffOf = (expected: ColumnDefault, actual: ColumnDefault) => {
         const source = new SchemaAST();
         const target = new SchemaAST();
         source.addTable(

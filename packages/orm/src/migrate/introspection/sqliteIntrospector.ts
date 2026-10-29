@@ -1,5 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import type { CheckSchema } from '../../schema/types.js';
+import type { CheckSchema, ColumnDefault } from '../../schema/types.js';
 import type {
   ForeignKeySchema,
   IndexEntry,
@@ -170,7 +170,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return match ? Number.parseInt(match[1], 10) : undefined;
   }
 
-  protected parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): ColumnDefault | undefined {
     if (defaultValue === null) {
       return undefined;
     }

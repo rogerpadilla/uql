@@ -86,7 +86,7 @@ export async function aReadHasWhatTheEntityDeclaresPresent() {
 export async function anInsertLeavesOutWhatUqlFills() {
   await querier.insertOne(Article, { slug: 'a' });
   await querier.insertMany(Article, [{ slug: 'a' }, { id: 'b', slug: 'b', views: 1 }]);
-  await querier.upsertOne(Article, { slug: true }, { slug: 'a' });
+  await querier.upsertOne(Article, { $conflict: { slug: true } }, { slug: 'a' });
   await querier.saveMany(Article, [{ slug: 'a' }, { id: 'b', slug: 'b' }]);
   await querier.insertOne(Draft, { body: 'a' });
   await querier.insertOne(Tally, { label: 'a' });
@@ -98,7 +98,7 @@ export async function anInsertNamesTheRest() {
   // @ts-expect-error ...in a batch too
   await querier.insertMany(Article, [{ views: 1 }]);
   // @ts-expect-error ...and where an upsert may insert
-  await querier.upsertOne(Article, { id: true }, { id: 'a' });
+  await querier.upsertOne(Article, { $conflict: { id: true } }, { id: 'a' });
   // @ts-expect-error ...on a defined entity alike
   await querier.insertOne(Tally, {});
   // @ts-expect-error a composite key is the references the row is made of, which the caller supplies

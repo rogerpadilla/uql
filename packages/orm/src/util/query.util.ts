@@ -1,26 +1,28 @@
 import { type KeyedRow, soleIdOf } from '../entity/metadata/definition.js';
 import type {
+  EntityData,
   EntityId,
   EntityMeta,
   FieldKey,
   Query,
-  QueryConflictPaths,
+  QueryConflictKeys,
   QuerySearch,
   QuerySortDirection,
   QuerySortMap,
+  QueryUpsert,
   QueryWhere,
   QueryWhereArray,
 } from '../type/index.js';
-import { entityName, isRecord, isScalarId, isWhereMap } from './object.util.js';
+import { entityName, getKeys, isRecord, isScalarId, isWhereMap } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
- * Maps each of `keys` to `true`, the shape of a `$select` or conflict paths. This and the builders below hold
+ * Maps each of `keys` to `true`, the shape of a `$select` or conflict keys. This and the builders below hold
  * the casts generic code needs to build a statement: the compiler types these maps per entity, so it does not
  * accept a key read at run time as one of their keys.
  */
-export function keySet<E>(keys: readonly FieldKey<E>[]): QueryConflictPaths<E> {
-  return Object.fromEntries(keys.map((key) => [key, true])) as QueryConflictPaths<E>;
+export function keySet<E>(keys: readonly FieldKey<E>[]): QueryConflictKeys<E> {
+  return Object.fromEntries(keys.map((key) => [key, true])) as QueryConflictKeys<E>;
 }
 
 /** `where` (or an empty `$where`) with `key` also set to `value`. Keys in one map combine with `AND`. */
@@ -58,6 +60,12 @@ export function sortOf<E>(entries: readonly (readonly [FieldKey<E>, QuerySortDir
  */
 export function whereAnd<E>(where: QueryWhere<E> | undefined, clauses: QueryWhereArray<E>): QueryWhere<E> {
   return { ...where, $and: [...(where?.$and ?? []), ...clauses] } as QueryWhere<E>;
+}
+
+/** The row an upsert of `row` finds by `q.$conflict`'s keys, as one matching `q.$where` too: the one it updates. */
+export function foundRowWhere<E>(q: QueryUpsert<E>, row: EntityData<E>): QueryWhere<E> {
+  const found = whereEach(getKeys(q.$conflict), (key) => row[key]);
+  return q.$where ? whereAnd(found, [q.$where]) : found;
 }
 
 /** `q` selecting only the id. A write passes it to its backend's read builder to find the rows it will act on. */

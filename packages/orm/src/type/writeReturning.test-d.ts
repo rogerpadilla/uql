@@ -18,7 +18,11 @@ export async function writesWithoutReturning() {
   const ids: (WrittenId<Account> | undefined)[] = await querier.insertMany(Account, [{ email: 'a' }]);
   const changed: number = await querier.updateMany(Account, { $where: { id: 1 } }, { email: 'b' });
   const deleted: number = await pool.deleteOneById(Account, 1);
-  const upserted: WrittenId<Account> | undefined = await querier.upsertOne(Account, { email: true }, { email: 'a' });
+  const upserted: WrittenId<Account> | undefined = await querier.upsertOne(
+    Account,
+    { $conflict: { email: true } },
+    { email: 'a' },
+  );
   return [id, ids, changed, deleted, upserted];
 }
 
@@ -48,7 +52,7 @@ export async function writesReturningRows() {
   const deleted = await querier.deleteOneById(Account, 1, { returning: { email: true } });
   deleted?.email.trim();
 
-  const upserted = await querier.upsertOne(Account, { email: true }, { email: 'a' }, undefined, {
+  const upserted = await querier.upsertOne(Account, { $conflict: { email: true } }, { email: 'a' }, undefined, {
     returning: { id: true },
   });
   upserted.id.toFixed();

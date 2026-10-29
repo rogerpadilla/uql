@@ -1,12 +1,15 @@
 import { getMeta } from '../entity/index.js';
 import type {
+  FieldKey,
   EntityMeta,
   InsertIdSource,
   Query,
-  QueryConflictPaths,
+  QueryConflictKeys,
   QueryContext,
   QueryOptions,
   QueryTextSearchOptions,
+  QueryUpsert,
+  QueryWhere,
   RowLockFeatures,
   SqlDialectFeatures,
   SqlDialectName,
@@ -17,10 +20,12 @@ import type {
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral } from '../util/sqlLiteral.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import {
   ANSI_SQL_VALUES,
   AbstractSqlDialect,
   type CarriedFields,
+  type ConflictUpdate,
   type DerivedRelation,
   type RelationRows,
   type SelectTerm,
@@ -29,6 +34,7 @@ import {
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { type JsonContainer, jsonPath, type JsonSlot, unlessThen } from './jsonSql.js';
+import { fieldsRead, namesRows } from './operators.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -56,11 +62,10 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: MYSQL_ROW_LOCKS,
-  writeReturning: false,
+  reportsWrites: [],
   nullsSortLowest: true,
   nullsOrdering: 'expression',
   textScoreIndexes: true,
-  orderedUpsertReturning: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
@@ -141,34 +146,64 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   // `innodb_autoinc_lock_mode` caveat on `buildUpdateResult` in `util/sql.util.ts`.
   override readonly insertIdSource: InsertIdSource = 'firstId';
 
-  /** `INSERT ... ON DUPLICATE KEY UPDATE`, the assignments bound after the insert, where a `?` reads them. */
+  /** `INSERT ... ON DUPLICATE KEY UPDATE`, its rows written before what a found row takes, as a `?` reads them. */
   override upsert<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
-    conflictPaths: QueryConflictPaths<E>,
+    q: QueryUpsert<E>,
     payload: E | E[],
     update?: UpdatePayload<E>,
-  ): void {
+    returning?: readonly FieldKey<E>[],
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
-    const updateCtx = this.createContext();
-    const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
+    const entries = this.conflictEntries(entity, q, payload, update);
     const insert = this.buildFragment(ctx, (fragment) => this.appendInsertValues(fragment, entity, payload));
-    const idReturning = this.insertedIdReturning(meta);
+    const { assignments } = this.foundRowUpdate(ctx, entity, entries, q.$where);
     const rows = Array.isArray(payload) ? payload.length : 1;
-    const headerId = assignments && this.insertIdSource === 'firstId' && this.upsertReportsIds(meta, rows);
+    const headerId = assignments && this.upsertReportsIds(meta, rows);
     // Qualified: where the rows name the key, the new row's alias carries a column of the same name.
     const key = headerId ? `${this.escapedTableName(meta)}.${this.escapedColumnName(meta, meta.ids[0])}` : '';
     const assigned = key ? `${key} = LAST_INSERT_ID(${key}), ${assignments}` : assignments;
-    ctx.append(`${this.onDuplicateKey(insert, assigned)}${idReturning && ` ${idReturning}`}`);
-    ctx.pushValue(...updateCtx.values);
+    return this.reportedWrite(ctx, entity, returning, 'upsert', () => {
+      ctx.append(this.onDuplicateKey(insert, assigned));
+    });
+  }
+
+  /**
+   * `ON DUPLICATE KEY UPDATE` takes no `WHERE`, so each assignment holds `where` itself, a `CASE WHEN`. MySQL assigns
+   * left to right, a later assignment reading a column as already set: the one column the condition reads is set
+   * last, and a condition reading two the update sets is refused, since no order reads both as found.
+   */
+  protected override foundRowUpdate<E>(
+    ctx: QueryContext,
+    entity: AbstractType<E>,
+    entries: readonly [string, unknown][],
+    where: QueryWhere<E> | undefined,
+  ): ConflictUpdate {
+    if (!where || !namesRows(where)) {
+      return super.foundRowUpdate(ctx, entity, entries, undefined);
+    }
+    const fields = fieldsRead(getMeta(entity), where);
+    const reads = ([key]: readonly [string, unknown]) => !fields || fields.has(key);
+    const read = entries.filter(reads);
+    if (read.length > 1) {
+      throw new UqlUsageError(
+        `an upsert's $where on ${this.engineName} ${fields ? 'reads' : 'may read, through its SQL,'} ` +
+          `${read.map(([key]) => `'${key}'`).join(', ')}, which its update sets too: the engine sets them one by one, ` +
+          'each later one reading the others as already set',
+      );
+    }
+    const guard = (fragment: QueryContext) => this.foundRowCondition(fragment, entity, where);
+    const ordered = [...entries.filter((entry) => !reads(entry)), ...read];
+    return { assignments: this.foundRowAssignments(ctx, entity, ordered, guard), condition: '' };
   }
 
   protected override appendTriggerUpsert<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
-    _conflictPaths: QueryConflictPaths<E>,
+    _conflictKeys: QueryConflictKeys<E>,
     entries: readonly [string, unknown][],
-    assignments: string,
+    { assignments }: ConflictUpdate,
   ): void {
     const insert = this.buildFragment(ctx, (fragmentCtx) => this.appendTriggerInsert(fragmentCtx, meta, entries));
     ctx.append(`${this.onDuplicateKey(insert, assignments)};`);
@@ -176,7 +211,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   /**
    * `insert` on a duplicate key: `ON DUPLICATE KEY UPDATE` with the new row named, or `INSERT IGNORE` where there
-   * is nothing to assign. MySQL matches on any unique key, not just the conflict paths, which it cannot name.
+   * is nothing to assign. MySQL matches on any unique key, not just the conflict keys, which it cannot name.
    */
   private onDuplicateKey(insert: string, assignments: string): string {
     if (!assignments) {

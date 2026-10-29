@@ -257,21 +257,21 @@ it("should keep an entity's own aggregate over its defined base's", () => {
   expect(getMeta(Kennel).fields.pupStat?.computed).toMatchObject({ spec: { op: '$count' } });
 });
 
-/** A derived field the registry cannot read as a column or an aggregate is refused on first read, not stored. */
-it('should refuse a derived field that is neither a column nor an aggregate, on first read', () => {
+/** An aggregate field the registry cannot read as a column or an aggregate is refused on first read, not stored. */
+it('should refuse an aggregate field that is neither a column nor an aggregate, on first read', () => {
   const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
     () => ({}),
-    // @ts-expect-error a derived field is a thunk of a column or an aggregate, never a plain value
+    // @ts-expect-error an aggregate field is a thunk of a column or an aggregate, never a plain value
     () => ({ total: () => 1 }),
   );
   expect(() => getMeta(Tally)).toThrow("'Tally.total' is neither a column nor an aggregate: declare it as one");
   removeEntity(Tally);
 });
 
-it('should refuse a derived field that is no thunk, on first read', () => {
+it('should refuse an aggregate field that is no thunk, on first read', () => {
   const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
     () => ({}),
-    // @ts-expect-error a derived field is a thunk, read lazily, never a plain value
+    // @ts-expect-error an aggregate field is a thunk, read lazily, never a plain value
     () => ({ total: 1 }),
   );
   expect(() => getMeta(Tally)).toThrow("'Tally.total' is neither a column nor an aggregate: declare it as one");
