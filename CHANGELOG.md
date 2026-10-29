@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.108.1] - 2026-10-29
+
+- The `uql-orm` skill has a pre-finish checklist, shows a `$where` comparing two columns, names the APIs it covers in its description, and repeats nothing.
+
 ## [0.108.0] - 2026-10-29
 
 - **Breaking:** an upsert takes its conflict keys as a query, `upsertMany(Job, { $conflict: { key: true } }, rows, update)`, and a `$where` beside them limits which found rows take the update, in one statement on every SQL engine. `upsertInto` alike; `QueryConflictPaths` is `QueryConflictKeys`. `npx uql-codemod` rewrites both.
