@@ -23,6 +23,7 @@ disable-model-invocation: true
 ## Gotchas
 
 - Run the two release commands apart: `release.patch` chains them, but `lerna version`'s prompt hangs a non-interactive shell, and a script's arguments reach only its last command.
+- A release touching only root files (`skills/`, `README.md`) gets "No changed packages to version": lerna watches `packages/` alone. Once `check` has passed, run `bunx lerna version patch --yes --force-publish=uql-orm`.
 - After the tag, never bump again: fix what failed and rerun that step alone (`release.finish`, `release.github`, `gh run rerun <id>`).
 - Never publish from a machine, `lerna publish` included; the packages refuse tokens.
 - The codemod gets no GitHub Release, so its bumps notify nobody who never installed it.
