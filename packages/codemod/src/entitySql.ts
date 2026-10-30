@@ -7,7 +7,7 @@ import { columnListEntries, propertyValue } from './syntax.js';
 // list's refs, and a partial-index `where` is `sql` or a predicate, never a string. SQL still naming a
 // column by hand is only noted: which member it meant is its author's to say.
 
-/** `sql\`...\`` or `sql(...)`, or the deprecated `raw` of either. */
+/** `sql\`...\`` or `sql(...)`, or the removed `raw` of either. */
 type SqlCall = ts.TaggedTemplateExpression | ts.CallExpression;
 
 export function isSqlCall(node: ts.Node, checker: ts.TypeChecker): node is SqlCall {

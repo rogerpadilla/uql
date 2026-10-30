@@ -7,13 +7,13 @@ import { Entity, f, Field } from '../../entity/index.js';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
 import { MariadbQuerierPool } from '../../mariadb/mariadbQuerierPool.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
-import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
 import { driftOf } from '../../test/drift.js';
 import { cockroachConnection, mariadbConnection, postgresConnection, provisioningTimeout } from '../../test/index.js';
 import { dropTables } from '../../test/sqlPools.js';
 import type { SqlQuerierPool, AbstractType, VectorDistance, VectorIndexType } from '../../type/index.js';
 import { sql } from '../../util/sql.js';
 import { Migrator } from '../migrator.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 import { detectDrift } from './driftDetector.js';
 
 const TABLE = 'drift_vector_index';
@@ -138,9 +138,11 @@ describe('libSQL vector index drift', () => {
     const migrator = new Migrator(pool, { entities: [cosine] });
     await migrator.sync();
 
-    const { drifts } = detectDrift(buildSchemaAST([cosine]), await migrator.schemaIntrospector.introspect(), {
-      dialect: pool.dialect,
-    });
+    const { drifts } = detectDrift(
+      new SqlSchemaGenerator(pool.dialect).buildAST([cosine]),
+      await migrator.schemaIntrospector.introspect(),
+      { dialect: pool.dialect },
+    );
 
     expect(drifts).toEqual([]);
   });

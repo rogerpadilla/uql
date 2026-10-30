@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { Computed, defineEntity, Entity, f, Field, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { assertDefined } from '../test/index.js';
-import { idKey } from '../type/index.js';
+import { type AbstractType, idKey, type NamingStrategy } from '../type/index.js';
 import { sql } from '../util/index.js';
-import { buildSchemaAST } from './schemaASTBuilder.js';
+import type { SchemaAST } from './schemaAST.js';
+
+/** The schema `entities` build, by the path every migration takes. */
+const schemaOf = (entities: readonly AbstractType<object>[], naming?: NamingStrategy) =>
+  new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: naming })).buildAST(entities);
 
 // Test entities
 @Entity()
@@ -55,7 +60,7 @@ class Category {
 describe('SchemaASTBuilder', () => {
   describe('fromEntities', () => {
     it('should build AST from a single entity', () => {
-      const ast = buildSchemaAST([User]);
+      const ast = schemaOf([User]);
 
       expect(ast.tables.size).toBe(1);
       const userTable = ast.getTable('User');
@@ -64,7 +69,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should build AST from multiple entities', () => {
-      const ast = buildSchemaAST([User, Post, Category]);
+      const ast = schemaOf([User, Post, Category]);
 
       expect(ast.tables.size).toBe(3);
       expect(ast.getTable('User')).toBeDefined();
@@ -73,7 +78,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should create columns with correct types', () => {
-      const ast = buildSchemaAST([User]);
+      const ast = schemaOf([User]);
 
       const userTable = ast.getTable('User');
       const idCol = userTable?.columns.get('id');
@@ -100,7 +105,7 @@ describe('SchemaASTBuilder', () => {
         accountId?: string | null;
       }
 
-      const ast = buildSchemaAST([Account, Item]);
+      const ast = schemaOf([Account, Item]);
 
       const itemTable = ast.getTable('Item');
       const accountIdCol = itemTable?.columns.get('accountId');
@@ -126,7 +131,7 @@ describe('SchemaASTBuilder', () => {
         parentRef?: string | null;
       }
 
-      const ast = buildSchemaAST([Parent2, Child2]);
+      const ast = schemaOf([Parent2, Child2]);
 
       const childTable = ast.getTable('Child2');
       const col = childTable?.columns.get('parentRef');
@@ -172,7 +177,7 @@ describe('SchemaASTBuilder', () => {
         @ManyToOne({ entity: () => FkParent, references: (plainChild) => plainChild.parentId }) parent?: FkParent;
       }
 
-      const ast = buildSchemaAST([FkParent, FkChild, PlainChild]);
+      const ast = schemaOf([FkParent, FkChild, PlainChild]);
 
       const declared = ast.getTable('FkChild')?.outgoingRelations[0];
       expect(declared?.onDelete).toBe('CASCADE');
@@ -233,12 +238,7 @@ describe('SchemaASTBuilder', () => {
         parent?: FkOnFieldParent;
       }
 
-      const ast = buildSchemaAST([
-        FkOnFieldParent,
-        FkOnFieldOnlyChild,
-        FkOnFieldWithRelationChild,
-        FkOnFieldOverriddenChild,
-      ]);
+      const ast = schemaOf([FkOnFieldParent, FkOnFieldOnlyChild, FkOnFieldWithRelationChild, FkOnFieldOverriddenChild]);
 
       expect(ast.getTable('FkOnFieldOnlyChild')?.outgoingRelations[0]?.onDelete).toBe('CASCADE');
       expect(ast.getTable('FkOnFieldWithRelationChild')?.outgoingRelations[0]?.onDelete).toBe('CASCADE');
@@ -265,7 +265,7 @@ describe('SchemaASTBuilder', () => {
         parentRef?: bigint | null;
       }
 
-      const ast = buildSchemaAST([Parent3, Child3]);
+      const ast = schemaOf([Parent3, Child3]);
 
       const childTable = ast.getTable('Child3');
       const col = childTable?.columns.get('parentRef');
@@ -275,7 +275,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle nullable fields', () => {
-      const ast = buildSchemaAST([User]);
+      const ast = schemaOf([User]);
 
       const userTable = ast.getTable('User');
       const emailCol = userTable?.columns.get('email');
@@ -284,7 +284,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle unique constraints', () => {
-      const ast = buildSchemaAST([Category]);
+      const ast = schemaOf([Category]);
 
       const catTable = ast.getTable('categories');
       const slugCol = catTable?.columns.get('slug');
@@ -293,7 +293,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle field length', () => {
-      const ast = buildSchemaAST([Category]);
+      const ast = schemaOf([Category]);
 
       const catTable = ast.getTable('categories');
       const nameCol = catTable?.columns.get('name');
@@ -302,7 +302,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should detect relationships from decorators', () => {
-      const ast = buildSchemaAST([User, Post]);
+      const ast = schemaOf([User, Post]);
 
       expect(ast.relationships.length).toBeGreaterThan(0);
     });
@@ -323,7 +323,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().nullable()) profileId?: number | null;
       }
 
-      const ast = buildSchemaAST([Profile11, User11]);
+      const ast = schemaOf([Profile11, User11]);
       const rel = ast.relationships.find((r) => r.from.table.name === 'User11');
       expect(rel?.type).toBe('OneToOne');
     });
@@ -338,17 +338,17 @@ describe('SchemaASTBuilder', () => {
         @Field(f.date().nullable().name('created_at')) createdAt?: Date | null;
       }
 
-      const ast = buildSchemaAST([Covered]);
+      const ast = schemaOf([Covered]);
       const index = ast.getTable('Covered')?.indexes[0];
 
       expect(index?.entries.map((entry) => entry.column)).toEqual(['tenant_id']);
       expect(index?.include).toEqual(['created_at']);
     });
 
-    it('should use custom naming strategy options overriding constructor', () => {
-      const ast = buildSchemaAST([User], {
-        resolveTableName: (meta) => `tbl_${(meta.name ?? meta.entity.name).toLowerCase()}`,
-        resolveColumnName: (key) => `col_${key}`,
+    it('should use custom naming strategy options', () => {
+      const ast = schemaOf([User], {
+        tableName: (name) => `tbl_${name.toLowerCase()}`,
+        columnName: (name) => `col_${name}`,
       });
 
       expect(ast.getTable('tbl_user')).toBeDefined();
@@ -368,7 +368,7 @@ describe('SchemaASTBuilder', () => {
         )
         secret?: string | null;
       }
-      const ast = buildSchemaAST([ComputedUser]);
+      const ast = schemaOf([ComputedUser]);
       expect(ast.getTable('ComputedUser')?.columns.has('secret')).toBe(false);
     });
 
@@ -389,9 +389,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.boolean().nullable()) active?: boolean | null;
       }
 
-      const ast = buildSchemaAST([IndexedUser], {
-        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
-      });
+      const ast = schemaOf([IndexedUser]);
       const table = ast.getTable('IndexedUser');
 
       const compositeIdx = table?.indexes.find((idx) => idx.entries.length > 1);
@@ -400,14 +398,6 @@ describe('SchemaASTBuilder', () => {
       expect(compositeIdx?.unique).toBe(true);
       expect(compositeIdx?.where).toBe('"active" = true');
       expect(compositeIdx?.entries.map((entry) => entry.column)).toEqual(['firstName', 'lastName']);
-    });
-
-    it('should refuse SQL an entity declares when given nothing to render it with', () => {
-      @Entity({ checks: (checked, check) => [check(sql`1 = 1`)] })
-      class Checked {
-        @Field(f.number().id()) id?: number;
-      }
-      expect(() => buildSchemaAST([Checked])).toThrow(/needs a dialect/);
     });
 
     it('should ignore composite index if columns do not exist', () => {
@@ -421,7 +411,7 @@ describe('SchemaASTBuilder', () => {
       class BadComposite {
         @Field(f.number().id()) id?: number;
       }
-      const ast = buildSchemaAST([BadComposite]);
+      const ast = schemaOf([BadComposite]);
       expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
     });
   });
@@ -441,7 +431,7 @@ describe('SchemaASTBuilder', () => {
       @Field(f.number().id()) id?: number;
     }
 
-    const indexedColumns = (ast: ReturnType<typeof buildSchemaAST>, table: string) =>
+    const indexedColumns = (ast: SchemaAST, table: string) =>
       ast.getTable(table)?.indexes.map((index) => index.entries.map((entry) => entry.column ?? entry.expression));
 
     it('should index a foreign key the entity does not index itself', () => {
@@ -451,7 +441,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
-      expect(buildSchemaAST([FkBlog, FkPost]).getTable('FkPost')?.indexes).toMatchObject([
+      expect(schemaOf([FkBlog, FkPost]).getTable('FkPost')?.indexes).toMatchObject([
         { name: 'FkPost__fkBlogId_idx', unique: false, entries: [{ column: 'fkBlogId' }] },
       ]);
     });
@@ -479,7 +469,7 @@ describe('SchemaASTBuilder', () => {
         region?: FkRegion;
       }
 
-      expect(indexedColumns(buildSchemaAST([FkRegion, FkCity]), 'FkCity')).toEqual([['cityCountry', 'cityArea']]);
+      expect(indexedColumns(schemaOf([FkRegion, FkCity]), 'FkCity')).toEqual([['cityCountry', 'cityArea']]);
     });
 
     it('should not index a foreign key again under an index the entity declares', () => {
@@ -502,7 +492,7 @@ describe('SchemaASTBuilder', () => {
         fkBlogId?: number | null;
       }
 
-      const ast = buildSchemaAST([FkBlog, FkLeading, FkFieldIndexed]);
+      const ast = schemaOf([FkBlog, FkLeading, FkFieldIndexed]);
 
       expect(indexedColumns(ast, 'FkLeading')).toEqual([['fkBlogId', 'title']]);
       expect(indexedColumns(ast, 'FkFieldIndexed')).toEqual([['fkBlogId']]);
@@ -540,7 +530,7 @@ describe('SchemaASTBuilder', () => {
         fkBlogId?: number | null;
       }
 
-      const ast = buildSchemaAST([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
+      const ast = schemaOf([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
 
       // The key leads with its first column alone, so the second still needs an index of its own. A
       // unique column is its own unique index, which serves the key.
@@ -558,9 +548,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
-      const ast = buildSchemaAST([FkBlog, FkExpression], {
-        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
-      });
+      const ast = schemaOf([FkBlog, FkExpression]);
 
       expect(indexedColumns(ast, 'FkExpression')).toEqual([['ABS("fkBlogId")'], ['fkBlogId']]);
     });
@@ -586,9 +574,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
-      const ast = buildSchemaAST([FkBlog, FkPartial, FkFulltext, FkPrefix], {
-        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
-      });
+      const ast = schemaOf([FkBlog, FkPartial, FkFulltext, FkPrefix]);
 
       expect(indexedColumns(ast, 'FkPartial')).toEqual([['fkBlogId'], ['fkBlogId']]);
       expect(indexedColumns(ast, 'FkFulltext')).toEqual([['fkBlogId'], ['fkBlogId']]);
@@ -608,7 +594,7 @@ describe('SchemaASTBuilder', () => {
         fkBlogId?: number | null;
       }
 
-      expect(indexedColumns(buildSchemaAST([FkBlog, FkUnindexed]), 'FkUnindexed')).toEqual([]);
+      expect(indexedColumns(schemaOf([FkBlog, FkUnindexed]), 'FkUnindexed')).toEqual([]);
     });
   });
 
@@ -625,7 +611,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().id()) id?: number;
         @Field(f.number().nullable()) tenantId?: number | null;
       }
-      const table = buildSchemaAST([Covering]).getTable('Covering');
+      const table = schemaOf([Covering]).getTable('Covering');
       assertDefined(table);
       const [index] = table.indexes;
       expect(index.include).toEqual(['legacy_total']);
@@ -640,7 +626,7 @@ describe('SchemaASTBuilder', () => {
       }
 
       let callCount = 0;
-      const ast = buildSchemaAST([RenamedColumn], { resolveColumnName: () => `c${++callCount}` });
+      const ast = schemaOf([RenamedColumn], { tableName: (name) => name, columnName: () => `c${++callCount}` });
 
       expect(ast.getTable('RenamedColumn')?.indexes).toEqual([]);
     });
@@ -656,7 +642,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.references(() => OutsideParent).nullable()) parentId?: number | null;
       }
 
-      const ast = buildSchemaAST([InsideChild]);
+      const ast = schemaOf([InsideChild]);
 
       expect([...ast.tables.keys()]).toEqual(['InsideChild']);
       expect(ast.relationships).toEqual([]);
@@ -672,7 +658,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().id().autoIncrement(false)) id?: number;
       }
 
-      const ast = buildSchemaAST([AutoInc, NoAutoInc]);
+      const ast = schemaOf([AutoInc, NoAutoInc]);
 
       expect(ast.getTable('AutoInc')?.columns.get('id')?.isAutoIncrement).toBe(true);
       expect(ast.getTable('NoAutoInc')?.columns.get('id')?.isAutoIncrement).toBe(false);
@@ -696,7 +682,7 @@ describe('SchemaASTBuilder', () => {
         holder: () => rel.oneToOne(Holder, { references: (shared) => shared.id }),
       }));
 
-      const ast = buildSchemaAST([Holder, SharedDecorated, SharedReference, SharedSchema]);
+      const ast = schemaOf([Holder, SharedDecorated, SharedReference, SharedSchema]);
 
       expect(ast.getTable('Holder')?.columns.get('id')?.isAutoIncrement).toBe(true);
       expect(ast.getTable('SharedDecorated')?.columns.get('id')?.isAutoIncrement).toBe(false);
@@ -711,7 +697,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.string().nullable().index()) name?: string | null;
       }
 
-      expect(buildSchemaAST([DefaultIndex]).getTable('DefaultIndex')?.indexes[0].name).toBe('DefaultIndex__name_idx');
+      expect(schemaOf([DefaultIndex]).getTable('DefaultIndex')?.indexes[0].name).toBe('DefaultIndex__name_idx');
     });
 
     it('should relate a to-one through the column its references name, to the key of its target', () => {
@@ -736,7 +722,7 @@ describe('SchemaASTBuilder', () => {
         group?: Target;
       }
 
-      const ast = buildSchemaAST([Target, Source, Member]);
+      const ast = schemaOf([Target, Source, Member]);
       const columnsOf = (table: string) =>
         ast.relationships
           .filter((rel) => rel.from.table.name === table)
@@ -752,7 +738,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().id()) id?: number;
         @Field(f.string().nullable().index('my_custom_idx')) name?: string | null;
       }
-      const ast = buildSchemaAST([CustomIndex]);
+      const ast = schemaOf([CustomIndex]);
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
 
@@ -772,12 +758,9 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().nullable()) total?: number | null;
         @Field(f.boolean().nullable()) live?: boolean | null;
       }
-      const options: Parameters<typeof buildSchemaAST>[1] = {
-        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
-      };
 
-      const live = buildSchemaAST([LiveOrder], options).getTable('Order')?.indexes[0]?.name;
-      const archived = buildSchemaAST([ArchivedOrder], options).getTable('Order')?.indexes[0]?.name;
+      const live = schemaOf([LiveOrder]).getTable('Order')?.indexes[0]?.name;
+      const archived = schemaOf([ArchivedOrder]).getTable('Order')?.indexes[0]?.name;
 
       expect(live).toMatch(/^Order__total_[0-9a-f]{6}_idx$/);
       expect(archived).toMatch(/^Order__total_[0-9a-f]{6}_idx$/);
@@ -795,7 +778,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Outlet extends Regional {}
 
-      const ast = buildSchemaAST([Depot, Outlet]);
+      const ast = schemaOf([Depot, Outlet]);
 
       expect(ast.getTable('Depot')?.indexes.map((index) => index.name)).toEqual(['Depot__region_idx']);
       expect(ast.getTable('Outlet')?.indexes.map((index) => index.name)).toEqual(['Outlet__region_idx']);
@@ -813,23 +796,18 @@ describe('SchemaASTBuilder', () => {
       }
 
       let callCount = 0;
-      const ast = buildSchemaAST([UnresolvedParent, UnresolvedChild], { resolveColumnName: () => `c${++callCount}` });
+      const ast = schemaOf([UnresolvedParent, UnresolvedChild], {
+        tableName: (name) => name,
+        columnName: () => `c${++callCount}`,
+      });
 
       expect(ast.relationships).toEqual([]);
-    });
-
-    it('should use default callback when resolveTableName/resolveColumnName are not provided', () => {
-      const ast = buildSchemaAST([User]);
-      const table = ast.getTable('User');
-      expect(table).toBeDefined();
-      expect(table?.name).toBe('User');
-      expect(table?.columns.get('name')).toBeDefined();
     });
   });
 
   it('should build a schema of its own each time, sharing nothing with the last', () => {
-    const first = buildSchemaAST([User]);
-    const second = buildSchemaAST([]);
+    const first = schemaOf([User]);
+    const second = schemaOf([]);
 
     expect(first.tables.size).toBe(1);
     expect(second.tables.size).toBe(0);

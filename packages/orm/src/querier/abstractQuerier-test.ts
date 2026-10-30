@@ -3780,6 +3780,14 @@ export abstract class AbstractQuerierIt<
     expect(updated).toEqual([await this.querier.findOneById(Label, inserted.id)]);
   }
 
+  /** `returning: false` is what no option says: the write reports its id alone, and reads nothing back. */
+  async shouldReportOnlyTheIdWhenReturningIsFalse() {
+    const off = await this.querier.insertOne(Label, { name: 'off' }, { returning: false });
+
+    expect(off).toEqual(expect.any(String));
+    expect(await this.querier.findOneById(Label, off)).toMatchObject({ name: 'off' });
+  }
+
   /** `returning` projects as `$select` does: a field set false leaves it out of every other field. */
   async shouldReturnWhatTheProjectionSelects() {
     const inserted = await this.querier.insertOne(Label, { name: 'a' }, { returning: { name: false } });

@@ -4,7 +4,6 @@ import { reverseDiff } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { assertDefined, Cohort } from '../test/index.js';
@@ -653,7 +652,7 @@ describe('a composite target across a many-to-many', () => {
 
 /** The table `entity` builds, failing the test where it builds none. */
 function tableOf(entity: AbstractType<object>, name: string) {
-  const table = buildSchemaAST([entity]).getTable(name);
+  const table = new SqlSchemaGenerator(new PostgresDialect()).buildAST([entity]).getTable(name);
   assertDefined(table);
   return table;
 }

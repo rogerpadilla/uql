@@ -398,9 +398,6 @@ function grouped(computed: QuerySql): QuerySql {
   return computed instanceof RelationAggregate ? computed : sql`(${computed})`;
 }
 
-/** @deprecated Renamed to {@link sql}, the tag editors recognise for SQL highlighting. */
-export const raw = sql;
-
 /** A tag call passes the frozen strings array, which carries its own `sql` counterpart. */
 function isTemplateStrings(value: unknown): value is TemplateStringsArray {
   return Array.isArray(value) && Array.isArray(Reflect.get(value, 'raw'));

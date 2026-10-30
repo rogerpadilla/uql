@@ -688,6 +688,18 @@ class Post { id?: number; }
       expect(unresolved).toContainEqual(expect.stringContaining(NO_ENTITY));
     });
 
+    it('folds an index into a file whose shallowest indent is the unit, on one line', () => {
+      const { text } = codemodFile(/*ts*/ `import { Entity, Index } from 'uql-orm';
+    function deep() {}
+  function shallow() {}
+@Index((post) => [post.id])
+@Entity()
+class Post { id?: number; }
+`);
+
+      expect(text).toContain('@Entity({ indexes: [{ columns: (post) => [post.id] }] })');
+    });
+
     it('folds decorators sharing a line with each other or with the class', () => {
       const { text } = codemodFile(/*ts*/ `import { Entity, Index } from 'uql-orm';
 @Index((post) => [post.id]) @Entity() class Post { id?: number; }

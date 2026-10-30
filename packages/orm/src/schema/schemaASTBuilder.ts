@@ -11,49 +11,36 @@ import { declaredIndexes, enumCheck, ownedCheck, renderIndex } from '../util/ddl
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { entryColumn, entryColumns, renamedEntry } from '../util/indexEntry.util.js';
-import { definedEntries, entityName } from '../util/object.util.js';
+import { definedEntries } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
-import { UqlUsageError } from '../util/uqlError.js';
 import { declaredColumn } from './declaredColumn.js';
 import { lookupColumns } from './indexColumns.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
-import {
-  type ColumnNode,
-  DEFAULT_FOREIGN_KEY_ACTION,
-  type ForeignKeyAction,
-  type TableNode,
-  type TriggerSchema,
-} from './types.js';
+import { type ColumnNode, type ForeignKeyAction, type TableNode, type TriggerSchema } from './types.js';
 
-/**
- * Options for building SchemaAST from entities.
- */
+/** What a build needs from its dialect, which `SqlSchemaGenerator.buildAST` supplies. */
 export interface BuildSchemaASTOptions {
-  /** Custom resolver for a table's own name, unqualified. */
-  resolveTableName?: (meta: EntityMeta<object>) => string;
-  /** Custom resolver for the schema a table lives in; `undefined` leaves it unqualified. */
-  resolveSchema?: (meta: EntityMeta<object>) => string | undefined;
-  /** Custom column name resolver */
-  resolveColumnName?: (key: string, field: FieldOptions) => string;
+  /** A table's own name, unqualified. */
+  resolveTableName: (meta: EntityMeta<object>) => string;
+  /** The schema a table lives in; `undefined` leaves it unqualified. */
+  resolveSchema: (meta: EntityMeta<object>) => string | undefined;
+  resolveColumnName: (key: string, field: FieldOptions) => string;
   /** Default action for foreign key ON DELETE and ON UPDATE clauses */
-  defaultForeignKeyAction?: ForeignKeyAction;
-  /**
-   * The text of SQL an entity declares - a check, a stored computed column, an index expression or
-   * predicate - which only a dialect can render. `SqlSchemaGenerator.buildAST` supplies it.
-   */
-  compileDdl?: (sql: EntityWhereMeta<object>, entity: AbstractType<object>) => string;
-  /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. */
-  compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: AbstractType<object>, indexName: string) => string;
+  defaultForeignKeyAction: ForeignKeyAction;
+  /** The text of SQL an entity declares: a check, a stored computed column, an index expression or predicate. */
+  compileDdl: (sql: EntityWhereMeta<object>, entity: AbstractType<object>) => string;
+  /** A partial index's predicate as the engine writes it. */
+  compileIndexPredicate: (where: EntityWhereMeta<object>, entity: AbstractType<object>, indexName: string) => string;
   /** Whether a weighted fulltext index declares one of its own for each heavier column, as MySQL scores through one. */
-  textScoreIndexes?: boolean;
+  textScoreIndexes: boolean;
   /** Whether a column a vector index covers is `NOT NULL` whatever the entity declares, as MariaDB demands. */
-  vectorIndexRequiresNotNull?: boolean;
-  /** The triggers an entity's table carries, as its dialect renders them; none where no dialect renders any. */
-  renderTriggers?: (meta: EntityMeta<object>) => TriggerSchema[];
+  vectorIndexRequiresNotNull: boolean;
+  /** The triggers an entity's table carries, as its dialect renders them. */
+  renderTriggers: (meta: EntityMeta<object>) => TriggerSchema[];
 }
 
-/** Every option resolved once, so no step has to fall back to a default twice, and what the passes below share. */
-type BuildContext = Readonly<Required<BuildSchemaASTOptions>> & {
+/** What the passes below share. */
+type BuildContext = Readonly<BuildSchemaASTOptions> & {
   readonly ast: SchemaAST;
   /** The table each entity of the build made, which a relation to one outside it has none of. */
   readonly tables: Map<EntityMeta<object>, TableNode>;
@@ -65,24 +52,8 @@ type BuildContext = Readonly<Required<BuildSchemaASTOptions>> & {
  * Three passes, because each needs the one before it to have finished for *every* entity: a relation
  * resolves against a table another entity declares, and an index against the columns of its own.
  */
-export function buildSchemaAST(
-  entities: readonly AbstractType<object>[],
-  options: BuildSchemaASTOptions = {},
-): SchemaAST {
-  const compileDdl = options.compileDdl ?? refuseDdl;
-  const ctx: BuildContext = {
-    ast: new SchemaAST(),
-    tables: new Map(),
-    resolveTableName: options.resolveTableName ?? entityName,
-    resolveSchema: options.resolveSchema ?? ((m) => m.schema),
-    resolveColumnName: options.resolveColumnName ?? ((key, field) => field.name ?? key),
-    defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
-    compileDdl,
-    compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
-    textScoreIndexes: options.textScoreIndexes ?? false,
-    vectorIndexRequiresNotNull: options.vectorIndexRequiresNotNull ?? false,
-    renderTriggers: options.renderTriggers ?? (() => []),
-  };
+export function buildSchemaAST(entities: readonly AbstractType<object>[], options: BuildSchemaASTOptions): SchemaAST {
+  const ctx: BuildContext = { ...options, ast: new SchemaAST(), tables: new Map() };
 
   for (const entity of entities) {
     const meta = getMeta(entity);
@@ -95,13 +66,6 @@ export function buildSchemaAST(
   }
 
   return ctx.ast;
-}
-
-/** The `compileDdl` of a build given no dialect, which has nothing to render an entity's SQL with. */
-function refuseDdl(): string {
-  throw new UqlUsageError(
-    'building the schema of an entity that declares SQL (a check, a stored computed column, an index expression or predicate) needs a dialect to render it: pass `compileDdl`, as `SqlSchemaGenerator.buildAST` does',
-  );
 }
 
 /** The members a vector index of `meta` covers by name. */

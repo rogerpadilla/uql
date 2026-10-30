@@ -25,8 +25,7 @@
     "test": "bun run test:bun && bun run test:vitest",
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --timeout 10000 ./packages/orm/src/bunSql/ ./packages/orm/src/sqlite/sqliteQuerier.bun.test.ts",
-    "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldSetJsonBooleanField'"
+    "test.watch": "vitest"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

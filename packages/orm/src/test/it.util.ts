@@ -1,8 +1,8 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getEntities } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
-import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import type { QuerierPool, QuerySql } from '../type/index.js';
 import { sql } from '../util/sql.js';
 
@@ -73,10 +73,7 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
  */
 export async function clearTables(querier: AbstractSqlQuerier) {
   const { dialect } = querier;
-  const order = buildSchemaAST(getEntities(), {
-    resolveTableName: (meta) => dialect.resolveTableAlias(meta),
-    resolveColumnName: (key, field) => dialect.resolveColumnName(key, field),
-  }).getDropOrder();
+  const order = new SqlSchemaGenerator(dialect).buildAST(getEntities()).getDropOrder();
   const probes = order.map(({ name }) => {
     const id = dialect.escapeId(name);
     return `CASE WHEN EXISTS (SELECT 1 FROM ${id}) THEN 1 ELSE 0 END AS ${id}`;
