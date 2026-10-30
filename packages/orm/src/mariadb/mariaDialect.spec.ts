@@ -24,7 +24,7 @@ export class MariaDialectSpec extends MySqlFamilySpec {
   /** MariaDB's upsert takes a `RETURNING`, which reports each row as it stands, a found one too. */
   shouldReportAnUpsertWithItsReturning() {
     const { sql } = this.exec((ctx) =>
-      this.dialect.upsert(ctx, Tax, { $conflict: { id: true } }, [{ id: 'a', name: 'x' }], undefined, ['name']),
+      this.dialect.upsert(ctx, Tax, { $conflict: { id: true } }, [{ id: 'a', name: 'x' }], ['name']),
     );
     expect(sql).toMatch(/ ON DUPLICATE KEY UPDATE .* RETURNING `name`$/);
   }

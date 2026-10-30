@@ -25,7 +25,7 @@ A statement is `{ sql, values }`. A driver answers two methods: `execute(sql, va
 
 One statement runs alone everywhere. A list asks for a transaction only where it is a split write, `runStatements(statements, atomic)`: an `insertMany` sent as two or more statements, an `upsertMany` of two or more upserts, and a vector search tuned by `SET LOCAL` outside a transaction, which the setting needs. A stream tuned so is refused outside one instead, since its transaction would stay open for the whole loop.
 
-On MongoDB, an `upsertMany` with an `update` or a `$where` inserts the absent documents, then updates the found ones: two `bulkWrite`s, atomic only inside a `transaction()` the caller opens. Any other `insertMany` or `upsertMany` is one command, which MongoDB applies a document at a time, as it does an `updateMany`; a `transaction()` makes it all or none.
+On MongoDB, an `upsertMany` with an `$update` or a `$where` inserts the absent documents, then updates the found ones: two `bulkWrite`s, atomic only inside a `transaction()` the caller opens. Any other `insertMany` or `upsertMany` is one command, which MongoDB applies a document at a time, as it does an `updateMany`; a `transaction()` makes it all or none.
 
 `runStatements` is the outermost step a statement takes, in this order: a list with no `executeBatch` where two or more write opens its transaction, whose `BEGIN` waits on the querier's queue; then the queue is taken, the connection made, and the driver runs the statement, the list in turn, or the list as one request, timed as one.
 

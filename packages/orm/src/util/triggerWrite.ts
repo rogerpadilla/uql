@@ -20,17 +20,20 @@ export function insertInto<E extends object>(entity: AbstractType<E>, row: Write
 }
 
 /**
- * A row inserted by a trigger's body, or what `q.$conflict` finds taking `update` instead where it matches
- * `q.$where`, as `upsertOne` does: `upsertInto(Tally, { $conflict: { postId: true } }, { postId: newRow.id, count: 1 },
- * { count: { $inc: 1 } })`.
+ * An upsert's query as a trigger's body writes it: its `$update` sets columns only, no relation, and its `$where`
+ * reads the found row's own columns, with no relation to filter by.
  */
-export function upsertInto<E extends object>(
-  entity: AbstractType<E>,
-  q: QueryUpsert<E> & { readonly $where?: EntityPredicate<E> },
-  row: WriteRow<E>,
-  update?: UpdatePayload<E, QuerySql, WritableKey<E>, never>,
-): QuerySql {
-  return written({ kind: 'upsert', entity, q, row, update });
+export type TriggerUpsert<E> = QueryUpsert<E, QuerySql, UpdatePayload<E, QuerySql, WritableKey<E>, never>> & {
+  readonly $where?: EntityPredicate<E>;
+};
+
+/**
+ * A row inserted by a trigger's body, or what `q.$conflict` finds taking `q.$update` instead where it matches
+ * `q.$where`, as `upsertOne` does: `upsertInto(Tally, { $conflict: { postId: true }, $update: { count: { $inc: 1 } } },
+ * { postId: newRow.id, count: 1 })`.
+ */
+export function upsertInto<E extends object>(entity: AbstractType<E>, q: TriggerUpsert<E>, row: WriteRow<E>): QuerySql {
+  return written({ kind: 'upsert', entity, q, row });
 }
 
 /** The rows `q.$where` names updated by a trigger's body: `updateTable(Post, { $where: { id: newRow.postId } }, set)`. */

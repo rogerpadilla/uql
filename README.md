@@ -33,7 +33,7 @@
 npm install uql-orm pg
 ```
 
-That is the whole install, `pg` swapped for your database's driver: `mysql2`, `mariadb`, `better-sqlite3`, `mongodb`, `@tursodatabase/serverless` or `@libsql/client` ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`; the decorators are the [TC39 standard spec](https://uql-orm.dev/entities/basic), and an entity can be declared as data instead, its row type derived, via [`defineEntity`](https://uql-orm.dev/entities/define-entity).
+That is the whole install, `pg` swapped for your database's driver: `mysql2`, `mariadb`, `better-sqlite3`, `mongodb`, `@tursodatabase/serverless` or `@libsql/client` ([setup](https://uql-orm.dev/getting-started)). No compiler flags and no `reflect-metadata`.
 
 <a href="https://uql-orm.dev">
   <picture>
@@ -149,6 +149,7 @@ The same queries run from the browser too: [serve them over HTTP](https://uql-or
 
 - **One API, everywhere it runs.** PostgreSQL, PGlite, CockroachDB, MySQL, MariaDB, MSSQL, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 22.18+, Bun, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
 - **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. No `.prisma` file, no generated client.
+- **Decorators or plain data, your call.** An entity is a class with [standard TC39 decorators](https://uql-orm.dev/entities/basic), or plain data via [`defineEntity`](https://uql-orm.dev/entities/define-entity), its row type derived. Both are typed the same, mix in one project, and need no compiler flags or `reflect-metadata`.
 - **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 27 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
 - **SQL when you need it.** [`sql()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, [computed fields](https://uql-orm.dev/entities/computed-fields) are SQL you can filter and sort on, and a migration can be plain SQL.

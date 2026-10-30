@@ -65,6 +65,7 @@ import {
   indentOf,
   type NamedProperty,
   namedProperty,
+  namedValue,
   objectLiteral,
   objectProperties,
   type Options,
@@ -574,38 +575,70 @@ function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
 const UPSERT_CALLS: ReadonlySet<string> = new Set(['upsertOne', 'upsertMany', 'upsertInto']);
 
 /**
- * Rewrites an upsert's conflict keys into its query's `$conflict`, `{ $conflict: { sku: true } }`, and its options
- * holding `update` alone into that update, its fourth argument now. Read wherever it is called, since a querier is
- * seldom imported from uql where it is used. A query already naming `$conflict`, or typed with one, is left as it is,
- * and any other fourth argument is already an update, `{}` included, so a second run changes nothing.
+ * Rewrites an upsert into one query: its conflict keys as `$conflict`, `{ $conflict: { sku: true } }`, and its update, a
+ * fourth argument or options holding `update` alone, as `$update`, the options after it kept. Read wherever it is
+ * called, since a querier is seldom imported from uql where it is used. A fourth argument holding only `returning` is
+ * already the options, and a query already naming `$conflict` keeps it, so a second run changes nothing.
  */
 function rewriteUpsertCall(call: ts.CallExpression, ctx: Context): void {
   const callee = call.expression;
   const name = identifierText(ts.isPropertyAccessExpression(callee) ? callee.name : callee);
-  if (!name || !UPSERT_CALLS.has(name)) {
+  const [, query, payload, fourth] = call.arguments;
+  if (!name || !UPSERT_CALLS.has(name) || !query || !payload || ts.isSpreadElement(query)) {
     return;
   }
-  const keys = call.arguments[1];
-  if (call.arguments.length >= 3 && keys && isConflictKeys(keys, ctx)) {
-    ctx.edits.push(replaced(keys, ['{ $conflict: ', original(keys), ' }']));
+  const moved = fourth && !isWriteOptions(fourth, ctx) ? fourth : undefined;
+  const update = moved && !isUndefined(moved) ? (upsertUpdate(moved) ?? moved) : undefined;
+  const keys = isConflictKeys(query, ctx);
+  if (!keys && !moved) {
+    return;
   }
-  const options = call.arguments[3];
-  const update = options && upsertUpdate(options);
-  if (update) {
-    ctx.edits.push(replaced(options, [original(update)]));
+  const end = moved ?? query;
+  ctx.edits.push({
+    start: query.getStart(),
+    end: end.getEnd(),
+    text: [...upsertQuery(query, keys, update), ...(moved ? [{ start: query.getEnd(), end: payload.getEnd() }] : [])],
+  });
+}
+
+/** The parts of an upsert's query naming `update` as its `$update`: the old conflict map wrapped, a literal extended, else spread. */
+function upsertQuery(query: ts.Expression, keys: boolean, update: ts.Expression | undefined): Part[] {
+  const named = update ? [', $update: ', original(update)] : [];
+  if (keys) {
+    return ['{ $conflict: ', original(query), ...named, ' }'];
   }
+  if (!update) {
+    return [original(query)];
+  }
+  const last = objectLiteral(query)?.properties.at(-1);
+  return last
+    ? [{ start: query.getStart(), end: last.getEnd() }, ...named, ' }']
+    : ['{ ...', original(query), ...named, ' }'];
 }
 
 /** Whether `keys` is the old conflict map, `{ sku: true }`: an argument of its own, not yet a query naming `$conflict`. */
 function isConflictKeys(keys: ts.Expression, ctx: Context): boolean {
-  return !ts.isSpreadElement(keys) && !ctx.checker.getTypeAtLocation(keys).getProperty('$conflict');
+  return !ctx.checker.getTypeAtLocation(keys).getProperty('$conflict');
+}
+
+/** Whether a fourth argument is already the write's options: something naming `returning` and nothing else. */
+function isWriteOptions(node: ts.Expression, ctx: Context): boolean {
+  const names = ctx.checker
+    .getTypeAtLocation(node)
+    .getProperties()
+    .map((property) => property.name);
+  return names.length > 0 && names.every((name) => name === 'returning');
+}
+
+function isUndefined(node: ts.Expression): boolean {
+  return identifierText(node) === 'undefined';
 }
 
 /** The value of options holding `update` alone, `{ update: value }` or `{ update }`. */
 function upsertUpdate(options: ts.Expression): ts.Expression | undefined {
   const literal = objectLiteral(options);
   const property = literal?.properties.length === 1 ? namedProperty(literal, 'update') : undefined;
-  return property && (ts.isPropertyAssignment(property) ? property.initializer : property.name);
+  return property && namedValue(property);
 }
 
 /**

@@ -1,5 +1,5 @@
 /**
- * The dual API on `Querier`: each read and `deleteMany` take the entity first or as the query's
+ * The dual API on `Querier`: each method taking a query takes the entity first or as the query's
  * `$entity`, for a query built where the class is not at hand. A pool takes the first form only, so the
  * other is rejected by arity. Type-checked by `bun run ts` only.
  */
@@ -46,6 +46,35 @@ export async function dualApiOnQuerier() {
 
   // The $entity form composes with the criteria of the entity it names, not some other one.
   await querier.findMany({ $entity: Author, $where: { name: 'x' } });
+}
+
+export async function dualApiOnWrites() {
+  await querier.updateMany(Article, { $where: { id: 1 } }, { title: 'y' });
+  const changed: number = await querier.updateMany({ $entity: Article, $where: { id: 1 } }, { title: 'y' });
+  const [updated] = await querier.updateMany(
+    { $entity: Article, $where: { id: 1 } },
+    { title: 'y' },
+    { returning: true },
+  );
+  updated?.title.trim();
+  const [deleted] = await querier.deleteMany({ $entity: Article, $where: { id: 1 } }, { returning: { title: true } });
+  deleted?.title.trim();
+  const restored: number = await querier.restoreMany({ $entity: Article, $where: { id: 1 } });
+  const [grouped] = await querier.aggregate({
+    $entity: Article,
+    $group: { title: true },
+    $select: { count: { $count: '*' } },
+  });
+  grouped?.count.toFixed();
+  grouped?.title.trim();
+
+  // @ts-expect-error the payload is checked against $entity: 'titel' is not a field of Article
+  await querier.updateMany({ $entity: Article, $where: { id: 1 } }, { titel: 'y' });
+  // @ts-expect-error so is `returning`
+  await querier.deleteMany({ $entity: Article, $where: { id: 1 } }, { returning: { titel: true } });
+  // @ts-expect-error and an aggregate's group
+  await querier.aggregate({ $entity: Article, $group: { titel: true } });
+  return [changed, restored];
 }
 
 export async function poolHasNoEntityAsFieldForm() {

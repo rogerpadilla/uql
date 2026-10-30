@@ -80,17 +80,19 @@ export async function arithmeticSafety() {
   // @ts-expect-error an upsert writes whole rows, with no update operator
   await querier.upsertOne(Counter, { $conflict: { id: true } }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
 
-  // A conflicting row takes the fourth argument as `updateMany` takes an update, operators and relations included.
+  // A conflicting row takes `$update` as `updateMany` takes an update, operators and relations included.
   const row = { id: 1, label: 'x', total: 1n };
+  await querier.upsertOne(Counter, { $conflict: { id: true }, $update: { hits: { $inc: 1 } } }, row);
+  await querier.upsertMany(Counter, { $conflict: { id: true }, $update: { total: { $inc: 1n } } }, [row]);
+  // @ts-expect-error the update is the query's `$update`: the argument after the row is the options
   await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { hits: { $inc: 1 } });
-  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { total: { $inc: 1n } });
   // @ts-expect-error it is checked as an update is: 'hit' is not a field of Counter
-  await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { hit: { $inc: 1 } });
+  await querier.upsertOne(Counter, { $conflict: { id: true }, $update: { hit: { $inc: 1 } } }, row);
   // @ts-expect-error and only a numeric field increments there too
-  await querier.upsertOne(Counter, { $conflict: { id: true } }, row, { label: { $inc: 1 } });
-  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { owner: { id: 1, name: 'Acme' } });
+  await querier.upsertOne(Counter, { $conflict: { id: true }, $update: { label: { $inc: 1 } } }, row);
+  await querier.upsertMany(Counter, { $conflict: { id: true }, $update: { owner: { id: 1, name: 'Acme' } } }, [row]);
   // @ts-expect-error a relation's value is checked against its own entity's fields
-  await querier.upsertMany(Counter, { $conflict: { id: true } }, [row], { owner: { id: 1, naem: 'Acme' } });
+  await querier.upsertMany(Counter, { $conflict: { id: true }, $update: { owner: { id: 1, naem: 'Acme' } } }, [row]);
 }
 
 export async function conflictPathSafety() {

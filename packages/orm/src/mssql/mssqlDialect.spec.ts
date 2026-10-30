@@ -260,7 +260,6 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
         StockLevel,
         { $conflict: { warehouseId: true, productId: true } },
         { warehouseId: 1, productId: 2, quantity: 3 },
-        undefined,
         ['quantity'],
       ),
     );

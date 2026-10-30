@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlDialectName } from './dialect.js';
-import type { FieldKey, HookEvent } from './entity.js';
+import type { EntityWrite, FieldKey, HookEvent, UpdateWrite } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
@@ -11,9 +11,11 @@ import type {
   QueryPage,
   QuerySearch,
   QueryUpdateResult,
+  QueryUpsert,
   WriteResults,
   WriteOptions,
 } from './query.js';
+import type { QueryAggregate, QueryAggregateResult } from './queryAggregate.js';
 import type { QuerySql, SqlStatement } from './querySql.js';
 import type { EntityRead, ReadResults, ReadQueries, UniversalQuerier } from './universalQuerier.js';
 import type { BooleanLike, Type, RawRow, AbstractType } from './utility.js';
@@ -70,7 +72,7 @@ type DualRead<K extends keyof ReadQueries<object, never>, R extends keyof ReadRe
 ) => ReadResults<'server', QueryFindResult<E, Q>>[R]) &
   EntityRead<K, R, 'server', QueryOptions>;
 
-/** The reads, counts and deletes below take the entity first or as the query's `$entity`, as {@link DualRead} does. */
+/** Each method below taking a query takes the entity first or as the query's `$entity`, as {@link DualRead} does. */
 export interface Querier extends UniversalQuerier {
   findOne: DualRead<'one', 'one'>;
 
@@ -85,21 +87,68 @@ export interface Querier extends UniversalQuerier {
   /** Read a page of records from a cursor. */
   findManyPage: DualRead<'page', 'page'>;
 
-  /** Count records, the entity passed first or as the query's `$entity`. */
-  count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
+  count: (<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions) => Promise<number>) &
+    UniversalQuerier['count'];
 
-  /** Whether anything matches, the entity passed first or as the query's `$entity`. */
-  exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
-  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
+  exists: (<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions) => Promise<boolean>) &
+    UniversalQuerier['exists'];
 
-  /** Delete many records, the entity passed first or as `$entity`; soft-deletes where the entity has a soft-delete field. */
-  deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['affectedMany']>;
+  updateMany: (<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QuerySearch<E> & { $entity: Type<E> },
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ) => Promise<WriteResults<E, S, V, W>['affectedMany']>) &
+    UniversalQuerier['updateMany'];
+
+  restoreMany: (<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }) => Promise<number>) &
+    UniversalQuerier['restoreMany'];
+
+  aggregate: (<E extends object, const Q extends QueryAggregate<E> & { $entity: Type<E> }>(
+    q: Captured<QueryAggregate<E, Q> & { $entity: Type<E> }, Q>,
+    opts?: QueryOptions,
+  ) => Promise<QueryAggregateResult<E, Q>[]>) &
+    UniversalQuerier['aggregate'];
+
+  /** Soft-deletes where the entity has a soft-delete field. */
+  deleteMany: (<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QuerySearch<E> & { $entity: Type<E> },
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ) => Promise<WriteResults<E, S, V, W>['affectedMany']>) &
+    UniversalQuerier['deleteMany'];
+
+  upsertOne: (<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QueryUpsert<E> & { $entity: Type<E> },
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V, W>,
+  ) => Promise<WriteResults<E, S, V, W>['inserted']>) &
+    UniversalQuerier['upsertOne'];
+
+  upsertMany: (<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QueryUpsert<E> & { $entity: Type<E> },
+    payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, S, V, W>,
+  ) => Promise<WriteResults<E, S, V, W>['inserted'][]>) &
+    UniversalQuerier['upsertMany'];
 
   /**
    * whether this querier is in a transaction or not.

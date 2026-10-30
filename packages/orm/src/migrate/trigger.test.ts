@@ -423,7 +423,8 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.def
     trigger({
       on: 'afterInsert',
       name: 'first',
-      run: (newRow) => upsertInto(TgFirst, { $conflict: { sku: true } }, { sku: newRow.sku, qty: newRow.qty }, {}),
+      run: (newRow) =>
+        upsertInto(TgFirst, { $conflict: { sku: true }, $update: {} }, { sku: newRow.sku, qty: newRow.qty }),
     }),
   ],
 })
@@ -472,7 +473,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
       on: 'afterInsert',
       name: 'count',
       run: (newRow) =>
-        upsertInto(TgCount, { $conflict: { sku: true } }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
+        upsertInto(TgCount, { $conflict: { sku: true }, $update: { hits: { $inc: 1 } } }, { sku: newRow.sku, hits: 1 }),
     }),
     trigger({
       on: 'afterInsert',
@@ -480,9 +481,8 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
       run: (newRow) =>
         upsertInto(
           TgTotal,
-          { $conflict: { sku: true } },
+          { $conflict: { sku: true }, $update: { total: sql`${refs(TgTotal).total} + ${newRow.qty}` } },
           { sku: newRow.sku, total: newRow.qty },
-          { total: sql`${refs(TgTotal).total} + ${newRow.qty}` },
         ),
     }),
   ],

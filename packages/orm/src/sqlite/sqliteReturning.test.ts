@@ -65,9 +65,8 @@ describe('a write returning on SQLite', () => {
   it('should count a hit and report it in one statement', async () => {
     const counted = await pool.upsertOne(
       Counter,
-      { $conflict: { key: true } },
+      { $conflict: { key: true }, $update: { hits: { $inc: 1 } } },
       { key: 'seen', hits: 1 },
-      { hits: { $inc: 1 } },
       { returning: { hits: true } },
     );
 
@@ -78,12 +77,11 @@ describe('a write returning on SQLite', () => {
   it('should read only a row its $where kept', async () => {
     const rows = await pool.upsertMany(
       Counter,
-      { $conflict: { key: true }, $where: { hits: { $gt: 100 } } },
+      { $conflict: { key: true }, $where: { hits: { $gt: 100 } }, $update: { hits: 0 } },
       [
         { key: 'seen', hits: 1 },
         { key: 'new', hits: 1 },
       ],
-      { hits: 0 },
       { returning: { key: true, hits: true } },
     );
 
@@ -99,13 +97,9 @@ describe('a write returning on SQLite', () => {
     const inserted = await pool.insertMany(Stamped, [{ key: 'b', body: 'abc' }], { returning: { stamp: true } });
     expect(inserted).toEqual(await stamped('b'));
 
-    const upserted = await pool.upsertMany(
-      Stamped,
-      { $conflict: { key: true } },
-      [{ key: 'a', body: 'abc' }],
-      undefined,
-      { returning: { stamp: true } },
-    );
+    const upserted = await pool.upsertMany(Stamped, { $conflict: { key: true } }, [{ key: 'a', body: 'abc' }], {
+      returning: { stamp: true },
+    });
     expect(upserted).toEqual(await stamped('a'));
 
     const updated = await pool.updateMany(

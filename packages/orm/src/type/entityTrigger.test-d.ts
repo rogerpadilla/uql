@@ -158,7 +158,7 @@ class VariantPrice {
 () => insertInto(VariantPrice, { amount: 1 });
 
 // @ts-expect-error an upsert inserts it too
-() => upsertInto(VariantPrice, { $conflict: { amount: true } }, { amount: 1 }, { amount: 2 });
+() => upsertInto(VariantPrice, { $conflict: { amount: true }, $update: { amount: 2 } }, { amount: 1 });
 
 // @ts-expect-error a field the table has not got
 () => insertInto(PostAudit, { nope: 1 });

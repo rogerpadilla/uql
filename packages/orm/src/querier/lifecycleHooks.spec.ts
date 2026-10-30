@@ -627,9 +627,14 @@ describe('lifecycle hooks', () => {
       { title: 'hooked', authorId: id },
     ]);
 
-    await querier.upsertOne(HookedAuthor, { $conflict: { id: true } }, { id, name: 'Cy' }, undefined, {
-      returning: { name: true },
-    });
+    await querier.upsertOne(
+      HookedAuthor,
+      { $conflict: { id: true } },
+      { id, name: 'Cy' },
+      {
+        returning: { name: true },
+      },
+    );
     expect(await querier.findMany(HookedTome, { $select: { title: true, authorId: true } })).toEqual([
       { title: 'hooked', authorId: id },
     ]);

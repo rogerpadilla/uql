@@ -102,8 +102,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldUpsertWithSqlOverTheRowAlreadyThere() {
     const id = '507f1f77bcf86cd799439014';
     const update = { percentage: sql`${refs(Tax).percentage} * 2` };
-    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'VAT', percentage: 5 }, update);
-    await this.querier.upsertOne(Tax, { $conflict: { id: true } }, { id, name: 'VAT', percentage: 5 }, update);
+    await this.querier.upsertOne(Tax, { $conflict: { id: true }, $update: update }, { id, name: 'VAT', percentage: 5 });
+    await this.querier.upsertOne(Tax, { $conflict: { id: true }, $update: update }, { id, name: 'VAT', percentage: 5 });
     expect(await this.querier.findOneById(Tax, id, { $select: { percentage: true } })).toMatchObject({
       percentage: 10,
     });
@@ -262,7 +262,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
         InventoryAdjustment,
         { $conflict: { id: true } },
         { id, description: 'found', itemAdjustments: [{ buyPrice: 7 }] },
-        undefined,
         { returning: { description: true } },
       );
 

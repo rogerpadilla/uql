@@ -152,7 +152,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       ]),
     );
     const nothing = this.exec((ctx) =>
-      this.dialect.upsert(ctx, Coupon, { $conflict: { code: true } }, { code: 'a' }, {}),
+      this.dialect.upsert(ctx, Coupon, { $conflict: { code: true }, $update: {} }, { code: 'a' }),
     );
 
     expect(one.sql).toMatch(/ ON DUPLICATE KEY UPDATE `Coupon`\.`id` = LAST_INSERT_ID\(`Coupon`\.`id`\), `label` = /);

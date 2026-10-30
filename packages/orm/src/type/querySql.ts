@@ -96,12 +96,17 @@ export function renderSql(statement: QuerySql, opts: QuerySqlRenderOptions): voi
 export class ColumnRef<K extends string = string, V = unknown> extends QuerySql {
   declare readonly [SQL_VALUE_TYPE]?: V;
   readonly [REF_KEY]: K;
-  readonly [REF_ENTITY]?: AbstractType<unknown>;
+  readonly #entity?: () => AbstractType<unknown>;
 
-  constructor(key: K, value: QuerySqlFn, entity?: AbstractType<unknown>) {
+  /** `entity` is read when the ref is, so an entity declared after the ref resolves. */
+  constructor(key: K, value: QuerySqlFn, entity?: () => AbstractType<unknown>) {
     super(value);
     this[REF_KEY] = key;
-    this[REF_ENTITY] = entity;
+    this.#entity = entity;
+  }
+
+  get [REF_ENTITY](): AbstractType<unknown> | undefined {
+    return this.#entity?.();
   }
 }
 

@@ -81,6 +81,8 @@ import {
   whereWith,
   withDeleted,
   cascadingRelations,
+  isClass,
+  defaultReadKeys,
   holdsForeignKey,
 } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
@@ -189,15 +191,11 @@ function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E
  * Whether an upsert has to read before it writes: `ON CONFLICT` updates a guarded row whatever tenant it belongs
  * to, writes no relation, and cannot tell a found row it skipped for a stale version.
  */
-function upsertsByReading<E extends object>(
-  meta: EntityMeta<E>,
-  rows: readonly object[],
-  update: UpdatePayload<E> | undefined,
-): boolean {
+function upsertsByReading<E extends object>(meta: EntityMeta<E>, q: QueryUpsert<E>, rows: readonly object[]): boolean {
   return (
     meta.version !== undefined ||
     securityConditions(meta).length > 0 ||
-    writesRelations(meta, update ? [...rows, update] : rows)
+    writesRelations(meta, q.$update ? [...rows, q.$update] : rows)
   );
 }
 
@@ -228,35 +226,59 @@ function adoptReportedIds<E>(
   });
 }
 
-/** A read's arguments in either call form: `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
-type EntityArgs<E, Q> =
-  | [entity: Type<E>, q?: Q, opts?: QueryOptions]
-  | [q: Q & { $entity: Type<E> }, opts?: QueryOptions];
+/** A call's arguments in either form: `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
+type EntityArgs<E, Q, O = QueryOptions> = EntityFirst<E, [q?: Q, opts?: O]> | [q: Q & { $entity: Type<E> }, opts?: O];
+
+/** A write's arguments in either form: `(entity, q, payload, opts)` or `({ $entity, ...q }, payload, opts)`. */
+type PayloadArgs<E, Q, P, O> =
+  | EntityFirst<E, [q: Q, payload: P, opts?: O]>
+  | [q: Q & { $entity: Type<E> }, payload: P, opts?: O];
+
+type EntityFirst<E, Rest extends unknown[]> = [entity: Type<E>, ...rest: Rest];
 
 /** Normalizes either call form to `[entity, query, opts]`, throwing when a query object has no `$entity`. */
-function entityArgs<E, Q extends object>(args: EntityArgs<E, Q>): [Type<E>, Q, QueryOptions | undefined] {
-  if (isEntityFirst(args)) {
+function entityArgs<E, Q extends object, O>(args: EntityArgs<E, Q, O>): [Type<E>, Q, O | undefined] {
+  if (isEntityFirst<E, [q?: Q, opts?: O]>(args)) {
     const [entity, q, opts] = args;
     return [entity, q ?? ({} as Q), opts];
   }
-  const [{ $entity, ...q }, opts] = args;
+  const [q, opts] = args;
+  return [...withoutEntity(q), opts];
+}
+
+/** Normalizes either write form to `[entity, query, payload, opts]`. */
+function payloadArgs<E, Q extends object, P, O>(args: PayloadArgs<E, Q, P, O>): [Type<E>, Q, P, O?] {
+  if (isEntityFirst<E, [q: Q, payload: P, opts?: O]>(args)) {
+    return args;
+  }
+  const [q, payload, opts] = args;
+  return [...withoutEntity(q), payload, opts];
+}
+
+/** A query of the `$entity` form as its entity and the query without it, throwing when it names none. */
+function withoutEntity<E, Q>(query: Q & { $entity: Type<E> }): [Type<E>, Q] {
+  const { $entity, ...q } = query;
   if (!$entity) {
     throw new UqlUsageError('$entity is required when using query-object syntax');
   }
-  return [$entity, q as Q, opts];
+  return [$entity, q as Q];
 }
 
-/** Whether the entity is passed first, i.e. the first argument is a class rather than a query object. */
-function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, q?: Q, opts?: QueryOptions] {
-  const [first] = args;
-  return typeof first === 'function' && first.prototype !== undefined;
+/** Whether the entity is passed first, the first argument a class rather than a query object. */
+function isEntityFirst<E, Rest extends unknown[]>(
+  args: EntityFirst<E, Rest> | [q: { $entity: Type<E> }, ...rest: unknown[]],
+): args is EntityFirst<E, Rest> {
+  return isClass(args[0]);
 }
 
-/** The fields `returning` projects, read as `$select` is, or `undefined` where it names none: the write reads nothing back. */
+/** The fields `returning` projects, read as `$select` is, every field a read returns for `true`, or `undefined` where it names none. */
 function returnedKeys<E>(
   meta: EntityMeta<E>,
   returning: WriteOptions<E>['returning'],
 ): readonly FieldKey<E>[] | undefined {
+  if (typeof returning === 'boolean') {
+    return returning ? defaultReadKeys(meta) : undefined;
+  }
   return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
 }
 
@@ -282,7 +304,6 @@ export type ReportingWrites = {
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update: UpdatePayload<E> | undefined,
     keys: readonly FieldKey<E>[],
   ): Promise<(E | undefined)[]>;
 };
@@ -605,13 +626,17 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * Run an aggregate query.
    */
+  aggregate<E extends object, const Q extends QueryAggregate<E> & { $entity: Type<E> }>(
+    q: Captured<QueryAggregate<E, Q> & { $entity: Type<E> }, Q>,
+    opts?: QueryOptions,
+  ): Promise<QueryAggregateResult<E, Q>[]>;
   aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Captured<QueryAggregate<E, Q>, Q>,
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q>[]>;
-  aggregate<E extends object>(entity: Type<E>, q: QueryAggregate<E>, opts?: QueryOptions): Promise<RawRow[]> {
-    return this.internalAggregate(entity, q, opts);
+  aggregate<E extends object>(...args: EntityArgs<E, QueryAggregate<E>>): Promise<RawRow[]> {
+    return this.internalAggregate(...entityArgs(args));
   }
 
   protected abstract internalAggregate<E extends object>(
@@ -623,21 +648,31 @@ export abstract class AbstractQuerier implements Querier {
   /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
   abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
-  insertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  insertOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     payload: EntityWrite<E>,
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted']>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted']>;
   async insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.insertWritten(entity, [payload], opts);
     return written;
   }
 
-  insertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  insertMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted'][]>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
   async insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.insertWritten(entity, payload, opts);
   }
@@ -774,12 +809,17 @@ export abstract class AbstractQuerier implements Querier {
   /** Writes `rows`, its columns only, and onto each one the key the database generated for it, where it can tell. */
   protected abstract internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void>;
 
-  updateOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  updateOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     id: EntityId<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['affected']>;
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affected']>;
   async updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
@@ -791,19 +831,31 @@ export abstract class AbstractQuerier implements Querier {
     return typeof updated === 'number' ? updated : updated[0];
   }
 
-  updateMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  updateMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QuerySearch<E> & { $entity: Type<E> },
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affectedMany']>;
+  updateMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['affectedMany']>;
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affectedMany']>;
   async updateMany<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: UpdateWrite<E>,
-    opts?: QueryOptions & WriteOptions<E>,
-  ) {
-    return this.updateWhere(entity, q, payload, opts);
+    ...args: PayloadArgs<E, QuerySearch<E>, UpdateWrite<E>, QueryOptions & WriteOptions<E>>
+  ): Promise<unknown> {
+    return this.updateWhere(...payloadArgs(args));
   }
 
   /**
@@ -1038,7 +1090,10 @@ export abstract class AbstractQuerier implements Querier {
     return this.restoreMany(entity, { $where: whereIds(getMeta(entity), id) });
   }
 
-  async restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
+  restoreMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
+  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  async restoreMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<number> {
+    const [entity, q] = entityArgs(args);
     const meta = getMeta(entity);
     if (!meta.softDelete) {
       throw new UqlUsageError(`'${entity.name}' has not enabled 'softDelete'`);
@@ -1051,38 +1106,60 @@ export abstract class AbstractQuerier implements Querier {
     );
   }
 
-  upsertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  upsertOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QueryUpsert<E> & { $entity: Type<E> },
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  upsertOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: EntityWrite<E>,
-    update?: UpdateWrite<E>,
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted']>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted']>;
   async upsertOne<E extends object>(
-    entity: Type<E>,
-    q: QueryUpsert<E>,
-    payload: EntityWrite<E>,
-    update?: UpdateWrite<E>,
-    opts?: WriteOptions<E>,
+    ...args: PayloadArgs<E, QueryUpsert<E>, EntityWrite<E>, WriteOptions<E>>
   ): Promise<unknown> {
-    const [written] = await this.upsertMany(entity, q, [payload], update, opts);
+    const [entity, q, payload, opts] = payloadArgs(args);
+    const [written] = await this.upsertMany(entity, q, [payload], opts);
     return written;
   }
 
-  upsertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  upsertMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QueryUpsert<E> & { $entity: Type<E> },
+    payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  upsertMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
-    update?: UpdateWrite<E>,
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted'][]>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
   async upsertMany<E extends object>(
-    entity: Type<E>,
-    q: QueryUpsert<E>,
-    payload: readonly EntityWrite<E>[],
-    update?: UpdateWrite<E>,
-    opts?: WriteOptions<E>,
+    ...args: PayloadArgs<E, QueryUpsert<E>, readonly EntityWrite<E>[], WriteOptions<E>>
   ) {
+    const [entity, q, payload, opts] = payloadArgs(args);
     const meta = getMeta(entity);
     const keys = returnedKeys(meta, opts?.returning);
     const reportingWrites = keys && this.reportingWrites(meta, 'upsert');
@@ -1091,15 +1168,15 @@ export abstract class AbstractQuerier implements Querier {
     if (!keys || !reportingWrites) {
       return this.writtenOrReadBack(
         entity,
-        () => this.hooked(entity, 'Upsert', payload, (rows) => this.upsertIds(entity, q, rows, update)),
+        () => this.hooked(entity, 'Upsert', payload, (rows) => this.upsertIds(entity, q, rows)),
         opts,
       );
     }
     return this.atomically(() =>
       this.hooked(entity, 'Upsert', payload, async (rows) =>
-        upsertsByReading(meta, rows, update)
-          ? this.readBack(entity, await this.upsertIds(entity, q, rows, update), keys)
-          : this.upsertReturning(reportingWrites, entity, q, rows, update, keys),
+        upsertsByReading(meta, q, rows)
+          ? this.readBack(entity, await this.upsertIds(entity, q, rows), keys)
+          : this.upsertReturning(reportingWrites, entity, q, rows, keys),
       ),
     );
   }
@@ -1109,31 +1186,29 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     rows: E[],
-    update: UpdatePayload<E> | undefined,
   ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    const ids = upsertsByReading(meta, rows, update)
-      ? await this.readThenUpsert(entity, q, rows, update)
-      : await this.internalUpsertMany(entity, q, rows, update);
+    const ids = upsertsByReading(meta, q, rows)
+      ? await this.readThenUpsert(entity, q, rows)
+      : await this.internalUpsertMany(entity, q, rows);
     adoptReportedIds(meta, rows, ids);
     return writtenIds(meta, rows);
   }
 
   /**
    * An upsert of one statement reporting each row as it stands after it: off its `RETURNING` where it wrote the row,
-   * else, where its `$where` or an empty `update` kept it, read by the conflict keys.
+   * else, where its `$where` or an empty `$update` kept it, read by the conflict keys.
    */
   private async upsertReturning<E extends object>(
     writes: ReportingWrites,
     entity: Type<E>,
     q: QueryUpsert<E>,
     rows: E[],
-    update: UpdatePayload<E> | undefined,
     keys: readonly FieldKey<E>[],
   ): Promise<Partial<E>[]> {
     const meta = getMeta(entity);
     const read = [...new Set([...keys, ...meta.ids, ...getKeys(q.$conflict)])];
-    const written = await writes.upsert(entity, q, rows, update, read);
+    const written = await writes.upsert(entity, q, rows, read);
     const keptAt = rows.flatMap((_, index) => (written[index] === undefined ? [index] : []));
     const kept = await this.rowsByConflict(
       entity,
@@ -1174,7 +1249,6 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     rows: E[],
-    update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]> {
     const meta = getMeta(entity);
     guardWrite(meta, rows, 'insert');
@@ -1188,7 +1262,7 @@ export abstract class AbstractQuerier implements Querier {
         if (id === undefined) {
           continue;
         }
-        const assigned = foundRowAssigned(meta, q.$conflict, row, update);
+        const assigned = foundRowAssigned(meta, q, row);
         if (assigned) {
           const $where = q.$where ? whereAnd(whereIds(meta, id), [q.$where]) : whereIds(meta, id);
           await this.updateRows(entity, { $where }, assigned, withDeleted(), meta.version).catch((error: unknown) => {
@@ -1217,14 +1291,18 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]>;
 
-  deleteOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  deleteOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     id: EntityId<E>,
-    opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['affected']>;
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affected']>;
   async deleteOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
@@ -1236,12 +1314,25 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Delete records matching the query, the entity passed first or as `$entity`; soft-deletes unless `opts.hardDelete`. */
-  deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  deleteMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
+    q: QuerySearch<E> & { $entity: Type<E> },
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affectedMany']>;
+  deleteMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions & WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['affectedMany']>;
+    opts?: QueryOptions & WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['affectedMany']>;
   async deleteMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<unknown> {
     const [entity, q, opts] = entityArgs(args);
     return this.deleteWhere(entity, q, opts);
@@ -1337,21 +1428,31 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  saveOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  saveOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     payload: EntityWrite<E>,
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted']>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted']>;
   async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.writtenOrReadBack(entity, () => this.saveIds(entity, [payload]), opts);
     return written;
   }
 
-  saveMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+  saveMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V extends BooleanLike = true,
+    const W extends boolean = false,
+  >(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-    opts?: WriteOptions<E, S, V>,
-  ): Promise<WriteResults<E, S, V>['inserted'][]>;
+    opts?: WriteOptions<E, S, V, W>,
+  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
   async saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.writtenOrReadBack(entity, () => this.saveIds(entity, payload), opts);
   }

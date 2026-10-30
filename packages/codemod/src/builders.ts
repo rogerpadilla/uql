@@ -18,6 +18,7 @@ import { isCallback, paramFor } from './keyMaps.js';
 import {
   type ChainMethod,
   chainOf,
+  constValue,
   decoratorName,
   decoratorsOf,
   FIELD_DECORATORS,
@@ -25,7 +26,9 @@ import {
   identifierUses,
   indentOf,
   indentUnit,
+  isNamedProperty,
   keyOf,
+  namedValue,
   objectLiteral,
   objectProperties,
   optionsOf,
@@ -286,9 +289,14 @@ function computedDecorator(
   return [replaced(call, `Computed((${param}) => ${built})`)];
 }
 
-/** Whether `node` is already a builder, `f.string()...`. */
+/** Whether `node` is already a builder, `f.string()...`, or a chain off a `const` holding one. */
 export function isBuilder(node: ts.Expression): boolean {
-  return identifierText(chainOf(node).root) === 'f';
+  const { root } = chainOf(node);
+  if (identifierText(root) === 'f') {
+    return true;
+  }
+  const held = ts.isIdentifier(root) ? constValue(root) : undefined;
+  return held !== undefined && isBuilder(held);
 }
 
 /** The options a defined entity's first call keeps. */
@@ -683,9 +691,7 @@ function appendedEntries(literal: ts.ObjectLiteralExpression, entries: readonly 
 
 /** Whether a defined column is a builder naming no foreign key, which a defined entity's `fields` keep as they are. */
 function isDefinedColumn(prop: ts.ObjectLiteralElementLike): boolean {
-  return (
-    ts.isPropertyAssignment(prop) && isBuilder(prop.initializer) && !chainMethods(prop.initializer).has('references')
-  );
+  return isNamedProperty(prop) && isBuilder(namedValue(prop)) && !chainMethods(namedValue(prop)).has('references');
 }
 
 /** Each method a builder chain calls, by name. */

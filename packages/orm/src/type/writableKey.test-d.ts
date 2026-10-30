@@ -48,7 +48,7 @@ export async function writesLeaveDatabaseWrittenFieldsOut() {
   // @ts-expect-error ...and a stored generated column the same way
   await querier.insertOne(Basket, { label: 'a', mirroredId: 1 });
   // @ts-expect-error ...including through upsert
-  await querier.upsertOne(Basket, { id: true }, { id: 1, label: 'a', lineCount: 3 });
+  await querier.upsertOne(Basket, { $conflict: { id: true } }, { id: 1, label: 'a', lineCount: 3 });
 }
 
 export async function readsAreUntouched() {

@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.109.0] - 2026-10-29
+
+- **Breaking:** an upsert's update is its query's `$update`, beside `$conflict` and `$where`, and the options follow the rows, as on every write: `upsertMany(Job, { $conflict: { key: true }, $update: { runs: { $inc: 1 } } }, rows)`. `upsertInto` alike, its query typed `TriggerUpsert<E>`. `npx uql-codemod` rewrites both.
+- `{ returning: true }` reads back every field a read returns.
+- On a querier, every method taking a query also takes the entity as its `$entity`, `updateMany`, `restoreMany`, `aggregate` and the upserts now included.
+- `refs(() => Order, 'o')` reads an entity declared later, a computed field's SQL included. `aliasOf(o)` renders the name its columns are qualified by, for SQL reading the whole row or naming a derived table, and `sql.id(name)` quotes a name a statement makes up.
+- `uql-codemod` keeps a column whose builder a `const` holds, `@Field(money.nullable())`, instead of reporting it.
+
 ## [0.108.1] - 2026-10-29
 
 - The `uql-orm` skill has a pre-finish checklist, shows a `$where` comparing two columns, names the APIs it covers in its description, and repeats nothing.

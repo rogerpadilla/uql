@@ -9,7 +9,6 @@ import type {
   QueryPager,
   TriggerRows,
   AbstractType,
-  UpdatePayload,
 } from '../type/index.js';
 import { assertNonNegativeInteger, getKeys } from '../util/index.js';
 import { AbstractSqlDialect, type ConflictUpdate, fromRows, type SelectTerm } from './abstractSqlDialect.js';
@@ -45,14 +44,13 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[] {
     const meta = getMeta(entity);
     // Before the row source, which is what fills the payload's `onInsert` fields: a column that
     // exists only there - the generated key, `createdAt` - must not join the update set, or a row
     // that already existed has both rewritten.
-    const found = this.conflictUpdate(ctx, entity, q, payload, update);
+    const found = this.conflictUpdate(ctx, entity, q, payload);
     return this.reportedWrite(ctx, entity, returning, 'upsert', (afterTarget) => {
       const shape = this.insertShape(entity, payload);
       ctx.append(`MERGE INTO ${this.escapedTableName(meta)}${this.mergeTargetHint} USING (VALUES `);

@@ -87,7 +87,7 @@ export class Post {
 }
 ```
 
-- A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal(precision?, scale?)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other type, and `f.references(() => Target)` for a foreign key typed as the target's key. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's.
+- A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal(precision?, scale?)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other SQL type uql names (`f.column('smallint')`, `f.column('date')` for a day with no time, `f.column('timestamptz')`), typed by its family, and `f.references(() => Target)` for a foreign key typed as the target's key. A type uql does not name is ``.columnType(sql`citext`)``. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A builder is immutable, so `const money = f.decimal(12, 2)` is shared across fields, each chaining its own `.nullable()`.
 - A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the single-column key and version uql fills. A NOT NULL field a default fills (`.default()`, `.onInsert()`) stays `!` and is listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
@@ -194,7 +194,7 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first, or the query's `$entity`. Signatures: https://uql-orm.dev/querying/methods.md
+- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Signatures: https://uql-orm.dev/querying/methods.md
 - Query keys: `$select`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`, `$lock`. `$select: { password: false }` reads every field but `password`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
 - Results are narrowed to what the query selected and populated, at every depth. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`, or `QueryFindResult<User, typeof query>` for a query declared `as const satisfies Query<User>`. A function forwarding a query keeps the narrowing typed `<E extends object, const Q extends Query<E>>(entity: Type<E>, q: Captured<Query<E>, Q>): Promise<QueryFindResult<E, Q>[]>`.
 - `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent. A populated to-many is always a list. A to-one is optional unless `$required: true`, which keeps only the parents that have one.
@@ -216,8 +216,8 @@ const users = await pool.findMany(User, {
 
 ### Writes
 
-- Without options, inserts and upserts resolve to ids, updates and deletes to a count. A last argument `{ returning: { id: true } }` resolves to those rows instead.
-- `upsertOne(Entity, { $conflict: { email: true }, $where? }, row, update?)`: a conflicting row matching `$where` takes `update` (an update payload), else the payload but keeping its own key; one not matching stays as it is. `upsertInto` in a trigger takes the same query. On MySQL and MariaDB, a `$where` may read only one column the update sets.
+- Without options, inserts and upserts resolve to ids, updates and deletes to a count. A last argument `{ returning: { id: true } }` resolves to those rows instead, `{ returning: true }` to every field a read returns.
+- `upsertOne(Entity, { $conflict: { email: true }, $where?, $update? }, row)`: a conflicting row matching `$where` takes `$update` (an update payload; `{}` keeps it as it is), else the payload but keeping its own key; one not matching stays as it is. SQL in `$update` reads the found row through `refs(Entity)`, no alias: ``{ uses: sql`${query.uses} + 1` }`` with `const query = refs(SearchQuery)`. `upsertInto` in a trigger takes the same query. On MySQL and MariaDB, a `$where` may read only one column the update sets.
 - `updateMany` and `deleteMany` that name no rows (no `$where` holding a value, no `$limit`) throw. Pass `{ unfiltered: true }` to mean the whole table.
 - Update operators: `{ stock: { $inc: -1 } }` or `$mul`, with NULL counted as 0. A guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$pull`, `$set`, `$push`, `$addToSet`, then `$unset`, applied in that order; `$set` and `$unset` take dotted paths and create parents: `settings: { $set: { 'billing.plan': 'pro' } }`.
 
@@ -225,7 +225,7 @@ const users = await pool.findMany(User, {
 
 - ``pool.all`SELECT ... WHERE id = ${id}` `` for a `SELECT`, ``pool.run`...` `` for a write. Interpolated values bind: a scalar, `null` or a list, never `undefined` or a plain object. `sql` builds a fragment, `sql.join(fragments, ' AND ')` joins them, and `sql.text(s)` runs trusted SQL held in a string: never user input.
 - A condition no operator expresses is a `sql` fragment beside the others, naming columns through `refs()`, never by string: ``const item = refs(Item); $where: { $and: [{ companyId: 1 }, sql`${item.price} * ${item.stock} > ${10000}`] }``. SQL databases only.
-- SQL reading another table names it with `tableOf`, its columns off refs read under an alias, so a rename reaches them: ``const o = refs(Order, 'o'); sql`(SELECT ${o.state} FROM ${tableOf(o)} WHERE ${o.checkoutId} = ${checkout.id} LIMIT 1)` ``. Two aliases read one table twice.
+- SQL reading another table names it with `tableOf`, its columns off refs read under an alias, so a rename reaches them: ``const o = refs(Order, 'o'); sql`(SELECT ${o.state} FROM ${tableOf(o)} WHERE ${o.checkoutId} = ${checkout.id} LIMIT 1)` ``. Two aliases read one table twice. For an entity declared later, a computed field's SQL included, pass an arrow: `refs(() => Order, 'o')`, `tableOf(refs(() => Order))`. `aliasOf(o)` renders the alias alone, for SQL reading the whole row (`pdb.score(${aliasOf(o)})`) or naming a derived table (`) ${aliasOf(o)} ON TRUE`). A name the statement makes up, read twice, is `sql.id('reason')`.
 - `queryErrorKind(err)` names a failure: `uniqueViolation`, `foreignKeyViolation`, `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage`, `security`. Catch by kind, not by driver code.
 
 ## Aggregates
@@ -280,7 +280,7 @@ Upgrading uql itself: `npx uql-codemod --dry-run`, then `npx uql-codemod`, which
 ## Before you finish
 
 - Mail, webhooks and queued jobs run from `onCommit`, never from an after-hook or mid-transaction.
-- Several writes that must land together run in one `pool.transaction(...)`; on MongoDB, so does an upsert with an `update` or `$where`, and an `updateMany` or `deleteMany` that cascades or runs hooks.
+- Several writes that must land together run in one `pool.transaction(...)`; on MongoDB, so does an upsert with an `$update` or `$where`, and an `updateMany` or `deleteMany` that cascades or runs hooks.
 
 ## Where to read more
 

@@ -17,6 +17,32 @@ export function isNamedProperty(prop: ts.ObjectLiteralElementLike): prop is Name
   return ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop);
 }
 
+/** What a named property holds: a shorthand holds its name. */
+export function namedValue(prop: NamedProperty): ts.Expression {
+  return ts.isShorthandPropertyAssignment(prop) ? prop.name : prop.initializer;
+}
+
+/** What the `const` `name` reads holds, where one is declared before it in a scope it sits in. */
+export function constValue(name: ts.Identifier): ts.Expression | undefined {
+  for (let scope: ts.Node | undefined = name.parent; scope; scope = scope.parent) {
+    const statements = ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope) ? scope.statements : [];
+    for (const statement of statements) {
+      if (statement.end > name.pos) {
+        break;
+      }
+      if (!ts.isVariableStatement(statement)) {
+        continue;
+      }
+      const { declarationList } = statement;
+      const declared = declarationList.declarations.find((it) => identifierText(it.name) === name.text);
+      if (declared && declarationList.flags & ts.NodeFlags.Const) {
+        return declared.initializer;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** The property `name` of an object literal, a shorthand included. */
 export function namedProperty(node: ts.ObjectLiteralExpression, name: string): NamedProperty | undefined {
   return node.properties.find(
@@ -66,7 +92,7 @@ export function propertiesByKey(node: ts.Expression): Map<string, ts.Expression>
     if (key === undefined) {
       return undefined;
     }
-    props.set(key, ts.isShorthandPropertyAssignment(prop) ? prop.name : prop.initializer);
+    props.set(key, namedValue(prop));
   }
   return props;
 }

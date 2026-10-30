@@ -536,15 +536,15 @@ describe('foundRowAssigned', () => {
   const row = { id: 1, code: 'a', name: 'n' };
 
   it('should assign a found row the payload less its key and what it matched on', () => {
-    expect(foundRowAssigned(meta, { code: true }, row, undefined)).toEqual({ name: 'n' });
+    expect(foundRowAssigned(meta, { $conflict: { code: true } }, row)).toEqual({ name: 'n' });
   });
 
   it('should assign a copy of the update, and nothing for an empty one', () => {
     const update = { name: 'u' };
 
-    expect(foundRowAssigned(meta, { code: true }, row, update)).not.toBe(update);
-    expect(foundRowAssigned(meta, { code: true }, row, update)).toEqual(update);
-    expect(foundRowAssigned(meta, { code: true }, row, {})).toBeUndefined();
+    expect(foundRowAssigned(meta, { $conflict: { code: true }, $update: update }, row)).not.toBe(update);
+    expect(foundRowAssigned(meta, { $conflict: { code: true }, $update: update }, row)).toEqual(update);
+    expect(foundRowAssigned(meta, { $conflict: { code: true }, $update: {} }, row)).toBeUndefined();
   });
 });
 

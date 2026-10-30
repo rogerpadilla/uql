@@ -15,7 +15,6 @@ import type {
   SqlDialectName,
   SqlValues,
   AbstractType,
-  UpdatePayload,
   TransactionOptions,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
@@ -152,11 +151,10 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[] {
     const meta = getMeta(entity);
-    const entries = this.conflictEntries(entity, q, payload, update);
+    const entries = this.conflictEntries(meta, q, payload);
     const insert = this.buildFragment(ctx, (fragment) => this.appendInsertValues(fragment, entity, payload));
     const { assignments } = this.foundRowUpdate(ctx, entity, entries, q.$where);
     const rows = Array.isArray(payload) ? payload.length : 1;

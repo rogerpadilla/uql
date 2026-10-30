@@ -299,7 +299,6 @@ export type TriggerWrite =
       readonly entity: AbstractType<object>;
       readonly q: QueryUpsert<object>;
       readonly row: Readonly<Record<string, unknown>>;
-      readonly update?: Readonly<Record<string, unknown>>;
     }
   | {
       readonly kind: 'update';
@@ -376,13 +375,12 @@ export interface SqlQueryDialect {
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[];
 
-  /** An upsert of one record or many as `q` names its rows, a conflicting row taking `update` where given. */
+  /** An upsert of one record or many as `q` names its rows, a conflicting row taking `q.$update` where given. */
   upsert<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[];
 

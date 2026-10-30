@@ -201,7 +201,7 @@ function checkPeerReach(): void {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
-  '.': 11_700,
+  '.': 12_000,
   './postgres': 48_600,
   './migrate': 69_200,
   './browser': 2_100,

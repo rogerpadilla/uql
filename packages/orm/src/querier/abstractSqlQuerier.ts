@@ -542,14 +542,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     ) => this.readRows<E>((ctx) => this.dialect.update(ctx, entity, q, payload, opts, keys)),
     delete: <E extends object>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions, keys: readonly FieldKey<E>[]) =>
       this.readRows<E>((ctx) => this.dialect.delete(ctx, entity, q, opts, keys)),
-    upsert: (entity, q, payload, update, keys) => {
+    upsert: (entity, q, payload, keys) => {
       const nullKey = getKeys(q.$conflict).find((key) => payload.some((row) => row[key] === null));
       if (nullKey !== undefined) {
         throw new UqlUsageError(
           `a row's '${nullKey}' is null: no row reads back by it, so its upsert cannot report it`,
         );
       }
-      return this.upsertedRows(entity, q, clone(payload), update, keys);
+      return this.upsertedRows(entity, q, clone(payload), keys);
     },
     insert: (entity, rows, keys) => this.insertedRows(entity, rows, keys),
   };
@@ -563,7 +563,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]> {
     if (!payload.length) {
       return [];
@@ -572,10 +571,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const meta = getMeta(entity);
     const kept = payload.map((row) => upsertKeepsOwnKey(meta, q.$conflict, row));
     const ids = this.dialect.features.reportsWrites.includes('upsert')
-      ? (await this.upsertedRows(entity, q, payload, update, [...meta.ids, ...getKeys(q.$conflict)])).map(
+      ? (await this.upsertedRows(entity, q, payload, [...meta.ids, ...getKeys(q.$conflict)])).map(
           (row) => row && idOf(meta, row),
         )
-      : await this.headerIds(entity, q, payload, update);
+      : await this.headerIds(entity, q, payload);
     return this.withUnreportedIds(entity, q.$conflict, payload, ids, kept);
   }
 
@@ -584,9 +583,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update: UpdatePayload<E> | undefined,
   ): Promise<(PrimaryKey | undefined)[]> {
-    const groups = this.upsertGroups(entity, q, payload, update);
+    const groups = this.upsertGroups(entity, q, payload);
     const results = await this.runStatements(
       groups.map(({ indexes }) =>
         this.bound((ctx) =>
@@ -595,7 +593,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
             entity,
             q,
             indexes.map((index) => payload[index]),
-            update,
           ),
         ),
       ),
@@ -619,12 +616,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update: UpdatePayload<E> | undefined,
     keys: readonly FieldKey<E>[],
   ): Promise<(E | undefined)[]> {
     const conflictKeys = getKeys(q.$conflict);
     const read = await this.readEach<E>(
-      this.upsertGroups(entity, q, payload, update).map(
+      this.upsertGroups(entity, q, payload).map(
         ({ indexes }) =>
           (ctx) =>
             this.dialect.upsert(
@@ -632,7 +628,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
               entity,
               q,
               indexes.map((index) => payload[index]),
-              update,
               keys,
             ),
       ),
@@ -653,11 +648,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update: UpdatePayload<E> | undefined,
   ): { indexes: number[]; reports: boolean }[] {
     const meta = getMeta(entity);
     return groupByInsertShape(meta, payload).flatMap((group) => {
-      const { binds, assigns } = this.dialect.upsertAssignments(entity, q, payload[group[0]], update);
+      const { binds, assigns } = this.dialect.upsertAssignments(entity, q, payload[group[0]]);
       const chunks = chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - binds);
       return chunks.map((indexes) => ({
         indexes,

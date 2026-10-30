@@ -171,9 +171,14 @@ describe('AbstractSqlQuerier insert report count', () => {
 describe('AbstractSqlQuerier upsert report match', () => {
   it('should refuse a row it cannot match back by its conflict key', async () => {
     await expect(
-      new StubSqlQuerier().upsertOne(HydratedParent, { $conflict: { id: true } }, { id: 1, name: 'a' }, undefined, {
-        returning: { name: true },
-      }),
+      new StubSqlQuerier().upsertOne(
+        HydratedParent,
+        { $conflict: { id: true } },
+        { id: 1, name: 'a' },
+        {
+          returning: { name: true },
+        },
+      ),
     ).rejects.toThrow("no 'HydratedParent' row reads back with 'id' 1");
   });
 
@@ -181,7 +186,7 @@ describe('AbstractSqlQuerier upsert report match', () => {
     const querier = new StubSqlQuerier();
     querier.rows = [{ id: 1, name: null }];
     await expect(
-      querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { name: null }], undefined, {
+      querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { name: null }], {
         returning: { id: true },
       }),
     ).rejects.toThrow("a row's 'name' is null");

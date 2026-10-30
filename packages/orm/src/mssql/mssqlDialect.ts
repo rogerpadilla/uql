@@ -38,7 +38,6 @@ import type {
   SqlValues,
   TriggerRows,
   AbstractType,
-  UpdatePayload,
   VectorDistance,
   VectorMetric,
   TransactionOptions,
@@ -285,12 +284,9 @@ export class MsSqlDialect extends MergeSqlDialect {
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[] {
-    return this.identityInserted(ctx, getMeta(entity), payload, () =>
-      super.upsert(ctx, entity, q, payload, update, returning),
-    );
+    return this.identityInserted(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, q, payload, returning));
   }
 
   /**

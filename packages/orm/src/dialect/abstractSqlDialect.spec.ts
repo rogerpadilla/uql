@@ -3,7 +3,7 @@ import { Computed, Entity, f, Field, getMeta } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
-import { memberRefs, sql, refs, tableOf } from '../util/index.js';
+import { aliasOf, memberRefs, sql, refs, tableOf } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 import { MYSQL_FEATURES } from './mysqlLikeSqlDialect.js';
 
@@ -487,6 +487,75 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, { value: sql`${refs(RefLedger, 'l').creditLimit}`, prefix: 'other' });
       expect(ctx.sql).toBe('`l`.`creditLimit`');
+    });
+
+    it('should read an entity declared later off a thunk, when a computed field reads it at decoration', () => {
+      const order = refs(() => LaterOrder, 'o');
+      @Entity()
+      class EarlierCheckout {
+        @Field(f.number().id()) id?: number;
+        @Computed((checkout) =>
+          f.string().as(sql`(SELECT ${order.state} FROM ${tableOf(order)} WHERE ${order.checkoutId} = ${checkout.id})`),
+        )
+        readonly state?: string;
+      }
+      @Entity()
+      class LaterOrder {
+        @Field(f.number().id()) id?: number;
+        @Field(f.number()) checkoutId!: number;
+        @Field(f.string()) state!: string;
+      }
+      const ctx = dialect.createContext();
+      dialect.find(ctx, EarlierCheckout, { $select: { state: true } });
+      expect(ctx.sql).toBe(
+        'SELECT ((SELECT `o`.`state` FROM `LaterOrder` `o` WHERE `o`.`checkoutId` = `EarlierCheckout`.`id`)) `state` FROM `EarlierCheckout`',
+      );
+    });
+
+    it("should name the table of a thunk's entity, with no alias", () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`${tableOf(refs(() => RefLedger))} @@@ pdb.all()` });
+      expect(ctx.sql).toBe('`RefLedger` @@@ pdb.all()');
+    });
+
+    it('should name the alias a refs map qualifies its columns by, for SQL reading the whole row', () => {
+      const ledger = refs(RefLedger, 'l');
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`pdb.score(${aliasOf(ledger)}), ${ledger.id} FROM ${tableOf(ledger)}` });
+      expect(ctx.sql).toBe('pdb.score(`l`), `l`.`id` FROM `RefLedger` `l`');
+    });
+
+    it('should name an unaliased refs map as its columns are qualified: the alias in scope, else its table', () => {
+      const ledger = refs(() => RefLedger);
+      const outside = dialect.createContext();
+      dialect.getRawValue(outside, { value: sql`${aliasOf(ledger)}` });
+      expect(outside.sql).toBe('`RefLedger`');
+      const entity = dialect.createContext();
+      dialect.getRawValue(entity, { value: sql`${aliasOf(RefLedger)}` });
+      expect(entity.sql).toBe('`RefLedger`');
+      const inside = dialect.createContext();
+      dialect.getRawValue(inside, { value: sql`${aliasOf(ledger)}, ${ledger.id}`, prefix: 'r', entity: RefLedger });
+      expect(inside.sql).toBe('`r`, `r`.`id`');
+    });
+
+    it('should name a derived table by the alias its refs are read under', () => {
+      const person = refs(RefLedger, 'person');
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`LEFT JOIN LATERAL (SELECT 1) ${aliasOf(person)} ON TRUE` });
+      expect(ctx.sql).toBe('LEFT JOIN LATERAL (SELECT 1) `person` ON TRUE');
+    });
+
+    it("should refuse a definition's refs, which name no alias", () => {
+      expect(() => aliasOf(memberRefs<RefLedger>())).toThrow(
+        "aliasOf takes an entity or the refs() read off one, not a definition's refs",
+      );
+    });
+
+    it('should quote a name sql.id holds as one identifier, wherever it is spliced', () => {
+      const reason = sql.id('reason');
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: sql`AS ${reason} GROUP BY ${reason}, ${sql.id('a.b`c')}` });
+      expect(ctx.sql).toBe('AS `reason` GROUP BY `reason`, `a.b``c`');
     });
 
     it('should name the table, under the alias its refs were read with', () => {

@@ -76,7 +76,7 @@ describe('insertMany id semantics', () => {
 
     await querier.insertOne(Coupon, { code: 'c0', label: 'old' });
 
-    await querier.upsertMany(Coupon, { $conflict: { code: true } }, payload, { label: 'updated' });
+    await querier.upsertMany(Coupon, { $conflict: { code: true }, $update: { label: 'updated' } }, payload);
 
     const founds = await querier.findMany(Coupon, { $select: { label: true }, $sort: { code: 1 } });
     expect(founds.map(({ label }) => label)).toEqual(['updated', 'new', 'new', 'new', 'new', 'new']);

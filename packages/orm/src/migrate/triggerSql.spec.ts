@@ -11,7 +11,7 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { filledKey, idKey } from '../type/index.js';
 import type { EntityTriggerMeta, Json } from '../type/index.js';
 import { currentTimestamp, sql, refs } from '../util/sql.js';
-import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
+import { deleteFrom, insertInto, refuse, type TriggerUpsert, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { dropTrigger, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
 @Entity()
@@ -809,7 +809,11 @@ describe('a write in the body, to another table', () => {
     const upserted = render(new PostgresDialect(), {
       on: 'afterInsert',
       run: (newRow) =>
-        upsertInto(TouchedAudit, { $conflict: { postId: true } }, { postId: newRow.id }, { hits: { $inc: 1 } }),
+        upsertInto(
+          TouchedAudit,
+          { $conflict: { postId: true }, $update: { hits: { $inc: 1 } } },
+          { postId: newRow.id },
+        ),
     }).join('\n');
     removeEntity(TouchedAudit);
 
@@ -1015,9 +1019,10 @@ describe('a deferred trigger, which fires at commit', () => {
 });
 
 describe('an upsert in the body, to another table', () => {
-  const tally = (update?: Parameters<typeof upsertInto<Tally>>[3]): EntityTriggerMeta<Post> => ({
+  const tally = (update?: TriggerUpsert<Tally>['$update']): EntityTriggerMeta<Post> => ({
     on: 'afterInsert',
-    run: (newRow) => upsertInto(Tally, { $conflict: { postId: true } }, { postId: newRow.id, count: 1 }, update),
+    run: (newRow) =>
+      upsertInto(Tally, { $conflict: { postId: true }, $update: update }, { postId: newRow.id, count: 1 }),
   });
   const counted = tally({ count: { $inc: 1 } });
 
@@ -1028,9 +1033,8 @@ describe('an upsert in the body, to another table', () => {
       run: (newRow) =>
         upsertInto(
           Tally,
-          { $conflict: { postId: true }, $where: { count: { $lt: 10 } } },
+          { $conflict: { postId: true }, $where: { count: { $lt: 10 } }, $update: { count: 5 } },
           { postId: newRow.id, count: 1 },
-          { count: 5 },
         ),
     };
     expect(render(new PostgresDialect(), capped).join('\n')).toContain(

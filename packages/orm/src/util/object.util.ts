@@ -33,6 +33,11 @@ export function chunk<T>(items: readonly T[], size: number): T[][] {
 }
 
 /** Whether `obj` has at least one enumerable key. Narrows away `undefined`/`null` for callers. */
+/** Whether `value` is a class, which an arrow, with no `prototype`, is not. */
+export function isClass(value: unknown): boolean {
+  return typeof value === 'function' && value.prototype !== undefined;
+}
+
 export function hasKeys<T>(obj: T): obj is NonNullable<T> {
   if (typeof obj !== 'object' || obj === null) return false;
   for (const _ in obj) return true;

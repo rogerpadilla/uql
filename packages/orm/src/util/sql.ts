@@ -25,7 +25,7 @@ import {
   type AbstractType,
 } from '../type/index.js';
 import { aggregateOf, isInlinedExpression } from './field.util.js';
-import { entityName, hasKeys } from './object.util.js';
+import { entityName, hasKeys, isClass } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
@@ -71,6 +71,14 @@ sql.join = function join(parts: readonly QuerySql[], separator = ', '): QuerySql
       renderSql(part, opts);
     });
   });
+};
+
+/**
+ * A name the statement makes up, quoted as one identifier the way the dialect quotes one: a function's output, a
+ * derived column, read twice from one constant, `AS ${reason} ... GROUP BY ${reason}`. An entity's names come off refs.
+ */
+sql.id = function id(name: string): QuerySql {
+  return new QuerySql(({ dialect }) => dialect.escapeId(name, true));
 };
 
 /** SQL held in a string, run as written, binding nothing: for trusted text only, never built from user input. */
@@ -129,17 +137,31 @@ export const SQL_VALUES: Readonly<Record<SqlValueName, QuerySql>> = {
   uuidv7,
 };
 
+/** An entity, or an arrow returning one, for an entity declared after the code reading it: `() => Order`. */
+export type EntitySource<E> = AbstractType<E> | (() => AbstractType<E>);
+
+function isThunk<E>(source: EntitySource<E>): source is () => AbstractType<E> {
+  return !isClass(source);
+}
+
+/** `source` as what reads its entity when called. */
+function resolverOf<E>(source: EntitySource<E>): () => AbstractType<E> {
+  return isThunk(source) ? source : () => source;
+}
+
 /**
  * The fields of `entity` as {@link ColumnRef}s, each rendering inside `sql` as its column: named the way
  * the dialect names it, so the naming strategy and `.name()` apply, and qualified by `alias`, or else by the
- * alias in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
+ * alias in scope. The entity and its metadata are read when a ref renders, so `refs(() => Order)` serves code
+ * running before `Order` is declared, a computed field's SQL included.
  */
-export function refs<E>(entity: AbstractType<E>, alias?: string): RefMap<E> {
+export function refs<E>(entity: EntitySource<E>, alias?: string): RefMap<E> {
   const qualifier = alias === undefined ? undefined : { alias };
-  return refMap<RefMap<E>>(
-    (key) => columnRef(entity, key, qualifier),
-    () => tableSql(entity, alias),
-  );
+  const resolve = resolverOf(entity);
+  return refMap<RefMap<E>>((key) => columnRef(resolve, key, qualifier), {
+    table: () => tableSql(resolve, alias),
+    alias: () => aliasSql(resolve, alias),
+  });
 }
 
 /**
@@ -147,34 +169,64 @@ export function refs<E>(entity: AbstractType<E>, alias?: string): RefMap<E> {
  * reading another table than its statement's: `sql`SELECT ${o.state} FROM ${tableOf(o)}``, `o = refs(Order, 'o')`.
  */
 export function tableOf<E>(source: AbstractType<E> | RefMap<E>): QuerySql {
-  if (typeof source === 'function') {
-    return tableSql(source);
-  }
-  const table: unknown = Reflect.get(source, TABLE);
-  if (!(table instanceof QuerySql)) {
-    throw new UqlUsageError(`tableOf takes an entity or the refs() read off one, not a definition's refs`);
-  }
-  return table;
+  return ownSql(source, TABLE, 'tableOf');
 }
 
-/** `entity`'s table as its statements name it, under `alias` where one is given. */
-function tableSql(entity: AbstractType<unknown>, alias?: string): QuerySql {
+/**
+ * The name `source`'s columns are qualified by, `"o"`, for raw SQL reading the whole row (`pdb.score(${aliasOf(o)})`)
+ * or naming a derived table after it (`) ${aliasOf(o)} ON TRUE`): its alias, else the alias in scope, else its table.
+ */
+export function aliasOf<E>(source: AbstractType<E> | RefMap<E>): QuerySql {
+  return ownSql(source, ALIAS, 'aliasOf');
+}
+
+/** What `source`'s refs keep under `key`, an entity's read as its unaliased refs; a definition's refs keep none. */
+function ownSql<E>(source: AbstractType<E> | RefMap<E>, key: typeof TABLE | typeof ALIAS, caller: string): QuerySql {
+  const own: unknown = Reflect.get(typeof source === 'function' ? refs(source) : source, key);
+  if (!(own instanceof QuerySql)) {
+    throw new UqlUsageError(`${caller} takes an entity or the refs() read off one, not a definition's refs`);
+  }
+  return own;
+}
+
+/** The table of the entity `resolve` reads, as its statements name it, under `alias` where one is given. */
+function tableSql(resolve: () => AbstractType<unknown>, alias?: string): QuerySql {
   return sql(({ ctx, dialect }) => {
-    ctx.append(dialect.tableRef(getMeta(entity), alias).ref);
+    ctx.append(dialect.tableRef(getMeta(resolve()), alias).ref);
   });
 }
 
-/** Where a refs map keeps the table it reads, for {@link tableOf}: a symbol, so no field can shadow it. */
+/** The name the columns of the entity `resolve` reads are qualified by: `alias`, else the alias in scope where it is that entity's, else its table. */
+function aliasSql(resolve: () => AbstractType<unknown>, alias?: string): QuerySql {
+  if (alias !== undefined) {
+    return sql.id(alias);
+  }
+  return sql((opts) => {
+    const owner = resolve();
+    assertRendersIn(owner, opts);
+    return opts.dialect.escapeId(opts.prefix || opts.dialect.tableRef(getMeta(owner)).alias, true);
+  });
+}
+
+/** Where a refs map keeps its table and its alias, for {@link tableOf} and {@link aliasOf}: symbols, so no field can shadow them. */
 const TABLE: unique symbol = Symbol('table');
+const ALIAS: unique symbol = Symbol('alias');
 
 /**
  * A map answering each string key with `ref(key)`, typed as the caller's map, whose keys say what it holds, and
- * {@link TABLE} with what renders the table where it reads one. No other symbol, so nothing probing it sees more.
+ * {@link TABLE} and {@link ALIAS} with what renders its table and its alias where it reads one. No other symbol, so
+ * nothing probing it sees more.
  */
-function refMap<T>(ref: (key: string) => unknown, table?: () => QuerySql): T {
+function refMap<T>(
+  ref: (key: string) => unknown,
+  own?: { readonly table: () => QuerySql; readonly alias: () => QuerySql },
+): T {
   return new Proxy(
     {},
-    { get: (_, key) => (key === TABLE ? table?.() : typeof key === 'string' ? ref(key) : undefined) },
+    {
+      get: (_, key) =>
+        key === TABLE ? own?.table() : key === ALIAS ? own?.alias() : typeof key === 'string' ? ref(key) : undefined,
+    },
   ) as T;
 }
 
@@ -267,25 +319,35 @@ type Qualifier =
  * One field as SQL, against its own entity or, read off a definition, the entity rendering it, read off the
  * alias in scope unless a `qualifier` names another.
  */
-export function columnRef(entity: AbstractType<unknown> | undefined, key: string, qualifier?: Qualifier): ColumnRef {
+export function columnRef(entity: EntitySource<unknown> | undefined, key: string, qualifier?: Qualifier): ColumnRef {
+  const resolve = entity && resolverOf(entity);
   return new ColumnRef(
     key,
     (opts) => {
-      const owner = refOwner(entity, key, opts);
-      const scope = opts.entity;
-      if (!qualifier && scope && scope !== owner && !(scope.prototype instanceof owner)) {
-        throw new UqlUsageError(
-          `a ref of '${owner.name}' cannot render against '${scope.name}', the table in scope: ` +
-            `read it off its own alias, refs(${owner.name}, 'alias')`,
-        );
+      const owner = refOwner(resolve?.(), key, opts);
+      if (!qualifier) {
+        assertRendersIn(owner, opts);
       }
       renderColumn(getMeta(owner), key, { ...opts, entity: owner }, qualifier);
     },
-    entity,
+    resolve,
   );
 }
 
 /** The entity a ref of `key` reads its column of: its own, or, read off a definition, the entity in scope. */
+/** Refuses a ref of `owner` read off the alias in scope where that alias is another entity's. */
+function assertRendersIn(
+  owner: AbstractType<unknown>,
+  { entity: scope }: { readonly entity?: AbstractType<unknown> },
+): void {
+  if (scope && scope !== owner && !(scope.prototype instanceof owner)) {
+    throw new UqlUsageError(
+      `a ref of '${owner.name}' cannot render against '${scope.name}', the table in scope: ` +
+        `read it off its own alias, refs(${owner.name}, 'alias')`,
+    );
+  }
+}
+
 export function refOwner(
   entity: AbstractType<unknown> | undefined,
   key: string,

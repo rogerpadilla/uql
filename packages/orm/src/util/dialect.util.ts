@@ -18,6 +18,7 @@ import {
   type OnFieldCallback,
   type QueryAggMap,
   type QueryConflictKeys,
+  type QueryUpsert,
   type QueryGroupMap,
   type QueryOptions,
   QuerySql,
@@ -148,17 +149,17 @@ export function deletionOf<E, O extends QueryOptions>(meta: EntityMeta<E>, opts:
 }
 
 /**
- * What the row an upsert of `row` finds takes: a copy of `update`, none for `{}`, which leaves it as `DO NOTHING`
+ * What the row an upsert of `row` finds takes: a copy of `q.$update`, none for `{}`, which leaves it as `DO NOTHING`
  * does, and by default the payload less its key and what it matched on.
  */
 export function foundRowAssigned<E>(
   meta: EntityMeta<E>,
-  conflictKeys: QueryConflictKeys<E>,
+  q: QueryUpsert<E>,
   row: EntityData<E>,
-  update: UpdatePayload<E> | undefined,
 ): UpdatePayload<E> | undefined {
+  const update = q.$update;
   if (update === undefined) {
-    return omitKeys(row, [...meta.ids, ...getKeys(conflictKeys)]);
+    return omitKeys(row, [...meta.ids, ...getKeys(q.$conflict)]);
   }
   return hasKeys(update) ? { ...update } : undefined;
 }

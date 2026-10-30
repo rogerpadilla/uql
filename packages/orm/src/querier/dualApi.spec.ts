@@ -215,6 +215,42 @@ describe('Dual API Pattern: $entity field support', () => {
     });
   });
 
+  describe('the writes and aggregate', () => {
+    it('should update the entity its query names', async () => {
+      const updateSpy = vi.spyOn(querier, 'internalUpdateMany').mockResolvedValue(1);
+      await querier.updateMany({ $entity: User, $where: { id: '1' } }, { name: 'n' });
+      expect(updateSpy).toHaveBeenCalledWith(
+        User,
+        { $where: { id: '1' } },
+        expect.objectContaining({ name: 'n' }),
+        undefined,
+      );
+    });
+
+    it('should restore the entity its query names', async () => {
+      const updateSpy = vi.spyOn(querier, 'internalUpdateMany').mockResolvedValue(1);
+      await querier.restoreMany({ $entity: MeasureUnitCategory, $where: { id: '1' } });
+      expect(updateSpy).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        expect.objectContaining({ $where: expect.objectContaining({ id: '1', deletedAt: { $ne: null } }) }),
+        expect.objectContaining({ deletedAt: null }),
+        { filters: { softDelete: false } },
+      );
+    });
+
+    it('should aggregate the entity its query names, without the $entity', async () => {
+      const aggregateSpy = vi.spyOn(querier, 'internalAggregate');
+      await querier.aggregate({ $entity: User, $select: { total: { $count: '*' } } });
+      expect(aggregateSpy).toHaveBeenCalledWith(User, { $select: { total: { $count: '*' } } }, undefined);
+    });
+
+    it('should upsert the entity its query names, without the $entity', async () => {
+      const upsertSpy = vi.spyOn(querier, 'internalUpsertMany');
+      await querier.upsertOne({ $entity: User, $conflict: { id: true } }, { id: '1', name: 'n' });
+      expect(upsertSpy).toHaveBeenCalledWith(User, { $conflict: { id: true } }, [expect.objectContaining({ id: '1' })]);
+    });
+  });
+
   describe('RPC-style use case', () => {
     it('should allow serializing and deserializing the query', async () => {
       // Simulate receiving a query object from an RPC/REST endpoint

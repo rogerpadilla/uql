@@ -9,7 +9,7 @@ export * from './indexEntry.util.js';
 export * from './logger.js';
 export * from './object.util.js';
 export * from './sql.js';
-export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './triggerWrite.js';
+export { deleteFrom, insertInto, refuse, type TriggerUpsert, updateTable, upsertInto } from './triggerWrite.js';
 export * from './rowKey.util.js';
 export * from './relationQuery.util.js';
 export * from './sql.util.js';

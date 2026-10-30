@@ -304,7 +304,6 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-    update?: UpdatePayload<E>,
   ): Promise<(UpsertedId<E> | undefined)[]> {
     refuseTriggers(entity);
     if (!payload.length) {
@@ -313,19 +312,19 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     // A found document is updated apart from the insert when the upsert has an update of its own, as `$setOnInsert`
     // and `$inc` on one field conflict in one operation, or a `$where`. The two batches are not atomic on their own:
     // a transaction the caller opens makes them so.
-    const apart = update !== undefined || q.$where !== undefined;
+    const apart = q.$update !== undefined || q.$where !== undefined;
     const meta = getMeta(entity);
-    const conflictKeys = q.$conflict;
-    const kept = payload.map((row) => upsertKeepsOwnKey(meta, conflictKeys, row));
+    const { $conflict } = q;
+    const kept = payload.map((row) => upsertKeepsOwnKey(meta, $conflict, row));
     // A row naming no conflict key conflicts with none, so it inserts, as `ON CONFLICT` inserts it; a soft-deleted
     // document conflicts as any other does, its unique key holding across both.
-    const keys = getKeys(conflictKeys);
+    const keys = getKeys($conflict);
     const upserts = payload.map((row): AnyBulkWriteOperation<E> =>
       !namesEvery(row, keys)
         ? { insertOne: { document: this.dialect.getPersistable(meta, clone(row), 'onInsert') as OptionalId<E> } }
         : {
             updateOne: {
-              filter: this.dialect.where(entity, foundRowWhere({ $conflict: conflictKeys }, row), withDeleted()),
+              filter: this.dialect.where(entity, foundRowWhere({ $conflict }, row), withDeleted()),
               update: this.upsertUpdate(meta, row, apart),
               upsert: true,
             },
@@ -340,7 +339,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     });
     const updates: AnyBulkWriteOperation<E>[] = apart
       ? payload.flatMap((row, index) => {
-          const assigned = reported[index] === undefined && foundRowAssigned(meta, conflictKeys, row, update);
+          const assigned = reported[index] === undefined && foundRowAssigned(meta, q, row);
           return assigned
             ? [{ updateOne: this.updateOperation(entity, foundRowWhere(q, row), assigned, withDeleted()) }]
             : [];
@@ -349,7 +348,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     if (updates.length) {
       await this.execute('upsertMany', (session) => this.collection(entity).bulkWrite(updates, { session }));
     }
-    return this.withUnreportedIds(entity, conflictKeys, payload, reported, kept);
+    return this.withUnreportedIds(entity, $conflict, payload, reported, kept);
   }
 
   protected override async internalDeleteMany<E extends Document>(

@@ -1532,6 +1532,20 @@ class Entity {
     expect(unresolved[0]).toContain("its options are passed as 'shared'");
   });
 
+  it('keeps a builder a const holds, as it keeps one written inline', () => {
+    const { changed, unresolved } = codemod(/*ts*/ `
+      declare const f: { string(): { nullable(): unknown } };
+      const text = f.string();
+      class Entity {
+        @Field(text) title!: string;
+        @Field(text.nullable()) body?: string | null;
+      }
+    `);
+
+    expect(unresolved).toEqual([]);
+    expect(changed).toBe(false);
+  });
+
   /** There is no argument list to write into, and it used to be read as an empty one and crash. */
   it('refuses to rewrite a decorator that is never called', () => {
     const { text, changed, unresolved } = codemod(/*ts*/ `
@@ -2430,7 +2444,7 @@ export default defineBuilderMigration({
     ]);
   });
 
-  it("names an upsert's conflict keys as its query's $conflict, and passes its update itself, wherever the querier comes from", () => {
+  it("names an upsert's conflict keys as its query's $conflict, and its update as its $update, wherever the querier comes from", () => {
     const { text, unresolved } = codemodFile(`declare function upsertInto(...args: unknown[]): void;
 declare const pool: { upsertOne(...args: unknown[]): void; upsertMany(...args: unknown[]): void };
 declare const Tally: unknown;
@@ -2439,23 +2453,50 @@ pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { update: { hits: { $inc: 1 }
 pool.upsertMany(Tally, { sku: true }, [{ sku: 'a' }], { update });
 pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { update: {} });
 upsertInto(Tally, { sku: true }, { sku: 'a' }, { 'update': update });
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' });
 `);
 
-    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { hits: { $inc: 1 } });");
-    expect(text).toContain("pool.upsertMany(Tally, { $conflict: { sku: true } }, [{ sku: 'a' }], update);");
-    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, {});");
-    expect(text).toContain("upsertInto(Tally, { $conflict: { sku: true } }, { sku: 'a' }, update);");
+    expect(text).toContain(
+      "pool.upsertOne(Tally, { $conflict: { sku: true }, $update: { hits: { $inc: 1 } } }, { sku: 'a' });",
+    );
+    expect(text).toContain("pool.upsertMany(Tally, { $conflict: { sku: true }, $update: update }, [{ sku: 'a' }]);");
+    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true }, $update: {} }, { sku: 'a' });");
+    expect(text).toContain("upsertInto(Tally, { $conflict: { sku: true }, $update: update }, { sku: 'a' });");
+    expect(text).toContain("pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' });");
     expect(unresolved).toEqual([]);
   });
 
-  it('leaves an upsert already passing its query and update alone, so a second run changes nothing', () => {
-    const body = `declare const pool: { upsertOne(...args: unknown[]): void };
+  it("moves an update passed beside an upsert's query into it, as its $update, keeping the options after it", () => {
+    const { text, unresolved } = codemodFile(`declare const pool: { upsertOne(...args: unknown[]): void };
 declare const Tally: unknown;
 declare const update: object;
-declare const q: object;
+declare const q: { $conflict: { sku: true } };
 pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { hits: { $inc: 1 } });
-pool.upsertOne(Tally, { $conflict: { sku: true }, $where: { hits: 0 } }, { sku: 'a' }, update);
-pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, {});
+pool.upsertOne(Tally, { $conflict: { sku: true }, $where: { hits: 0 } }, { sku: 'a' }, update, { returning: true });
+pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, undefined, { returning: { id: true } });
+pool.upsertOne(Tally, q, { sku: 'a' }, {});
+`);
+
+    expect(text).toContain(
+      "pool.upsertOne(Tally, { $conflict: { sku: true }, $update: { hits: { $inc: 1 } } }, { sku: 'a' });",
+    );
+    expect(text).toContain(
+      "pool.upsertOne(Tally, { $conflict: { sku: true }, $where: { hits: 0 }, $update: update }, { sku: 'a' }, { returning: true });",
+    );
+    expect(text).toContain(
+      "pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { returning: { id: true } });",
+    );
+    expect(text).toContain("pool.upsertOne(Tally, { ...q, $update: {} }, { sku: 'a' });");
+    expect(unresolved).toEqual([]);
+  });
+
+  it('leaves an upsert already naming its $update alone, its options included, so a second run changes nothing', () => {
+    const body = `declare const pool: { upsertOne(...args: unknown[]): void };
+declare const Tally: unknown;
+declare const opts: { returning: { id: true } };
+pool.upsertOne(Tally, { $conflict: { sku: true }, $update: { hits: { $inc: 1 } } }, { sku: 'a' });
+pool.upsertOne(Tally, { $conflict: { sku: true } }, { sku: 'a' }, { returning: true });
+pool.upsertOne(Tally, { $conflict: { sku: true }, $update: {} }, { sku: 'a' }, opts);
 `;
     const { text, unresolved } = codemodFile(body);
 
@@ -2634,13 +2675,13 @@ export const a = raw\`1\`;
     ]);
   });
 
-  it('renames a raw inside an upsert update, which the update is unwrapped from its options', () => {
+  it('renames a raw inside an upsert update, which moves into its query as $update', () => {
     const { text } = codemodFile(`import { raw } from 'uql-orm';
 declare const q: { upsertOne(entity: unknown, data: unknown, unique: unknown, options: unknown): void };
 q.upsertOne(Item, { id: 1 }, ['id'], { update: { stock: raw\`1 + 1\` } });
 `);
 
-    expect(text).toContain("q.upsertOne(Item, { $conflict: { id: 1 } }, ['id'], { stock: sql`1 + 1` });");
+    expect(text).toContain("q.upsertOne(Item, { $conflict: { id: 1 }, $update: { stock: sql`1 + 1` } }, ['id']);");
   });
 
   it('renames a raw inside a statement value, which the statement keeps as written', () => {

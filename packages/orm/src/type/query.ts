@@ -6,6 +6,7 @@ import type {
   RelationKey,
   RelationTarget,
   ToManyRelationKey,
+  UpdateWrite,
   WrittenId,
 } from './entity.js';
 import type { QueryLock } from './queryLock.js';
@@ -93,10 +94,14 @@ export type QueryCount<E, Sql = QuerySql, R extends keyof E = ToManyRelationKey<
 export type QueryConflictKeys<E> = QuerySelect<E, FieldKey<E>, true>;
 
 /**
- * The rows an upsert writes: a row `$conflict`'s keys find, `{ email: true }`, takes the update where it matches
- * `$where`, as `updateMany` reads one, `{ status: ['done', 'failed'] }`, and stays as it is elsewhere; the rest insert.
+ * The rows an upsert writes: a row `$conflict`'s keys find, `{ email: true }`, takes `$update` where it matches `$where`,
+ * as `updateMany` reads one, `{ status: ['done', 'failed'] }`, and stays as it is elsewhere; the rest insert. Without
+ * `$update` a found row takes the payload less its key and `$conflict`'s; `$update: {}` keeps it as it is.
  */
-export type QueryUpsert<E, Sql = QuerySql> = QueryFilter<E, Sql> & { readonly $conflict: QueryConflictKeys<E> };
+export type QueryUpsert<E, Sql = QuerySql, U = UpdateWrite<E, Sql>> = QueryFilter<E, Sql> & {
+  readonly $conflict: QueryConflictKeys<E>;
+  readonly $update?: U;
+};
 
 /**
  * Options to populate a relation declared as `V`, by its cardinality.
@@ -551,24 +556,29 @@ type Tally<_Relation> = number;
 
 /**
  * A write's options: `returning` projects each row it writes as `$select` projects a read, `{ id: true, createdAt: true }`,
- * read in the same transaction after the write (before it, for a delete), so they hold what the database filled.
+ * or `true` for every field a read returns, read in the same transaction after the write (before it, for a delete), so
+ * they hold what the database filled. `W` is `true` for `returning: true`, and `boolean` for a map.
  */
-export type WriteOptions<E, S extends FieldKey<E> = FieldKey<E>, V = BooleanLike> = {
-  readonly returning?: QuerySelect<E, S, V>;
+export type WriteOptions<E, S extends FieldKey<E> = FieldKey<E>, V = BooleanLike, W = boolean> = {
+  readonly returning?: QuerySelect<E, S, V> | W;
 };
 
-/** What each kind of write resolves to: its ids or its count where it names no `returning` field, else the rows it reads back. */
-export type WriteResults<E, S, V> = [S] extends [never]
-  ? {
-      readonly inserted: WrittenId<E> | undefined;
-      readonly affected: number;
-      readonly affectedMany: number;
-    }
-  : {
-      readonly inserted: ReturnedRow<E, S, V>;
-      readonly affected: ReturnedRow<E, S, V> | undefined;
-      readonly affectedMany: ReturnedRow<E, S, V>[];
-    };
+/** What each kind of write resolves to: its ids or its count where it reads nothing back, else the rows it reads. */
+export type WriteResults<E, S, V, W = false> = [W] extends [true]
+  ? ReturnedRows<Pick<E, FieldKey<E>>>
+  : [W] extends [false]
+    ? WrittenIds<E>
+    : [S] extends [never]
+      ? WrittenIds<E>
+      : ReturnedRows<ReturnedRow<E, S, V>>;
+
+type WrittenIds<E> = {
+  readonly inserted: WrittenId<E> | undefined;
+  readonly affected: number;
+  readonly affectedMany: number;
+};
+
+type ReturnedRows<R> = { readonly inserted: R; readonly affected: R | undefined; readonly affectedMany: R[] };
 
 /**
  * The row `returning` reads back: its keys, every field but them where it subtracts, and where it mixes both, its

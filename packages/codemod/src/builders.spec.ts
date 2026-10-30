@@ -324,6 +324,20 @@ export const Owned = defineEntity({
     expect(text).toContain('replyId: f.number().nullable(),');
   });
 
+  it('should keep a builder a const holds, in a class or a defined entity', () => {
+    const input = `const money = f.decimal(12, 2);
+@Entity()
+export class Order {
+  @Field(money) total!: string;
+  @Field(money.nullable()) tip?: string | null;
+}
+function entities() {
+  const id = f.number().id();
+  return defineEntity({ name: 'Item', fields: { id, price: money } });
+}`;
+    expect(build(input)).toEqual({ text: input, unresolved: [] });
+  });
+
   it('should leave what it cannot write as it is, and say why', () => {
     const input = `@Entity()
 export class User {

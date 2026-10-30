@@ -2271,8 +2271,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ctx.append(';');
         return;
       }
-      const { q, update } = write;
-      const assigned = this.foundRowEntries(meta, q.$conflict, write.row, update, 'trigger');
+      const { q } = write;
+      const assigned = this.conflictEntries(meta, q, write.row, 'trigger');
       this.refuseAccumulating(meta, assigned, rows);
       const found = this.foundRowUpdate(ctx, write.entity, assigned, q.$where);
       this.appendTriggerUpsert(ctx, meta, q.$conflict, entries, found, rows);
@@ -2402,11 +2402,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
     returning?: readonly FieldKey<E>[],
   ): readonly SelectTerm[] {
     const meta = getMeta(entity);
-    const entries = this.conflictEntries(entity, q, payload, update);
+    const entries = this.conflictEntries(meta, q, payload);
     return this.reportedWrite(ctx, entity, returning, 'upsert', () => {
       this.appendInsertValues(ctx, entity, payload);
       ctx.append(this.onConflict(meta, q.$conflict, this.foundRowUpdate(ctx, entity, entries, q.$where)));
@@ -2421,57 +2420,42 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     row: E,
-    update?: UpdatePayload<E>,
   ): { readonly binds: number; readonly assigns: boolean } {
     const ctx = this.createContext();
-    const { assignments } = this.conflictUpdate(ctx, entity, q, row, update);
+    const { assignments } = this.conflictUpdate(ctx, entity, q, row);
     return { binds: ctx.values.length, assigns: assignments !== '' };
   }
 
-  /**
-   * What a row an upsert finds takes: `update` where given, else the incoming row less the conflict keys, and what
-   * `onUpdate` fills, under `q.$where`. An empty `update` leaves the row as it is, its fills included.
-   */
+  /** What a row an upsert finds takes, {@link conflictEntries}, under `q.$where`. */
   protected conflictUpdate<E>(
     ctx: QueryContext,
     entity: AbstractType<E>,
     q: QueryUpsert<E>,
     payload: E | E[],
-    update?: UpdatePayload<E>,
   ): ConflictUpdate {
-    return this.foundRowUpdate(ctx, entity, this.conflictEntries(entity, q, payload, update), q.$where);
-  }
-
-  /** The columns a row an upsert finds takes, read off the payload before the insert fills it. */
-  protected conflictEntries<E>(
-    entity: AbstractType<E>,
-    q: QueryUpsert<E>,
-    payload: E | E[],
-    update?: UpdatePayload<E>,
-  ): [string, unknown][] {
-    return this.foundRowEntries(getMeta(entity), q.$conflict, Array.isArray(payload) ? payload[0] : payload, update);
+    return this.foundRowUpdate(ctx, entity, this.conflictEntries(getMeta(entity), q, payload), q.$where);
   }
 
   /**
-   * What a row an upsert of `row` finds takes, {@link foundRowAssigned}, with the `onUpdate` fills: by default, each
-   * payload column as the incoming row has it, and no fill of what it matched on. In a trigger, an update as written
-   * and the fills a trigger can write.
+   * The columns a row an upsert finds takes, read off the payload's first row before the insert fills it: `q.$update`
+   * where given, {@link foundRowAssigned}, with the `onUpdate` fills; by default, each payload column as the incoming
+   * row has it, and no fill of what it matched on. In a trigger, an update as written and the fills a trigger can write.
    */
-  private foundRowEntries<E>(
+  protected conflictEntries<E>(
     meta: EntityMeta<E>,
-    conflictKeys: QueryConflictKeys<E>,
-    row: EntityData<E>,
-    update: UpdatePayload<E> | undefined,
+    q: QueryUpsert<E>,
+    payload: EntityData<E> | EntityData<E>[],
     scope: WriteScope = 'statement',
   ): [string, unknown][] {
-    const assigned = foundRowAssigned(meta, conflictKeys, row, update);
+    const row = Array.isArray(payload) ? payload[0] : payload;
+    const assigned = foundRowAssigned(meta, q, row);
     if (!assigned) {
       return [];
     }
-    if (update) {
+    if (q.$update) {
       return scope === 'trigger' ? this.triggerUpdateEntries(meta, assigned) : this.updateEntries(meta, assigned);
     }
-    const matched = new Set<string>([...meta.ids, ...getKeys(conflictKeys)]);
+    const matched = new Set<string>([...meta.ids, ...getKeys(q.$conflict)]);
     return this.updateEntries(meta, assigned, scope).flatMap(([key, value]): [string, unknown][] =>
       matched.has(key) ? [] : [[key, Object.hasOwn(row, key) ? this.incoming(meta, key) : value]],
     );
