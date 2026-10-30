@@ -296,6 +296,11 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON(${operand})`;
   }
 
+  /** Read through {@link jsonCast}: a scalar subquery's value loses its JSON subtype at its edge on SQLite 3.54+. */
+  protected override jsonSubquery(select: string): string {
+    return this.jsonCast(`(${select})`);
+  }
+
   /** `JSON` keeps each element's JSON type in the array, which answers `[]` for no rows. */
   protected override jsonArrayOf(elem: string): string {
     return `JSON_GROUP_ARRAY(JSON(${elem}))`;

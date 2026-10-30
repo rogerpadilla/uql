@@ -2743,7 +2743,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const isArray = this.jsonIs(slot, 'array');
     const kept =
       pulls.length > 0
-        ? `COALESCE((${this.jsonKept(ctx, slot, pulls)}), ${this.jsonEmptyArray})`
+        ? `COALESCE(${this.jsonSubquery(this.jsonKept(ctx, slot, pulls))}, ${this.jsonEmptyArray})`
         : this.jsonValue(slot);
     if (appends.length === 0) {
       return `CASE WHEN ${isArray} THEN ${kept} END`;
@@ -2769,6 +2769,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** `value`, or the one stored at `slot` where it is NULL. */
   protected jsonOrStored(slot: JsonSlot, value: string): string {
     return `COALESCE(${value}, ${this.jsonValue(slot)})`;
+  }
+
+  /** A subquery answering a JSON value, as an operand of a JSON function. */
+  protected jsonSubquery(select: string): string {
+    return `(${select})`;
   }
 
   /** The elements of `slot` no pulled item equals, as one array, or NULL where none is left. */

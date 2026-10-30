@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.109.1] - 2026-10-29
+
+- **Fixed:** on SQLite 3.54+ (Node 27's `node:sqlite`), a `$pull` stores the array it keeps as an array, not as its JSON text.
+
 ## [0.109.0] - 2026-10-29
 
 - **Breaking:** an upsert's update is its query's `$update`, beside `$conflict` and `$where`, and the options follow the rows, as on every write: `upsertMany(Job, { $conflict: { key: true }, $update: { runs: { $inc: 1 } } }, rows)`. `upsertInto` alike, its query typed `TriggerUpsert<E>`. `npx uql-codemod` rewrites both.
