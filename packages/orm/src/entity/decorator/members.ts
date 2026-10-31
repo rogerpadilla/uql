@@ -6,6 +6,7 @@ import {
   type FilledOptions,
   type filledKey,
   type HookContext,
+  type HoldsKind,
   type HookEvent,
   type IsEqual,
   type Json,
@@ -13,6 +14,7 @@ import {
   type NamedIdKey,
   type NullOf,
   type QuerySql,
+  type ReferencedKey,
   RelationAggregate,
   type RelationManyToManyOptions,
   type RelationManyToOneOptions,
@@ -41,18 +43,38 @@ type MemberDecorator<V, O = unknown> = (value: undefined, context: ClassFieldDec
  * family - `jsonb`, whose document the property shapes, or `numeric`, either number kind - is meant to
  * be narrowed. A column insists on its `null`; an aggregate, whose value is exact, insists on all of it.
  */
-type AdmittingDecorator<V, M, O, Filled = true, Key = false, Lock = false> = <
-  P extends V | undefined,
-  N extends PropertyKey,
->(
+type AdmittingDecorator<V, M, O> = <P extends V | undefined, N extends PropertyKey>(
   value: undefined,
-  context: ClassFieldDecoratorContext<O, P> & { readonly name: N } & ([M] extends [P]
-      ? unknown
-      : { readonly __propertyMustAdmit: M }) &
-    FilledIfBranded<O, N, Filled> &
-    ([Key] extends [true] ? KeyIsNamed<O> : unknown) &
-    ([Lock] extends [true] ? VersionIsBranded<O> : unknown),
+  context: MemberContext<O, P, N, M, true, false, false>,
 ) => void;
+
+/** What {@link AdmittingDecorator} asks of a property, a column's own value aside. */
+type MemberContext<O, P, N, M, Filled, Key, Lock> = ClassFieldDecoratorContext<O, P> & { readonly name: N } & ([
+    M,
+  ] extends [P]
+    ? unknown
+    : { readonly __propertyMustAdmit: M }) &
+  FilledIfBranded<O, N, Filled> &
+  ([Key] extends [true] ? KeyIsNamed<O> : unknown) &
+  ([Lock] extends [true] ? VersionIsBranded<O> : unknown);
+
+/** An {@link AdmittingDecorator} for a column: its class is the decorator's own, and `K` is the key it references, `never` if none. */
+type ColumnDecorator<V, M, Filled, Key, Lock, K = never> = <This, P extends V | undefined, N extends PropertyKey>(
+  value: undefined,
+  context: MemberContext<This, P, N, M, Filled, Key, Lock> & PropertyHoldsKey<P, K>,
+) => void;
+
+/** Refuses a property that does not hold the key a column references: a builder cannot say, a property brands what it does not. */
+type PropertyHoldsKey<P, K> = [K] extends [never]
+  ? unknown
+  : HoldsKind<P, K> extends true
+    ? unknown
+    : { readonly __propertyMustHoldReferencedKey: K };
+
+/** The key a typed column references, `never` otherwise: `f.references` has no type of its own, its value being the key. */
+type ReferencedKeyOf<O> = O extends { readonly type: unknown; readonly references: () => infer C }
+  ? NonNullable<ReferencedKey<C>>
+  : never;
 
 /** A field the `filledKey` brand lets an insert leave out, which only a default can then fill. */
 type FilledIfBranded<O, N, Filled> = [Filled] extends [true]
@@ -63,22 +85,24 @@ type FilledIfBranded<O, N, Filled> = [Filled] extends [true]
       : unknown
     : unknown;
 
+/** What `Field` answers: a column's own checks, and that a property holds the key its column references. */
+type FieldDecorator<O, V> = ColumnDecorator<
+  Narrowable<V> | NullOf<O>,
+  NullOf<O>,
+  O extends FilledOptions ? true : false,
+  IsKey<O>,
+  O extends { readonly version: true } ? true : false,
+  ReferencedKeyOf<O>
+>;
+
 /**
  * Declares a persisted field, the property checked against the column: `@Field(f.string()) name!: string;`, and
  * `@Field(f.string().nullable()) bio?: string | null;` for a column holding `null`. A key is `f.number().id()`.
  * @example `@Field(f.references(() => User).nullable()) userId?: number | null;`
  */
-export function Field<This, O, V>(
-  column: Column<O, V>,
-): AdmittingDecorator<
-  Narrowable<V> | NullOf<O>,
-  NullOf<O>,
-  This,
-  O extends FilledOptions ? true : false,
-  IsKey<O>,
-  O extends { readonly version: true } ? true : false
-> {
-  return (_value, context) => {
+export function Field<O, V>(column: Column<O, V>): FieldDecorator<O, V>;
+export function Field(column: Column) {
+  return (_value: undefined, context: ClassFieldDecoratorContext) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = column[COLUMN_OPTIONS];
   };
 }

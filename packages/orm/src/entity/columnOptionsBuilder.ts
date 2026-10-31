@@ -88,10 +88,6 @@ export class ColumnOptionsBuilder {
     return this.with({ onDelete });
   }
 
-  narrow(): ColumnOptionsBuilder {
-    return this;
-  }
-
   as(computed: QuerySql): ColumnOptionsBuilder {
     return this.with({ computed });
   }

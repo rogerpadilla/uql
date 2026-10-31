@@ -1,6 +1,7 @@
 /**
  * A consuming project as `tsc` sees it: decorated entities, `queries` call sites mixing the clauses a real query
- * does, then `definitions` decorated and `defined` entities from `defineEntity` declaring the same indexes, each read once.
+ * does, then `definitions` decorated and `defined` entities from `defineEntity` declaring the same indexes, each read once,
+ * and `wide` decorated pairs whose every column names its SQL type and whose relation is checked against each field.
  * The caller makes `uql-orm` resolve. Shared by `type-perf.ts`, `type-floor.ts` and `packages/orm/verify-dist.ts`.
  */
 
@@ -128,13 +129,42 @@ export const DefinedChild${i} = defineEntity({
 }).relations((rel) => ({ parent: () => rel.manyToOne(Defined${i}, { references: (child) => child.parentId }) }));
 ${read('Defined', i)}`;
 
-/** How many of each block the project holds. */
-export type FixtureSize = { readonly queries: number; readonly definitions: number; readonly defined: number };
-
 const times = (count: number, write: (i: number) => string) => Array.from({ length: count }, (_, i) => write(i));
 
+/** Thirty columns of three SQL types, as a generated entity declares them. */
+const wideColumns = times(
+  10,
+  (i) => /*ts*/ `  @Field(f.column('varchar').nullable()) text${i}?: string | null;
+  @Field(f.column('int').nullable()) count${i}?: number | null;
+  @Field(f.column('timestamptz').nullable()) at${i}?: Date | null;`,
+).join('\n');
+
+/** A wide entity and one referencing it by a column-level foreign key and a relation. */
+const wideEntity = (i: number) => /*ts*/ `
+@Entity() export class Wide${i} {
+  @Field(f.number().id()) id?: number;
+${wideColumns}
+}
+@Entity() export class WideChild${i} {
+  @Field(f.number().id()) id?: number;
+  @Field(f.number().references(() => Wide${i}).nullable()) wideId?: number | null;
+${wideColumns}
+  @ManyToOne({ entity: () => Wide${i}, references: (child) => child.wideId }) wide?: Wide${i};
+}`;
+
+/** How many of each block the project holds, none unless stated. */
+export type FixtureSize = {
+  readonly queries?: number;
+  readonly definitions?: number;
+  readonly defined?: number;
+  readonly wide?: number;
+};
+
+/** Enough to compile every block as a consumer. */
+export const ONE_OF_EACH: FixtureSize = { queries: 1, definitions: 1, defined: 1, wide: 1 };
+
 /** The project's sources by file name. */
-function sources({ queries, definitions, defined }: FixtureSize): Record<string, string> {
+function sources({ queries = 0, definitions = 0, defined = 0, wide = 0 }: FixtureSize): Record<string, string> {
   return {
     'entities.ts': entities,
     'payloads.ts': /*ts*/ `import type { StandardSchemaV1 } from 'uql-orm';
@@ -157,6 +187,7 @@ export declare const Tags: StandardSchemaV1<unknown, string[]>;
       /*ts*/ `import { Settings, Tags } from './payloads.js';`,
       ...times(defined, definedEntity),
     ].join('\n'),
+    'wide.ts': [/*ts*/ `import { Entity, f, Field, ManyToOne } from 'uql-orm';`, ...times(wide, wideEntity)].join('\n'),
   };
 }
 

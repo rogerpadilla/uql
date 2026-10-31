@@ -15,7 +15,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFi
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import { writeConsumerProject } from '../../scripts/typeFixture.js';
+import { ONE_OF_EACH, writeConsumerProject } from '../../scripts/typeFixture.js';
 
 const pkgDir = import.meta.dirname;
 const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
@@ -344,7 +344,7 @@ function installConsumerProject(): { checkDir: string; installed: string } {
   );
   writeConsumerProject(
     checkDir,
-    { queries: 1, definitions: 1, defined: 1 },
+    ONE_OF_EACH,
     // What a browser consumer has, and no more; `declaration` as a library exporting its entities emits them.
     {
       target: 'es2025',

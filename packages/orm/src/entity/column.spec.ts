@@ -88,6 +88,5 @@ describe('f', () => {
     const price = money.nullable();
     expect(optionsOf(money)).toEqual({ type: 'decimal', precision: 12, scale: 2 });
     expect(optionsOf(price)).toEqual({ type: 'decimal', precision: 12, scale: 2, nullable: true });
-    expect(money.narrow()).toBe(money);
   });
 });

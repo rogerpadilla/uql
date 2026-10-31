@@ -44,7 +44,7 @@ The pool's first argument is the driver's own config; set an acquire timeout the
 
 Two forms, mixable per entity, producing the same queries and types:
 
-- **Decorators**: a named class type, and column-level foreign keys (`f.references`), so entities may reference each other in any order. Slightly stricter: a property may be typed narrower than its column (a branded id), and `mappedBy` must name a relation or foreign key at compile time. Each field is written twice (builder and property), and it needs the TC39 decorator transform.
+- **Decorators**: a named class type, and column-level foreign keys (`f.references`), so entities may reference each other in any order. A property may be typed narrower than its column, a branded id, and `f.references(() => User)` takes the key's type. Slightly stricter: `mappedBy` must name a relation or foreign key at compile time. Each field is written twice (builder and property), and it needs the TC39 decorator transform.
 - **`defineEntity`**: the row type is derived, nothing written twice; no transform, so it fits projects on legacy decorators (NestJS, Angular), and it can be built at run time. Cheaper to type-check. A shared set of fields spreads into `fields`.
 
 `uql-codemod` cannot convert one form into the other. Details: https://uql-orm.dev/entities/define-entity.md
@@ -138,7 +138,7 @@ export const Book = defineEntity({
   }));
 ```
 
-- Columns are the same builders. No `!`, `?` or brands to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union.
+- Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it.
 - `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `hooks`, then `relations` last; only a `filters` reading through relations follows it.
 - A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.

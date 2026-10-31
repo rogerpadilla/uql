@@ -33,9 +33,7 @@ export type PrimaryKey = string | number | bigint;
  * Brands a JSON field so it reads as a field rather than a relation: `settings?: Json<{ isArchived?: boolean }>`.
  * A bare `Json` holds any JSON value. A `null` in `T` stays `null`, so `Json<X | null>` may be `null`.
  */
-export type Json<T extends object | string | number | boolean | null = JsonDocument> = T extends null
-  ? null
-  : T & JsonBrand;
+export type Json<T extends JsonScalar | object | null = JsonDocument> = T extends null ? null : T & JsonBrand;
 
 /** Any value a JSON column holds, which a bare {@link Json} stands for. */
 export type JsonDocument = string | number | boolean | readonly unknown[] | { readonly [key: string]: unknown };
@@ -52,7 +50,18 @@ export interface JsonBrand {
  */
 export type IsJson<T> = typeof json extends keyof T ? true : false;
 
-export type ExpandScalar<T> = T extends Date ? Date | string : T;
+/** Whether `T` carries a brand: a primitive with a tag, or a `Date` narrower than `Date`. */
+export type IsBranded<T> = T extends Date
+  ? Date extends T
+    ? false
+    : true
+  : T extends string | number | bigint
+    ? T extends object
+      ? true
+      : false
+    : false;
+
+export type ExpandScalar<T> = T extends Date ? (IsBranded<T> extends true ? T : Date | string) : T;
 
 /**
  * A raw database result row before entity mapping.

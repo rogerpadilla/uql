@@ -1,26 +1,20 @@
 import type { ForeignKeyAction } from '../schema/types.js';
 import type { TYPE_BOUNDS, VALUE_DECIDERS } from '../util/fieldOption.util.js';
-import type { ReferencedKey } from './definedEntity.js';
 import type {
-  BlobColumnType,
-  BooleanColumnType,
   ColumnType,
-  DateColumnType,
   DdlDefault,
-  JsonColumnType,
-  NumericColumnType,
-  StringColumnType,
-  VectorColumnType,
+  FamilyOf,
   FieldOptions,
   HasCompositeKey,
   IdValue,
-  JoinKind,
+  JsonColumnType,
   OnFieldCallback,
   StampEvent,
+  TsTypeOf,
 } from './entity.js';
 import type { QuerySql } from './querySql.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
-import type { Type, Json, AbstractType } from './utility.js';
+import type { Type, Json, JsonDocument, JsonScalar, AbstractType } from './utility.js';
 import type { VectorDistance } from './vector.js';
 
 /** Where a column builder holds its options, so every string key of a builder is a method. */
@@ -112,15 +106,13 @@ export interface ColumnBuilder<in out O, in out V, F extends Family> extends Col
   /** The SQL type where it differs from the one the builder implies; an engine's own, `sql`citext``, verbatim. */
   columnType(type: ColumnType): With<O, V, { readonly columnType: ColumnType }, F>;
   columnType(this: Lacking<TypeBound>, type: QuerySql): With<O, V, { readonly columnType: QuerySql }, F>;
-  /** A foreign key to `entity`'s key, which the column has to hold the kind of: `f.number().references(() => User)`. */
-  references<C extends Type<object>>(entity: () => C & HoldsKey<C, V>): With<O, V, { readonly references: () => C }, F>;
+  /** A foreign key to `entity`'s key, which `@Field` holds its property to: `f.number().references(() => User)`. */
+  references<C extends Type<object>>(entity: () => C): With<O, V, { readonly references: () => C }, F>;
   /** The foreign key's delete action. */
   onDelete(
     this: Column<{ readonly references: unknown }>,
     action: ForeignKeyAction,
   ): With<O, V, { readonly onDelete: ForeignKeyAction }, F>;
-  /** Narrows the value a row holds, a branded id or a literal union: `f.uuid().narrow<UserId>()`. */
-  narrow<T extends V>(): Builders<O, T>[F];
   /**
    * A column the database computes from `expression`, read in each query naming it; `stored()` keeps it. A relation
    * aggregate is no column's SQL: it is read on each query, so `@Computed` or `aggregates` declares one.
@@ -170,24 +162,16 @@ export interface VersionColumn<in out O, in out V> extends Column<O, V> {
   comment(text: string): VersionColumn<O & { readonly comment: string }, V>;
 }
 
-/** Refuses a target whose key is another kind of value than the column holds, which no join matches. */
-type HoldsKey<C, V> = [JoinKind<NonNullable<ReferencedKey<C>>>] extends [JoinKind<V>]
-  ? unknown
-  : { readonly __columnMustHoldReferencedKey: ReferencedKey<C> };
-
-/** The column types holding an exact decimal, read as its text: a JS number would round it. */
-type DecimalType = 'decimal' | 'numeric';
-
 /** A JSON column of `T`, typed by the payload its schema validates to, or any document with none. */
 type JsonColumn<T extends 'json' | 'jsonb'> = {
-  (): ColumnBuilder<{ readonly type: T }, Json, 'json'>;
+  <P extends JsonScalar | object = JsonDocument>(): ColumnBuilder<{ readonly type: T }, Json<P>, 'json'>;
   <S extends StandardSchemaV1>(
     schema: S,
   ): ColumnBuilder<{ readonly type: T; readonly schema: S }, JsonOutput<PayloadOf<S['~standard']['types']>>, 'json'>;
 };
 
 /** A schema's output as a JSON column holds it: a document, or the primitive a payload may be. */
-type JsonOutput<O> = O extends object | string | number | boolean | null ? Json<O> : Json;
+type JsonOutput<O> = O extends JsonScalar | object | null ? Json<O> : Json;
 
 /** The output a schema's `types` states, `unknown` where it states none: `never` would type the column as nothing. */
 type PayloadOf<T> =
@@ -207,22 +191,32 @@ type ReferenceValue<C> =
       : NonNullable<IdValue<E>>
     : never;
 
-/** The builders, one per value a column holds; `column` takes any SQL type, its family deciding what it offers. */
+/** The builder of a SQL type, its value what the type reads as: a family alone does not say, `time` and a decimal being text. */
+type ColumnOf<T extends ColumnType> = [FamilyOf<T>] extends [never]
+  ? ColumnBuilder<{ readonly type: ColumnType }, unknown, 'any'>
+  : Builders<{ readonly type: T }, T extends JsonColumnType ? Json : TsTypeOf<T>>[FamilyOf<T>];
+
+/**
+ * The builders, one per value a column holds; `column` takes any SQL type, its family deciding what it offers. A
+ * scalar's or a document's type argument narrows what a row holds, a brand or a payload: `f.uuid<UserId>()`.
+ */
 export type ColumnFactory = {
-  string(): StringColumn<{ readonly type: StringConstructor }, string>;
-  text(): StringColumn<{ readonly type: 'text' }, string>;
-  uuid(): StringColumn<{ readonly type: 'uuid' }, string>;
-  number(): NumericColumn<{ readonly type: NumberConstructor }, number>;
-  bigint(): NumericColumn<{ readonly type: BigIntConstructor }, bigint>;
+  string<V extends string = string>(): StringColumn<{ readonly type: StringConstructor }, V>;
+  text<V extends string = string>(): StringColumn<{ readonly type: 'text' }, V>;
+  uuid<V extends string = string>(): StringColumn<{ readonly type: 'uuid' }, V>;
+  number<V extends number = number>(): NumericColumn<{ readonly type: NumberConstructor }, V>;
+  bigint<V extends bigint = bigint>(): NumericColumn<{ readonly type: BigIntConstructor }, V>;
   /** An exact decimal, read as its text: a JS number would round it. `f.number().precision()` opts in to that. */
-  decimal(): NumericColumn<{ readonly type: 'decimal' }, string>;
-  decimal(precision: number): NumericColumn<{ readonly type: 'decimal'; readonly precision: number }, string>;
-  decimal(
+  decimal<V extends string = string>(): NumericColumn<{ readonly type: 'decimal' }, V>;
+  decimal<V extends string = string>(
+    precision: number,
+  ): NumericColumn<{ readonly type: 'decimal'; readonly precision: number }, V>;
+  decimal<V extends string = string>(
     precision: number,
     scale: number,
-  ): NumericColumn<{ readonly type: 'decimal'; readonly precision: number; readonly scale: number }, string>;
+  ): NumericColumn<{ readonly type: 'decimal'; readonly precision: number; readonly scale: number }, V>;
   boolean(): ColumnBuilder<{ readonly type: BooleanConstructor }, boolean, 'boolean'>;
-  date(): DateColumn<{ readonly type: DateConstructor }, Date>;
+  date<V extends Date = Date>(): DateColumn<{ readonly type: DateConstructor }, V>;
   json: JsonColumn<'json'>;
   jsonb: JsonColumn<'jsonb'>;
   vector(dimensions: number): VectorColumn<{ readonly type: 'vector'; readonly dimensions: number }, readonly number[]>;
@@ -239,20 +233,8 @@ export type ColumnFactory = {
    */
   version(): VersionColumn<{ readonly type: NumberConstructor; readonly version: true }, number>;
   version(type: BigIntConstructor): VersionColumn<{ readonly type: BigIntConstructor; readonly version: true }, bigint>;
-  /** A column of SQL type `type`, offering what its family takes. */
-  column(type: DecimalType): NumericColumn<{ readonly type: DecimalType }, string>;
-  column(
-    type: Exclude<NumericColumnType, DecimalType>,
-  ): NumericColumn<{ readonly type: NumericColumnType }, number | bigint>;
-  column(type: StringColumnType): StringColumn<{ readonly type: StringColumnType }, string>;
-  column(type: 'time'): DateColumn<{ readonly type: 'time' }, string>;
-  column(type: Exclude<DateColumnType, 'time'>): DateColumn<{ readonly type: DateColumnType }, Date>;
-  column(type: VectorColumnType): VectorColumn<{ readonly type: VectorColumnType }, readonly number[]>;
-  column(type: BooleanColumnType): ColumnBuilder<{ readonly type: BooleanColumnType }, boolean, 'boolean'>;
-  column(type: JsonColumnType): ColumnBuilder<{ readonly type: JsonColumnType }, Json, 'json'>;
-  column(type: BlobColumnType): ColumnBuilder<{ readonly type: BlobColumnType }, Uint8Array, 'blob'>;
-  /** A column whose type is data, as an entity defined at run time declares one. */
-  column(type: ColumnType): ColumnBuilder<{ readonly type: ColumnType }, unknown, 'any'>;
+  /** A column of SQL type `type`, offering what its family takes, or what any does where its type is data. */
+  column<T extends ColumnType>(type: T): ColumnOf<T>;
   /** A foreign key to `entity`'s key, its column typed as that key is. */
   references<C extends Type<object>>(
     entity: () => C,

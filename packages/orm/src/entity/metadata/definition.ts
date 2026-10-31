@@ -1027,7 +1027,7 @@ export function generatesKey<E>(meta: EntityMeta<E>): boolean {
   return !!sole && isAutoIncrement(sole.field, ownsSoleKey(meta, sole.key));
 }
 
-/** The kinds a column of `type` holds as a join compares them, as `JoinKind` does: a bigint is a number, which BIGINT widens. */
+/** The kinds a column of `type` holds as a join compares them, as `HoldsKind` does: a bigint is a number, which BIGINT widens. */
 function joinedKinds(type: FieldMeta['type']) {
   const types = valueTypesOf(type);
   return types && [...new Set(types.map((kind) => (kind === 'bigint' ? 'number' : kind)))];

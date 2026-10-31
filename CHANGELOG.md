@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.110.0] - 2026-10-31
+
+- A column constructor's type argument narrows what a row holds: `f.uuid<UserId>()` for a brand, `f.json<Settings>()` for a payload with no schema. `.narrow<T>()` is gone.
+- A brand holds across a foreign key: a column referencing a branded key has to carry the brand, in a relation and on a decorated property.
+- A filter on a branded `Date` takes the brand, not a plain `Date` or string.
+- `f.column(type)` is one signature, so a type spanning several families offers what any column does. The `DateColumnType`, `BlobColumnType` and `VectorColumnType` exports are gone: `ColumnType` covers them.
+
 ## [0.109.2] - 2026-10-30
 
 - The deprecated `raw` export is gone: `sql` replaces it, and `npx uql-codemod` renames it.

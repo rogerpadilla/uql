@@ -8,6 +8,7 @@ import type { StandardSchemaV1 } from './standardSchema.js';
 import type {
   AtLeastOne,
   ExactlyOne,
+  IsBranded,
   IsEqual,
   Merge,
   IsJson,
@@ -383,7 +384,7 @@ type ColumnTypeOf<F extends ColumnFamily> = (typeof COLUMN_TYPES)[F][number];
 
 export type NumericColumnType = ColumnTypeOf<'numeric'>;
 export type StringColumnType = ColumnTypeOf<'string'>;
-export type DateColumnType = ColumnTypeOf<'date'>;
+type DateColumnType = ColumnTypeOf<'date'>;
 
 /** A date column holding a time of day, which names no day: every driver reads it back as text, never a `Date`. */
 type TimeColumnType = 'time';
@@ -392,12 +393,17 @@ type TimeColumnType = 'time';
 type DecimalColumnType = 'decimal' | 'numeric';
 export type JsonColumnType = ColumnTypeOf<'json'>;
 
-export type BlobColumnType = ColumnTypeOf<'blob'>;
+type BlobColumnType = ColumnTypeOf<'blob'>;
 export type BooleanColumnType = ColumnTypeOf<'boolean'>;
-export type VectorColumnType = ColumnTypeOf<'vector'>;
+type VectorColumnType = ColumnTypeOf<'vector'>;
 
 /** SQL column types supported by uql migrations. */
 export type ColumnType = ColumnTypeOf<ColumnFamily>;
+
+/** The family every type of `T` belongs to, `never` where they span several: then only the run time knows. */
+export type FamilyOf<T extends ColumnType> = {
+  readonly [F in ColumnFamily]: [T] extends [ColumnTypeOf<F>] ? F : never;
+}[ColumnFamily];
 
 /** What a field declares its `type` as: a constructor, or a column type. */
 export type FieldType =
@@ -502,15 +508,15 @@ export type OnFieldCallback<V = unknown> = V | QuerySql | (() => V | QuerySql);
  */
 export type DdlDefault<V, T = NonNullable<V>> =
   IsJsonColumn<T> extends true
-    ? unknown extends JsonDocument<T>
+    ? unknown extends StoredDocument<T>
       ? JsonDdlDefault
-      : NonNullable<JsonDocument<T>>
+      : NonNullable<StoredDocument<T>>
     : [TsTypeOf<FieldType>] extends [T]
       ? JsonDdlDefault | T
       : T;
 
 /** The document a JSON column declared as `T` stores: its payload, or a list of them for `Json<P>[]`. */
-type JsonDocument<T> = IsJson<T> extends true ? UnwrapJson<T> : readonly UnwrapJson<NonNullable<Unpacked<T>>>[];
+type StoredDocument<T> = IsJson<T> extends true ? UnwrapJson<T> : readonly UnwrapJson<NonNullable<Unpacked<T>>>[];
 
 /** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list or a scalar included. */
 type JsonDdlDefault = JsonScalar | Record<string, unknown> | readonly unknown[];
@@ -596,14 +602,32 @@ export type FieldKeyOf<E, T> = {
   readonly [K in FieldKey<E>]-?: [NonNullable<E[K]>] extends [T] ? K : never;
 }[FieldKey<E>];
 
-/** A value's kind as a join compares it: a number and a bigint are one kind, which BIGINT widens. */
-export type JoinKind<T> = T extends number | bigint ? number : T;
+/** A value's kind as a join compares it, a brand aside: a number and a bigint are one kind, which BIGINT widens. */
+type JoinKind<T> = T extends number | bigint
+  ? number
+  : T extends string
+    ? T extends object
+      ? string
+      : T
+    : T extends Date
+      ? Date
+      : T;
+
+/** Whether a field of `V` holds a key of `K`: the same kind, and its brand where it has one, unless `V` is data's. */
+export type HoldsKind<V, K> =
+  true extends IsBranded<K>
+    ? [unknown extends V ? K : NonNullable<V>] extends [K]
+      ? true
+      : false
+    : [JoinKind<K>] extends [JoinKind<V>]
+      ? true
+      : false;
 
 /** The fields of `O` that can hold a key of `V`'s kind, compared as a join compares it at run time. */
 export type KeyHolding<O, V> = [V] extends [never]
   ? never
   : {
-      readonly [K in keyof O]-?: [JoinKind<NonNullable<V>>] extends [JoinKind<NonNullable<O[K]>>] ? K : never;
+      readonly [K in keyof O]-?: HoldsKind<O[K], NonNullable<V>> extends true ? K : never;
     }[FieldKey<O>];
 
 /** A relation once `getMeta` resolved it: `references` settled into pairs and `mappedBy` a name. */

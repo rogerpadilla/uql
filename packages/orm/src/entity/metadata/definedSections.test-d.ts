@@ -111,7 +111,7 @@ export const SharedWorkspace = defineEntity({ name: 'SharedWorkspace', fields: {
 );
 export const SharedDoc = defineEntity({
   name: 'SharedDoc',
-  fields: { id: f.uuid().id(), workspaceId: f.uuid().narrow<string>() },
+  fields: { id: f.uuid().id(), workspaceId: f.uuid() },
 }).relations((rel) => workspaceOf(rel));
 expectTypeOf<InstanceType<typeof SharedDoc>['workspace']>().toMatchTypeOf<{ readonly id: string } | undefined>();
 expectTypeOf<InstanceType<typeof SharedWorkspace>['docs']>().toMatchTypeOf<

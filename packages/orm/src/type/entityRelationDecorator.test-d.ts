@@ -33,11 +33,11 @@ export class Pointer {
       .references(() => StringKeyed),
   )
   keyedId?: string | null;
+  // @ts-expect-error a foreign key holds the key it references, a string here
   @Field(
     f
       .number()
       .nullable()
-      // @ts-expect-error a foreign key holds the key it references, a string here
       .references(() => StringKeyed),
   )
   miskeyedId?: number | null;

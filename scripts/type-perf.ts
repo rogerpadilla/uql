@@ -60,10 +60,11 @@ const downloads = mkdtempSync(resolve(tmpdir(), 'uql-type-perf-published-'));
 try {
   const targets = [['dist', built], ...(version ? [[version, await published(version, downloads)]] : [])];
   const rows: readonly (readonly [string, FixtureSize])[] = [
-    ['fixed (0 queries)', { queries: 0, definitions: 0, defined: 0 }],
-    [`${calls * 4} queries`, { queries: calls, definitions: 0, defined: 0 }],
-    [`${calls} definitions`, { queries: 0, definitions: calls, defined: 0 }],
-    [`${calls} defined`, { queries: 0, definitions: 0, defined: calls }],
+    ['fixed (0 queries)', {}],
+    [`${calls * 4} queries`, { queries: calls }],
+    [`${calls} definitions`, { definitions: calls }],
+    [`${calls} defined`, { defined: calls }],
+    [`${calls} wide`, { wide: calls }],
   ];
   for (const [label, declarations] of targets) {
     for (const [what, size] of rows) {

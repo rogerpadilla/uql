@@ -33,7 +33,7 @@ export function checkTsconfig(fileName: string, text: string): readonly string[]
   if (target && ts.isStringLiteral(target) && target.text.toLowerCase() === 'esnext') {
     unresolved.push(
       `${fileName}: 'target' is 'esnext', the one target that emits decorator syntax untransformed. ` +
-        'Change it to any dated target, such as `es2024`.',
+        'Change it to any dated target, such as `es2022`.',
     );
   }
 

@@ -5,13 +5,14 @@
  */
 import { expectTypeOf } from 'vitest';
 import { type ColumnOptionsOf, type ColumnValueOf, type Json, sql } from '../index.js';
-import type { StandardSchemaV1 } from '../type/index.js';
+import type { ColumnType, StandardSchemaV1 } from '../type/index.js';
 import { f } from './column.js';
 
 declare const settingsSchema: StandardSchemaV1<unknown, { theme: string; tags?: string[] }>;
+declare const dataColumnType: ColumnType;
+declare const eitherFamilyType: 'int' | 'varchar';
+declare const oneFamilyType: 'int' | 'smallint';
 declare const schemaWithoutTypes: StandardSchemaV1 & { readonly '~standard': { readonly types: undefined } };
-
-type UserId = string & { readonly __brand: 'UserId' };
 
 export function values() {
   expectTypeOf<ColumnValueOf<ReturnType<typeof f.string>>>().toEqualTypeOf<string>();
@@ -26,8 +27,20 @@ export function values() {
   expectTypeOf<ColumnValueOf<typeof document>>().toEqualTypeOf<Json>();
   const untyped = f.json(schemaWithoutTypes);
   expectTypeOf<ColumnValueOf<typeof untyped>>().toEqualTypeOf<Json>();
-  const owner = f.uuid().narrow<UserId>();
-  expectTypeOf<ColumnValueOf<typeof owner>>().toEqualTypeOf<UserId>();
+  const time = f.column('time');
+  expectTypeOf<ColumnValueOf<typeof time>>().toEqualTypeOf<string>();
+  const stamp = f.column('timestamptz');
+  expectTypeOf<ColumnValueOf<typeof stamp>>().toEqualTypeOf<Date>();
+  const count = f.column('int');
+  expectTypeOf<ColumnValueOf<typeof count>>().toEqualTypeOf<number | bigint>();
+  const bytes = f.column('bytea');
+  expectTypeOf<ColumnValueOf<typeof bytes>>().toEqualTypeOf<Uint8Array>();
+  const fromData = f.column(dataColumnType);
+  expectTypeOf<ColumnValueOf<typeof fromData>>().toEqualTypeOf<unknown>();
+  const eitherFamily = f.column(eitherFamilyType).nullable();
+  expectTypeOf<ColumnValueOf<typeof eitherFamily>>().toEqualTypeOf<unknown>();
+  const oneFamily = f.column(oneFamilyType).precision(10);
+  expectTypeOf<ColumnValueOf<typeof oneFamily>>().toEqualTypeOf<number | bigint>();
   const lock = f.version();
   expectTypeOf<ColumnValueOf<typeof lock>>().toEqualTypeOf<number>();
   const wide = f.version(BigInt);
@@ -93,8 +106,6 @@ export function refusesWhatAnotherLeavesUnread() {
   f.number().default('zero');
   // @ts-expect-error or one of its enum's members
   f.enum(['draft', 'published']).default('archived');
-  // @ts-expect-error the narrowed type is the column's own
-  f.number().narrow<string>();
 }
 
 export function boundsAreTakenInEitherOrderWhileTheTypeIsAName() {

@@ -55,11 +55,11 @@ export class Referrer {
   wideCompanyId?: bigint | null;
   // @ts-expect-error a string property cannot hold Company's numeric key
   @Field(f.references(() => Company).nullable()) misTypedId?: string | null;
+  // @ts-expect-error a text column cannot hold Company's numeric key
   @Field(
     f
       .string()
       .nullable()
-      // @ts-expect-error a text column cannot hold Company's numeric key
       .references(() => Company),
   )
   textCompanyId?: string | null;

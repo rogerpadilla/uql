@@ -11,7 +11,7 @@ describe('tsconfig', () => {
       `{
   // Kept as the project wrote it, comments included.
   "compilerOptions": {
-    "target": "es2024",
+    "target": "es2025",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strict": true

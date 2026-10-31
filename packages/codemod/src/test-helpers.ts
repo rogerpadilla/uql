@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 export const TSCONFIG = `{
   "compilerOptions": {
-    "target": "es2024",
+    "target": "es2025",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strict": true
