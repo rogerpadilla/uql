@@ -709,14 +709,19 @@ export abstract class AbstractQuerier implements Querier {
   private async insertIds<E extends object>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]> {
+  ): Promise<NonNullable<WrittenId<E>>[]> {
     if (!payload.length) {
       return [];
     }
     const meta = getMeta(entity);
     return this.inserting(entity, payload, async (rows) => {
       await this.insertRows(entity, rows, (inserting) => this.internalInsertMany(entity, inserting));
-      return writtenIds(meta, rows);
+      return writtenIds(meta, rows).map((id) => {
+        if (id == null) {
+          throw new UqlUsageError(`an insert into '${meta.name}' left its key empty: name it`);
+        }
+        return id;
+      });
     });
   }
 
@@ -1115,7 +1120,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['upserted']>;
   upsertOne<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -1126,7 +1131,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['upserted']>;
   async upsertOne<E extends object>(
     ...args: PayloadArgs<E, QueryUpsert<E>, EntityWrite<E>, WriteOptions<E>>
   ): Promise<unknown> {
@@ -1144,7 +1149,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
   upsertMany<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -1155,7 +1160,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
   async upsertMany<E extends object>(
     ...args: PayloadArgs<E, QueryUpsert<E>, readonly EntityWrite<E>[], WriteOptions<E>>
   ) {
@@ -1679,24 +1684,14 @@ export abstract class AbstractQuerier implements Querier {
     );
   }
 
-  /**
-   * Saves the rows a relation points at, each one's id what the pointer needs: a MySQL batch mixing supplied and
-   * generated keys cannot report it, so one it could not is refused rather than left pointing nowhere.
-   */
+  /** Saves the rows a relation points at, each one's id what the pointer needs. */
   private async saveTargets<E extends object>(
     entity: Type<E>,
     relKey: RelationKey<E>,
     rows: readonly object[],
   ): Promise<WrittenId<object>[]> {
     const relEntity = relationOf(getMeta(entity), relKey).entity();
-    const ids = await this.saveMany(relEntity, rows);
-    if (ids.includes(undefined)) {
-      throw new UqlUsageError(
-        `'${relEntity.name}' rows saved through '${entity.name}.${relKey}' reported no id, so they cannot be pointed at. ` +
-          'Insert them with their own ids, or save the relation in its own statement.',
-      );
-    }
-    return ids.filter((id) => id !== undefined);
+    return this.saveMany(relEntity, rows);
   }
 
   /**

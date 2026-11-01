@@ -49,7 +49,7 @@ describe('a many-to-many on rows the database keys', () => {
   /** A link needs the target's id, which a row the database keyed reports none of on MySQL. */
   it('should refuse to link rows whose ids the insert could not report', async () => {
     await expect(pool.insertOne(LabelPost, { labels: [{ name: 'x' }] })).rejects.toThrow(
-      "'LinkedLabel' rows saved through 'LabelPost.labels' reported no id, so they cannot be pointed at",
+      "'uql_linked_label.id' is filled by nothing",
     );
     expect(await pool.count(LabelLink, {})).toBe(0);
   });

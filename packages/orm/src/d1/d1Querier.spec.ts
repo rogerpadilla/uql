@@ -87,7 +87,7 @@ describe('D1Querier', () => {
 
     await d1.insertMany(
       Coupon,
-      Array.from({ length: 60 }, (_, index) => ({ code: `c${index}`, label: 'x' })),
+      Array.from({ length: 60 }, (_, index) => ({ id: index + 1, code: `c${index}`, label: 'x' })),
     );
 
     expect(mockDb.prepare.mock.calls.map(([sql]) => String(sql).split(' ')[0])).toEqual(['INSERT', 'INSERT']);

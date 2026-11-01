@@ -19,10 +19,12 @@ class Enrolment {
 }
 
 export async function aSingleKeyReportsItsValue() {
-  const inserted: string | undefined = await querier.insertOne(User, { name: 'a' });
-  const saved: string | undefined = await querier.saveOne(User, { name: 'a' });
-  const many: (string | undefined)[] = await querier.insertMany(User, [{ name: 'a' }]);
-  return [inserted, saved, many];
+  const inserted: string = await querier.insertOne(User, { name: 'a' });
+  const saved: string = await querier.saveOne(User, { name: 'a' });
+  const many: string[] = await querier.insertMany(User, [{ name: 'a' }]);
+  // @ts-expect-error an upsert may leave a row no read finds
+  const upserted: string = await querier.upsertOne(User, { $conflict: { name: true } }, { name: 'a' });
+  return [inserted, saved, many, upserted];
 }
 
 export async function aCompositeReportsItsKeyMap() {

@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.111.1] - 2026-11-01
+
+- `insertOne`, `insertMany`, `saveOne` and `saveMany` resolve to a defined key, `number` for `id?: number`, with no `!`.
+- An insert on a SQL engine refuses a key it leaves out unless the entity declares what fills it: `.autoIncrement()`, `.default()` or `.onInsert()`. A default only the table states now needs declaring.
+
 ## [0.111.0] - 2026-11-01
 
 - **Breaking:** `f.number().autoIncrement()` is a generated key. `.id()` alone is now a key you supply, and `.autoIncrement(false)` is gone. `npx uql-codemod` rewrites numeric keys.

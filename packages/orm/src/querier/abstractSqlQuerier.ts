@@ -420,7 +420,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const [idKey] = meta.ids;
     const sole = soleId(meta);
     const generatedKey = generatesKey(meta);
-    await this.fillDefaultedKeys(meta, rows);
+    await this.settleLeftOutKeys(meta, rows);
     // Only a statement whose every row left its key to the database needs its ids, which a supplied one would void
     // in a header: a `RETURNING` reports them all, a header only a generated key's.
     const statements = this.insertChunks(meta, rows).map((indexes) => ({
@@ -461,12 +461,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Writes a defaulted key onto each row naming none, where the engine reports only a key it generates: the row then
-   * names its key, the value the column would have taken, SQL evaluated first.
+   * Settles the key of each row leaving it out, unless the database generates it. With no default nothing fills it, so
+   * the insert is refused unwritten; where the engine reports only a key it generates, the row names the value its
+   * default would have taken, SQL evaluated first.
    */
-  private async fillDefaultedKeys<E extends object>(meta: EntityMeta<E>, rows: EntityData<E>[]): Promise<void> {
+  private async settleLeftOutKeys<E extends object>(meta: EntityMeta<E>, rows: EntityData<E>[]): Promise<void> {
     const sole = soleId(meta);
-    if (sole?.field.defaultValue === undefined || this.dialect.insertIdSource === 'returning') {
+    if (!sole || generatesKey(meta)) {
       return;
     }
     const unnamed = rows.filter((row) => !namesKey(meta, row));
@@ -474,6 +475,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       return;
     }
     const value = sole.field.defaultValue;
+    if (value === undefined) {
+      throw new UqlUsageError(`'${meta.name}.${sole.key}' is filled by nothing: name it, or declare what fills it`);
+    }
+    if (this.dialect.insertIdSource === 'returning') {
+      return;
+    }
     const keys = value instanceof QuerySql ? await this.evaluated(value, unnamed.length) : unnamed.map(() => value);
     unnamed.forEach((row, at) => {
       row[sole.key] = keys[at] as E[typeof sole.key];

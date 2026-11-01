@@ -230,7 +230,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['upserted']>;
 
   /** Insert or update records by `q.$conflict`'s keys, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
   upsertMany<
@@ -243,7 +243,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
 
   /** Insert a record, or upsert one naming its key; resolves to its id, or the row `returning` reads back. */
   saveOne<

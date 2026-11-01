@@ -146,18 +146,15 @@ describe('insertMany id semantics', () => {
   it('should return the real persisted value (not the internal rowid) when the primary key is not database-generated', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
     await querier.run(sql.text('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)'));
-    // No id provided: the persisted key is NULL, which names no row, so none is reported - never the rowid.
-    const generated = await querier.insertMany(TextPkNote, [{ title: 'no pk' }]);
-    expect(generated).toEqual([undefined]);
+    // No id provided, and nothing fills it: refused unwritten, where the table would have taken a NULL key.
+    await expect(querier.insertMany(TextPkNote, [{ title: 'no pk' }])).rejects.toThrow(
+      "'TextPkNote.code' is filled by nothing",
+    );
     // Provided ids are returned as-is.
-    const provided = await querier.insertMany(TextPkNote, [{ code: 'abc', title: 'has pk' }, { title: 'still no pk' }]);
-    expect(provided).toEqual(['abc', undefined]);
+    const provided = await querier.insertMany(TextPkNote, [{ code: 'abc', title: 'has pk' }]);
+    expect(provided).toEqual(['abc']);
     const founds = await querier.findMany(TextPkNote, { $select: { code: true, title: true }, $sort: { title: 1 } });
-    expect(founds).toEqual([
-      { code: 'abc', title: 'has pk' },
-      { code: null, title: 'no pk' },
-      { code: null, title: 'still no pk' },
-    ]);
+    expect(founds).toEqual([{ code: 'abc', title: 'has pk' }]);
     await querier.release();
   });
 

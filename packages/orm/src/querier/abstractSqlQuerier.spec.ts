@@ -198,7 +198,8 @@ describe('AbstractSqlQuerier rows reported out of order', () => {
   class ReversingQuerier extends StubSqlQuerier {
     reported: RawRow[] = [];
     protected override async execute(query: string): Promise<SqlExecution> {
-      return query.startsWith('INSERT') ? { rows: this.reported.toReversed() } : super.execute(query);
+      const executed = await super.execute(query);
+      return query.startsWith('INSERT') ? { rows: this.reported.toReversed() } : executed;
     }
   }
 
@@ -255,7 +256,7 @@ describe('AbstractSqlQuerier rows reported out of order', () => {
   });
 
   it('should write one row per statement where the key the database defaults orders nothing', async () => {
-    const querier = new StubSqlQuerier(undefined, new PostgresDialect());
+    const querier = reversing([{ id: 'k' }], new PostgresDialect());
 
     await querier.insertMany(DefaultedKey, [{ name: 'a' }, { name: 'b' }]);
 
@@ -310,7 +311,7 @@ describe('AbstractSqlQuerier returning by reading back', () => {
   /** A key the driver did not report cannot name the row to read back, which `returning` needs. */
   it('should refuse to return a row whose key the driver did not report', async () => {
     await expect(querier().insertOne(HydratedParent, { name: 'a' }, { returning: { name: true } })).rejects.toThrow(
-      'did not report for every row',
+      "an insert into 'HydratedParent' left its key empty",
     );
   });
 

@@ -573,12 +573,18 @@ export type WriteResults<E, S, V, W = false> = [W] extends [true]
       : ReturnedRows<ReturnedRow<E, S, V>>;
 
 type WrittenIds<E> = {
-  readonly inserted: WrittenId<E> | undefined;
+  readonly inserted: NonNullable<WrittenId<E>>;
+  readonly upserted: WrittenId<E> | undefined;
   readonly affected: number;
   readonly affectedMany: number;
 };
 
-type ReturnedRows<R> = { readonly inserted: R; readonly affected: R | undefined; readonly affectedMany: R[] };
+type ReturnedRows<R> = {
+  readonly inserted: R;
+  readonly upserted: R;
+  readonly affected: R | undefined;
+  readonly affectedMany: R[];
+};
 
 /**
  * The row `returning` reads back: its keys, every field but them where it subtracts, and where it mixes both, its
