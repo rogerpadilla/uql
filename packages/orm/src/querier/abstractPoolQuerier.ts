@@ -13,7 +13,7 @@ export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
   constructor(
     protected readonly connect: () => Promise<C>,
     dialect: AbstractSqlDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }

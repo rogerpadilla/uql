@@ -129,7 +129,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   constructor(
     readonly dialect: AbstractSqlDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(extra);
   }

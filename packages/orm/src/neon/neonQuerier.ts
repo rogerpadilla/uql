@@ -30,7 +30,7 @@ export class NeonQuerier extends PgQuerier {
     this.assertActive();
   }
 
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     if (this.conn) {
       return super.execute(sql, values);
     }

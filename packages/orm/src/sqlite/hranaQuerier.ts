@@ -56,7 +56,7 @@ export class HranaQuerier extends AbstractSqlQuerier {
   constructor(
     readonly client: HranaClient,
     dialect: SqliteDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
     connection?: HranaQuerierConnectionOptions,
   ) {
     super(dialect, extra);
@@ -64,12 +64,12 @@ export class HranaQuerier extends AbstractSqlQuerier {
   }
 
   /** Runs on the open transaction's handle when there is one. */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     return executionOf(await (this.tx ?? this.client).execute({ sql, args: toBindValues(values) }));
   }
 
   /** A list as one request: the client's `batch`, all or none; inside an open transaction, its own, which joins it. */
-  protected override async executeBatch(statements: readonly BoundStatement[]) {
+  protected override async executeBatch(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
     const stmts = sqliteStatements(statements);
     const results = await (this.tx ? this.tx.batch(stmts) : this.client.batch(stmts, 'write'));
     return results.map(executionOf);

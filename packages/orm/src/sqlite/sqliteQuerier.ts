@@ -1,5 +1,6 @@
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { decodeBigInts } from '../util/wideNumber.js';
 import { type SqliteBindValue, toBindValues } from './bindValues.js';
 import type { SqliteDialect } from './sqliteDialect.js';
@@ -39,7 +40,7 @@ export class SqliteQuerier extends AbstractSqlQuerier {
   constructor(
     readonly db: SqliteDatabase,
     dialect: SqliteDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }
@@ -50,7 +51,7 @@ export class SqliteQuerier extends AbstractSqlQuerier {
   }
 
   /** `reader` picks the call: `run()` would discard the rows of a statement that reads, RETURNING included. */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const stmt = await this.db.prepare(sql);
     if (stmt.reader) {
       return { rows: ((await stmt.all(...toBindValues(values))) as RawRow[]).map(decodeBigInts) };

@@ -31,7 +31,7 @@ export interface QuerierPool<
   /**
    * extra options
    */
-  readonly extra?: ExtraOptions;
+  readonly extra?: ExtraOptions | undefined;
 
   /**
    * Default connection for application queries, transactions, and anything that should use the pool's primary URL.

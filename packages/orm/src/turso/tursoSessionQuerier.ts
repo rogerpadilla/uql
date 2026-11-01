@@ -53,12 +53,12 @@ export class TursoSessionQuerier extends AbstractSqlQuerier {
   constructor(
     readonly session: TursoSession,
     dialect: SqliteDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }
 
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     return executionOf(await this.session.execute(sql, toBindValues(values), true));
   }
 
@@ -66,7 +66,7 @@ export class TursoSessionQuerier extends AbstractSqlQuerier {
    * A list as one request, all or none: its own `BEGIN IMMEDIATE` and `COMMIT` in it, or, inside an open
    * transaction, none, so it joins it.
    */
-  protected override async executeBatch(statements: readonly BoundStatement[]) {
+  protected override async executeBatch(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
     const mode = this.hasOpenTransaction ? undefined : 'immediate';
     const results = await this.session.batch(sqliteStatements(statements), mode, undefined, true, true);
     return results.map(executionOf);

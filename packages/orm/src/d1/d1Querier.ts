@@ -31,17 +31,17 @@ export class D1Querier extends AbstractSqlQuerier {
   constructor(
     readonly db: D1Queryable,
     dialect: D1SqliteDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }
 
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     return executionOf(await this.prepared(sql, values).all());
   }
 
   /** A list as one `batch()`, which D1 runs in order as one transaction: the one it has. */
-  protected override async executeBatch(statements: readonly BoundStatement[]) {
+  protected override async executeBatch(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
     const results = await this.db.batch(statements.map(({ sql, values }) => this.prepared(sql, values)));
     return results.map(executionOf);
   }

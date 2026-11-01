@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream';
 import type { PoolConnection } from 'mariadb';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { RawRow } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { decodeBigInts } from '../util/wideNumber.js';
 
 /** This driver binds only a `Buffer` as bytes: any other `Uint8Array` goes as the JSON of its indices. */
@@ -15,7 +16,7 @@ function toBindValues(values: unknown[] | undefined): unknown[] | undefined {
 
 export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
   /** A read, or a `RETURNING` write, answers rows, counted by them; any other write an OK packet reporting `affectedRows`. */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const res = await this.getConn().query(sql, toBindValues(values));
     const rows = Array.isArray(res) ? Array.from<RawRow, RawRow>(res, decodeBigInts) : [];
     return { rows, changes: res.affectedRows };

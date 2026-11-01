@@ -86,7 +86,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   constructor(
     readonly dialect: MongoDialect,
     readonly conn: MongoClient,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(extra);
   }

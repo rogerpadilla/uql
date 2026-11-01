@@ -1,6 +1,7 @@
 import mssql from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { IsolationLevel, RawRow, TransactionOptions } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
 
 /** What `tedious` hands back for one statement, whichever shape it took. */
@@ -64,7 +65,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
    * `rowsAffected` carries one entry per statement, and a write runs in a batch of several - the table variable
    * its ids go through, the read handing them back uncounted - so the counts are summed.
    */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const res = await this.#request(values).query(sql);
     return {
       rows: decodeWireTypes(res.recordset, res.recordset?.columns),

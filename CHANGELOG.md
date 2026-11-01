@@ -8,6 +8,7 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - **Breaking:** an insert has to name a key nothing fills, on `defineEntity` and on a decorated class, where a generated key is `id?` or listed in `[filledKey]`. `@Field` refuses `?` on a numeric or `.references()` key nothing fills.
 - **Fixed:** on MySQL, an insert reports a key filled by a column default, a batch included.
 - **Fixed:** on SQLite, a supplied integer key is `INT`, so a row with no key is refused instead of numbered. An existing table reads as no drift.
+- **Fixed:** a project setting `exactOptionalPropertyTypes` can pass a pool to `Config` and read uql's declarations with `skipLibCheck` off.
 - A generated entity declares a key the database fills `?`, and leaves a serial on a column that is no key to the database.
 
 ## [0.110.0] - 2026-10-31

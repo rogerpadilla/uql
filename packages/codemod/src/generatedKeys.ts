@@ -1,18 +1,8 @@
 import ts from 'typescript';
 import { applyEdits, type Edit } from './edits.js';
+import { type ChainMethod, chainOf } from './syntax.js';
 
 type Key = { readonly name: string; readonly column: ts.Expression };
-
-/** A builder's calls in order, by name, and what they are called on. */
-function chainCalls(node: ts.Expression) {
-  const calls: { readonly name: string; readonly call: ts.CallExpression }[] = [];
-  let root = node;
-  while (ts.isCallExpression(root) && ts.isPropertyAccessExpression(root.expression)) {
-    calls.unshift({ name: root.expression.name.text, call: root });
-    root = root.expression.expression;
-  }
-  return { root, calls };
-}
 
 /** The columns a class's `@Field`s declare, by property. */
 function classColumns(node: ts.ClassLikeDeclaration): Key[] {
@@ -39,35 +29,35 @@ function statementOf(node: ts.Node): ts.Node {
   return ts.isStatement(node) || ts.isSourceFile(node.parent) ? node : statementOf(node.parent);
 }
 
+/** `method`, dot included, as `text`. */
+function written({ receiver, call }: ChainMethod, text: string): Edit {
+  return { start: receiver.getEnd(), end: call.getEnd(), text };
+}
+
 /** The `.autoIncrement()` of a column no key, which generated nothing and would now make it one. */
 function inertAutoIncrement(column: ts.Expression): Edit[] {
-  const { calls } = chainCalls(column);
-  const names = calls.map(({ name }) => name);
-  const at = names.indexOf('autoIncrement');
-  return at > 0 && !names.includes('id')
-    ? [{ start: calls[at - 1].call.getEnd(), end: calls[at].call.getEnd(), text: '' }]
-    : [];
+  const { methods } = chainOf(column);
+  const inert = methods.find(({ name }) => name === 'autoIncrement');
+  return inert && !methods.some(({ name }) => name === 'id') ? [written(inert, '')] : [];
 }
 
 /** `.autoIncrement()` in place of `.id()` on the sole numeric key of `scope`, which the database no longer generates unasked. */
 function stateKey(keys: readonly Key[], scope: ts.Node): Edit[] {
-  const ids = keys.filter(({ column }) => chainCalls(column).calls.some(({ name }) => name === 'id'));
+  const ids = keys.filter(({ column }) => chainOf(column).methods.some(({ name }) => name === 'id'));
   const inert = ids.length ? keys.flatMap(({ column }) => inertAutoIncrement(column)) : [];
   if (ids.length !== 1) return inert;
   const [{ name: key, column }] = ids;
-  const { root, calls } = chainCalls(column);
-  const names = calls.map(({ name }) => name);
-  const [type] = calls;
+  const { root, methods } = chainOf(column);
+  const names = methods.map(({ name }) => name);
+  const [type] = methods;
   const numeric =
     ['number', 'bigint'].includes(type.name) ||
     (type.name === 'column' && /\b(?:tiny|small|medium|big)?(?:int\d?|integer|serial)\b/i.test(type.call.getText()));
   const shared = new RegExp(`references:\\s*\\(?\\w+\\)?\\s*=>\\s*\\w+\\.${key}\\b`).test(scope.getText());
   const filled = ['references', 'onInsert', 'default'].some((method) => names.includes(method));
-  const declared = calls.some(({ name, call }) => name === 'autoIncrement' && call.arguments.length);
+  const declared = methods.some(({ name, call }) => name === 'autoIncrement' && call.arguments.length);
   if (root.getText() !== 'f' || !numeric || filled || declared || shared) return inert;
-  const at = names.indexOf('id');
-  const edit = { start: calls[at - 1].call.getEnd(), end: calls[at].call.getEnd() };
-  return [...inert, { ...edit, text: names.includes('autoIncrement') ? '' : '.autoIncrement()' }];
+  return [...inert, written(methods[names.indexOf('id')], names.includes('autoIncrement') ? '' : '.autoIncrement()')];
 }
 
 /**

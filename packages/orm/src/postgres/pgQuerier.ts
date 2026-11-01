@@ -1,5 +1,6 @@
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { RawRow } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { type PgResult, pgExecution } from './pgExecution.js';
 
 export interface PgAnyClient {
@@ -27,7 +28,7 @@ export class PgQuerier extends AbstractPoolQuerier<PgAnyClient> {
     return conn;
   }
 
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     return pgExecution(await this.getConn().query(sql, values));
   }
 

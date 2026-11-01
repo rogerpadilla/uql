@@ -5,8 +5,7 @@ import { schemaDefault } from './sqlExpression.js';
 import type { ColumnNode } from './types.js';
 
 /**
- * The column a field's options declare, whether an entity's table or a migration holds it: `soleKey` says whether it
- * is its table's whole and own key, which a numeric one auto-increments as, and `compile` renders its SQL.
+ * The column a field's options declare, whether an entity's table or a migration holds it: `compile` renders its SQL.
  */
 export function declaredColumn(
   field: FieldMeta,

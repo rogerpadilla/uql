@@ -1,6 +1,7 @@
 import type { PoolConnection } from 'mysql2';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
+import type { SqlExecution } from '../util/sql.util.js';
 
 /**
  * Holds the driver's own connection rather than its promise wrapper, whose types name the connection
@@ -8,7 +9,7 @@ import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
  */
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   /** A read answers its rows; a write, the header naming how many rows it changed and the first id it generated. */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const [res] = await this.getConn().promise().query<RowDataPacket[] | ResultSetHeader>(sql, values);
     return Array.isArray(res) ? { rows: res } : { rows: [], changes: res.affectedRows, id: res.insertId };
   }

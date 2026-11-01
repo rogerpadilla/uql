@@ -1,4 +1,5 @@
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { decodeBigInts } from '../util/wideNumber.js';
 import { type BunSqlConn, type BunSqlResult, getAffectedRows, getInsertId } from './bunSql.util.js';
 
@@ -11,7 +12,7 @@ export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
    * Through `.unsafe()`, which takes the compiled text where Bun's tagged template would parse its own: safe, as
    * every value is bound.
    */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const res = await this.getConn().unsafe<BunSqlResult>(sql, values);
     return { rows: Array.from(res, decodeBigInts), changes: getAffectedRows(res), id: getInsertId(res) };
   }

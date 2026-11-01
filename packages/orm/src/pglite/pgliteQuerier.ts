@@ -1,5 +1,6 @@
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import type { PgliteDialect } from './pgliteDialect.js';
 
 /** The two methods uql uses of `@electric-sql/pglite`, stated so its published types do not depend on a pre-1.0 package. */
@@ -18,7 +19,7 @@ export class PgliteQuerier extends AbstractSqlQuerier {
   constructor(
     readonly db: PgliteDatabase,
     dialect: PgliteDialect,
-    override readonly extra?: ExtraOptions,
+    extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }
@@ -32,7 +33,7 @@ export class PgliteQuerier extends AbstractSqlQuerier {
    * `affectedRows`, not `rowCount`: PGlite derives the former from the command tag of a write only, where the
    * latter also counts a `SELECT`'s rows and is absent altogether from a DDL tag.
    */
-  protected override async execute(sql: string, values?: unknown[]) {
+  protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
     const { rows, affectedRows } = await this.db.query<RawRow>(sql, values);
     return { rows, changes: affectedRows };
   }

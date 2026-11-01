@@ -266,8 +266,10 @@ function checkDeclarationsStandalone(checkDir: string, installed: string): void 
     refuse(
       'the published types do not stand on their own in a consumer project',
       unresolved,
-      'A public type is naming something only this repo has in scope. Prefer a structural type a consumer ' +
-        'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
+      'A public type is naming something only this repo has in scope, or a class no longer meets the type it ' +
+        'implements under `exactOptionalPropertyTypes`. Prefer a structural type a consumer always has ' +
+        '(`Uint8Array` over `Buffer`), import the name instead of relying on an ambient global, and state an ' +
+        "override's return type.",
     );
   }
 }
@@ -353,6 +355,8 @@ function installConsumerProject(): { checkDir: string; installed: string } {
       moduleResolution: 'bundler',
       skipLibCheck: false,
       declaration: true,
+      // A class emits a parameter property as `T | undefined`, which only this flag tells from an interface's `T`.
+      exactOptionalPropertyTypes: true,
     },
     reexports,
   );
