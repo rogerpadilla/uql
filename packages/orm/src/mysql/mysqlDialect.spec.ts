@@ -163,7 +163,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
   shouldThrowForVectorSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(() =>

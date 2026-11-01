@@ -16,13 +16,17 @@ describe('f', () => {
       unique: true,
       index: 'by_name',
     });
-    expect(optionsOf(f.number().id().autoIncrement(false).name('pk').comment('the key'))).toEqual({
+    expect(optionsOf(f.number().id().name('pk').comment('the key'))).toEqual({
       type: Number,
       isId: true,
-      autoIncrement: false,
       name: 'pk',
       comment: 'the key',
     });
+  });
+
+  it('should write a generated key, a number unless told otherwise', () => {
+    expect(optionsOf(f.number().autoIncrement())).toEqual({ type: Number, isId: true, autoIncrement: true });
+    expect(optionsOf(f.bigint().autoIncrement())).toEqual({ type: BigInt, isId: true, autoIncrement: true });
   });
 
   it('should spell each column type its constructor names', () => {

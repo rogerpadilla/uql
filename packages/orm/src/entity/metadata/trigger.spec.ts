@@ -12,7 +12,7 @@ function entityWith(...triggers: TriggerOptions<Post>[]) {
     triggers: (_, trigger) => triggers.map(trigger),
   })
   class Post {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) body?: string | null;
   }
   return Post;
@@ -33,7 +33,7 @@ describe('triggers', () => {
   it('should register the triggers a defined entity lists, as @Trigger does', () => {
     const Note = defineEntity({
       name: 'Note',
-      fields: { id: f.number().id(), body: f.string().nullable() },
+      fields: { id: f.number().autoIncrement(), body: f.string().nullable() },
     }).triggers((note, trigger) => [trigger({ on: 'beforeUpdate', of: [note.body], run: body })]);
     expect(getMeta(Note).triggers).toEqual([{ on: 'beforeUpdate', of: ['body'], run: body }]);
     removeEntity(Note);

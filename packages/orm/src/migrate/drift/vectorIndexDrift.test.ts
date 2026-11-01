@@ -29,7 +29,7 @@ function vectorTable(type: VectorIndexType, distance: VectorDistance) {
     ],
   })
   class VectorRow {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.vector(2).nullable()) vec?: number[] | null;
   }
   return VectorRow;
@@ -38,7 +38,7 @@ function vectorTable(type: VectorIndexType, distance: VectorDistance) {
 /** The table before its index is declared: NOT NULL, as MariaDB indexes no other column and an index alters none. */
 @Entity({ name: TABLE })
 class Unindexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(2)) vec?: number[];
 }
 

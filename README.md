@@ -54,7 +54,7 @@ import { Entity, f, Field, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity()
 export class User {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().unique())
@@ -66,7 +66,7 @@ export class User {
 
 @Entity()
 export class Post {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string())
@@ -91,7 +91,7 @@ import { defineEntity, f } from 'uql-orm';
 export const Post = defineEntity({
   name: 'Post',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string(),
     likes: f.number().nullable(),
     authorId: f.number().nullable(),

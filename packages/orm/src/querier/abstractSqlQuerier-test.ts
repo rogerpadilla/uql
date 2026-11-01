@@ -16,6 +16,12 @@ import {
   ShelfBook,
   Skill,
   InventoryAdjustment,
+  AppFilledKey,
+  Credential,
+  DefaultedKey,
+  GeneratedBigKey,
+  SqlDefaultedKey,
+  SuppliedNumericKey,
   Invoice,
   JsonRecord,
   InvoiceLine,
@@ -827,6 +833,53 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
 
     expect(found.map(({ name }) => name)).toEqual(['kept']);
+  }
+
+  /** A key nothing fills holds no row on any engine, in one row or a batch, and writing it is what stores one. */
+  async shouldRefuseAKeyNothingFills() {
+    // @ts-expect-error nothing fills `hash`
+    await expect(this.querier.insertOne(Credential, { code: 'a' })).rejects.toThrow();
+    // @ts-expect-error nor in a batch
+    await expect(this.querier.insertMany(Credential, [{ code: 'b' }])).rejects.toThrow();
+    expect(await this.querier.count(Credential, {})).toBe(0);
+
+    // @ts-expect-error nor a numeric key the database does not generate
+    await expect(this.querier.insertOne(SuppliedNumericKey, { code: 'd' })).rejects.toThrow();
+    expect(await this.querier.count(SuppliedNumericKey, {})).toBe(0);
+
+    await this.querier.insertOne(Credential, { hash: 'h', code: 'c' });
+    expect(await this.querier.findMany(Credential, {})).toEqual([{ hash: 'h', code: 'c' }]);
+  }
+
+  /** What the types let an insert leave out, something fills: the id comes back, and it finds the row. */
+  async shouldReportEveryKeyAnInsertLeavesOut() {
+    const generated = await this.querier.insertOne(Invoice, { description: 'generated' });
+    expect(generated).toBeDefined();
+    expect(await this.querier.findOneById(Invoice, generated)).toMatchObject({ description: 'generated' });
+
+    const wide = await this.querier.insertOne(GeneratedBigKey, { code: 'wide' });
+    expect(wide).toBeDefined();
+    expect(await this.querier.findOneById(GeneratedBigKey, wide)).toMatchObject({ code: 'wide' });
+
+    const filled = await this.querier.insertOne(AppFilledKey, { code: 'filled' });
+    expect(filled).toEqual(expect.any(String));
+    expect(await this.querier.findOneById(AppFilledKey, filled)).toEqual({ id: filled, code: 'filled' });
+
+    const defaulted = await this.querier.insertOne(DefaultedKey, { code: 'defaulted' });
+    expect(defaulted).toBe('fixed');
+    expect(await this.querier.findOneById(DefaultedKey, defaulted)).toEqual({ id: 'fixed', code: 'defaulted' });
+
+    const computed = await this.querier.insertOne(SqlDefaultedKey, { code: 'computed' });
+    expect(computed).toBe('fixed');
+    expect(await this.querier.findOneById(SqlDefaultedKey, computed)).toEqual({ id: 'fixed', code: 'computed' });
+
+    expect(await this.querier.upsertOne(SqlDefaultedKey, { $conflict: { code: true } }, { code: 'computed' })).toBe(
+      'fixed',
+    );
+    await this.querier.deleteOneById(SqlDefaultedKey, 'fixed');
+    expect(await this.querier.upsertOne(SqlDefaultedKey, { $conflict: { code: true } }, { code: 'upserted' })).toBe(
+      'fixed',
+    );
   }
 
   /** A key left to the database is assigned by it: the shape only a SQL engine can offer. */

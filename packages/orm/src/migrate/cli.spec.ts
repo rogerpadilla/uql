@@ -22,7 +22,7 @@ function configSource(
 import { defineEntity, f } from ${JSON.stringify(join(SRC, 'entity/index.ts'))};
 import { NodeSqliteQuerierPool } from ${JSON.stringify(join(SRC, 'sqlite/nodeSqliteQuerierPool.ts'))};
 
-const CliNote = defineEntity({ name: 'CliNote', fields: { id: f.number().id(), body: f.string().nullable() } });
+const CliNote = defineEntity({ name: 'CliNote', fields: { id: f.number().autoIncrement(), body: f.string().nullable() } });
 
 export default {
   pool: new NodeSqliteQuerierPool(${JSON.stringify(join(dir, 'app.db'))}),

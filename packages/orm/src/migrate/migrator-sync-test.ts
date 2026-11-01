@@ -91,7 +91,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should have nothing to do when the schema was created from the same entities', async () => {
       @Entity()
       class AutoSyncSettledTest {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.string().nullable().index()) email?: string | null;
         @Field(f.number().nullable()) cost?: number | null;
@@ -135,8 +135,8 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       @Entity()
       class AutoSyncKeyTest {
         [idKey]?: 'userId' | 'groupId';
-        @Field(f.number().id()) userId?: number;
-        @Field(f.number().id()) groupId?: number;
+        @Field(f.number().id()) userId!: number;
+        @Field(f.number().id()) groupId!: number;
         @Field(f.string().nullable()) note?: string | null;
       }
 
@@ -159,7 +159,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should create an index the entity declares on a table that already exists', async () => {
       @Entity()
       class AutoSyncIndexTest {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index()) email?: string | null;
       }
 
@@ -178,7 +178,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
         indexes: (autoSyncReindexTest, index) => [index([autoSyncReindexTest.kind, autoSyncReindexTest.status])],
       })
       class AutoSyncReindexTest {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) kind?: string | null;
         @Field(f.string().nullable()) status?: string | null;
       }
@@ -207,7 +207,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should add multiple new properties to an existing entity', async () => {
       @Entity()
       class AutoSyncProductTest1 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.number().nullable()) price?: number | null;
         @Field(f.string().nullable()) description?: string | null;
@@ -225,7 +225,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should have nothing to do on a table written as the entity declares it', async () => {
       @Entity()
       class AutoSyncCategoryTest1 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
       }
 
@@ -239,7 +239,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should create a new table if it does not exist', async () => {
       @Entity()
       class AutoSyncNewTableTest1 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) title?: string | null;
         @Field(f.string().nullable()) content?: string | null;
       }
@@ -255,7 +255,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should handle entity with custom table name', async () => {
       @Entity({ name: 'custom_user_table' })
       class AutoSyncCustomNameTest1 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) username?: string | null;
         @Field(f.string().nullable()) email?: string | null;
       }
@@ -271,7 +271,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should handle field with custom column name', async () => {
       @Entity()
       class AutoSyncCustomColumnTest1 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().name('user_email')) email?: string | null;
       }
 
@@ -287,7 +287,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should drop a column the entity no longer declares only given safe: false and drop: true, logging why not', async () => {
       @Entity()
       class AutoSyncRenameTest {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) newName?: string | null;
       }
 
@@ -315,7 +315,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should retype a DOUBLE column to the integer a number field declares, only outside safe mode', async () => {
       @Entity()
       class AutoSyncFloatTest {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) cost?: number | null;
       }
 
@@ -368,11 +368,11 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should add a foreign key the table has not got', async () => {
       @Entity()
       class FkSyncCompany {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class FkSyncEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkSyncCompany)
@@ -394,12 +394,12 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should force a sync over a cycle of foreign keys it created', async () => {
       @Entity()
       class FkCycleCompany {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkCycleEmployee).nullable()) ownerId?: number | null;
       }
       @Entity()
       class FkCycleEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkCycleCompany).nullable()) companyId?: number | null;
       }
       const entities = [FkCycleCompany, FkCycleEmployee];
@@ -433,11 +433,11 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should alter a foreign key whose referential action changed', async () => {
       @Entity()
       class FkAlterCompany {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class FkAlterEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkAlterCompany)
@@ -465,11 +465,11 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should report no foreign key change on a schema it just created', async () => {
       @Entity()
       class FkStableCompany {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class FkStableEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkStableCompany)
@@ -491,7 +491,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should leave alone a foreign key to a table no entity names', async () => {
       @Entity()
       class FkUnnamedEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) companyId?: number | null;
       }
 
@@ -510,11 +510,11 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it.runIf(features.supportsUnsigned)('should bring a legacy unsigned key back to its declared type', async () => {
       @Entity()
       class FkLegacyCompany {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class FkLegacyEmployee {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkLegacyCompany)
@@ -549,7 +549,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should constrain an enum column it adds to an existing table', async () => {
       @Entity()
       class SyncEnumAdded {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.enum(['draft', 'paid']).nullable().length(20).columnType('varchar'))
         status?: 'draft' | 'paid' | null;
       }
@@ -568,7 +568,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should constrain an enum column on a table it creates', async () => {
       @Entity()
       class SyncEnumCreated {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.enum(['on', 'off']).nullable().length(20).columnType('varchar')) state?: 'on' | 'off' | null;
       }
 
@@ -593,7 +593,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       // MariaDB, which makes the constraint compare two constants and reject every row.
       @Entity({ checks: (syncChecked, check) => [check(sql`spent <= balance`)] })
       class SyncChecked {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) spent?: number | null;
         @Field(f.number().nullable()) balance?: number | null;
       }
@@ -614,7 +614,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it.runIf(db.keepsComments)('should document a column it creates and one it adds', async () => {
       @Entity()
       class SyncCommented {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().length(40).columnType('varchar').comment("the author's name")) author?:
           | string
           | null;
@@ -628,7 +628,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       @Entity({ name: 'SyncCommented' })
       class SyncCommentedMore {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().length(40).columnType('varchar').comment("the author's name")) author?:
           | string
           | null;
@@ -647,7 +647,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should keep a stored computed column, and refuse a write to it', async () => {
       @Entity()
       class SyncComputed {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) qty?: number | null;
         @Field(f.number().nullable()) price?: number | null;
         @Computed((row) =>
@@ -690,12 +690,12 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should add a stored computed column to a table that already exists', async () => {
       @Entity({ name: 'SyncComputedAdded' })
       class Before {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) qty?: number | null;
       }
       @Entity({ name: 'SyncComputedAdded' })
       class After {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) qty?: number | null;
         @Computed((row) =>
           f
@@ -725,13 +725,13 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should keep every row through a retype, the ones pointing at the table included', async () => {
       @Entity({ name: 'RetypedParent' })
       class ParentBefore {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index()) name?: string | null;
         @Field(f.string().nullable()) code?: string | null;
       }
       @Entity({ name: 'RetypedChild' })
       class ChildBefore {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => ParentBefore)
@@ -742,13 +742,13 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       }
       @Entity({ name: 'RetypedParent' })
       class ParentAfter {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index()) name?: string | null;
         @Field(f.number().nullable()) code?: number | null;
       }
       @Entity({ name: 'RetypedChild' })
       class ChildAfter {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => ParentAfter)
@@ -778,7 +778,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     const givenRowsGainingRank = async (tableName: string, rows = 1) => {
       @Entity({ name: tableName })
       class Before {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.number().nullable()) rank?: number | null;
       }
@@ -799,7 +799,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       @Entity({ name: 'RequiredRank' })
       class After {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.number()) rank?: number;
       }
@@ -814,7 +814,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       @Entity({ name: 'RequiredAdded' })
       class After {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.number().nullable()) rank?: number | null;
         @Field(f.number()) score?: number;
@@ -828,11 +828,11 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     it('should add a required column with no default to a table holding no rows', async () => {
       @Entity({ name: 'RequiredEmpty' })
       class Before {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity({ name: 'RequiredEmpty' })
       class After {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number()) rank?: number;
       }
 
@@ -850,7 +850,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       @Entity({ name: 'RequiredDefault' })
       class After {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) name?: string | null;
         @Field(f.number().default(5)) rank?: number;
       }

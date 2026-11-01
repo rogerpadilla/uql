@@ -18,7 +18,7 @@ import { encodeFloat32s, parseVectorLiteral, toSparsevecLiteral } from './vector
 /** A per-field default metric, which a query without `$distance` inherits. */
 @Entity({ name: 'L2Item' })
 class L2Item {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.column('vector').nullable().distance('l2')) vec!: number[] | null;
 }
 
@@ -28,14 +28,14 @@ class L2Item {
   indexes: (l2IndexedItem, index) => [index([l2IndexedItem.vec], { type: 'hnsw', distance: 'l2' })],
 })
 class L2IndexedItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.column('vector').nullable()) vec!: number[] | null;
 }
 
 /** A vector column named like the one of the item it joins, which only its table alias tells apart. */
 @Entity({ name: 'VectorNote' })
 class VectorNote {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable()) vec!: number[] | null;
   @Field(f.references(() => VectorItem).nullable()) itemId?: number | null;
   @ManyToOne({ entity: () => VectorItem, references: (note) => note.itemId }) item?: VectorItem;
@@ -552,7 +552,7 @@ describe('vector $project', () => {
   indexes: (hnswItem, index) => [index([hnswItem.vec], { type: 'hnsw', distance: 'cosine' })],
 })
 class HnswItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable()) vec!: number[] | null;
 }
 
@@ -561,7 +561,7 @@ class HnswItem {
   indexes: (ivfflatItem, index) => [index([ivfflatItem.vec], { type: 'ivfflat', distance: 'cosine' })],
 })
 class IvfflatItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable()) vec!: number[] | null;
 }
 
@@ -613,7 +613,7 @@ describe('vector query-time tuning', () => {
       indexes: (twoVectorItem, index) => [index([twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })],
     })
     class TwoVectorItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) a!: number[] | null;
       @Field(f.vector(3).nullable()) b!: number[] | null;
     }
@@ -673,7 +673,7 @@ describe('vector query-time tuning', () => {
       indexes: (mariaVecItem, index) => [index([mariaVecItem.vec], { type: 'vector', distance: 'cosine' })],
     })
     class MariaVecItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) vec!: number[] | null;
     }
     const maria = new MariaDialect();
@@ -689,7 +689,7 @@ describe('vector query-time tuning', () => {
   it('should set the tuning beside the to-many cap in one prefix on MariaDB', () => {
     @Entity({ name: 'MariaVecChunk' })
     class MariaVecChunk {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.references(() => MariaVecDoc).nullable()) docId?: number | null;
     }
     @Entity({
@@ -697,7 +697,7 @@ describe('vector query-time tuning', () => {
       indexes: (mariaVecDoc, index) => [index([mariaVecDoc.vec], { type: 'vector', distance: 'cosine' })],
     })
     class MariaVecDoc {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) vec!: number[] | null;
       @OneToMany({ entity: () => MariaVecChunk, mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
       chunks?: MariaVecChunk[];
@@ -756,7 +756,7 @@ describe('libSQL vector index search', () => {
   it('should compute every distance where the index is an Atlas one', () => {
     @Entity({ name: 'AtlasItem', indexes: (atlasItem, index) => [index([atlasItem.vec], { type: 'vectorSearch' })] })
     class AtlasItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) vec!: number[] | null;
     }
     expect(find(libsql, AtlasItem, rank).sql).not.toContain('vector_top_k');

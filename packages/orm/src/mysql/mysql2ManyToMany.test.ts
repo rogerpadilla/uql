@@ -14,14 +14,14 @@ class LinkedLabel {
 
 @Entity({ name: 'uql_label_link' })
 class LabelLink {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => LabelPost).nullable()) labelPostId?: number | null;
   @Field(f.references(() => LinkedLabel).nullable()) linkedLabelId?: string | null;
 }
 
 @Entity({ name: 'uql_label_post' })
 class LabelPost {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @ManyToMany({ entity: () => LinkedLabel, through: () => LabelLink, cascade: true }) labels?: LinkedLabel[];
 }
 

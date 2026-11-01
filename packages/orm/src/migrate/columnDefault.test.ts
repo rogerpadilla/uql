@@ -13,7 +13,7 @@ import { Migrator } from './migrator.js';
 
 @Entity({ name: 'DefaultNote' })
 class DefaultNote {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   /** Text that spells the clock, which is text all the same. */
   @Field(f.string().nullable().default('CURRENT_TIMESTAMP')) spelled?: string | null;
@@ -41,7 +41,7 @@ class DefaultNote {
 /** The SQL defaults alone, on a table a test drops them from. */
 @Entity({ name: 'DefaultDown' })
 class DefaultDown {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Field(f.date().nullable().default(currentTimestamp)) createdAt?: Date | null;
   @Field(
@@ -83,7 +83,7 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
   it("should put an SQL default back as SQL through a generated migration's down", async () => {
     @Entity({ name: 'DefaultDown' })
     class Slim {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) body?: string | null;
     }
     const migrator = new Migrator(pool(), { entities: [Slim], migrationsPath: await migrationsDir() });

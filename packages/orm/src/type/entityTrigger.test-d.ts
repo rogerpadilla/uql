@@ -5,7 +5,7 @@ import { filledKey, type RefMap, type TriggerOptions } from './index.js';
 
 @Entity()
 class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Field(f.string().nullable()) searchVector?: string | null;
   @Field(f.string().nullable()) status?: string | null;
@@ -13,7 +13,7 @@ class Post {
 
 @Entity()
 class PostAudit {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .number()
@@ -142,7 +142,7 @@ const logOld = (_newRow: unknown, oldRow: RefMap<Post>) => sql`PERFORM log(${old
 
 @Entity()
 class VariantPrice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number()) variantId!: number;
   @Field(f.number()) amount!: number;
   @Field(f.number().default(0)) hits!: number;

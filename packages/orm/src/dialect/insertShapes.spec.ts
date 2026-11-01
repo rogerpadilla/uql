@@ -4,7 +4,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 
 @Entity()
 class Shaped {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.json().nullable()) settings?: object | null;

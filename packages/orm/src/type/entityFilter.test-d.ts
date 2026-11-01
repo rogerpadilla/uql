@@ -41,7 +41,7 @@ export const contextFilterReturningFragment: FilterOptions<Invoice> = {
 // ─── `@Entity({ filters })`: `E` is inferred from the class it decorates ───
 @Entity({ filters: { active: { where: { status: 'active' }, default: false } } })
 class DecoratedInvoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) status?: string | null;
 }
 void DecoratedInvoice;
@@ -53,7 +53,7 @@ void DecoratedInvoice;
   },
 })
 class MisfilteredInvoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) status?: string | null;
 }
 void MisfilteredInvoice;
@@ -61,11 +61,11 @@ void MisfilteredInvoice;
 // ─── a defined entity's filters: checked against its columns, same as decorators ───
 defineEntity({
   name: 'Bill',
-  fields: { id: f.number().id(), status: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), status: f.string().nullable() },
 }).filters({ active: { where: { status: 'active' } } });
 defineEntity({
   name: 'Bill',
-  fields: { id: f.number().id() },
+  fields: { id: f.number().autoIncrement() },
 }).filters({
   // @ts-expect-error 'statuz' is not a column of Bill
   active: { where: { statuz: 'active' } },
@@ -74,14 +74,14 @@ defineEntity({
 // ─── a defined entity's filters after its relations read through them, as a decorated entity's do ───
 export const Writer = defineEntity({
   name: 'Writer',
-  fields: { id: f.number().id(), name: f.string(), active: f.boolean() },
+  fields: { id: f.number().autoIncrement(), name: f.string(), active: f.boolean() },
 })
   .relations((rel) => ({ posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.writer }) }))
   .filters({ published: { where: { posts: { title: { $ne: '' } } } } });
 
 export const Post = defineEntity({
   name: 'Post',
-  fields: { id: f.number().id(), title: f.string(), writerId: f.number() },
+  fields: { id: f.number().autoIncrement(), title: f.string(), writerId: f.number() },
 })
   .relations((rel) => ({ writer: () => rel.manyToOne(Writer, { references: (post) => post.writerId }) }))
   .filters({
@@ -105,14 +105,14 @@ export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active
   },
 })
 class ReservedInvoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) status?: string | null;
 }
 void ReservedInvoice;
 
 defineEntity({
   name: 'Bill',
-  fields: { id: f.number().id(), status: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), status: f.string().nullable() },
 })
   // @ts-expect-error and among an entity's filters
   .filters({ softDelete: { where: { status: 'active' } } });

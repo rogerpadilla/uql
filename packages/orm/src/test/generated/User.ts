@@ -3,8 +3,8 @@ import { Post } from './Post.js';
 
 @Entity({ name: 'users' })
 export class User {
-  @Field(f.column('int').id())
-  id!: number;
+  @Field(f.column('int').autoIncrement())
+  id?: number;
 
   @Field(f.column('varchar').length(255).unique())
   email!: string;

@@ -20,7 +20,7 @@ const ROWS = 1000;
   ],
 })
 class JsonPathIndexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.json().nullable()) kind?: Json<{ name: string; score: number }> | null;
 }
 

@@ -5,7 +5,10 @@ import { defineEntity, getEntities, getMeta, removeEntity } from './definition.j
 
 describe('a defined entity', () => {
   it('should register its columns and every section on first read', () => {
-    const Author = defineEntity({ name: 'Author', fields: { id: f.number().id(), name: f.string() } }).relations(
+    const Author = defineEntity({
+      name: 'Author',
+      fields: { id: f.number().autoIncrement(), name: f.string() },
+    }).relations(
       (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
       (author) => ({
         bookCount: () => author.books.count(),
@@ -20,7 +23,7 @@ describe('a defined entity', () => {
       name: 'Book',
       table: 'books',
       fields: {
-        id: f.number().id(),
+        id: f.number().autoIncrement(),
         title: f.string(),
         authorId: f.number(),
         editorId: f.number().nullable(),
@@ -60,19 +63,20 @@ describe('a defined entity', () => {
   });
 
   it('should refuse a relation to an abstract base at run time, which an entity defined from data reaches', () => {
-    const Base = defineEntity({ name: 'Base', abstract: true, fields: { id: f.number().id() } });
-    const Holder = defineEntity({ name: 'Holder', fields: { id: f.number().id(), baseId: f.number() } }).relations(
-      (rel) => ({
-        // @ts-expect-error an abstract base is never a table
-        base: () => rel.manyToOne(Base, { references: (holder) => holder.baseId }),
-      }),
-    );
+    const Base = defineEntity({ name: 'Base', abstract: true, fields: { id: f.number().autoIncrement() } });
+    const Holder = defineEntity({
+      name: 'Holder',
+      fields: { id: f.number().autoIncrement(), baseId: f.number() },
+    }).relations((rel) => ({
+      // @ts-expect-error an abstract base is never a table
+      base: () => rel.manyToOne(Base, { references: (holder) => holder.baseId }),
+    }));
     expect(() => getMeta(Holder)).toThrow("'Base' is abstract: a relation needs a table to join");
     removeEntity(Holder);
   });
 
   it('should refuse a section declared twice, or after its first read', () => {
-    const Tag = defineEntity({ name: 'Tag', fields: { id: f.number().id(), label: f.string() } });
+    const Tag = defineEntity({ name: 'Tag', fields: { id: f.number().autoIncrement(), label: f.string() } });
     Tag.indexes((tag, index) => [index([tag.label])]);
     expect(() => Tag.indexes(() => [])).toThrow("'Tag' declares its indexes twice");
     getMeta(Tag);
@@ -81,7 +85,7 @@ describe('a defined entity', () => {
   });
 
   it('should be listed, its sections in, before anything read it', () => {
-    const Listed = defineEntity({ name: 'Listed', fields: { id: f.number().id() } });
+    const Listed = defineEntity({ name: 'Listed', fields: { id: f.number().autoIncrement() } });
     expect(getEntities()).toContain(Listed);
     removeEntity(Listed);
   });
@@ -106,7 +110,7 @@ describe('a defined entity', () => {
     const Base = defineEntity({
       name: 'Base',
       abstract: true,
-      fields: { id: f.number().id(), createdAt: f.date() },
+      fields: { id: f.number().autoIncrement(), createdAt: f.date() },
     }).indexes((base, index) => [index([base.createdAt])]);
     const Child = defineEntity({ name: 'Child', extends: Base, fields: { label: f.string() } }).indexes(
       (child, index) => [index([child.label, child.createdAt])],
@@ -123,7 +127,7 @@ describe('a defined entity', () => {
   });
 
   it('should read the refs a section is handed off the entity it declares', () => {
-    const Post = defineEntity({ name: 'Post', fields: { id: f.number().id(), body: f.text() } }).triggers(
+    const Post = defineEntity({ name: 'Post', fields: { id: f.number().autoIncrement(), body: f.text() } }).triggers(
       (post, trigger) => [trigger({ on: 'beforeUpdate', of: [post.body], run: () => sql`SELECT 1` })],
     );
     expect(getMeta(Post).triggers).toMatchObject([{ on: 'beforeUpdate', of: ['body'] }]);
@@ -131,7 +135,10 @@ describe('a defined entity', () => {
   });
 
   it('should refuse a member two sections declare', () => {
-    const Twice = defineEntity({ name: 'Twice', fields: { id: f.number().id(), title: f.string() } }).computed(() => ({
+    const Twice = defineEntity({
+      name: 'Twice',
+      fields: { id: f.number().autoIncrement(), title: f.string() },
+    }).computed(() => ({
       title: f.string().as(sql`'x'`),
     }));
     expect(() => getMeta(Twice)).toThrow("'Twice.title' is declared twice: name each member once");

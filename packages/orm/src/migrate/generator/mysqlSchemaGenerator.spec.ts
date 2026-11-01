@@ -25,7 +25,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
   it('should spell a generated key from its own column type', () => {
     @Entity()
     class IntKeyed {
-      @Field(f.number().id().columnType('int')) id?: number;
+      @Field(f.number().autoIncrement().columnType('int')) id?: number;
     }
 
     expect(generator.generateCreateSchema([IntKeyed]).join('\n')).toContain('`id` INT AUTO_INCREMENT');

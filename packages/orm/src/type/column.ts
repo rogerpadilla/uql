@@ -84,7 +84,7 @@ export interface ColumnBuilder<in out O, in out V, F extends Family> extends Col
   /** Lets the column hold `null`, which a read then answers with: a column is `NOT NULL` otherwise. */
   nullable(this: Lacking<'isId'>): With<O, V, { readonly nullable: true }, F>;
   /** Makes it the primary key, or a column of a composite one. */
-  id(this: Lacking<'nullable'>): With<O, V, { readonly isId: true }, F>;
+  id(this: Lacking<'nullable' | 'autoIncrement'>): With<O, V, { readonly isId: true }, F>;
   /** The column's DDL default: a value, or SQL the database evaluates per row (`currentTimestamp`, `sql`). */
   default(value: DdlDefault<V> | QuerySql): With<O, V, { readonly defaultValue: unknown }, F>;
   /** The value uql writes on insert, where the row has none: a value, SQL or a function returning either. */
@@ -127,9 +127,10 @@ export interface NumericColumn<in out O, in out V> extends ColumnBuilder<O, V, '
   /** Digits in all: a `DECIMAL`, read as a number where the builder is `f.number()`, rounding where it must. */
   precision(this: TypeNotSql, digits: number): NumericColumn<O & { readonly precision: number }, V>;
   scale(this: TypeNotSql, digits: number): NumericColumn<O & { readonly scale: number }, V>;
-  /** Has the database generate the value, which a numeric sole key does unless `autoIncrement(false)` says otherwise. */
-  autoIncrement(): NumericColumn<O & { readonly autoIncrement: true }, V>;
-  autoIncrement(generated: false): NumericColumn<O & { readonly autoIncrement: false }, V>;
+  /** Makes it the primary key, which the database generates. A key the caller supplies is `.id()`. */
+  autoIncrement(
+    this: Lacking<'nullable' | 'isId'>,
+  ): NumericColumn<O & { readonly isId: true; readonly autoIncrement: true }, V>;
 }
 
 export interface StringColumn<in out O, in out V> extends ColumnBuilder<O, V, 'string'> {

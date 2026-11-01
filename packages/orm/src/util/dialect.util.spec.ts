@@ -33,7 +33,7 @@ import { UqlSecurityError } from './uqlError.js';
   },
 })
 class Filtered {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.string().nullable())
   status?: string | null;
@@ -67,7 +67,7 @@ it('should skip a convenience filter whose condition does not resolve', () => {
     filters: { mine: { where: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) } },
   })
   class Owned {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) ownerId?: number | null;
   }
   expect(applyFilters(getMeta(Owned), {})).toEqual({});
@@ -96,7 +96,7 @@ it('should not overwrite a key already in $where', () => {
   },
 })
 class Tenanted {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   companyId?: number | null;
@@ -151,7 +151,7 @@ it('should fail closed on a write whose security context is missing', () => {
 
 @Entity({ filters: { tenants: { where: { companyId: { $in: [1, 2] } }, security: true } } })
 class MultiTenanted {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   companyId?: number | null;
@@ -174,7 +174,7 @@ it('should read a condition resolving to {} as no restriction, merging nothing',
     },
   })
   class SystemScoped {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.number().nullable())
     companyId?: number | null;
@@ -217,12 +217,12 @@ it("should read a field callback's value, or the value itself", () => {
 it("should stamp a soft delete from its option: the current time, a callback's result, or the value itself", () => {
   @Entity()
   class Dated {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
   }
   @Entity()
   class Counted {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(
       f
         .number()
@@ -233,7 +233,7 @@ it("should stamp a soft delete from its option: the current time, a callback's r
   }
   @Entity()
   class Marked {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable().softDelete('DELETED')) status?: string | null;
   }
 
@@ -265,7 +265,7 @@ it('should select the scalar fields a projection names', () => {
 
 @Entity()
 class LazyId {
-  @Field(f.number().id().eager(false))
+  @Field(f.number().autoIncrement().eager(false))
   id?: number;
   @Field(f.string().nullable())
   name?: string | null;
@@ -373,7 +373,7 @@ it('should reject an aggregate argument that is not one field', () => {
 describe('textSearchFields', () => {
   @Entity({ indexes: (article, index) => [index([article.title, article.body], { type: 'fulltext' })] })
   class Article {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) title?: string | null;
     @Field(f.string().nullable()) body?: string | null;
     @Field(f.string().nullable()) summary?: string | null;
@@ -381,7 +381,7 @@ describe('textSearchFields', () => {
 
   @Entity()
   class Plain {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) title?: string | null;
   }
 
@@ -392,7 +392,7 @@ describe('textSearchFields', () => {
     ],
   })
   class TwiceIndexed {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) title?: string | null;
     @Field(f.string().nullable()) body?: string | null;
   }
@@ -415,7 +415,7 @@ describe('textSearchFields', () => {
       indexes: (lowered, index) => [index([sql`lower(${lowered.title})`, lowered.body], { type: 'fulltext' })],
     })
     class Lowered {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
       @Field(f.string().nullable()) body?: string | null;
     }
@@ -425,7 +425,7 @@ describe('textSearchFields', () => {
   it('should not search the JSON column a fulltext entry reads a path of, which a search of whole columns never reads', () => {
     @Entity({ indexes: (pathed, index) => [index([pathed.meta.title, pathed.title], { type: 'fulltext' })] })
     class Pathed {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
       @Field(f.jsonb().nullable()) meta?: Json<{ title: string }> | null;
     }
@@ -489,7 +489,7 @@ describe('findVectorIndex', () => {
   it('should find the vector index over a column', () => {
     @Entity({ indexes: (indexed, index) => [index([indexed.embedding], { type: 'hnsw', distance: 'cosine' })] })
     class Indexed {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Indexed), 'embedding')?.type).toBe('hnsw');
@@ -498,7 +498,7 @@ describe('findVectorIndex', () => {
   it('should ignore an expression index, whose text names no column however it reads', () => {
     @Entity({ indexes: (expressed, index) => [index([sql`embedding`], { type: 'hnsw', distance: 'cosine' })] })
     class Expressed {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Expressed), 'embedding')).toBeUndefined();
@@ -508,7 +508,7 @@ describe('findVectorIndex', () => {
 describe('fillOnFields', () => {
   @Entity()
   class Zeroed {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable().onInsert(0)) count?: number | null;
     @Field(f.string().nullable().onInsert('')) note?: string | null;
     @Field(f.boolean().nullable().onInsert(false)) flag?: boolean | null;
@@ -528,7 +528,7 @@ describe('fillOnFields', () => {
 describe('foundRowAssigned', () => {
   @Entity()
   class Coded {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) code?: string | null;
     @Field(f.string().nullable()) name?: string | null;
   }
@@ -551,7 +551,7 @@ describe('foundRowAssigned', () => {
 describe('a delete of a soft-deletable entity', () => {
   @Entity()
   class Trashed {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(
       f
         .number()
@@ -566,7 +566,7 @@ describe('a delete of a soft-deletable entity', () => {
     const softDelete = vi.fn(() => 9);
     @Entity()
     class Stamped {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable().softDelete(softDelete)) deletedAt?: number | null;
     }
     const stamped = getMeta(Stamped);

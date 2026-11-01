@@ -16,7 +16,7 @@ const ROWS = 1000;
   indexes: (elemMatched, index) => [index([{ column: elemMatched.tags, type: [String], charLength: 64 }])],
 })
 class ElemMatched {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.json().nullable()) items?: Json<{ name: string }[]> | null;
   @Field(f.json().nullable()) tags?: Json<string[]> | null;
 }

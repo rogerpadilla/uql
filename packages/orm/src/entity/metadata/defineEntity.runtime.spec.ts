@@ -22,7 +22,7 @@ type ContentType = { name: string; fields: { name: string; type: ColumnType }[] 
 /** Its columns as `defineEntity` takes them, keyed by whatever the admin named each field. */
 function columnsOf({ fields }: ContentType): DefinedFields {
   return {
-    id: f.column('bigint').id(),
+    id: f.column('bigint').autoIncrement(),
     ...Object.fromEntries(fields.map((field) => [field.name, f.column(field.type).nullable()])),
   };
 }
@@ -50,7 +50,7 @@ it('should register the table a hand-written entity would, whichever way the typ
 
   const Written = defineEntity({
     name: 'recipe',
-    fields: { id: f.number().id(), title: f.string().nullable(), servings: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), title: f.string().nullable(), servings: f.number().nullable() },
   });
 
   // The runtime one names SQL types, the hand-written one JS constructors: the same table either way.

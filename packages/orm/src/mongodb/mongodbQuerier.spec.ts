@@ -13,7 +13,7 @@ import { vectorDistanceExpr } from './vectorDistance.js';
   indexes: (article, index) => [index([article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })],
 })
 class Article {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.string().nullable()) category?: string | null;
   @Field(f.column('vector').nullable()) embedding?: number[] | null;
@@ -21,13 +21,13 @@ class Article {
 
 @Entity({ name: 'Author' })
 class Author {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }
 
 @Entity({ name: 'Post' })
 class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
   @Field(f.references(() => Author).nullable()) reviewerId?: number | null;
@@ -40,13 +40,13 @@ class Post {
   triggers: (triggered, trigger) => [trigger({ on: 'afterInsert', run: (newRow) => sql`PERFORM ${newRow.id};` })],
 })
 class Triggered {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
 }
 
 @Entity({ name: 'Stamped' })
 class Stamped {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Computed((row) =>
     f
       .date()
@@ -60,7 +60,7 @@ class Stamped {
 /** Soft-deletable through a renamed column. */
 @Entity({ name: 'SoftDoc' })
 class SoftDoc {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.date().nullable().softDelete().name('deleted_at')) deletedAt?: Date | null;
 }
 
@@ -70,7 +70,7 @@ class SoftDoc {
   indexes: (rankedByInner, index) => [index([rankedByInner.embedding], { type: 'vectorSearch', distance: 'inner' })],
 })
 class RankedByInner {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 
@@ -80,7 +80,7 @@ class RankedByInner {
   indexes: (chunk, index) => [index([chunk.embedding], { type: 'vectorSearch', name: 'chunk_vs' })],
 })
 class Chunk {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) text?: string | null;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (chunk) => chunk.authorId }) author?: Author;

@@ -10,7 +10,7 @@ import type { KeyMap, Querier } from './index.js';
 
 @Entity()
 class Studio {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @OneToMany({ entity: () => Movie, mappedBy: (movie) => movie.studio }) movies?: Movie[];
 }
 
@@ -23,7 +23,7 @@ class Studio {
   ],
 })
 class Movie {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.number().nullable()) rating?: number | null;
   @Field(
@@ -60,7 +60,7 @@ class Movie {
   ],
 })
 class Cinema {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) city?: string | null;
   @Computed((cinema) =>
     f

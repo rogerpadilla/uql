@@ -15,7 +15,7 @@ const ctx: HookContext = { querier, onCommit: querier.onCommit };
 
 @Entity()
 class Article {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -34,7 +34,7 @@ class Article {
 /** Its hook is the assertion: reaching it at all fails the test that says it must not run. */
 @Entity()
 class Unhooked {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -66,7 +66,7 @@ describe('runHooks', () => {
 
     @Entity()
     class Ordered {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -97,7 +97,7 @@ describe('runHooks', () => {
   it("should await a defined entity's hook, each run on the row with the context", async () => {
     const Note = defineEntity({
       name: 'Note',
-      fields: { id: f.number().id(), body: f.string().nullable(), seen: f.boolean().nullable() },
+      fields: { id: f.number().autoIncrement(), body: f.string().nullable(), seen: f.boolean().nullable() },
     }).hooks({
       beforeInsert: [
         async (note, { querier: given }) => {
@@ -120,7 +120,7 @@ describe('runHooks', () => {
       abstract: true,
       fields: { by: f.string().nullable() },
     }).hooks({ beforeInsert: [(row) => void (row.by ??= 'base')] });
-    const Note = defineEntity({ name: 'Note', extends: Stamped, fields: { id: f.number().id() } });
+    const Note = defineEntity({ name: 'Note', extends: Stamped, fields: { id: f.number().autoIncrement() } });
     const note: InstanceType<typeof Note> = { id: 1 };
 
     await runHooks(Note, 'beforeInsert', [note], ctx);
@@ -136,7 +136,7 @@ describe('runHooks', () => {
     expect(() => {
       @Entity()
       class Misnamed {
-        @Field(f.number().id())
+        @Field(f.number().autoIncrement())
         id?: number;
         // @ts-expect-error covers the runtime guard for untyped callers
         @BeforeInsert()
@@ -149,7 +149,7 @@ describe('runHooks', () => {
   it("should run an entity's override of the hook method its base declares", async () => {
     @Entity()
     class Stamped {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
       @Field(f.string().nullable())
       by?: string | null;
@@ -174,7 +174,7 @@ describe('runHooks', () => {
   it("should run an entity's override of a hook method named by the empty string", async () => {
     @Entity()
     class Blank {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
       @Field(f.string().nullable())
       by?: string | null;

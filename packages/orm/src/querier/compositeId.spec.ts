@@ -15,7 +15,7 @@ import { sql, whereIds } from '../util/index.js';
 class Enrolment {
   [idKey]?: 'studentId' | 'courseId';
   @Field(f.number().id())
-  studentId?: number;
+  studentId!: number;
   @Field(f.string().id())
   courseId?: string;
   @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolment })
@@ -27,7 +27,7 @@ class Enrolment {
 
 @Entity()
 class Badge {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) label?: string | null;
 }
 
@@ -38,7 +38,7 @@ class Badge {
  */
 @Entity()
 class EnrolmentBadge {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) enrolmentStudentId?: number | null;
   @Field(f.string().nullable()) enrolmentCourseId?: string | null;
   @ManyToOne({
@@ -60,7 +60,7 @@ class EnrolmentBadge {
  */
 @Entity()
 class Note {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) enrolmentStudentId?: number | null;
   @Field(f.string().nullable()) enrolmentCourseId?: string | null;
   @ManyToOne({
@@ -78,7 +78,7 @@ class Note {
 @Entity()
 class Attempt {
   [idKey]?: 'studentId' | 'task';
-  @Field(f.number().id()) studentId?: number;
+  @Field(f.number().id()) studentId!: number;
   @Field(f.string().id()) task?: string;
   @Field(f.string().nullable()) score?: string | null;
 }
@@ -117,7 +117,7 @@ class Seat {
 @Entity()
 class Term {
   [idKey]?: 'year' | 'season';
-  @Field(f.number().id()) year?: number;
+  @Field(f.number().id()) year!: number;
   @Field(f.string().id()) season?: string;
   @OneToMany({ entity: () => Session, mappedBy: (session) => session.term, cascade: 'delete' })
   sessions?: Session[];
@@ -125,7 +125,7 @@ class Term {
 
 @Entity()
 class Session {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) termYear?: number | null;
   @Field(f.string().nullable()) termSeason?: string | null;
   @ManyToOne({
@@ -370,14 +370,14 @@ describe('changing the primary key of an existing table', () => {
   @Entity({ name: 'Member' })
   class MemberBefore {
     [idKey]?: 'userId';
-    @Field(f.number().id()) userId?: number;
+    @Field(f.number().autoIncrement()) userId?: number;
     @Field(f.string().nullable()) note?: string | null;
   }
   @Entity({ name: 'Member' })
   class MemberAfter {
     [idKey]?: 'userId' | 'groupId';
-    @Field(f.number().id()) userId?: number;
-    @Field(f.number().id()) groupId?: number;
+    @Field(f.number().id()) userId!: number;
+    @Field(f.number().id()) groupId!: number;
     @Field(f.string().nullable()) note?: string | null;
   }
 
@@ -450,7 +450,7 @@ describe('a composite key across a relation', () => {
 
   @Entity()
   class Attendance {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) enrolmentStudentId?: number | null;
     @Field(f.string().nullable()) enrolmentCourseId?: string | null;
     @ManyToOne({

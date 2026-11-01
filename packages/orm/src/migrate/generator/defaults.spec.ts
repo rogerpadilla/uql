@@ -48,7 +48,7 @@ describe('Default value expressions', () => {
   it("should write a JSON column's default as the JSON text of its document, a string or a number included", () => {
     @Entity({ name: 'DocDefaults' })
     class DocDefaults {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.jsonb().nullable().default({ a: 1 })) settings?: Json<{ a?: number }> | null;
       @Field(f.jsonb().nullable().default('draft')) state?: Json<string> | null;
       @Field(f.jsonb().nullable().default(1)) level?: Json<number> | null;

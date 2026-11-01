@@ -5,7 +5,7 @@ import { SqliteDialect } from './sqliteDialect.js';
 
 @Entity({ name: 'SqliteReportAudit' })
 class SqliteReportAudit {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) postId?: number | null;
 }
 
@@ -21,13 +21,13 @@ class SqliteReportAudit {
   ],
 })
 class SqliteReportPost {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) title!: string;
 }
 
 @Entity({ name: 'SqliteReportPlain' })
 class SqliteReportPlain {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) title!: string;
 }
 

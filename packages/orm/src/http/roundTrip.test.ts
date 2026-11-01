@@ -12,13 +12,13 @@ import { createFetchHandler } from './fetchHandler.js';
 
 @Entity()
 class Gadget {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }
 
 @Entity()
 class Widget {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }

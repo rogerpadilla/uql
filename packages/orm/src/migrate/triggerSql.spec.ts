@@ -16,7 +16,7 @@ import { dropTrigger, namesAny, renderTrigger, stampTriggers } from './triggerSq
 
 @Entity()
 class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Field(f.string().nullable()) searchVector?: string | null;
 }
@@ -40,7 +40,7 @@ const nameOf = (dialect: AbstractSqlDialect, trigger: EntityTriggerMeta<Post>, i
 
 @Entity()
 class Tally {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable().unique()) postId?: number | null;
   @Field(f.number().nullable()) count?: number | null;
 }
@@ -70,7 +70,7 @@ describe('renderTrigger', () => {
   it('should keep two entities sharing a label apart', () => {
     @Entity({ name: 'Page' })
     class Page {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     expect(nameOf(new PostgresDialect(), { ...stamp, name: 'audit' })).toMatch(/^_uql_Post__audit_/);
     expect(renderTrigger(new PostgresDialect(), getMeta(Page), { ...plain, name: 'audit' }, 0).name).toMatch(
@@ -98,7 +98,7 @@ describe('renderTrigger', () => {
   it('should keep a name, hash included, inside the shortest identifier every engine accepts', () => {
     @Entity({ name: 'A'.repeat(60) })
     class Long {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const { name } = renderTrigger(new PostgresDialect(), getMeta(Long), plain, 0);
     expect(name.length).toBeLessThanOrEqual(63);
@@ -344,7 +344,7 @@ describe('the guard, however the engine states one', () => {
 describe('the where guard', () => {
   @Entity({ name: 'Scoped', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
   class Scoped {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) tenantId?: number | null;
     @Field(f.string().nullable()) status?: string | null;
     @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
@@ -453,7 +453,7 @@ describe('the where guard', () => {
 describe('a stamp, which uql writes the body of', () => {
   @Entity({ name: 'Note' })
   class Note {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Computed((row) =>
       f
         .number()
@@ -501,8 +501,8 @@ describe('a stamp, which uql writes the body of', () => {
     @Entity({ name: 'Pair' })
     class Pair {
       [idKey]?: 'left';
-      @Field(f.number().id()) left?: number;
-      @Field(f.number().id()) right?: number;
+      @Field(f.text().id()) left?: string;
+      @Field(f.text().id()) right?: string;
       @Computed((row) =>
         f
           .number()
@@ -520,7 +520,7 @@ describe('a stamp, which uql writes the body of', () => {
   it('should install one trigger per event, so neither replaces the other', () => {
     @Entity({ name: 'Both' })
     class Both {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Computed((row) =>
         f
           .number()
@@ -599,7 +599,7 @@ describe('the rows it reads', () => {
   it('should name the table behind its schema where the entity claims one', () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const statement = renderTrigger(new PostgresDialect(), getMeta(Note), plain, 0).statements.join('\n');
     expect(statement).toContain('ON "sales"."Note"');
@@ -610,7 +610,7 @@ describe('the rows it reads', () => {
   it("should put the function in the table's schema, leaving the trigger name bare, on Postgres", () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const meta = getMeta(Note);
     const { name, statements } = renderTrigger(new PostgresDialect(), meta, plain, 0);
@@ -627,7 +627,7 @@ describe('the rows it reads', () => {
   it("should name the trigger in the table's schema where the engine keeps names per schema", () => {
     @Entity({ name: 'Note', schema: 'sales' })
     class Note {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const meta = getMeta(Note);
     const mysql = renderTrigger(new MySqlDialect(), meta, { on: 'afterInsert', run: () => sql`SET @x = 1;` }, 0);
@@ -653,7 +653,7 @@ describe('a write in the body, to another table', () => {
   // delete, a JavaScript fill standing on a column default.
   @Entity({ name: 'WriteAudit', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
   class WriteAudit {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable().name('post_id')) postId?: number | null;
     @Field(f.string().nullable()) body?: string | null;
     @Field(
@@ -683,7 +683,7 @@ describe('a write in the body, to another table', () => {
 
   @Entity({ name: 'PriceAudit' })
   class PriceAudit {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number()) variantId!: number;
     @Field(f.number()) amount!: number;
     @Field(f.number().default(0)) attempts!: number;
@@ -700,7 +700,7 @@ describe('a write in the body, to another table', () => {
 
   @Entity({ name: 'StateAudit' })
   class StateAudit {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().unique()) postId!: number;
     @Field(f.string().onInsert('open')) state!: string;
     @Field(f.date().onInsert(currentTimestamp)) at!: Date;
@@ -797,7 +797,7 @@ describe('a write in the body, to another table', () => {
   it("should stamp an onUpdate fill on a trigger's update and on an upsert with an update", () => {
     @Entity({ name: 'TouchedAudit' })
     class TouchedAudit {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().unique()) postId!: number;
       @Field(f.number().nullable()) hits?: number | null;
       @Field(f.date().nullable().onUpdate(currentTimestamp)) touchedAt?: Date | null;

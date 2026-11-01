@@ -27,6 +27,7 @@ import {
   unedited,
 } from './edits.js';
 import { columnExpressions, handNamedColumns, sqlTag, sqlWhereEdit, templateOf } from './entitySql.js';
+import { toGeneratedKeys } from './generatedKeys.js';
 import {
   clashingName,
   deadImportNames,
@@ -913,7 +914,9 @@ export function transformFile(
   const legacy = rewriteLegacy(source, checker, options, taken);
   const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
   const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
-  const { text, unresolved } = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
+  const migrated = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
+  const { unresolved } = migrated;
+  const text = toGeneratedKeys(source.fileName, migrated.text);
   return {
     fileName: source.fileName,
     text,

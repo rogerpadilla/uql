@@ -30,7 +30,7 @@ export const BrandedUser = defineEntity({
 
 export const BrandedPost = defineEntity({
   name: 'BrandedPost',
-  fields: { id: f.number().id(), authorId: f.uuid<UserId>() },
+  fields: { id: f.number().autoIncrement(), authorId: f.uuid<UserId>() },
 }).relations((rel) => ({
   author: () => rel.manyToOne(BrandedUser, { references: (post) => post.authorId }),
 }));
@@ -64,19 +64,19 @@ type Stamp = Date & { readonly __tag: 'Stamp' };
 
 export const BrandedTenant = defineEntity({
   name: 'BrandedTenant',
-  fields: { id: f.number<TenantId>().id(), at: f.date<Stamp>() },
+  fields: { id: f.number<TenantId>().autoIncrement(), at: f.date<Stamp>() },
 });
 
 defineEntity({
   name: 'HoldsTenant',
-  fields: { id: f.number().id(), tenantId: f.number<TenantId>() },
+  fields: { id: f.number().autoIncrement(), tenantId: f.number<TenantId>() },
 }).relations((rel) => ({ tenant: () => rel.manyToOne(BrandedTenant, { references: (row) => row.tenantId }) }));
 
 /** A key's brand holds across a relation: a plain column would drop it, another brand is another kind of value. */
-defineEntity({ name: 'DropsBrand', fields: { id: f.number().id(), tenantId: f.number() } })
+defineEntity({ name: 'DropsBrand', fields: { id: f.number().autoIncrement(), tenantId: f.number() } })
   // @ts-expect-error the column has to hold the key's brand
   .relations((rel) => ({ tenant: () => rel.manyToOne(BrandedTenant, { references: (row) => row.tenantId }) }));
-defineEntity({ name: 'OtherBrand', fields: { id: f.number().id(), tenantId: f.number<OrgId>() } })
+defineEntity({ name: 'OtherBrand', fields: { id: f.number().autoIncrement(), tenantId: f.number<OrgId>() } })
   // @ts-expect-error another brand is not the key's
   .relations((rel) => ({ tenant: () => rel.manyToOne(BrandedTenant, { references: (row) => row.tenantId }) }));
 
@@ -88,39 +88,44 @@ export async function aBrandedDateFiltersAsAnyBrandDoes(querier: Querier, at: St
 
 type BigKey = bigint & { readonly __tag: 'BigKey' };
 
-export const PlainKey = defineEntity({ name: 'PlainKey', fields: { id: f.number().id() } });
-export const BigKeyed = defineEntity({ name: 'BigKeyed', fields: { id: f.bigint().id() } });
-export const BrandedBigKey = defineEntity({ name: 'BrandedBigKey', fields: { id: f.bigint<BigKey>().id() } });
+export const PlainKey = defineEntity({ name: 'PlainKey', fields: { id: f.number().autoIncrement() } });
+export const BigKeyed = defineEntity({ name: 'BigKeyed', fields: { id: f.bigint().autoIncrement() } });
+export const BrandedBigKey = defineEntity({
+  name: 'BrandedBigKey',
+  fields: { id: f.bigint<BigKey>().autoIncrement() },
+});
 
 /** A brand on the column alone loses nothing, and is no other kind of value: a number still joins a bigint. */
 defineEntity({
   name: 'NarrowerThanKey',
-  fields: { id: f.number().id(), keyId: f.number<TenantId>() },
+  fields: { id: f.number().autoIncrement(), keyId: f.number<TenantId>() },
 }).relations((rel) => ({
   plain: () => rel.manyToOne(PlainKey, { references: (row) => row.keyId }),
   wide: () => rel.manyToOne(BigKeyed, { references: (row) => row.keyId }),
 }));
-defineEntity({ name: 'HoldsBigBrand', fields: { id: f.number().id(), keyId: f.bigint<BigKey>() } }).relations(
-  (rel) => ({ big: () => rel.manyToOne(BrandedBigKey, { references: (row) => row.keyId }) }),
-);
-defineEntity({ name: 'DropsBigBrand', fields: { id: f.number().id(), keyId: f.number() } })
+defineEntity({
+  name: 'HoldsBigBrand',
+  fields: { id: f.number().autoIncrement(), keyId: f.bigint<BigKey>() },
+}).relations((rel) => ({ big: () => rel.manyToOne(BrandedBigKey, { references: (row) => row.keyId }) }));
+defineEntity({ name: 'DropsBigBrand', fields: { id: f.number().autoIncrement(), keyId: f.number() } })
   // @ts-expect-error a plain number drops a bigint key's brand too
   .relations((rel) => ({ big: () => rel.manyToOne(BrandedBigKey, { references: (row) => row.keyId }) }));
 
 /** A column whose type is data states no value, so only the run time can check it. */
-defineEntity({ name: 'HoldsData', fields: { id: f.number().id(), keyId: f.column(dataColumnType) } }).relations(
-  (rel) => ({ tenant: () => rel.manyToOne(BrandedTenant, { references: (row) => row.keyId }) }),
-);
+defineEntity({
+  name: 'HoldsData',
+  fields: { id: f.number().autoIncrement(), keyId: f.column(dataColumnType) },
+}).relations((rel) => ({ tenant: () => rel.manyToOne(BrandedTenant, { references: (row) => row.keyId }) }));
 
 @Entity()
 export class DecoratedKey {
-  @Field(f.number().id()) id?: TenantId;
+  @Field(f.number().autoIncrement()) id?: TenantId;
 }
 
 /** A decorated property brands what its builder does not, so the builder cannot be held to the brand. */
 @Entity()
 export class DecoratedHolder {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().references(() => DecoratedKey)) keyId?: TenantId;
   @Field(f.references(() => DecoratedKey)) derivedId?: TenantId;
   @Field(f.column(dataColumnType).references(() => BrandedTenant)) dataId?: TenantId;
@@ -129,7 +134,7 @@ export class DecoratedHolder {
 /** A column-level foreign key is held to a relation's rule, on the property, which is what the row holds. */
 @Entity()
 export class DecoratedDropsBrand {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error a plain property drops the key's brand
   @Field(f.number().references(() => DecoratedKey)) keyId?: number;
   // @ts-expect-error another brand is not the key's
@@ -156,7 +161,7 @@ export class NamesReferencingKey {
       .id()
       .references(() => DecoratedKey),
   )
-  code?: TenantId;
+  code!: TenantId;
 }
 
 @Entity()
@@ -200,10 +205,12 @@ export const StampKey = defineEntity({ name: 'StampKey', fields: { at: f.date<St
 export const PlainDateKey = defineEntity({ name: 'PlainDateKey', fields: { at: f.date().id() } });
 
 /** A date's brand holds as a primitive's does: a plain column would drop it, a brand on the column alone loses nothing. */
-defineEntity({ name: 'HoldsStamp', fields: { id: f.number().id(), keyAt: f.date<Stamp>() } }).relations((rel) => ({
-  branded: () => rel.manyToOne(StampKey, { references: (row) => row.keyAt }),
-  plain: () => rel.manyToOne(PlainDateKey, { references: (row) => row.keyAt }),
-}));
-defineEntity({ name: 'DropsStamp', fields: { id: f.number().id(), keyAt: f.date() } })
+defineEntity({ name: 'HoldsStamp', fields: { id: f.number().autoIncrement(), keyAt: f.date<Stamp>() } }).relations(
+  (rel) => ({
+    branded: () => rel.manyToOne(StampKey, { references: (row) => row.keyAt }),
+    plain: () => rel.manyToOne(PlainDateKey, { references: (row) => row.keyAt }),
+  }),
+);
+defineEntity({ name: 'DropsStamp', fields: { id: f.number().autoIncrement(), keyAt: f.date() } })
   // @ts-expect-error the column has to hold the key's brand
   .relations((rel) => ({ branded: () => rel.manyToOne(StampKey, { references: (row) => row.keyAt }) }));

@@ -8,7 +8,7 @@ import type { Querier } from '../index.js';
 
 @Entity()
 class Line {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .number()
@@ -21,7 +21,7 @@ class Line {
 
 @Entity()
 class Basket {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) label?: string | null;
 
   @OneToMany({ entity: () => Line, mappedBy: (line) => line.basketId })

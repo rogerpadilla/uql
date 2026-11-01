@@ -18,7 +18,7 @@ const TABLE = 'RawColumnTypeCaption';
   indexes: (caption, index) => [index([caption.searchVector], { name: 'rct_search_idx', type: 'gin' })],
 })
 class Caption {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 
   @Field(f.string().nullable()) text?: string | null;
 

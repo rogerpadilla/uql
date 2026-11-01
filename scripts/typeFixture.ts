@@ -12,13 +12,13 @@ const entities = /*ts*/ `import { Entity, f, Field, idKey, ManyToOne, OneToMany 
 import { Settings, Tags } from './payloads.js';
 
 @Entity() export class Company {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.number().nullable()) size?: number | null;
   @OneToMany({ entity: () => User, mappedBy: (u) => u.company }) users?: User[];
 }
 @Entity() export class User {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.number().nullable()) age?: number | null;
@@ -28,11 +28,11 @@ import { Settings, Tags } from './payloads.js';
 }
 @Entity() export class Membership {
   [idKey]?: 'userId' | 'companyId';
-  @Field(f.number().id()) userId?: number;
-  @Field(f.number().id()) companyId?: number;
+  @Field(f.number().id()) userId!: number;
+  @Field(f.number().id()) companyId!: number;
 }
 @Entity() export class Seat {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) memberUserId?: number | null;
   @Field(f.number().nullable()) memberCompanyId?: number | null;
   @ManyToOne({
@@ -88,7 +88,7 @@ export async function read${entity}${i}(q: Querier) {
 const definition = (i: number) => /*ts*/ `
 @Entity({ indexes: ${indexes}, filters: ${filters} })
 export class Indexed${i} {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.date().nullable()) createdAt?: Date | null;
@@ -98,7 +98,7 @@ export class Indexed${i} {
   @Computed((row) => row.children.count()) readonly childCount?: number;
 }
 @Entity() export class Child${i} {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Indexed${i}).nullable()) parentId?: number | null;
   @ManyToOne({ entity: () => Indexed${i}, references: (child) => child.parentId }) parent?: Indexed${i};
 }
@@ -109,7 +109,7 @@ const definedEntity = (i: number) => /*ts*/ `
 export const Defined${i} = defineEntity({
   name: 'Defined${i}',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     name: f.string().nullable(),
     email: f.string().nullable(),
     createdAt: f.date().nullable(),
@@ -125,7 +125,7 @@ export const Defined${i} = defineEntity({
   .filters(${filters});
 export const DefinedChild${i} = defineEntity({
   name: 'DefinedChild${i}',
-  fields: { id: f.number().id(), parentId: f.number().nullable() },
+  fields: { id: f.number().autoIncrement(), parentId: f.number().nullable() },
 }).relations((rel) => ({ parent: () => rel.manyToOne(Defined${i}, { references: (child) => child.parentId }) }));
 ${read('Defined', i)}`;
 
@@ -142,11 +142,11 @@ const wideColumns = times(
 /** A wide entity and one referencing it by a column-level foreign key and a relation. */
 const wideEntity = (i: number) => /*ts*/ `
 @Entity() export class Wide${i} {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 ${wideColumns}
 }
 @Entity() export class WideChild${i} {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().references(() => Wide${i}).nullable()) wideId?: number | null;
 ${wideColumns}
   @ManyToOne({ entity: () => Wide${i}, references: (child) => child.wideId }) wide?: Wide${i};

@@ -1,5 +1,5 @@
 import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
-import { AGGREGATE_VALUE_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, KEY_DEFAULT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import { generatesKey, idOf, namesEvery, namesKey, soleId } from '../entity/metadata/definition.js';
@@ -14,7 +14,6 @@ import type {
   QueryAggregate,
   QueryBuildFn,
   FieldKey,
-  QuerySql,
   QueryUpsert,
   QueryPage,
   QueryOptions,
@@ -29,6 +28,7 @@ import type {
   UpdatePayload,
   ReportedWrite,
 } from '../type/index.js';
+import { QuerySql } from '../type/querySql.js';
 import {
   buildUpdateResult,
   chunk,
@@ -39,7 +39,7 @@ import {
   getKeys,
   rowKey,
 } from '../util/index.js';
-import { statementOf } from '../util/sql.js';
+import { sql, statementOf } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier, type UpsertedId, type ReportingWrites } from './abstractQuerier.js';
@@ -420,6 +420,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const [idKey] = meta.ids;
     const sole = soleId(meta);
     const generatedKey = generatesKey(meta);
+    await this.fillDefaultedKeys(meta, rows);
     // Only a statement whose every row left its key to the database needs its ids, which a supplied one would void
     // in a header: a `RETURNING` reports them all, a header only a generated key's.
     const statements = this.insertChunks(meta, rows).map((indexes) => ({
@@ -457,6 +458,35 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
         });
       }
     });
+  }
+
+  /**
+   * Writes a defaulted key onto each row naming none, where the engine reports only a key it generates: the row then
+   * names its key, the value the column would have taken, SQL evaluated first.
+   */
+  private async fillDefaultedKeys<E extends object>(meta: EntityMeta<E>, rows: EntityData<E>[]): Promise<void> {
+    const sole = soleId(meta);
+    if (sole?.field.defaultValue === undefined || this.dialect.insertIdSource === 'returning') {
+      return;
+    }
+    const unnamed = rows.filter((row) => !namesKey(meta, row));
+    if (!unnamed.length) {
+      return;
+    }
+    const value = sole.field.defaultValue;
+    const keys = value instanceof QuerySql ? await this.evaluated(value, unnamed.length) : unnamed.map(() => value);
+    unnamed.forEach((row, at) => {
+      row[sole.key] = keys[at] as E[typeof sole.key];
+    });
+  }
+
+  /** What SQL evaluates to on its own, `count` times, each as a column's default would: one statement, a value a row. */
+  private async evaluated(value: QuerySql, count: number): Promise<unknown[]> {
+    const select = sql`SELECT ${value} AS ${sql.id(KEY_DEFAULT_ALIAS)}`;
+    const rows = await this.rowsOf<Record<typeof KEY_DEFAULT_ALIAS, unknown>>(
+      sql.join(new Array<QuerySql>(count).fill(select), ' UNION ALL '),
+    );
+    return rows.map((row) => row[KEY_DEFAULT_ALIAS]);
   }
 
   /**

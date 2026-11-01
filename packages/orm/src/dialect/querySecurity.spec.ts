@@ -226,7 +226,7 @@ describe('SQL generation - JSON path keys', () => {
 
 @Entity({ filters: { tenant: { where: (ctx) => ({ tenantId: ctx?.secureTenantId }), security: true } } })
 class LooseTenantRow {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   tenantId?: number | null;

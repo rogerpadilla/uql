@@ -15,7 +15,7 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({ name: 'TgAudit' })
 class TgAudit {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) postId?: number | null;
 }
 
@@ -33,7 +33,7 @@ function tgPost(watched: 'title' | 'views', title: Column<unknown, string> = f.s
     ],
   })
   class TgPost {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(title) title?: string;
     @Field(f.number().nullable()) views?: number | null;
   }
@@ -128,7 +128,7 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   it('should drop a trigger the entity no longer declares', async () => {
     @Entity({ name: 'TgPost' })
     class Untriggered {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
       @Field(f.number().nullable()) views?: number | null;
     }
@@ -258,14 +258,14 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   ],
 })
 class TgLogged {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
 }
 
 // A column named apart from its key, and a literal holding a quote, both carried into each engine's body.
 @Entity({ name: 'TgLog' })
 class TgLog {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable().name('post_id')) postId?: number | null;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.string().nullable()) source?: string | null;
@@ -347,7 +347,7 @@ describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_en
   ],
 })
 class TgLedger {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.boolean().nullable()) frozen?: boolean | null;
   @Field(f.number().nullable()) amount?: number | null;
 }
@@ -384,7 +384,7 @@ describe.each(TRIGGER_POOLS)('a refusal on %s', (_engine, connect) => {
   ],
 })
 class TgEntry {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) amount?: number | null;
 }
 
@@ -429,21 +429,21 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.def
   ],
 })
 class TgSale {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) sku?: string | null;
   @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgLast' })
 class TgLast {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(20)) sku?: string | null;
   @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgFirst' })
 class TgFirst {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(20)) sku?: string | null;
   @Field(f.number().nullable()) qty?: number | null;
 }
@@ -488,21 +488,21 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
   ],
 })
 class TgOrder {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) sku?: string | null;
   @Field(f.number().nullable()) qty?: number | null;
 }
 
 @Entity({ name: 'TgCount' })
 class TgCount {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(20)) sku?: string | null;
   @Field(f.number().nullable()) hits?: number | null;
 }
 
 @Entity({ name: 'TgTotal' })
 class TgTotal {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(20)) sku?: string | null;
   @Field(f.number().nullable()) total?: number | null;
 }
@@ -552,14 +552,14 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.fir
   ],
 })
 class TgSlugged {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.string().nullable()) slug?: string | null;
 }
 
 @Entity({ name: 'TgTrash' })
 class TgTrash {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) postId?: number | null;
 }
 
@@ -629,7 +629,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
         ],
       })
       class Upper {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) title?: string | null;
         @Field(f.string().nullable()) slug?: string | null;
       }
@@ -660,13 +660,13 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
         ],
       })
       class Schemed {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) title?: string | null;
         @Field(f.string().nullable()) slug?: string | null;
       }
       @Entity({ name: 'TgSchemed', schema: 'tg' })
       class Untriggered {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) title?: string | null;
         @Field(f.string().nullable()) slug?: string | null;
       }

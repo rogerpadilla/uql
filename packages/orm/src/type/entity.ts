@@ -81,11 +81,10 @@ export type WritableKey<E> = {
 }[FieldKey<E>];
 
 /**
- * What an insert may leave out however the entity declares it: a single-column key, which something
- * usually generates, the version, which uql starts at 0, and what {@link filledKey} lists. A composite
- * key is the references a row is made of, so an insert names it.
+ * What an insert may leave out, the class saying so: `_id`, which MongoDB fills, the version, which uql starts at 0,
+ * and what {@link filledKey} lists. A `?` property a write keeps as it is.
  */
-type FilledKey<E> = SoleIdKey<E> | VersionKey<E> | (BrandNames<E, typeof filledKey> & FieldKey<E>);
+type FilledKey<E> = VersionKey<E> | (('_id' | BrandNames<E, typeof filledKey>) & FieldKey<E>);
 
 /**
  * A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write,
@@ -488,7 +487,7 @@ export type FieldOptions<V = unknown> = {
   readonly unique?: boolean;
   /** The column's DDL default: a literal, or SQL the database evaluates per inserted row (`currentTimestamp`, `sql`). */
   readonly defaultValue?: DdlDefault<V> | QuerySql;
-  /** Whether the database generates the value; a numeric sole key does unless something else fills it. */
+  /** Whether the database generates the value. */
   readonly autoIncrement?: boolean;
   /**
    * `true` for an index over the column, a string to name it. A foreign key column is indexed unless

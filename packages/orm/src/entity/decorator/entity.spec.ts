@@ -8,7 +8,7 @@ describe('@Index decorator', () => {
   it('should register a single-column index', () => {
     @Entity({ indexes: (user, index) => [index([user.email])] })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -25,7 +25,7 @@ describe('@Index decorator', () => {
   it('should register a unique index', () => {
     @Entity({ indexes: (user, index) => [index([user.email], { unique: true })] })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -40,7 +40,7 @@ describe('@Index decorator', () => {
   it('should register a composite index', () => {
     @Entity({ indexes: (user, index) => [index([user.firstName, user.lastName])] })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -58,7 +58,7 @@ describe('@Index decorator', () => {
   it('should register a named index', () => {
     @Entity({ indexes: (user, index) => [index([user.email], 'user_email_idx')] })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -75,7 +75,7 @@ describe('@Index decorator', () => {
       indexes: (user, index) => [index([user.firstName, user.lastName]), index([user.email], { unique: true })],
     })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -96,7 +96,7 @@ describe('@Index decorator', () => {
   it('should support index with where clause', () => {
     @Entity({ indexes: (user, index) => [index([user.email], { where: { deletedAt: null } })] })
     class User {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -114,7 +114,7 @@ describe('@Index decorator', () => {
   it('should default unique to false if not specified', () => {
     @Entity({ indexes: (category, index) => [index([category.name])] })
     class Category {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())
@@ -128,7 +128,7 @@ describe('@Index decorator', () => {
   it('should register a fulltext column weight', () => {
     @Entity({ indexes: (doc, index) => [index([{ column: doc.title, weight: 2 }, doc.body], { type: 'fulltext' })] })
     class Doc {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
       @Field(f.string().nullable()) body?: string | null;
     }
@@ -143,7 +143,7 @@ describe('@Index decorator', () => {
       () => {
         @Entity({ indexes: (doc, index) => [index([{ column: doc.title, weight }, doc.body], { type })] })
         class Doc {
-          @Field(f.number().id()) id?: number;
+          @Field(f.number().autoIncrement()) id?: number;
           @Field(f.string().nullable()) title?: string | null;
           @Field(f.string().nullable()) body?: string | null;
         }
@@ -158,7 +158,7 @@ describe('@Index decorator', () => {
   it('should generate index name if not provided', () => {
     @Entity({ indexes: (task, index) => [index([task.status, task.priority])] })
     class Task {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())

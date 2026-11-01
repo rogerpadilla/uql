@@ -16,7 +16,7 @@ const STATUSES: readonly string[] = ['draft', 'paid'];
 const CkBill = defineEntity({
   name: 'CkBill',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     // Its values declared as data, so the row admits any string: the tests widen them.
     status: f.enum(STATUSES).nullable().length(20).columnType('varchar'),
     spent: f.number().nullable(),
@@ -29,7 +29,7 @@ type CkBill = InstanceType<typeof CkBill>;
 @Entity({ name: 'CkHand', checks: (ckHand, check) => [check({ n: { $lte: 100 } })] })
 class CkHand {
   // Not generated, so it matches the table the test writes by hand, and the check is all that differs.
-  @Field(f.number().id().autoIncrement(false)) id?: number;
+  @Field(f.number().id()) id!: number;
   @Field(f.number().nullable()) n?: number | null;
 }
 

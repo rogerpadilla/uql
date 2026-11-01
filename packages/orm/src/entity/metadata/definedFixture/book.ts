@@ -6,7 +6,7 @@ import { Author } from './author.js';
 export const Book = defineEntity({
   name: 'Book',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string(),
     stock: f.number().default(0),
     status: f.enum(['draft', 'published']),

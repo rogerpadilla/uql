@@ -6,12 +6,12 @@ import { entityTypesSource } from './entityTypes.js';
 it('should write an interface per registered entity, relations included', () => {
   const Author = defineEntity({
     name: 'Author',
-    fields: { id: f.number().id(), name: f.string().nullable() },
+    fields: { id: f.number().autoIncrement(), name: f.string().nullable() },
   }).relations((rel) => ({ posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.author }) }));
   const Post = defineEntity({
     name: 'Post',
     fields: {
-      id: f.number().id(),
+      id: f.number().autoIncrement(),
       title: f.string().nullable(),
       publishedAt: f.date().nullable(),
       authorId: f.number().nullable(),
@@ -40,20 +40,20 @@ it('should write an interface per registered entity, relations included', () => 
 });
 
 it('should emit names a generated file can carry, whatever a content type was called', () => {
-  const Outside = defineEntity({ name: 'outside', fields: { id: f.number().id() } });
+  const Outside = defineEntity({ name: 'outside', fields: { id: f.number().autoIncrement() } });
 
   // A slug carries what an identifier cannot, and two of them collide once that is stripped.
   const dashed = defineEntity({
     name: 'blog-post',
     fields: {
-      id: f.number().id(),
+      id: f.number().autoIncrement(),
       'hero-image': f.string().nullable(),
       outsideId: f.number().nullable(),
     },
   }).relations((rel) => ({ outside: () => rel.manyToOne(Outside, { references: (post) => post.outsideId }) }));
-  const collides = defineEntity({ name: 'blogpost', fields: { id: f.number().id() } });
+  const collides = defineEntity({ name: 'blogpost', fields: { id: f.number().autoIncrement() } });
   // A slug can also start with what an identifier cannot.
-  const numeric = defineEntity({ name: '2fa', fields: { id: f.number().id() } });
+  const numeric = defineEntity({ name: '2fa', fields: { id: f.number().autoIncrement() } });
 
   expect(entityTypesSource([numeric])).toContain('export interface Entity2fa {');
   const source = entityTypesSource([dashed, collides]);
@@ -66,7 +66,10 @@ it('should emit names a generated file can carry, whatever a content type was ca
 });
 
 it('should keep the letters of a name in any script', () => {
-  const owner = defineEntity({ name: 'dueño', fields: { id: f.number().id(), größe: f.string().nullable() } });
+  const owner = defineEntity({
+    name: 'dueño',
+    fields: { id: f.number().autoIncrement(), größe: f.string().nullable() },
+  });
 
   const source = entityTypesSource([owner]);
   expect(source).toContain('export interface Dueño {');
@@ -78,7 +81,7 @@ it('should declare each field as present, optional or nullable as its column is'
   const Invoice = defineEntity({
     name: 'Invoice',
     fields: {
-      id: f.number().id(),
+      id: f.number().autoIncrement(),
       number: f.string(),
       status: f.string().default('draft'),
       issuedAt: f.date().onInsert(() => new Date()),

@@ -46,7 +46,7 @@ it('should name an entity that declares no primary key', () => {
   }
   @Entity()
   class Keyed extends Keyless {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   expect(getMeta(Keyed).ids).toEqual(['id']);
   expect(() => assertSoleId(getMeta(Keyless), 'a key lookup')).toThrow(
@@ -59,7 +59,7 @@ it('should name the columns of a composite key, and name its row by every one', 
   class Seat {
     [idKey]?: 'row' | 'number';
     @Field(f.string().id()) row?: string;
-    @Field(f.number().id()) number?: number;
+    @Field(f.number().id()) number!: number;
     @Field(f.string().nullable()) holder?: string | null;
   }
   const meta = getMeta(Seat);
@@ -89,7 +89,7 @@ it('should keep a check constraint as authored, for the schema build to render',
   const checks = [{ name: 'quantity_positive', where: sql`quantity > 0` }, { where: sql`quantity < 1000` }];
   @Entity({ checks: (_, check) => checks.map(({ where, name }) => check(where, name)) })
   class Stocked {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) quantity?: number | null;
   }
   expect(getMeta(Stocked).checks).toEqual(checks);
@@ -99,7 +99,7 @@ it('should refuse a field option the column type does not take', () => {
   expect(() => {
     @Entity()
     class Conflicted {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
       @Field(f.number().nullable().length(10)) amount?: number | null;
     }
@@ -111,7 +111,7 @@ it('should refuse a vector field measuring by another metric than its index rank
   expect(() => {
     @Entity({ indexes: (twoMetrics, index) => [index([twoMetrics.embedding], { type: 'hnsw', distance: 'inner' })] })
     class TwoMetrics {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable().distance('l2')) embedding?: number[] | null;
     }
     return TwoMetrics;
@@ -120,10 +120,10 @@ it('should refuse a vector field measuring by another metric than its index rank
 
 /** A foreign key's kind is checked against the key it references, read off registrations alone. */
 it('should check a chained foreign key without resolving the entity at its end', () => {
-  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().autoIncrement() } });
   const Root = defineEntity({
     name: 'Root',
-    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), ownerId: f.number().nullable() },
   }).relations((rel) => ({
     // @ts-expect-error a cascade only resolving refuses at run time, standing for any mistake it finds
     owner: () => rel.manyToOne(Owner, { references: (root) => root.ownerId, cascade: 'delete' }),
@@ -131,11 +131,11 @@ it('should check a chained foreign key without resolving the entity at its end',
   // Its key takes its type from Root's, which only a column-level foreign key can say: a decorated one.
   @Entity()
   class Shared {
-    @Field(f.references(() => Root).id()) id?: number;
+    @Field(f.references(() => Root).id()) id!: number;
   }
   const Leaf = defineEntity({
     name: 'Leaf',
-    fields: { id: f.number().id(), sharedId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), sharedId: f.number().nullable() },
   }).relations((rel) => ({ shared: () => rel.manyToOne(Shared, { references: (leaf) => leaf.sharedId }) }));
 
   expect(getMeta(Leaf).fields.sharedId?.type).toBe(Number);
@@ -146,14 +146,14 @@ it('should check a chained foreign key without resolving the entity at its end',
 it('should keep the fields a read answers with by default, a relation aggregate left out', () => {
   const Shelf = defineEntity({
     name: 'Shelf',
-    fields: { id: f.number().id(), label: f.string().nullable() },
+    fields: { id: f.number().autoIncrement(), label: f.string().nullable() },
   }).relations(
     (rel) => ({ books: () => rel.oneToMany(Volume, { mappedBy: (volume) => volume.shelf }) }),
     (shelf) => ({ bookCount: () => shelf.books.count() }),
   );
   const Volume = defineEntity({
     name: 'Volume',
-    fields: { id: f.number().id(), shelfId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), shelfId: f.number().nullable() },
   }).relations((rel) => ({ shelf: () => rel.manyToOne(Shelf, { references: (volume) => volume.shelfId }) }));
 
   expect(getMeta(Shelf).readKeys).toEqual(['id', 'label']);
@@ -164,7 +164,7 @@ it('should refuse a dotted entity name, pointing at the schema option', () => {
   expect(() => {
     @Entity({ name: 'crm.users' })
     class Dotted {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     return Dotted;
   }).toThrow("'Dotted' has a dotted name 'crm.users'. Name the schema separately as { schema: 'crm', name: 'users' }.");
@@ -173,7 +173,7 @@ it('should refuse a dotted entity name, pointing at the schema option', () => {
 it('should keep the columns an inverse side names itself', () => {
   @Entity()
   class Shelf {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     // @ts-expect-error `mappedBy` derives the columns, so the types take one or the other; plain JavaScript reaches here
     @OneToMany({
       entity: () => Book,
@@ -184,7 +184,7 @@ it('should keep the columns an inverse side names itself', () => {
   }
   @Entity()
   class Book {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Shelf).nullable()) shelfRef?: number | null;
     @ManyToOne({ entity: () => Shelf, references: (book, shelf) => [{ local: book.shelfRef, foreign: shelf.id }] })
     shelf?: Shelf;
@@ -195,11 +195,11 @@ it('should keep the columns an inverse side names itself', () => {
 it('should keep a foreign key column a column, with no relation it did not declare', () => {
   @Entity()
   class Warehouse {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Pallet {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Warehouse).nullable()) warehouseId?: number | null;
   }
   const meta = getMeta(Pallet);
@@ -210,16 +210,16 @@ it('should keep a foreign key column a column, with no relation it did not decla
 it('should take a junction column as the one referencing its side, whatever either is called', () => {
   @Entity()
   class Course {
-    @Field(f.number().id().name('course_pk')) id?: number;
+    @Field(f.number().autoIncrement().name('course_pk')) id?: number;
     @ManyToMany({ entity: () => Student, through: () => Enrolment }) students?: Student[];
   }
   @Entity()
   class Student {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Enrolment {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Course).nullable()) course?: number | null;
     @Field(f.references(() => Student).nullable()) learner?: number | null;
   }
@@ -857,7 +857,9 @@ it('should refuse an entity with no @Id', () => {
       id!: string | null;
     }
     return SomeEntity;
-  }).toThrow(`'SomeEntity' must have at least one id field (declare one with 'id()', as in 'f.number().id()')`);
+  }).toThrow(
+    `'SomeEntity' must have at least one id field (declare one with '.autoIncrement()', which the database generates, or '.id()', which the caller supplies)`,
+  );
 });
 
 it('should refuse an entity with no fields', () => {
@@ -873,13 +875,13 @@ it('should refuse an entity with no fields', () => {
 it("should join a one-to-many through a junction by the junction's columns", () => {
   @Entity()
   class Author {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
   @Entity()
   class BookAuthor {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(
       f
@@ -899,7 +901,7 @@ it("should join a one-to-many through a junction by the junction's columns", () 
 
   @Entity()
   class Book {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @OneToMany({ entity: () => Author, through: () => BookAuthor })
     authors?: Author[];
@@ -916,11 +918,11 @@ it("should join a one-to-many through a junction by the junction's columns", () 
 it('should refuse a one-to-many whose target holds no relation back', () => {
   @Entity()
   class Page {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Diary {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Page }) pages?: Page[];
   }
 
@@ -930,14 +932,14 @@ it('should refuse a one-to-many whose target holds no relation back', () => {
 it('should refuse a to-many relation with no way to join', () => {
   @Entity()
   class Chapter {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
   expect(() => {
     @Entity()
     class Novel {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
       // @ts-expect-error the type rejects it too; this covers the runtime guard for untyped callers
       @ManyToMany({ entity: () => Chapter })
@@ -952,14 +954,14 @@ it('should refuse a to-many relation with no way to join', () => {
 it('should refuse a mappedBy naming neither a field nor a relation', () => {
   @Entity()
   class Track {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     undeclared?: string;
   }
 
   @Entity()
   class Album {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @OneToMany({ entity: () => Track, mappedBy: (track) => track.undeclared })
@@ -974,13 +976,13 @@ it('should refuse a mappedBy naming neither a field nor a relation', () => {
 it('should say which column to declare for a junction referencing no side', () => {
   @Entity()
   class Colour {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
   @Entity()
   class ShirtColour {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(
       f
@@ -993,7 +995,7 @@ it('should say which column to declare for a junction referencing no side', () =
 
   @Entity()
   class Shirt {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @ManyToMany({ entity: () => Colour, through: () => ShirtColour })
     colours?: Colour[];
@@ -1007,12 +1009,12 @@ it('should say which column to declare for a junction referencing no side', () =
 it('should say to pair a column per key for a junction referencing no side of a composite key', () => {
   @Entity()
   class Size {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
 
   @Entity()
   class Fit {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(
       f
         .number()
@@ -1038,12 +1040,12 @@ it('should say to pair a column per key for a junction referencing no side of a 
 it('should refuse a junction where two columns reference the same key', () => {
   @Entity()
   class Person {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @ManyToMany({ entity: () => Person, through: () => Friendship }) friends?: Person[];
   }
   @Entity()
   class Friendship {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Person).nullable()) personId?: number | null;
     @Field(f.references(() => Person).nullable()) friendId?: number | null;
   }
@@ -1056,11 +1058,11 @@ it('should refuse a junction where two columns reference the same key', () => {
 it('should resolve a junction read first, even with an inverse side leading back through it', () => {
   @Entity()
   class Film {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Screening {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     // Ahead of the junction's own foreign key, and leading back through the junction.
     @OneToMany({ entity: () => Review, mappedBy: (review) => review.screening }) reviews?: Review[];
     @Field(f.references(() => Film).nullable()) filmId?: number | null;
@@ -1069,7 +1071,7 @@ it('should resolve a junction read first, even with an inverse side leading back
   }
   @Entity()
   class Review {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Screening).nullable()) screeningId?: number | null;
     @ManyToOne({ entity: () => Screening, references: (review) => review.screeningId }) screening?: Screening;
     @ManyToMany({ entity: () => Film, through: () => Screening }) films?: Film[];
@@ -1085,21 +1087,21 @@ it('should resolve a junction read first, even with an inverse side leading back
 it('should resolve an inverse side through a junction whichever side is read first', () => {
   @Entity()
   class Genre {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @ManyToMany({ entity: () => Album, mappedBy: (album) => album.genres }) albums?: Album[];
     @Field(f.references(() => Album).nullable()) featuredId?: number | null;
     @ManyToOne({ entity: () => Album, references: (genre) => genre.featuredId }) featured?: Album;
   }
   @Entity()
   class Album {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     // Ahead of the relation `Genre.albums` is the inverse of, and leading to `Genre` first.
     @OneToMany({ entity: () => Genre, mappedBy: (genre) => genre.featured }) featuredBy?: Genre[];
     @ManyToMany({ entity: () => Genre, through: () => AlbumGenre }) genres?: Genre[];
   }
   @Entity()
   class AlbumGenre {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Album).nullable()) albumId?: number | null;
     @Field(f.references(() => Genre).nullable()) genreId?: number | null;
   }
@@ -1136,7 +1138,7 @@ it('should refuse a second version field', () => {
     @Entity()
     class Ledger {
       [versionKey]?: 'version' | 'revision';
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.version()) version?: number;
       @Field(f.version()) revision?: number;
     }
@@ -1147,12 +1149,12 @@ it('should refuse a second version field', () => {
 it('should join a to-one on the foreign key its references name, whatever either is called', () => {
   @Entity()
   class Author {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Essay, mappedBy: (essay) => essay.author }) essays?: Essay[];
   }
   @Entity()
   class Essay {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Author).nullable()) writtenById?: number | null;
     @ManyToOne({ entity: () => Author, references: (essay) => essay.writtenById }) author?: Author;
   }
@@ -1165,11 +1167,11 @@ it('should join a to-one on the foreign key its references name, whatever either
 it('should refuse a to-one naming no foreign key, on every read rather than handing back a half-resolved one', () => {
   @Entity()
   class Quay {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Barge {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) quayId?: number | null;
     @ManyToOne({ entity: () => Quay }) quay?: Quay;
   }
@@ -1184,7 +1186,7 @@ it('should refuse a to-one naming no foreign key, on every read rather than hand
 it('should refuse a join on a member that is not a column of its entity', () => {
   @Entity()
   class Pier {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Computed((row) =>
       f
         .number()
@@ -1195,13 +1197,13 @@ it('should refuse a join on a member that is not a column of its entity', () => 
   }
   @Entity()
   class Tug {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     pierId?: number;
     @ManyToOne({ entity: () => Pier, references: (tug) => tug.pierId }) pier?: Pier;
   }
   @Entity()
   class Yacht {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) pierId?: number | null;
     @ManyToOne({
       entity: () => Pier,
@@ -1219,15 +1221,15 @@ it('should refuse a join on a member that is not a column of its entity', () => 
 it('should refuse a to-one whose foreign key references another entity', () => {
   @Entity()
   class Harbour {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Marina {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Ferry {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Marina).nullable()) harbourId?: number | null;
     @ManyToOne({ entity: () => Harbour, references: (ferry) => ferry.harbourId }) harbour?: Harbour;
   }
@@ -1242,11 +1244,11 @@ it('should refuse references naming one column for a composite key, which needs 
   class Locker {
     [idKey]?: 'row' | 'slot';
     @Field(f.string().id()) row?: string;
-    @Field(f.number().id()) slot?: number;
+    @Field(f.number().id()) slot!: number;
   }
   @Entity()
   class Rental {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) lockerRef?: string | null;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @ManyToOne({ entity: () => Locker, references: (rental) => rental.lockerRef }) locker?: Locker;
@@ -1262,11 +1264,11 @@ it('should refuse references naming one column for a composite key, which needs 
 it('should refuse references naming one column on a relation that holds no foreign key', () => {
   @Entity()
   class Dock {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Ship {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) dockId?: number | null;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @OneToMany({ entity: () => Dock, references: (ship) => ship.dockId }) docks?: Dock[];
@@ -1281,7 +1283,7 @@ it('should refuse references naming one column on a relation that holds no forei
 it('should join a relation a base class declares on its foreign key in every entity extending it', () => {
   @Entity()
   class Region {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   abstract class Regional {
     @Field(f.references(() => Region).nullable()) regionId?: number | null;
@@ -1289,11 +1291,11 @@ it('should join a relation a base class declares on its foreign key in every ent
   }
   @Entity()
   class Office extends Regional {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Depot extends Regional {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
 
   expect(getMeta(Office).relations.region?.references).toEqual([{ local: 'regionId', foreign: 'id' }]);
@@ -1310,7 +1312,7 @@ it('should register @Filter and bulk filters', () => {
     filters: { recent: { where: { status: 'new' } }, active: { where: { status: 'active' }, default: false } },
   })
   class FilteredEntity {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.string().nullable())
     status?: string | null;
@@ -1329,7 +1331,7 @@ it('should refuse softDelete as a filter name', () => {
       },
     })
     class ReservedFilter {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
       @Field(f.string().nullable())
       status?: string | null;
@@ -1352,7 +1354,7 @@ it('should refuse a security filter that skips when its condition is unresolved'
       },
     })
     class SkippableSecurityFilter {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
     }
     return SkippableSecurityFilter;
@@ -1365,9 +1367,9 @@ it('should make the primary key composite on a second @Id', () => {
   class Membership {
     [idKey]?: 'userId' | 'groupId';
     @Field(f.number().id())
-    userId?: number;
+    userId!: number;
     @Field(f.number().id())
-    groupId?: number;
+    groupId!: number;
     @Field(f.string().nullable())
     role?: string | null;
   }
@@ -1388,20 +1390,20 @@ it('should pair every key of both sides in a junction, the inverse side swapping
   @Entity()
   class Enrolment {
     [idKey]?: 'studentId' | 'courseId';
-    @Field(f.number().id()) studentId?: number;
+    @Field(f.number().id()) studentId!: number;
     @Field(f.string().id()) courseId?: string;
     @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
     badges?: Badge[];
   }
   @Entity()
   class Badge {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @ManyToMany({ entity: () => Enrolment, mappedBy: (enrolment) => enrolment.badges })
     enrolments?: Enrolment[];
   }
   @Entity()
   class EnrolmentBadge {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) enrolmentStudentId?: number | null;
     @Field(f.string().nullable()) enrolmentCourseId?: string | null;
     @ManyToOne({
@@ -1431,13 +1433,13 @@ it('should pair every key of both sides in a junction, the inverse side swapping
 it('should refuse an inverse relation mapped by a field when the key is composite', () => {
   @Entity()
   class Note {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) enrolmentStudentId?: number | null;
   }
   @Entity()
   class Enrolment {
     [idKey]?: 'studentId' | 'courseId';
-    @Field(f.number().id()) studentId?: number;
+    @Field(f.number().id()) studentId!: number;
     @Field(f.string().id()) courseId?: string;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolmentStudentId })
@@ -1453,12 +1455,12 @@ it('should refuse an inverse relation mapped by a field when the key is composit
 it('should pair an inverse relation mapped by a field from the parent side', () => {
   @Entity()
   class Note {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) ownerId?: number | null;
   }
   @Entity()
   class Owner {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Note, mappedBy: (note) => note.ownerId })
     notes?: Note[];
   }
@@ -1470,16 +1472,16 @@ it('should pair an inverse relation mapped by a field from the parent side', () 
 it('should refuse an inverse relation mapped by a field referencing another entity', () => {
   @Entity()
   class Reader {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Review {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Reader).nullable()) readerId?: number | null;
   }
   @Entity()
   class Critic {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Review, mappedBy: (review) => review.readerId })
     reviews?: Review[];
   }
@@ -1492,16 +1494,16 @@ it('should refuse an inverse relation mapped by a field referencing another enti
 it('should refuse a to-many joining columns whose foreign key, on the other side, references another entity', () => {
   @Entity()
   class Crew {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Sailor {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Crew).nullable()) crewId?: number | null;
   }
   @Entity()
   class Captain {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({
       entity: () => Sailor,
       references: (captain, sailor) => [{ local: captain.id, foreign: sailor.crewId }],
@@ -1517,17 +1519,17 @@ it('should refuse a to-many joining columns whose foreign key, on the other side
 it('should refuse an inverse relation mapped by a relation to another entity', () => {
   @Entity()
   class Editor {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity()
   class Draft {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) editorId?: number | null;
     @ManyToOne({ entity: () => Editor, references: (draft) => draft.editorId }) editor?: Editor;
   }
   @Entity()
   class Proofreader {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Draft, mappedBy: (draft) => draft.editor }) drafts?: Draft[];
   }
 
@@ -1539,7 +1541,7 @@ it('should refuse an inverse relation mapped by a relation to another entity', (
 it('should accept an inverse relation mapped by a field referencing the entity it inherits it from', () => {
   @Entity()
   class Shelf {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Volume, mappedBy: (volume) => volume.shelfId })
     volumes?: Volume[];
   }
@@ -1549,7 +1551,7 @@ it('should accept an inverse relation mapped by a field referencing the entity i
   }
   @Entity()
   class Volume {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Shelf).nullable()) shelfId?: number | null;
   }
 
@@ -1573,7 +1575,7 @@ it('should hold no foreign key for a column whose target registers no key', () =
   }
   @Entity()
   class Book {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(
       f
         .number()
@@ -1591,12 +1593,12 @@ it('should refuse a plain foreign key pointing at a composite key', () => {
   @Entity()
   class Enrolment {
     [idKey]?: 'studentId' | 'courseId';
-    @Field(f.number().id()) studentId?: number;
+    @Field(f.number().id()) studentId!: number;
     @Field(f.string().id()) courseId?: string;
   }
   @Entity()
   class Note {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Field(f.references(() => Enrolment).nullable()) enrolmentStudentId?: number | null;
   }
@@ -1613,13 +1615,13 @@ it('should drop every key of a composite parent from a subclass declaring its ow
   @Entity()
   class Pair {
     [idKey]?: 'left' | 'right';
-    @Field(f.number().id()) left?: number;
-    @Field(f.number().id()) right?: number;
+    @Field(f.number().id()) left!: number;
+    @Field(f.number().id()) right!: number;
     @Field(f.string().nullable()) label?: string | null;
   }
   @Entity()
   class Single extends Pair {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
 
   const meta = getMeta(Single);
@@ -1635,7 +1637,7 @@ it('should inherit the parent fields in a subclass declaring the only @Id', () =
 
   @Entity()
   class IdentifiedChild extends IdlessBase {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
@@ -1647,7 +1649,7 @@ it('should inherit the parent fields in a subclass declaring the only @Id', () =
 it("should inherit the parent's softDelete field key and filters in a subclass", () => {
   @Entity({ filters: { active: { where: { status: 'active' }, default: false } } })
   class SoftBase {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.string().nullable())
     status?: string | null;
@@ -1681,7 +1683,7 @@ it('should inherit the fields, relations, hooks and filters of a base and its ow
 
   @Entity()
   class Ticket extends Owned {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) title?: string | null;
   }
 
@@ -1696,7 +1698,7 @@ it('should inherit the fields, relations, hooks and filters of a base and its ow
 it('should keep an entity base in its own table, and the child what it declares itself', () => {
   @Entity({ name: 'auditable' })
   class Auditable {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string()) label?: string;
     @Field(f.boolean().nullable()) archived?: boolean | null;
   }
@@ -1719,13 +1721,13 @@ it('should keep an entity base in its own table, and the child what it declares 
 it('should keep the relations a junction declares itself', () => {
   @Entity()
   class Screening {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
   @Entity()
   class Note {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.number().nullable())
     filmScreeningId?: number | null;
@@ -1733,7 +1735,7 @@ it('should keep the relations a junction declares itself', () => {
 
   @Entity()
   class FilmScreening {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.references(() => Film).nullable())
     filmId?: number | null;
@@ -1747,7 +1749,7 @@ it('should keep the relations a junction declares itself', () => {
 
   @Entity()
   class Film {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @ManyToMany({ entity: () => Screening, through: () => FilmScreening })
     screenings?: Screening[];
@@ -1765,13 +1767,13 @@ it('should keep the relations a junction declares itself', () => {
 it('should refuse a delete cascade on a to-one holding the key, whose target other rows may point at', () => {
   @Entity()
   class Venue {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
   }
 
   @Entity()
   class Gig {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @Field(f.references(() => Venue).nullable())
     venueId?: number | null;
@@ -1786,7 +1788,7 @@ it('should refuse a delete cascade on a to-one holding the key, whose target oth
 it('should refuse a mappedBy naming an inverse side, since neither side owns the foreign key', () => {
   @Entity()
   class Passport {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @OneToMany({ entity: () => Traveller, mappedBy: (traveller) => traveller.passports })
     travellers?: Traveller[];
@@ -1794,7 +1796,7 @@ it('should refuse a mappedBy naming an inverse side, since neither side owns the
 
   @Entity()
   class Traveller {
-    @Field(f.number().id())
+    @Field(f.number().autoIncrement())
     id?: number;
     @OneToMany({ entity: () => Passport, mappedBy: (passport) => passport.travellers })
     passports?: Passport[];
@@ -1810,7 +1812,7 @@ it('should refuse references on a relation through a junction, whose own columns
   expect(() => {
     @Entity()
     class Shelf {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
       @ManyToMany({ entity: () => Shelf, through: () => Shelf, references: () => [] }) shelves?: Shelf[];
     }
@@ -1823,12 +1825,12 @@ it('should refuse references on a relation through a junction, whose own columns
 it('should say so for a relation with no columns to join on', () => {
   @Entity()
   class Terminal {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
 
   @Entity()
   class Gate {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     // Hand-written and empty: nothing filled it in, so nothing says how the two are joined.
     @ManyToOne({ entity: () => Terminal, references: () => [] }) terminal?: Terminal;
   }
@@ -1844,7 +1846,7 @@ it('should register the indexes an entity lists and the hooks its methods mark',
     ],
   })
   class Indexed {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) email?: string | null;
     @Field(f.string().nullable()) status?: string | null;
 
@@ -1869,7 +1871,7 @@ it('should register the indexes an entity lists and the hooks its methods mark',
 it("should inherit a parent's fields when the parent was finalized first", () => {
   @Entity()
   class ParentEntity {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) baseCol?: string | null;
   }
   expect(getMeta(ParentEntity).ids).toEqual(['id']);
@@ -1895,12 +1897,12 @@ it('keyOf should answer the member a selector reads', () => {
 it('should infer a relation join where only one column or relation can be it', () => {
   @Entity()
   class Kennel {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Hound }) hounds?: Hound[];
   }
   @Entity()
   class Hound {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Kennel).nullable()) kennelId?: number | null;
     @ManyToOne({ entity: () => Kennel }) kennel?: Kennel;
   }
@@ -1915,12 +1917,12 @@ it('should infer a relation join where only one column or relation can be it', (
 it('should name the candidates where a relation join could be either', () => {
   @Entity()
   class Port {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @OneToMany({ entity: () => Voyage }) voyages?: Voyage[];
   }
   @Entity()
   class Voyage {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Port).nullable()) fromId?: number | null;
     @Field(f.references(() => Port).nullable()) toId?: number | null;
     @ManyToOne({ entity: () => Port }) from?: Port;

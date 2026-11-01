@@ -1,4 +1,4 @@
-import { fieldOf, foreignKeysOf, getMeta, ownsSoleKey } from '../entity/metadata/definition.js';
+import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
 import type {
   IndexEntry,
   EntityIndexMeta,
@@ -98,7 +98,6 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
     const column: ColumnNode = {
       ...declaredColumn(field, {
         name: columnName,
-        soleKey: ownsSoleKey(meta, key),
         compile: (sql) => ctx.compileDdl(sql, meta.entity),
       }),
       ...(notNull.has(key) && { nullable: false }),

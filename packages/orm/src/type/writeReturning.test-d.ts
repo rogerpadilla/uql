@@ -2,9 +2,10 @@
  * What a write resolves to: its ids or its count, or, with `returning`, the rows narrowed to the fields it
  * lists, whose keys are checked like a `$select`'s, or every field for `returning: true`. Type-checked by `bun run ts` only.
  */
-import type { Querier, QuerierPool, WrittenId } from '../index.js';
+import { filledKey, type Querier, type QuerierPool, type WrittenId } from '../index.js';
 
 class Account {
+  [filledKey]?: 'id';
   id!: number;
   email!: string;
   createdAt?: Date | null;

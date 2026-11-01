@@ -37,8 +37,8 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
       expect(result.code).toContain('@Entity(');
       expect(result.code).toContain('class User');
-      expect(result.code).toContain("@Field(f.column('int').id())");
-      expect(result.code).toContain('id!: number;');
+      expect(result.code).toContain("@Field(f.column('int').autoIncrement())");
+      expect(result.code).toContain('id?: number;');
       expect(result.code).toContain('@Field(');
       expect(result.code).toContain('name?: string | null;');
     });
@@ -493,7 +493,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field(f.column('int').id().name('user_id'))");
+      expect(result.code).toContain("@Field(f.column('int').autoIncrement().name('user_id'))");
       // No conventional name to read the key by, so the entity names it.
       expect(result.code).toContain("[idKey]?: 'userId';");
     });
@@ -549,10 +549,41 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).not.toContain('@Index');
     });
 
+    it('should declare a key nothing fills required, which an insert then names', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('regions', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: false, nullable: false },
+        ]),
+      );
+      const result = new EntityCodeGenerator(ast).generateForTable('regions');
+      assertDefined(result);
+      expect(result.code).toContain('id!: number;');
+    });
+
+    it('should declare a key the database fills optional, which an insert may leave out', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('counters', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
+        ]),
+      );
+      ast.addTable(
+        mockTableNode('tickets', [{ name: 'id', type: { category: 'uuid' }, isPrimaryKey: true, defaultValue: 'x' }]),
+      );
+      const generator = new EntityCodeGenerator(ast);
+      const counters = generator.generateForTable('counters');
+      const tickets = generator.generateForTable('tickets');
+      assertDefined(counters);
+      assertDefined(tickets);
+      expect(counters.code).toContain('id?: number;');
+      expect(tickets.code).toContain('id?: string;');
+    });
+
     it('should generate composite index', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [
-        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
         { name: 'first_name', type: { category: 'string' } },
         { name: 'last_name', type: { category: 'string' } },
       ]);
@@ -574,7 +605,7 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('import { Entity, Field, f }');
     });
 
-    it('should state a serial the database generates on a column that is no key', () => {
+    it('should leave a serial on a column that is no key to the database', () => {
       const ast = new SchemaAST();
       ast.addTable(
         mockTableNode('tickets', [
@@ -586,7 +617,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('tickets');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field(f.column('int').autoIncrement())");
+      expect(result.code).toContain("@Field(f.column('int'))\n  seq?: number;");
     });
 
     it('should handle boolean and Date types', () => {
@@ -703,7 +734,7 @@ describe('EntityCodeGenerator', () => {
       const ast = new SchemaAST();
       ast.addTable(
         mockTableNode('stamped', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
           { name: 'spelled', type: { category: 'string' }, defaultValue: 'CURRENT_TIMESTAMP' },
           { name: 'created', type: { category: 'timestamp' }, defaultValue: SqlExpression.named('currentTimestamp') },
           { name: 'derived', type: { category: 'string' }, defaultValue: SqlExpression.parenthesized("lower('A')") },
@@ -859,7 +890,7 @@ describe('EntityCodeGenerator', () => {
       const ast = new SchemaAST();
       ast.addTable(
         mockTableNode('lines', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
           { name: 'qty', type: { category: 'integer' } },
           { name: 'total', type: { category: 'integer' }, generatedAs: 'qty * 2' },
         ]),

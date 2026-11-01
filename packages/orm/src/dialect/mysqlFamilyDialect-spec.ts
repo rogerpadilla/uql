@@ -59,7 +59,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   shouldEstimateTheCountInTheSchemaTheEntityNames() {
     @Entity({ schema: 'crm' })
     class Ledger {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Ledger));
     expect(sql).toBe(
@@ -72,7 +72,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }
@@ -89,7 +89,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       ],
     })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }

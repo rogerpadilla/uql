@@ -1,5 +1,5 @@
 import type { Except, FieldMeta, QuerySql } from '../type/index.js';
-import { declaresNotNull, fieldFamily, isAutoIncrement } from '../util/field.util.js';
+import { declaresNotNull, fieldFamily } from '../util/field.util.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
 import { schemaDefault } from './sqlExpression.js';
 import type { ColumnNode } from './types.js';
@@ -10,11 +10,7 @@ import type { ColumnNode } from './types.js';
  */
 export function declaredColumn(
   field: FieldMeta,
-  {
-    name,
-    soleKey,
-    compile,
-  }: { readonly name: string; readonly soleKey: boolean; readonly compile: (sql: QuerySql) => string },
+  { name, compile }: { readonly name: string; readonly compile: (sql: QuerySql) => string },
 ): Except<ColumnNode, 'table'> {
   return {
     name,
@@ -22,7 +18,7 @@ export function declaredColumn(
     nullable: !declaresNotNull(field),
     defaultValue: schemaDefault(field.defaultValue, compile, fieldFamily(field) === 'json'),
     isPrimaryKey: field.isId === true,
-    isAutoIncrement: isAutoIncrement(field, soleKey),
+    isAutoIncrement: field.autoIncrement === true,
     isUnique: field.unique ?? false,
     // A stamp is filled by a trigger, so it is a column like any other; only `stored: true` generates.
     generatedAs: field.stored === true && field.computed ? compile(field.computed) : undefined,

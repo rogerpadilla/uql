@@ -327,6 +327,6 @@ function propertySource(col: ColumnNode, propertyName: string): string {
   if (col.nullable && !col.isPrimaryKey) {
     return `${written}${propertyName}?: ${type} | null`;
   }
-  const filled = !col.isPrimaryKey && col.defaultValue !== undefined;
+  const filled = col.defaultValue !== undefined || col.isAutoIncrement;
   return `${written}${propertyName}${filled ? '?' : '!'}: ${type}`;
 }

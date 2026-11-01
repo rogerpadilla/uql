@@ -45,13 +45,7 @@ import {
   type DefinedEntity,
   SOFT_DELETE_FILTER,
 } from '../../type/index.js';
-import {
-  aggregateField,
-  defaultReadKeys,
-  fieldKeys,
-  isAutoIncrement,
-  isInlinedExpression,
-} from '../../util/field.util.js';
+import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
   fieldOptionConflict,
   findVectorIndex,
@@ -569,7 +563,7 @@ export function registerEntity<E>(
   const ids = getIdKeys(meta);
   if (!ids.length && !meta.abstract) {
     throw new UqlUsageError(
-      `'${entity.name}' must have at least one id field (declare one with 'id()', as in 'f.number().id()')`,
+      `'${entity.name}' must have at least one id field (declare one with '.autoIncrement()', which the database generates, or '.id()', which the caller supplies)`,
     );
   }
   meta.ids = ids;
@@ -1016,15 +1010,9 @@ export function referenceKeys<E>(meta: EntityMeta<E>): ReadonlySet<string> {
   );
 }
 
-/** Whether `key` is `meta`'s whole primary key and its own, not the key of the row it references. */
-export function ownsSoleKey<E>(meta: EntityMeta<E>, key: string): boolean {
-  return soleId(meta)?.key === key && !referenceKeys(meta).has(key);
-}
-
 /** Whether the database generates `meta`'s key on insert: the one answer every insert path reads. */
 export function generatesKey<E>(meta: EntityMeta<E>): boolean {
-  const sole = soleId(meta);
-  return !!sole && isAutoIncrement(sole.field, ownsSoleKey(meta, sole.key));
+  return soleId(meta)?.field.autoIncrement === true;
 }
 
 /** The kinds a column of `type` holds as a join compares them, as `HoldsKind` does: a bigint is a number, which BIGINT widens. */

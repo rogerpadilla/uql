@@ -6,7 +6,7 @@ import { Book } from './book.js';
 export const Author = defineEntity({
   name: 'Author',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     name: f.string(),
     bio: f.string().nullable(),
     createdAt: f.date().default(currentTimestamp),

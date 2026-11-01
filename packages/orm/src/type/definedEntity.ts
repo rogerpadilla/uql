@@ -122,7 +122,7 @@ export type Brands<F, B = object> = {
 /** The keys of `F` a brand marks, read off its columns: the id, the version, and the fields a default fills. */
 type IdKeyOf<F> = FlagKeys<F, Column<{ readonly isId: true }>>;
 type VersionKeyOf<F> = FlagKeys<F, Column<{ readonly version: true }>>;
-type FilledKeyOf<F> = Exclude<FlagKeys<F, Column<FilledOptions>>, IdKeyOf<F>>;
+type FilledKeyOf<F> = FlagKeys<F, Column<FilledOptions>>;
 
 /** The relation constructors a defined entity's `relations` receives, typed by the columns of the entity declaring them. */
 export type RelationBuilder<O> = {

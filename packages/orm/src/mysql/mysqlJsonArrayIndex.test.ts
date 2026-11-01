@@ -22,7 +22,7 @@ const ROWS = 1000;
   ],
 })
 class JsonArrayIndexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.json().nullable()) tags?: Json<string[]> | null;
 }
 

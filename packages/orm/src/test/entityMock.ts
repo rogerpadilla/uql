@@ -12,6 +12,7 @@ import {
   OneToOne,
 } from '../entity/index.js';
 import { idKey, type Json, versionKey } from '../type/index.js';
+import { sql } from '../util/index.js';
 
 /** The fields most fixtures share. */
 export abstract class BaseEntity {
@@ -121,7 +122,7 @@ export class User extends BaseEntity {
 
 @Entity()
 export class UserWithNonUpdatableId {
-  @Field(f.number().id().updatable(false))
+  @Field(f.number().autoIncrement().updatable(false))
   id!: number;
 
   @Field(f.string().nullable())
@@ -426,7 +427,7 @@ export class ItemAdjustment extends BaseEntity {
  */
 @Entity()
 export class Invoice {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -442,7 +443,7 @@ export class Invoice {
 
 @Entity()
 export class InvoiceLine {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())
@@ -462,7 +463,7 @@ export class InvoiceLine {
  */
 @Entity()
 export class Coupon {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique()) code?: string | null;
   @Field(f.string().nullable()) label?: string | null;
 }
@@ -475,7 +476,7 @@ export class Coupon {
  */
 @Entity()
 export class TypedRow {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.number().nullable()) count?: number | null;
   /** precision/scale makes this DECIMAL/NUMERIC, which pg and mysql2 both return as a string. */
@@ -501,16 +502,62 @@ export class TypedRow {
 /** Holds {@link TypedRow}s, so a populated row can be read back beside a read of its own. */
 @Entity()
 export class TypedGroup {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @OneToMany({ entity: () => TypedRow, mappedBy: (typedRow) => typedRow.group }) rows?: TypedRow[];
 }
 
 @Entity()
 export class VectorItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.vector(3).nullable()) vec!: number[] | null;
+}
+
+/** A key nothing generates, fills or defaults, so a row names it. */
+@Entity()
+export class Credential {
+  [idKey]?: 'hash';
+  @Field(f.string().id()) hash!: string;
+  @Field(f.string()) code!: string;
+}
+
+/** The keys an insert may leave out, each filled another way: the database, the application, a default. */
+@Entity()
+export class GeneratedBigKey {
+  @Field(f.bigint().autoIncrement()) id?: bigint;
+  @Field(f.string()) code!: string;
+}
+
+@Entity()
+export class AppFilledKey {
+  @Field(f.string().id().onInsert(uuidv7)) id?: string;
+  @Field(f.string()) code!: string;
+}
+
+@Entity()
+export class DefaultedKey {
+  @Field(f.string().id().default('fixed')) id?: string;
+  @Field(f.string()) code!: string;
+}
+
+@Entity()
+export class SqlDefaultedKey {
+  @Field(
+    f
+      .string()
+      .id()
+      .default(sql`(lower('FIXED'))`),
+  )
+  id?: string;
+  @Field(f.string().unique()) code!: string;
+}
+
+/** A numeric key the database does not generate, which an insert names. */
+@Entity()
+export class SuppliedNumericKey {
+  @Field(f.number().id()) id!: number;
+  @Field(f.string()) code!: string;
 }
 
 /**
@@ -551,7 +598,7 @@ export class VectorCitation {
  */
 @Entity()
 export class NarrowVectorItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.column('halfvec').nullable().dimensions(3)) half!: number[] | null;
   @Field(f.column('sparsevec').nullable().dimensions(3)) sparse!: number[] | null;
@@ -563,7 +610,7 @@ export class NarrowVectorItem {
  */
 @Entity()
 export class JsonRecord {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.json().nullable()) entries?: Json<unknown[]> | null;
 }
 
@@ -685,13 +732,13 @@ export class ShipmentLabel {
 /** A relation the database cascades on its own, through the `ON DELETE CASCADE` its constraint declares. */
 @Entity()
 export class Shelf {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) label?: string | null;
 }
 
 @Entity()
 export class ShelfBook {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .references(() => Shelf)
@@ -705,7 +752,7 @@ export class ShelfBook {
 @Entity()
 export class Cohort {
   [idKey]?: 'year' | 'track';
-  @Field(f.number().id()) year?: number;
+  @Field(f.number().id()) year!: number;
   @Field(f.string().id()) track?: string;
   @Field(f.string().nullable()) title?: string | null;
   @OneToMany({ entity: () => Seminar, mappedBy: (seminar) => seminar.cohort, cascade: true }) seminars?: Seminar[];

@@ -6,14 +6,14 @@ import type { Json } from './utility.js';
 /** A typo'd option is a method the builder has not got. */
 @Entity()
 class TypoRejected {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error - 'nulable' is not an option
   @Field(f.string().nulable()) a?: string | null;
 }
 
 @Entity()
 class RealOptionsStillCompile {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().unique().index().name('the_name')) a?: string;
   @Field(f.number().nullable().default(0).precision(10).scale(2)) b?: number | null;
 }
@@ -25,7 +25,7 @@ class IncompatibleRejected {
   // One brand satisfies the decorator's "a lock is declared in both halves" check for every case below.
   [versionKey]?: 'j';
 
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().id()) id!: number;
   // @ts-expect-error - a serial is a numeric column's
   @Field(f.string().nullable().autoIncrement()) a?: string | null;
   // @ts-expect-error - 'dimensions' belongs to a vector column
@@ -71,7 +71,7 @@ class IncompatibleRejected {
 /** Half a lock is no lock: a version without the brand leaves an update payload free of it. */
 @Entity()
 class UnbrandedVersionRejected {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error - the entity has to brand the property with 'versionKey' as well
   @Field(f.version()) version?: number;
 }
@@ -79,7 +79,7 @@ class UnbrandedVersionRejected {
 /** The combinations that do apply. */
 @Entity()
 class CompatibleStillCompiles {
-  @Field(f.number().id().autoIncrement()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable().distance('cosine')) vec?: number[] | null;
   // An exact decimal reads as its text.
   @Field(f.decimal(30, 2).nullable()) exact?: string | null;
@@ -117,7 +117,7 @@ class CompatibleStillCompiles {
 /** A column type uql does not model is spelled `sql`, which is what keeps a typo from becoming one. */
 @Entity()
 class UnknownColumnTypeRejected {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error a bare string names one of the types uql models, and this is not one
   @Field(f.string().nullable().columnType('tsvector')) vector?: string | null;
   // @ts-expect-error which is what catches a misspelling of one that is

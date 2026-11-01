@@ -15,13 +15,13 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class FkCompany {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
 }
 
 @Entity()
 class FkEmployee {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
   @Field(
     f
@@ -36,7 +36,7 @@ class FkEmployee {
 /** The one referential action nothing else in these entities declares. */
 @Entity()
 class FkSetDefault {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .references(() => FkCompany)
@@ -50,19 +50,19 @@ class FkSetDefault {
 /** A key that is not the default big integer, which is what catches a serial spelled independently. */
 @Entity()
 class FkNarrowCompany {
-  @Field(f.number().id().columnType('int')) id?: number;
+  @Field(f.number().autoIncrement().columnType('int')) id?: number;
 }
 
 @Entity()
 class FkNarrowEmployee {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => FkNarrowCompany).nullable()) companyId?: number | null;
 }
 
 /** No relation at all, so a foreign key found on its table is one the entity does not declare. */
 @Entity()
 class FkStandalone {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) companyId?: number | null;
 }
 

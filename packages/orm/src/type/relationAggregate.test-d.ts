@@ -7,7 +7,7 @@ import { Computed, Entity, f, Field, ManyToOne, OneToMany } from '../entity/inde
  */
 @Entity()
 class Ticket {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .number()
@@ -23,7 +23,7 @@ class Ticket {
 
 @Entity()
 class Board {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 
   @OneToMany({ entity: () => Ticket, mappedBy: (ticket) => ticket.board })
   tickets?: Ticket[];

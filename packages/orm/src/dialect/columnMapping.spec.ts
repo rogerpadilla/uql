@@ -10,7 +10,7 @@ import { Item } from '../test/entityMock.js';
  */
 @Entity({ name: 'renamed_row' })
 class Renamed {
-  @Field(f.number().id().name('row_pk'))
+  @Field(f.number().autoIncrement().name('row_pk'))
   id?: number;
   @Field(f.string().nullable().name('the_label'))
   label?: string | null;

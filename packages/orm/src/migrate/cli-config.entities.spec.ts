@@ -23,7 +23,7 @@ it('should register decorator metadata for the entities the config imports', asy
     `import { Entity, f, Field } from 'uql-orm';
 @Entity()
 export class UqlConfigProbe {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string;
 }
 `,

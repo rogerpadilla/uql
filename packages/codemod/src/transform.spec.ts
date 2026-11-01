@@ -134,7 +134,7 @@ export class User {
     expect(text).toBe(`import { f, Entity, Field } from 'uql-orm';
 @Entity()
 export class User {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }`);
   });
@@ -227,7 +227,7 @@ defineEntity(Post, {
 
 export const Company = defineEntity({
   name: 'Company',
-  fields: { id: f.number().id(), name: f.string() },
+  fields: { id: f.number().autoIncrement(), name: f.string() },
 })
   .relations((rel) => ({
     posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.company }),
@@ -238,7 +238,7 @@ export const Post = defineEntity({
   name: 'Post',
   table: 'posts',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string().length(100),
     companyId: f.number(),
     editorId: f.number().nullable(),

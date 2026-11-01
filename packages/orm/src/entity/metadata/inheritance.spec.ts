@@ -12,7 +12,7 @@ describe('what a subclass inherits of its bases', () => {
     indexes: (tenanted, index) => [index([tenanted.tenant])],
   })
   class Tenanted {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) tenant?: string | null;
     @BeforeInsert() stamp() {}
   }
@@ -38,7 +38,7 @@ describe('what a subclass inherits of its bases', () => {
   it('should inherit the checks a registered base declares', () => {
     @Entity({ checks: (wallet, check) => [check({ balance: { $gte: 0 } }, 'positive')] })
     class Wallet {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) balance?: number | null;
     }
     @Entity()
@@ -63,7 +63,7 @@ describe('what a subclass inherits of its bases', () => {
       indexes: (named, index) => [index([named.tenant], 'by_tenant')],
     })
     class Named {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) tenant?: string | null;
     }
     @Entity({
@@ -81,7 +81,7 @@ describe('what a subclass inherits of its bases', () => {
 
 it('should keep the indexes an entity declares over a base declaring none', () => {
   abstract class Plain {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
   @Entity({ indexes: (sku, index) => [index([sku.code])] })
   class Sku extends Plain {
@@ -103,7 +103,7 @@ describe('an abstract base', () => {
 
   @Entity()
   class Receipt extends Audited {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
   }
 
   it('should pass what it declares to the entities extending it, with no key of its own', () => {
@@ -122,7 +122,7 @@ describe('an abstract base', () => {
 
   it('should be declared by defineEntity too', () => {
     const Stamped = defineEntity({ name: 'Stamped', abstract: true, fields: { at: f.date().nullable() } });
-    const Visit = defineEntity({ name: 'Visit', extends: Stamped, fields: { id: f.number().id() } });
+    const Visit = defineEntity({ name: 'Visit', extends: Stamped, fields: { id: f.number().autoIncrement() } });
 
     expect(Object.keys(getMeta(Visit).fields)).toEqual(['at', 'id']);
     expect(getEntities()).not.toContain(Stamped);

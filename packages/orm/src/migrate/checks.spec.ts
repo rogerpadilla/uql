@@ -15,20 +15,20 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
   checks: (wallet, check) => [check(sql`"balance" >= 0`, 'wallet_non_negative_ck'), check(sql`"spent" <= "balance"`)],
 })
 class Wallet {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) balance?: number | null;
   @Field(f.number().nullable()) spent?: number | null;
 }
 
 @Entity({ name: 'purse', checks: (renamedWallet, check) => [check(sql`"balance" >= 0`)] })
 class RenamedWallet {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) balance?: number | null;
 }
 
 @Entity()
 class NoChecks {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 const ddl = (dialect: AbstractSqlDialect, entity: AbstractType<object>) =>
@@ -53,7 +53,7 @@ describe('check constraints', () => {
   it('should name an edited check apart from the one it replaces', () => {
     @Entity({ name: 'purse', checks: (editedWallet, check) => [check(sql`"balance" >= 1`)] })
     class EditedWallet {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) balance?: number | null;
     }
     expect(ownedNames(ddl(new PostgresDialect(), EditedWallet))).not.toEqual(
@@ -81,7 +81,7 @@ describe('check expressions', () => {
   it('should write a value as its literal, which CREATE TABLE carries inline', () => {
     @Entity({ checks: (floor, check) => [check(sql`"balance" >= ${0}`)] })
     class Floor {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     expect(ddl(new PostgresDialect(), Floor)).toContain('CHECK ("balance" >= 0)');
   });
@@ -94,7 +94,7 @@ describe('check expressions', () => {
       ],
     })
     class Rate {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.date()) effectiveFrom!: Date;
       @Field(f.date().nullable()) effectiveTo?: Date | null;
       @Field(f.number()) fromHour!: number;
@@ -108,7 +108,7 @@ describe('check expressions', () => {
   it('should read a JSON path compared with a column by that column’s type, as a query does', () => {
     @Entity({ checks: (doc, check) => [check({ 'meta.rank': { $eq: doc.rank } })] })
     class Ranked {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) rank?: number | null;
       @Field(f.jsonb().nullable()) meta?: Json<{ rank?: number }> | null;
     }
@@ -120,7 +120,7 @@ describe('check expressions', () => {
       checks: (bound, check) => [check(sql(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')))],
     })
     class Bound {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     expect(() => ddl(new PostgresDialect(), Bound)).toThrow(/no placeholder/);
   });
@@ -128,7 +128,7 @@ describe('check expressions', () => {
 
 @Entity()
 class Invoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum(['draft', 'paid', 'void']).nullable())
   status?: 'draft' | 'paid' | 'void' | null;
   @Field(f.string().nullable()) note?: string | null;
@@ -136,13 +136,13 @@ class Invoice {
 
 @Entity()
 class Priority {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum([1, 2, 3]).nullable()) level?: 1 | 2 | 3 | null;
 }
 
 @Entity()
 class Quoted {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum(["it's", 'plain']).nullable()) label?: "it's" | 'plain' | null;
 }
 
@@ -153,7 +153,7 @@ enum Status {
 
 @Entity()
 class TsEnumInvoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum(Object.values(Status)).nullable()) status?: Status | null;
 }
 
@@ -165,7 +165,7 @@ describe('enum fields', () => {
   it('should keep the constraints a stored computed column declares', () => {
     @Entity({ name: 'Priced' })
     class Priced {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) net?: number | null;
       @Computed((row) =>
         f
@@ -212,7 +212,7 @@ describe('enum fields', () => {
   it('should name and state the check by its values, whatever order they are declared in', () => {
     @Entity({ name: 'Invoice' })
     class Reordered {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.enum(['void', 'draft', 'paid']).nullable()) status?: 'draft' | 'paid' | 'void' | null;
       @Field(f.string().nullable()) note?: string | null;
     }
@@ -224,7 +224,7 @@ describe('enum fields', () => {
   it('should order numeric values as numbers', () => {
     @Entity({ name: 'Priority' })
     class Reordered {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.enum([10, 2, 1]).nullable()) level?: 1 | 2 | 10 | null;
     }
 
@@ -239,19 +239,19 @@ describe('enum fields', () => {
 
 @Entity({ name: 'Bill' })
 class NarrowBill {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum(['draft', 'paid']).nullable()) status?: 'draft' | 'paid' | null;
 }
 
 @Entity({ name: 'Bill' })
 class WideBill {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.enum(['draft', 'paid', 'void']).nullable()) status?: 'draft' | 'paid' | 'void' | null;
 }
 
 @Entity({ name: 'Bill' })
 class PlainBill {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 /** `entity`'s table as the database would report it, checks included, had `installed` built it. */

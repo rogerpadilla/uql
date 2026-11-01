@@ -20,7 +20,7 @@ it('should register each relation kind the builder declares, and an async hook o
   const Junction = defineEntity({
     name: 'Junction',
     fields: {
-      id: f.number().id(),
+      id: f.number().autoIncrement(),
       parentId: f.number(),
       dogId: f.number(),
     },
@@ -47,7 +47,7 @@ it("should register a defined entity's table schema, filters and triggers", () =
   const Post = defineEntity({
     name: 'Post',
     schema: 'blog',
-    fields: { id: f.number().id(), title: f.string().nullable(), live: f.boolean().nullable() },
+    fields: { id: f.number().autoIncrement(), title: f.string().nullable(), live: f.boolean().nullable() },
   })
     .triggers((post, trigger) => [trigger({ on: 'beforeUpdate', of: [post.title], run: () => sql`select 1` })])
     .filters({ live: { where: { live: true } } });
@@ -58,10 +58,10 @@ it("should register a defined entity's table schema, filters and triggers", () =
 
 /** A base's relations reach every entity extending it, whichever of them is read first. */
 it("should inherit a defined base's relations, read before or after the base", () => {
-  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().autoIncrement() } });
   const Pet = defineEntity({
     name: 'Pet',
-    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), ownerId: f.number().nullable() },
   }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
   const Cat = defineEntity({ name: 'Cat', extends: Pet, fields: { lives: f.number().nullable() } });
   @Entity()
@@ -76,10 +76,10 @@ it("should inherit a defined base's relations, read before or after the base", (
 });
 
 it('should answer a removed defined entity as no entity', () => {
-  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().autoIncrement() } });
   const Gone = defineEntity({
     name: 'Gone',
-    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), ownerId: f.number().nullable() },
   }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (gone) => gone.ownerId }) }));
 
   removeEntity(Gone);
@@ -89,10 +89,10 @@ it('should answer a removed defined entity as no entity', () => {
 
 /** An entity declaring a relation its base declares too keeps its own. */
 it("should keep an entity's own relation over its defined base's", () => {
-  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().autoIncrement() } });
   const Pet = defineEntity({
     name: 'Pet',
-    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), ownerId: f.number().nullable() },
   }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
   const Foster = defineEntity({
     name: 'Foster',
@@ -104,11 +104,11 @@ it("should keep an entity's own relation over its defined base's", () => {
 });
 
 it("should keep a defined entity's own relation over its decorated base's", () => {
-  const Keeper = defineEntity({ name: 'Keeper', fields: { id: f.number().id() } });
+  const Keeper = defineEntity({ name: 'Keeper', fields: { id: f.number().autoIncrement() } });
   type Keeper = InstanceType<typeof Keeper>;
   @Entity()
   class Stall {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Keeper).nullable()) keeperId?: number | null;
     @ManyToOne({ entity: () => Keeper, references: (stall) => stall.keeperId }) keeper?: Keeper;
   }
@@ -140,10 +140,13 @@ it('should read a column an owning to-one joins by as holding its key, as an f.r
 });
 
 it("should not read a column a to-one joins to another than its target's key as holding a key", () => {
-  const Region = defineEntity({ name: 'Region', fields: { id: f.number().id(), code: f.string().unique() } });
+  const Region = defineEntity({
+    name: 'Region',
+    fields: { id: f.number().autoIncrement(), code: f.string().unique() },
+  });
   const Office = defineEntity({
     name: 'Office',
-    fields: { id: f.number().id(), regionCode: f.string() },
+    fields: { id: f.number().autoIncrement(), regionCode: f.string() },
   }).relations((rel) => ({
     region: () =>
       rel.manyToOne(Region, { references: (office, region) => [{ local: office.regionCode, foreign: region.code }] }),
@@ -153,10 +156,10 @@ it("should not read a column a to-one joins to another than its target's key as 
 });
 
 it("should read the key columns of each entity by its own relations, not its base's", () => {
-  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().id() } });
+  const Owner = defineEntity({ name: 'Owner', fields: { id: f.number().autoIncrement() } });
   const Pet = defineEntity({
     name: 'Pet',
-    fields: { id: f.number().id(), ownerId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), ownerId: f.number().nullable() },
   }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (pet) => pet.ownerId }) }));
   const Foster = defineEntity({
     name: 'Foster',
@@ -170,7 +173,7 @@ it("should read the key columns of each entity by its own relations, not its bas
 
 /** A key shared with the row it extends is that row's, so the database must not generate it. */
 it('should not auto-increment a numeric key a one-to-one shares with its target', () => {
-  const Person = defineEntity({ name: 'Person', fields: { id: f.number().id() } });
+  const Person = defineEntity({ name: 'Person', fields: { id: f.number().autoIncrement() } });
   const Passport = defineEntity({ name: 'Passport', fields: { id: f.number().id() } }).relations((rel) => ({
     person: () => rel.oneToOne(Person, { references: (passport) => passport.id }),
   }));
@@ -178,7 +181,7 @@ it('should not auto-increment a numeric key a one-to-one shares with its target'
   type Person = InstanceType<typeof Person>;
   @Entity()
   class Visa {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().id()) id!: number;
     @OneToOne({ entity: () => Person, references: (visa) => visa.id }) person?: Person;
   }
 
@@ -190,11 +193,11 @@ it('should not auto-increment a numeric key a one-to-one shares with its target'
 it('should map a one-to-many naming no options by the one relation of its target pointing back', () => {
   const Hive = defineEntity({
     name: 'Hive',
-    fields: { id: f.number().id() },
+    fields: { id: f.number().autoIncrement() },
   }).relations((rel) => ({ bees: () => rel.oneToMany(Bee) }));
   const Bee = defineEntity({
     name: 'Bee',
-    fields: { id: f.number().id(), hiveId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), hiveId: f.number().nullable() },
   }).relations((rel) => ({ hive: () => rel.manyToOne(Hive, { references: (bee) => bee.hiveId }) }));
 
   expect(getMeta(Hive).relations.bees).toMatchObject({
@@ -208,7 +211,7 @@ it('should refuse a foreign key whose type holds another kind of value than the 
   const Badge = defineEntity({ name: 'Badge', fields: { id: f.string().id() } });
   const Wearer = defineEntity({
     name: 'Wearer',
-    fields: { id: f.number().id(), badgeId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), badgeId: f.number().nullable() },
   }).relations((rel) => ({
     // @ts-expect-error a number column cannot hold the text key of the badge it points at
     badge: () => rel.manyToOne(Badge, { references: (wearer) => wearer.badgeId }),
@@ -220,10 +223,10 @@ it('should refuse a foreign key whose type holds another kind of value than the 
 });
 
 it('should take a BigInt foreign key over a numeric key, which it widens', () => {
-  const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().id() } });
+  const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().autoIncrement() } });
   const Entry = defineEntity({
     name: 'Entry',
-    fields: { id: f.number().id(), ledgerId: f.bigint().nullable() },
+    fields: { id: f.number().autoIncrement(), ledgerId: f.bigint().nullable() },
   }).relations((rel) => ({
     ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
   }));
@@ -235,14 +238,14 @@ it('should take a BigInt foreign key over a numeric key, which it widens', () =>
 it("should keep an entity's own aggregate over its defined base's", () => {
   const Kennel = defineEntity({
     name: 'Kennel',
-    fields: { id: f.number().id() },
+    fields: { id: f.number().autoIncrement() },
   }).relations(
     (rel) => ({ pups: () => rel.oneToMany(Pup, { mappedBy: (pup) => pup.kennel }) }),
     (kennel) => ({ pupStat: () => kennel.pups.count() }),
   );
   const Pup = defineEntity({
     name: 'Pup',
-    fields: { id: f.number().id(), age: f.number().nullable(), kennelId: f.number().nullable() },
+    fields: { id: f.number().autoIncrement(), age: f.number().nullable(), kennelId: f.number().nullable() },
   }).relations((rel) => ({ kennel: () => rel.manyToOne(Kennel, { references: (pup) => pup.kennelId }) }));
   const Shelter = defineEntity({
     name: 'Shelter',
@@ -259,7 +262,7 @@ it("should keep an entity's own aggregate over its defined base's", () => {
 
 /** An aggregate field the registry cannot read as a column or an aggregate is refused on first read, not stored. */
 it('should refuse an aggregate field that is neither a column nor an aggregate, on first read', () => {
-  const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
+  const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().autoIncrement() } }).relations(
     () => ({}),
     // @ts-expect-error an aggregate field is a thunk of a column or an aggregate, never a plain value
     () => ({ total: () => 1 }),
@@ -269,7 +272,7 @@ it('should refuse an aggregate field that is neither a column nor an aggregate, 
 });
 
 it('should refuse an aggregate field that is no thunk, on first read', () => {
-  const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().id() } }).relations(
+  const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().autoIncrement() } }).relations(
     () => ({}),
     // @ts-expect-error an aggregate field is a thunk, read lazily, never a plain value
     () => ({ total: 1 }),

@@ -15,7 +15,7 @@ const Meta = z.object({ lang: z.string(), tags: z.array(z.string()).optional() }
 export const Book = defineEntity({
   name: 'Book',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string(),
     subtitle: f.string().nullable(),
     stock: f.number().default(0),

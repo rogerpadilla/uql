@@ -19,7 +19,7 @@ const ROWS = 2000;
   ],
 })
 class SearchableDoc {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
 }
 

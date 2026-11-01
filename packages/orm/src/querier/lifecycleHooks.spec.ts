@@ -32,7 +32,7 @@ let log: string[] = [];
 
 @Entity()
 class Book {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -94,7 +94,7 @@ class Book {
 /** No hooks: what a delete costs when nothing is watching. */
 @Entity()
 class Plain {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -104,7 +104,7 @@ class Plain {
 /** Masking on load, which is what `@AfterLoad` propagating its mutations is for. */
 @Entity()
 class Secret {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -123,7 +123,7 @@ class Secret {
 
 @Entity()
 class Archived {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -144,7 +144,7 @@ class Archived {
 }
 
 class Timestamped {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @BeforeInsert()
@@ -171,7 +171,7 @@ class Note extends Timestamped {
 
 @Entity()
 class Guarded {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -185,7 +185,7 @@ class Guarded {
 
 @Entity()
 class Late {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -200,7 +200,7 @@ class Late {
 /** A key the database generates and a field the ORM fills, neither of which the caller passed. */
 @Entity()
 class Stamped {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable().unique())
@@ -228,7 +228,7 @@ class Stamped {
 /** The documented use for `HookContext`: query through the hook's own querier. */
 @Entity()
 class Unique {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -243,7 +243,7 @@ class Unique {
 /** Mails once its row is committed, the documented use for `HookContext.onCommit`. */
 @Entity()
 class Mailed {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @AfterInsert()
@@ -255,7 +255,7 @@ class Mailed {
 /** Queries through its own querier on load, which a stream holding that querier refuses. */
 @Entity()
 class Looked {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -269,7 +269,7 @@ class Looked {
 
 @Entity()
 class Shelf {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @OneToMany({ entity: () => ShelvedBook, mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
@@ -283,7 +283,7 @@ class Shelf {
 
 @Entity()
 class ShelvedBook {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())
@@ -306,7 +306,7 @@ class ShelvedBook {
 
 @Entity()
 class Author {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -323,7 +323,7 @@ class Author {
 
 @Entity()
 class Tome {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -344,7 +344,7 @@ class Tome {
 /** Its hooks hand the write a relation the payload did not carry, which the write still has to land. */
 @Entity()
 class HookedAuthor {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -362,7 +362,7 @@ class HookedAuthor {
 
 @Entity()
 class HookedTome {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())

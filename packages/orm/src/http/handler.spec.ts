@@ -75,8 +75,8 @@ describe('createRequestHandler', () => {
   // The path comes from the class name, so two entities on the same table in different schemas would
   // land on one path, the second unreachable.
   it('should throw when two entities claim the same path', () => {
-    const Company = defineEntity({ name: 'Company', schema: 'crm', fields: { id: f.number().id() } });
-    const Shadow = defineEntity({ name: 'Company', schema: 'billing', fields: { id: f.number().id() } });
+    const Company = defineEntity({ name: 'Company', schema: 'crm', fields: { id: f.number().autoIncrement() } });
+    const Shadow = defineEntity({ name: 'Company', schema: 'billing', fields: { id: f.number().autoIncrement() } });
 
     expect(() => createRequestHandler({ pool, include: [Company, Shadow] })).toThrow(
       '/company <- Company (crm.Company), Company (billing.Company)',
@@ -96,12 +96,12 @@ describe('createRequestHandler', () => {
   it('should name a colliding table by itself when it has no schema', () => {
     @Entity()
     class Order {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const Archived =
       @Entity({ name: 'order_archive' })
       class Order {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       };
 
     expect(() => createRequestHandler({ pool, include: [Order, Archived] })).toThrow(
@@ -117,7 +117,7 @@ describe('createRequestHandler', () => {
   });
 
   it('should serve no entity it does not name, however defined', () => {
-    defineEntity({ name: 'OtherEntity', fields: { id: f.number().id() } });
+    defineEntity({ name: 'OtherEntity', fields: { id: f.number().autoIncrement() } });
     const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
   });

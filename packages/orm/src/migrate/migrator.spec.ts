@@ -18,19 +18,19 @@ import { createMigrationsTable } from './storage/databaseStorage.js';
 
 @Entity()
 class MigNote {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
 }
 
 @Entity()
 class MigAuthor {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @OneToMany({ entity: () => MigBook, mappedBy: (book) => book.author }) books?: MigBook[];
 }
 
 @Entity()
 class MigBook {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => MigAuthor).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => MigAuthor, references: (book) => book.authorId }) author?: MigAuthor;
 }
@@ -371,12 +371,12 @@ describe('Migrator', () => {
     it('should drop a column replaced by one identical to it but for its name, suggesting the rename', async () => {
       @Entity({ name: 'Doc' })
       class DocBefore {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.text().nullable()) legacyNotes?: string | null;
       }
       @Entity({ name: 'Doc' })
       class DocAfter {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.text().nullable()) publicSummary?: string | null;
       }
       await migratorOf({ entities: [DocBefore] }).sync();
@@ -397,12 +397,12 @@ describe('Migrator', () => {
     it('should rename a column its naming strategy now spells otherwise, keeping its data', async () => {
       @Entity({ name: 'Person' })
       class PersonBefore {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) firstName?: string | null;
       }
       @Entity({ name: 'Person' })
       class PersonAfter {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().name('first_name')) firstName?: string | null;
       }
       await migratorOf({ entities: [PersonBefore] }).sync();
@@ -445,12 +445,12 @@ describe('Migrator', () => {
     it('should roll back the latest diff first, each as its reverse', async () => {
       @Entity({ name: 'First' })
       class First {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) a?: string | null;
       }
       @Entity({ name: 'Second' })
       class Second {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       await pool.run(sql.text('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)'));
       await pool.run(sql.text('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)'));
@@ -475,7 +475,7 @@ describe('Migrator', () => {
     it('should roll a dropped required column back nullable, saying it needs filling', async () => {
       @Entity({ name: 'Code' })
       class Code {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       await pool.run(sql.text('CREATE TABLE `Code` (`id` INTEGER PRIMARY KEY, `expiresAt` TEXT NOT NULL)'));
       await pool.run(sql.text("INSERT INTO `Code` (`id`, `expiresAt`) VALUES (1, 'soon')"));

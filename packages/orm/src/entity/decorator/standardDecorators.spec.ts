@@ -14,7 +14,7 @@ describe('standard decorators', () => {
   it('should register fields, the id and the entity name', () => {
     @Entity()
     class Basic {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
     }
 
@@ -28,7 +28,7 @@ describe('standard decorators', () => {
 
   it('should inherit fields from an undecorated abstract base, parent fields first', () => {
     abstract class Base {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.date().nullable()) createdAt?: Date | null;
     }
 
@@ -45,7 +45,7 @@ describe('standard decorators', () => {
 
   it('should keep sibling subclasses of one base independent', () => {
     abstract class Shared {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
 
     @Entity()
@@ -65,7 +65,7 @@ describe('standard decorators', () => {
 
   it('should register an inherited hook exactly once', () => {
     abstract class HookedBase {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
 
       @BeforeInsert()
       stamp(_ctx: HookContext) {}
@@ -83,13 +83,13 @@ describe('standard decorators', () => {
   it('should register relations from the entity getter', () => {
     @Entity()
     class Owner {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @OneToMany({ entity: () => Owned, mappedBy: (owned) => owned.owner }) owned?: Owned[];
     }
 
     @Entity()
     class Owned {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.references(() => Owner).nullable()) ownerId?: number | null;
       @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
     }
@@ -102,7 +102,7 @@ describe('standard decorators', () => {
   it('should apply @Index stacked above @Entity', () => {
     @Entity({ indexes: (indexed, index) => [index([indexed.title], { unique: true })] })
     class Indexed {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
     }
 
@@ -139,7 +139,7 @@ describe('standard decorators', () => {
     expect(() => {
       @Entity()
       class Untyped {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(untypedColumn({})) mystery?: string | null;
       }
       return Untyped;
@@ -150,7 +150,7 @@ describe('standard decorators', () => {
     expect(() => {
       @Entity()
       class NoTarget {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         // @ts-expect-error deliberately omitted
         @ManyToOne({}) other?: NoTarget;
       }

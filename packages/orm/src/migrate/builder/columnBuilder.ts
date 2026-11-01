@@ -113,7 +113,7 @@ export class TableColumn implements ForeignKeyBuilder {
     if (conflict) {
       throw new UqlUsageError(`'${this.#name}' ${conflict}`);
     }
-    const column = declaredColumn(field, { name: this.#name, soleKey: false, compile: migrationSql });
+    const column = declaredColumn(field, { name: this.#name, compile: migrationSql });
     return {
       ...column,
       type: this.#unsigned ? { ...column.type, unsigned: true } : column.type,
@@ -128,7 +128,7 @@ export class TableColumn implements ForeignKeyBuilder {
 export function tableColumns(add: (column: TableColumn) => TableColumn): TableColumnFactory {
   const named = (name: string, column: ColumnOptionsBuilder) => add(new TableColumn(name, column));
   return {
-    id: (name = 'id') => named(name, columns.bigint().id().autoIncrement()),
+    id: (name = 'id') => named(name, columns.bigint().autoIncrement()),
     integer: (name) => named(name, columns.column('int')),
     smallint: (name) => named(name, columns.column('smallint')),
     bigint: (name) => named(name, columns.bigint()),

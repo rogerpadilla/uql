@@ -9,14 +9,14 @@ import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
 
 @Entity()
 class Counter {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().unique()) key!: string;
   @Field(f.number()) hits!: number;
 }
 
 @Entity()
 class Stamped {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().unique()) key!: string;
   @Field(f.string()) body!: string;
   @Computed(() =>

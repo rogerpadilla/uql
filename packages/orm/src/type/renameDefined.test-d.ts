@@ -6,7 +6,7 @@ import type { Querier } from './index.js';
 
 export const Studio = defineEntity({
   name: 'Studio',
-  fields: { id: f.number().id(), cityName: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), cityName: f.string().nullable() },
 }).relations(
   (rel) => ({ films: () => rel.oneToMany(Movie, { mappedBy: (movie) => movie.studioRel }) }),
   (agg) => ({ filmTally: () => agg.films.count() }),
@@ -15,7 +15,7 @@ export const Studio = defineEntity({
 export const Movie = defineEntity({
   name: 'Movie',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     movieTitle: f.string(),
     movieRating: f.number().nullable(),
     studioRef: f.number().nullable(),

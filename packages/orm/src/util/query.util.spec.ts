@@ -8,7 +8,7 @@ import { sql } from './sql.js';
 @Entity()
 class Enrolled {
   [idKey]?: 'studentId' | 'courseId';
-  @Field(f.number().id()) studentId?: number;
+  @Field(f.number().id()) studentId!: number;
   @Field(f.string().id()) courseId?: string;
   @Field(f.string().nullable()) grade?: string | null;
 }

@@ -7,7 +7,7 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 
 @Entity()
 class UserProfileDialect {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) firstName?: string | null;
   @Field(f.string().nullable()) lastName?: string | null;
   @Field(f.string().nullable().name('explicit_name')) explicitField?: string | null;

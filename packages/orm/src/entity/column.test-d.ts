@@ -59,7 +59,7 @@ export function options() {
 
 export function familiesOfferTheirOwn() {
   f.string().length(80);
-  f.number().precision(12).scale(2).autoIncrement(false);
+  f.number().precision(12).scale(2);
   f.date().precision(3);
   f.vector(1536).distance('cosine');
   f.column('timestamptz').precision(6);

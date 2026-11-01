@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
+import { canonicalToSql, engineType, isVectorCategory, suppliedKeySql } from '../schema/canonicalType.js';
 import { indexChanges } from '../schema/indexDifferences.js';
 import { matchByKey } from '../schema/matchByKey.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
@@ -80,12 +80,16 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * The SQL type a column is spelled with: its canonical type, plus the engine's generated suffix on an
-   * auto-increment key, so a foreign key taking its type from the key gets the same one.
+   * The SQL type a column is spelled with: its canonical type, the key's where it is one, plus the engine's generated
+   * suffix on an auto-increment key, so a foreign key taking its type from the key gets the same one.
    */
   private columnSqlType(col: Pick<ColumnNode, 'type' | 'isPrimaryKey' | 'isAutoIncrement'>): string {
-    const type = canonicalToSql(col.type, this.dialect);
-    return col.isPrimaryKey && col.isAutoIncrement ? `${type} ${this.dialect.autoIncrementSuffix}` : type;
+    if (!col.isPrimaryKey) {
+      return canonicalToSql(col.type, this.dialect);
+    }
+    return col.isAutoIncrement
+      ? `${canonicalToSql(col.type, this.dialect)} ${this.dialect.autoIncrementSuffix}`
+      : suppliedKeySql(col.type, this.dialect);
   }
 
   /**

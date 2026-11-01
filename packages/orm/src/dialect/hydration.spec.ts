@@ -33,7 +33,7 @@ class PriceRow {
 
 @Entity()
 class FlagRow {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.boolean().nullable()) active?: boolean | null;
 }
 
@@ -44,7 +44,7 @@ class FlagRow {
  */
 @Entity()
 class LogicalRow {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.column('boolean').nullable()) active?: boolean | null;
   @Field(f.decimal(12, 2).nullable()) amount?: string | null;
   @Field(f.bigint().nullable()) huge?: bigint | null;
@@ -52,7 +52,7 @@ class LogicalRow {
 
 @Entity()
 class WideOwner {
-  @Field(f.bigint().id()) id?: bigint;
+  @Field(f.bigint().autoIncrement()) id?: bigint;
 }
 
 /** A foreign key typed by the key it references, a `BigInt` one here. */

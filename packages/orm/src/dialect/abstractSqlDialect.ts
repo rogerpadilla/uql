@@ -1,5 +1,5 @@
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
-import { generatesKey, ownsSoleKey, valueFieldOf } from '../entity/metadata/definition.js';
+import { generatesKey, valueFieldOf } from '../entity/metadata/definition.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -2257,7 +2257,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (write.kind === 'insert' || write.kind === 'upsert') {
       const [row] = fillOnFields<object, Record<string, unknown>>(meta, { ...write.row }, 'onInsert', 'trigger');
       const unfilled = definedEntries(meta.fields)
-        .filter(([key, field]) => row[key] === undefined && lacksValueOnInsert(field, ownsSoleKey(meta, key)))
+        .filter(([key, field]) => row[key] === undefined && lacksValueOnInsert(field))
         .map(([key]) => key);
       if (unfilled.length) {
         throw new UqlUsageError(

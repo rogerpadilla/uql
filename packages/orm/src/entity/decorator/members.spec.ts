@@ -8,7 +8,7 @@ describe('hook decorators', () => {
   it('should register a @BeforeInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -22,7 +22,7 @@ describe('hook decorators', () => {
   it('should register a @AfterInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @AfterInsert()
@@ -36,7 +36,7 @@ describe('hook decorators', () => {
   it('should register a @BeforeUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeUpdate()
@@ -50,7 +50,7 @@ describe('hook decorators', () => {
   it('should register a @AfterUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @AfterUpdate()
@@ -64,7 +64,7 @@ describe('hook decorators', () => {
   it('should register @AfterLoad hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @AfterLoad()
@@ -78,7 +78,7 @@ describe('hook decorators', () => {
   it('should register @BeforeDelete hook', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeDelete()
@@ -92,7 +92,7 @@ describe('hook decorators', () => {
   it('should register multiple hooks for the same event', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -109,7 +109,7 @@ describe('hook decorators', () => {
   it('should register hooks for multiple different events', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -127,7 +127,7 @@ describe('hook decorators', () => {
   it('should support stacking multiple decorators on one method', () => {
     @Entity()
     class TestEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -142,7 +142,7 @@ describe('hook decorators', () => {
 
   it('should inherit hooks from parent entity', () => {
     class BaseEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -165,7 +165,7 @@ describe('hook decorators', () => {
 
   it('should inherit parent hooks when the child declares none of its own', () => {
     class BaseEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -184,7 +184,7 @@ describe('hook decorators', () => {
 
   it('should merge parent and child hooks registered on different events', () => {
     class BaseEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @BeforeInsert()
@@ -208,7 +208,7 @@ describe('hook decorators', () => {
   it('should not have hooks when none are defined', () => {
     @Entity()
     class PlainEntity {
-      @Field(f.number().id())
+      @Field(f.number().autoIncrement())
       id?: number;
 
       @Field(f.string().nullable())

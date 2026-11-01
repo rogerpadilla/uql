@@ -65,7 +65,7 @@ class Doc {
  */
 @Entity({ name: 'renamed_doc' })
 class RenamedDoc {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.string().nullable().name('the_label'))
   label?: string | null;
@@ -75,7 +75,7 @@ class RenamedDoc {
 
 @Entity()
 class AggregateLine {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(
     f
@@ -91,7 +91,7 @@ class AggregateLine {
 /** Relation aggregates a document engine builds out of stages: one over a page, one over a filtered page. */
 @Entity()
 class AggregateDoc {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @OneToMany({ entity: () => AggregateLine, mappedBy: (line) => line.docId })
   lines?: AggregateLine[];
@@ -106,7 +106,7 @@ class AggregateDoc {
 /** The other arm of `computed`: SQL, which no document engine evaluates. */
 @Entity()
 class SqlComputedDoc {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   price?: number | null;
@@ -841,7 +841,7 @@ class MongoDialectSpec implements Spec {
   shouldRejectDistinctSortedByAnUnprojectedVectorDistance() {
     @Entity({ name: 'DistinctVector' })
     class DistinctVector {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
@@ -859,7 +859,7 @@ class MongoDialectSpec implements Spec {
   shouldGroupDistinctSortedByAProjectedVectorDistance() {
     @Entity({ name: 'DistinctProjected' })
     class DistinctProjected {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
@@ -1706,7 +1706,7 @@ class MongoDialectSpec implements Spec {
   shouldRefuseToMintAKeyDeclaredByTypeName() {
     @Entity()
     class BigKeyed {
-      @Field(f.column('bigint').id()) id?: bigint;
+      @Field(f.column('bigint').autoIncrement()) id?: bigint;
       @Field(f.string().nullable()) title?: string | null;
     }
     expect(() => this.dialect.getPersistables(getMeta(BigKeyed), { title: 't' }, 'onInsert')).toThrow(
@@ -1904,7 +1904,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildBasicVectorSearchStage() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const result = this.vectorStage(VectorItem, { vec: { $vector: [1, 2, 3] } }, undefined, 10);
@@ -1923,7 +1923,7 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchOnUnknownField() {
     @Entity({ name: 'VectorUnknown' })
     class VectorUnknown {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(() =>
@@ -1935,7 +1935,7 @@ class MongoDialectSpec implements Spec {
   shouldDeriveNumCandidatesFromLimit() {
     @Entity({ name: 'VectorNum' })
     class VectorNum {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const r5 = this.vectorStage(VectorNum, { vec: { $vector: [1, 2, 3] } }, undefined, 5);
@@ -1948,7 +1948,7 @@ class MongoDialectSpec implements Spec {
   shouldCapNumCandidatesAtTheAtlasMaximum() {
     @Entity({ name: 'VectorCap' })
     class VectorCap {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const stage = this.vectorStage(VectorCap, { vec: { $vector: [1, 2, 3] } }, undefined, 5000);
@@ -1959,7 +1959,7 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchWithoutALimit() {
     @Entity({ name: 'VectorNoLimit' })
     class VectorNoLimit {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(() => this.vectorStage(VectorNoLimit, { vec: { $vector: [1, 2, 3] } }, undefined, 0)).toThrow(
@@ -1991,7 +1991,7 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterVectorSearch() {
     @Entity({ name: 'VectorItem2' })
     class VectorItem2 {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) category!: string | null;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
@@ -2011,7 +2011,7 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterWithComplexWhere() {
     @Entity({ name: 'VectorComplex' })
     class VectorComplex {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) category!: string | null;
       @Field(f.string().nullable()) status!: string | null;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
@@ -2037,7 +2037,7 @@ class MongoDialectSpec implements Spec {
   shouldNotAddFilterForEmptyWhere() {
     @Entity({ name: 'VectorItem3' })
     class VectorItem3 {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const result = this.vectorStage(VectorItem3, { vec: { $vector: [1, 2, 3] } }, {}, 10);
@@ -2055,7 +2055,7 @@ class MongoDialectSpec implements Spec {
   shouldProjectVectorSearchScore() {
     @Entity({ name: 'VectorProj' })
     class VectorProj {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const result = this.vectorStage(VectorProj, { vec: { $vector: [1, 2, 3], $project: 'similarity' } }, undefined, 10);
@@ -2075,7 +2075,7 @@ class MongoDialectSpec implements Spec {
   shouldAcceptTheDistanceTheIndexRanksBy() {
     @Entity({ name: 'VectorDist' })
     class VectorDist {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable().distance('l2')) vec!: number[] | null;
     }
     const result = this.vectorStage(VectorDist, { vec: { $vector: [1, 2, 3], $distance: 'l2' } }, undefined, 10);
@@ -2091,7 +2091,7 @@ class MongoDialectSpec implements Spec {
       ],
     })
     class VectorCustomIdx {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const result = this.vectorStage(VectorCustomIdx, { vec: { $vector: [1, 2, 3] } }, undefined, 10);
@@ -2100,7 +2100,7 @@ class MongoDialectSpec implements Spec {
   shouldOrderAVectorSearchByTheRestOfTheSort() {
     @Entity({ name: 'VectorMixed' })
     class VectorMixed {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.date().nullable()) createdAt?: Date | null;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
@@ -2121,7 +2121,7 @@ class MongoDialectSpec implements Spec {
   shouldRunAVectorSearchWithNoOtherOrdering() {
     @Entity({ name: 'VectorOnly' })
     class VectorOnly {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     expect(this.dialect.readPlan(VectorOnly, { $sort: { vec: { $vector: [4, 5, 6] } }, $limit: 5 })).toMatchObject({
@@ -2334,7 +2334,7 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Enrolment {
       [idKey]?: 'studentId' | 'courseId';
-      @Field(f.number().id()) studentId?: number;
+      @Field(f.number().id()) studentId!: number;
       @Field(f.string().id()) courseId?: string;
       @Field(f.string().nullable()) grade?: string | null;
     }
@@ -2358,12 +2358,12 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Enrolment {
       [idKey]?: 'studentId' | 'courseId';
-      @Field(f.number().id()) studentId?: number;
+      @Field(f.number().id()) studentId!: number;
       @Field(f.string().id()) courseId?: string;
     }
     @Entity()
     class Attendance {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) enrolmentStudentId?: number | null;
       @Field(f.string().nullable()) enrolmentCourseId?: string | null;
       @ManyToOne({

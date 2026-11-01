@@ -7,7 +7,7 @@ import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 @Entity()
 class RebuiltUser {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.number().default(0)) age?: number;
 }

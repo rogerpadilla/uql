@@ -41,7 +41,7 @@ const EVERY_TAG_FIELD = {
 /** Exercises a soft-delete stamp whose value is a raw SQL expression. */
 @Entity()
 class SoftDeleteRaw {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(
     f
@@ -55,7 +55,7 @@ class SoftDeleteRaw {
 /** A column of each literal kind an inline context writes. */
 @Entity()
 class InlineRow {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.string().nullable())
   name?: string | null;
@@ -68,7 +68,7 @@ class InlineRow {
 /** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
 @Entity()
 class RenamedParent {
-  @Field(f.number().id().name('parent_pk'))
+  @Field(f.number().autoIncrement().name('parent_pk'))
   id?: number;
   @OneToMany({ entity: () => RenamedChild, mappedBy: (renamedChild) => renamedChild.parentId })
   children?: RenamedChild[];
@@ -76,7 +76,7 @@ class RenamedParent {
 
 @Entity()
 class RenamedChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(
     f

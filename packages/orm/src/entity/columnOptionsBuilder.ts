@@ -104,8 +104,8 @@ export class ColumnOptionsBuilder {
     return this.with({ scale });
   }
 
-  autoIncrement(autoIncrement = true): ColumnOptionsBuilder {
-    return this.with({ autoIncrement });
+  autoIncrement(): ColumnOptionsBuilder {
+    return this.with({ isId: true, autoIncrement: true });
   }
 
   length(length: number): ColumnOptionsBuilder {

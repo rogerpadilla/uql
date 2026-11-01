@@ -9,12 +9,12 @@ import { sql } from '../util/index.js';
 declare function expectType<T>(value: T): void;
 
 class Company {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 // ─── @Field({ type }): the constructor and the column-string spelling are both checked ───
 export class Typed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.column('varchar').nullable()) name?: string | null;
   @Field(f.column('int').nullable()) count?: number | null;
   @Field(f.column('timestamptz').nullable()) at?: Date | null;
@@ -44,7 +44,7 @@ export class Typed {
 // An explicit `type` opts out of resolving the column from that key, so it may widen it, a BIGINT column over
 // a numeric key, but not hold another kind of value, which no join could match.
 export class Referrer {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
   @Field(
     f
@@ -143,19 +143,19 @@ expectType<MethodKey<WithMethods>>('name');
 
 // ─── Relation options: each decorator takes the options its side can use ───
 class Employee {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
 }
 
 class EmployeeProject {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Employee).nullable()) employeeId?: number | null;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
 }
 
 export class Staffed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.company }) staff?: Employee[];
   // A pivot is its own entity, unrelated to the target's shape.
   @ManyToMany({ entity: () => Employee, through: () => EmployeeProject }) contractors?: Employee[];
@@ -181,7 +181,7 @@ export class Staffed {
   checks: (account, check) => [check({ email: { $ne: '' } }), check(sql`${account.createdAt} IS NOT NULL`)],
 })
 export class Account {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.column('timestamptz').nullable()) createdAt?: Date | null;
 }
@@ -189,7 +189,7 @@ export class Account {
 // @ts-expect-error a check reads the entity's own fields
 @Entity({ checks: (unchecked, check) => [check({ emial: { $ne: '' } })] })
 export class Unchecked {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
 }
 
@@ -200,14 +200,14 @@ export class Unchecked {
 // @ts-expect-error an index option the entity index does not have
 @Entity({ indexes: (misindexed, index) => [index([misindexed.email], { uniqe: true })] })
 export class Misindexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
 }
 
 // @ts-expect-error no such column to index
 @Entity({ indexes: (unindexed, index) => [index([unindexed.emial])] })
 export class Unindexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
 }
 

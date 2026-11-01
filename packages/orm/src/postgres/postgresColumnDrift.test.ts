@@ -26,7 +26,10 @@ describe('PostgreSQL column type drift', () => {
     const Row = defineEntity({
       name: TABLE,
       schema: SCHEMA,
-      fields: { id: f.number().id(), title: length ? f.string().nullable().length(length) : f.string().nullable() },
+      fields: {
+        id: f.number().autoIncrement(),
+        title: length ? f.string().nullable().length(length) : f.string().nullable(),
+      },
     });
     const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect([TABLE]);
     const generator = new SqlSchemaGenerator(dialect);

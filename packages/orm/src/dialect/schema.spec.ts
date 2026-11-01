@@ -17,7 +17,7 @@ import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 @Entity({ schema: 'crm' })
 class Customer {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable().index())
@@ -26,7 +26,7 @@ class Customer {
 
 @Entity({ schema: 'sales' })
 class Order {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())
@@ -42,7 +42,7 @@ class Order {
 /** No schema of its own, so it follows whatever the pool carries. */
 @Entity()
 class Plain {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())
@@ -230,7 +230,7 @@ describe('schema', () => {
   });
 
   it('should reject a dotted name, naming the option that replaces it', () => {
-    expect(() => getMeta(defineEntity({ name: 'sales.Dotted', fields: { id: f.number().id() } }))).toThrow(
+    expect(() => getMeta(defineEntity({ name: 'sales.Dotted', fields: { id: f.number().autoIncrement() } }))).toThrow(
       /schema: 'sales'/,
     );
   });

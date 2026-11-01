@@ -20,7 +20,7 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 // Test entities
 @Entity()
 class TestUser {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable().length(100))
@@ -59,7 +59,7 @@ class TestPost {
 
 @Entity()
 class SqliteIndexedEntity {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().index())
   slug?: string | null;
 }
@@ -126,7 +126,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       ],
     })
     class WeightedDoc {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) title?: string | null;
       @Field(f.string().nullable()) summary?: string | null;
       @Field(f.string().nullable()) body?: string | null;
@@ -156,7 +156,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       ],
     })
     class InlineDoc {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) slug?: string | null;
       @Field(f.string().nullable()) code?: string | null;
       @Field(f.string().nullable()) body?: string | null;
@@ -224,7 +224,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       ],
     })
     class NullableEmbedding {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     const nullable = (dialect: MariaDialect | PostgresDialect) =>
@@ -1005,7 +1005,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
 
 @Entity()
 class DiffUser {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(255).columnType('varchar')) name?: string | null;
   @Field(f.string().nullable().length(100).columnType('varchar')) email?: string | null;
   @Field(f.string().nullable().index().length(255).columnType('varchar')) status?: string | null;
@@ -1013,14 +1013,14 @@ class DiffUser {
 
 @Entity()
 class DefaultsEntity {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().default('active').length(20).columnType('varchar')) status?: string | null;
   @Field(f.number().nullable().default(0).columnType('int')) attempts?: number | null;
 }
 
 @Entity()
 class ComputedEntity {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Computed((row) =>
     f
       .number()
@@ -1047,7 +1047,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     }
     @Entity()
     class RefSource {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.references(() => RefTarget).nullable()) ownerId?: string | null;
     }
     const { ownerId } = getMeta(RefSource).fields;
@@ -1059,7 +1059,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should type a foreign key as its create statement does, its own columnType first, and a shared key never serial', () => {
     @Entity()
     class Account {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     @Entity()
     class AccountProfile {
@@ -1069,7 +1069,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
           .id()
           .references(() => Account),
       )
-      id?: number;
+      id!: number;
       @Field(
         f
           .references(() => Account)
@@ -1089,7 +1089,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should comment a column of a table that has no comment of its own', () => {
     @Entity()
     class Commented {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable().comment('Shown to users')) label?: string | null;
     }
     const statements = generator.generateCreateSchema([Commented]);
@@ -1392,7 +1392,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
 
 @Entity({ name: 'users' })
 class UsersTable {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }
 
@@ -1502,7 +1502,7 @@ describe('triggers', () => {
     ],
   })
   class GenPost {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) title?: string | null;
     @Field(f.string().nullable()) titleNote?: string | null;
   }

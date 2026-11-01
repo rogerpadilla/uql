@@ -11,7 +11,7 @@ import { memberRefs, sql } from '../util/index.js';
  */
 @Entity()
 class Task {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .number()
@@ -26,13 +26,13 @@ class Task {
 
 @Entity()
 class Tag {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) weight?: number | null;
 }
 
 @Entity()
 class ProjectTag {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .number()
@@ -51,7 +51,7 @@ class ProjectTag {
 
 @Entity()
 class Project {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) owner?: string | null;
 
   @OneToMany({ entity: () => Task, mappedBy: (task) => task.project })
@@ -184,7 +184,7 @@ describe('relation aggregate', () => {
     expect(() => {
       @Entity()
       class Stored {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @OneToMany({ entity: () => Task, mappedBy: (task) => task.project }) tasks?: Task[];
         @Field(untypedColumn({ computed: memberRefs<{ tasks: Task[] }>().tasks.count(), stored: true }))
         readonly taskCount?: number;

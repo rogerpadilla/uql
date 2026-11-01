@@ -101,6 +101,8 @@ type ScalarTypeMap = Record<Exclude<TypeCategory, VectorCast>, string>;
 /** How one engine spells the canonical types: a base name per category, size variants, and a default decimal precision. */
 type EngineTypes = {
   readonly scalars: Record<TypeCategory, string>;
+  /** How a key the database does not generate is spelled, where the integer type alone would generate it. */
+  readonly suppliedIntegerKey?: string;
   readonly sizes?: Partial<Record<TypeCategory, Record<SizeVariant, string>>>;
   readonly decimal?: { readonly precision: number; readonly scale: number };
   /** The fractional-second digits a timestamp stating none holds, where the engine counts them. */
@@ -241,7 +243,7 @@ const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
     timestampPrecision: 0,
   },
   // SQLite uses affinity, so no size variants. `F32_BLOB` is libSQL's vector type; elsewhere just a name of BLOB affinity.
-  sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'F32_BLOB') },
+  sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'F32_BLOB'), suppliedIntegerKey: 'INT' },
   // 2025 and up; below that the server refuses the type rather than storing it as text.
   mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'VECTOR'), sizes: MSSQL_SIZES, timestampPrecision: 7 },
   mongodb: { scalars: withVectorType(MONGO_SCALAR_MAP, 'array') },
@@ -330,9 +332,15 @@ function declaredSqlType(options: FieldOptions): string | undefined {
   return columnType ?? (typeof type === 'string' ? type : undefined);
 }
 
-/**
- * Convert a canonical type to a SQL type string for a specific dialect instance.
- */
+/** {@link canonicalToSql} for a key the database does not generate, which an engine may spell apart from one it does. */
+export function suppliedKeySql(type: CanonicalType, dialect: AbstractDialect): string {
+  const { suppliedIntegerKey } = ENGINE_TYPES[dialect.dialectName];
+  return suppliedIntegerKey && type.category === 'integer' && !type.raw
+    ? suppliedIntegerKey
+    : canonicalToSql(type, dialect);
+}
+
+/** Convert a canonical type to a SQL type string for a specific dialect instance. */
 export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): string {
   if (type.raw) return type.raw;
 

@@ -94,7 +94,7 @@ it('should backstop at run time what the decorators reject at compile time', () 
   expect(() => {
     @Entity()
     class Backstopped {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Computed(() =>
         f
           .number()

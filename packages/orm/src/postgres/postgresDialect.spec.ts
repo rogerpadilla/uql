@@ -33,7 +33,7 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldCastHalfvecSort() {
     @Entity({ name: 'HalfvecItem' })
     class HalfvecItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('halfvec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
@@ -55,7 +55,7 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldBindSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('sparsevec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
@@ -72,7 +72,7 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldInsertSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem2' })
     class SparsevecItem2 {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('sparsevec').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));

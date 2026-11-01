@@ -4,7 +4,7 @@ import { Entity, Field, f, idKey } from 'uql-orm';
 export class Region {
   [idKey]?: 'code';
 
-  @Field(f.column('int').id().autoIncrement(false))
+  @Field(f.column('int').id())
   code!: number;
 
   @Field(f.column('text'))

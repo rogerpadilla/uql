@@ -15,7 +15,7 @@ const TABLE = 'vector_tuning';
   ],
 })
 export class TunedItem {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.vector(3).nullable()) vec?: number[] | null;
 }

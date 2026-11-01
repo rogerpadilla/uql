@@ -49,6 +49,9 @@ export const SAVEPOINT_PREFIX = `${OWNED_PREFIX}_sp`;
 /** The cursor a stream declares. Suffixed per call, so two streams on one connection cannot collide. */
 export const CURSOR_ALIAS = `${OWNED_PREFIX}_cursor`;
 
+/** The column reading a key's SQL default ahead of the insert writing it, where an engine reports only a generated key. */
+export const KEY_DEFAULT_ALIAS = `${OWNED_PREFIX}_key_default`;
+
 /** The SQL Server table variable an `OUTPUT` fills. */
 export const OUTPUT_TABLE = `@${OWNED_PREFIX}_output`;
 

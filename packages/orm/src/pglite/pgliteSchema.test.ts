@@ -14,13 +14,13 @@ import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 const Customer = defineEntity({
   name: 'Customer',
   schema: 'crm',
-  fields: { id: f.number().id(), name: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), name: f.string().nullable() },
 });
 const Order = defineEntity({
   name: 'Order',
   schema: 'sales',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     total: f.number().nullable(),
     customerId: f.number().nullable(),
   },
@@ -33,14 +33,14 @@ const Order = defineEntity({
 /** No schema of its own: it follows whichever pool reads it. */
 const Ledger = defineEntity({
   name: 'Ledger',
-  fields: { id: f.number().id(), total: f.number().nullable(), label: f.string().nullable().index() },
+  fields: { id: f.number().autoIncrement(), total: f.number().nullable(), label: f.string().nullable().index() },
 });
 
 /** The same `crm.Customer` table, plus a column, so the diff has something to find. */
 const Drifted = defineEntity({
   schema: 'crm',
   name: 'Customer',
-  fields: { id: f.number().id(), name: f.string().nullable(), age: f.number().nullable() },
+  fields: { id: f.number().autoIncrement(), name: f.string().nullable(), age: f.number().nullable() },
 });
 
 const TENANTS = [

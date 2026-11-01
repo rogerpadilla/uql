@@ -165,7 +165,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }
@@ -180,7 +180,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldInsertTheDeclaredDefaultForAColumnARowLeavesOut() {
     @Entity()
     class Flagged {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable().default('active')) status?: string | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>

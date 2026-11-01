@@ -6,11 +6,11 @@ import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
 
 const Invoice = defineEntity({
   name: 'Invoice',
-  fields: { id: f.number().id(), amount: f.number() },
+  fields: { id: f.number().autoIncrement(), amount: f.number() },
 });
 const Ticket = defineEntity({
   name: 'Ticket',
-  fields: { id: f.number().id(), title: f.string() },
+  fields: { id: f.number().autoIncrement(), title: f.string() },
 });
 
 describe('two pools with disjoint entities in one process', () => {

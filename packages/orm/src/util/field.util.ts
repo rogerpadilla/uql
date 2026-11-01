@@ -108,16 +108,6 @@ export function isDatabaseWritten(field: FieldOptions): boolean {
   return field.computed !== undefined;
 }
 
-/**
- * Whether the database generates this column's value: its table's whole and own key (see `ownsSoleKey`), numeric,
- * that the application does not fill `onInsert`; a `columnType` only states its width. The one answer the create
- * statement and the diff both read.
- */
-export function isAutoIncrement(field: FieldOptions, soleKey: boolean): boolean {
-  if (field.autoIncrement !== undefined) return field.autoIncrement;
-  return soleKey && columnFamily(field.type) === 'numeric' && !field.onInsert;
-}
-
 /** The column family of a field, from its `columnType` if set, else from its `type`. */
 export function fieldFamily(field: FieldOptions): ColumnFamily | undefined {
   return columnFamily(field.columnType ?? field.type);
@@ -142,13 +132,13 @@ export function lacksValue(column: {
  * {@link lacksValue} for an insert leaving the field out, where a computed column, a stamp its trigger fills included,
  * holds a value too, unlike on the rows a migration finds.
  */
-export function lacksValueOnInsert(field: FieldOptions, soleKey: boolean): boolean {
+export function lacksValueOnInsert(field: FieldOptions): boolean {
   return (
     !isDatabaseWritten(field) &&
     lacksValue({
       nullable: !declaresNotNull(field),
       defaultValue: field.defaultValue,
-      isAutoIncrement: isAutoIncrement(field, soleKey),
+      isAutoIncrement: field.autoIncrement === true,
     })
   );
 }

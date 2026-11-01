@@ -73,7 +73,7 @@ export class User {
 
 @Entity()
 export class Post {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -88,7 +88,7 @@ export class Post {
 ```
 
 - A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal(precision?, scale?)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other SQL type uql names (`f.column('smallint')`, `f.column('date')` for a day with no time, `f.column('timestamptz')`), typed by its family, and `f.references(() => Target)` for a foreign key typed as the target's key. A type uql does not name is ``.columnType(sql`citext`)``. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A builder is immutable, so `const money = f.decimal(12, 2)` is shared across fields, each chaining its own `.nullable()`.
-- A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the single-column key and version uql fills. A NOT NULL field a default fills (`.default()`, `.onInsert()`) stays `!` and is listed in the class's `[filledKey]?: 'stock' | 'createdAt'`: inserts may omit it, reads always have it.
+- A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the version uql fills. A key the database generates is `@Field(f.number().autoIncrement()) id?: number` (`f.bigint().autoIncrement()` past 2^53); `.id()` alone generates nothing, so `f.number().id()` is a key the caller supplies and `@Field` refuses `?` on it, as on a `.references()` key. A NOT NULL field something fills (`.default()`, `.onInsert()`, a generated key) stays `!` when listed in the class's `[filledKey]?: 'id' | 'createdAt'`: inserts may omit it, reads always have it. MongoDB fills a text key declared `?` and `_id`. `defineEntity` works all of this out.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
 - A JSON column's property is `Json<T>`: `settings?: Json<{ theme?: string }> | null`. A plain object type reads as a relation, which `$where`, `$sort` and the update operators refuse.
@@ -112,7 +112,7 @@ const Settings = z.object({ theme: z.string(), bio: z.string().optional() });
 export const Author = defineEntity({
   name: 'Author',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     name: f.string(),
     settings: f.json(Settings).nullable(),
   },
@@ -125,7 +125,7 @@ export type Author = InstanceType<typeof Author>;
 export const Book = defineEntity({
   name: 'Book',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string(),
     stock: f.number().default(0),
     authorId: f.number(),
@@ -164,7 +164,7 @@ declare module 'uql-orm' {
   },
 })
 export class Invoice {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number()) companyId!: number;
   @Field(f.string().nullable()) status?: string | null;
   @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;

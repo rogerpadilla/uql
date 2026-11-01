@@ -6,7 +6,7 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class UserProfileMigrate {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) firstName?: string | null;
   @Field(f.string().nullable()) lastName?: string | null;
 }
@@ -14,7 +14,7 @@ class UserProfileMigrate {
 /** Named after itself: what the author wrote is the table, however much it looks like a default. */
 @Entity({ name: 'UserProfileNamed' })
 class UserProfileNamed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 describe('Schema Generator with Naming Strategy', () => {
@@ -33,13 +33,13 @@ describe('Schema Generator with Naming Strategy', () => {
     // Both of these state their table; a strategy derives a name, it does not rewrite one.
     expect(generator.generateCreateSchema([UserProfileNamed]).join('\n')).toContain('CREATE TABLE "UserProfileNamed"');
     // A schema stating its table: the strategy leaves it alone.
-    const minted = defineEntity({ name: 'BlogPost', table: 'blogPost', fields: { id: f.number().id() } });
+    const minted = defineEntity({ name: 'BlogPost', table: 'blogPost', fields: { id: f.number().autoIncrement() } });
     expect(generator.generateCreateSchema([minted]).join('\n')).toContain('CREATE TABLE "blogPost"');
   });
 
   it("should derive a schema's table from its name, as a decorated class's", () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
-    const derived = defineEntity({ name: 'DerivedPost', fields: { id: f.number().id() } });
+    const derived = defineEntity({ name: 'DerivedPost', fields: { id: f.number().autoIncrement() } });
     expect(generator.generateCreateSchema([derived]).join('\n')).toContain('CREATE TABLE "derived_post"');
   });
 });

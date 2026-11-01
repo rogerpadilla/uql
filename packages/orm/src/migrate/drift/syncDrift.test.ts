@@ -21,7 +21,7 @@ const TABLE = 'drift_sync_user';
   ],
 })
 class DriftUniqueUser {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(100)) email?: string | null;
   @Field(f.string().nullable().length(100)) handle?: string | null;
   @Field(f.string().nullable().length(20)) region?: string | null;
@@ -36,13 +36,13 @@ const DATED = 'drift_sync_dated';
 /** A timestamp as an older schema built it: no zone, and whole seconds. */
 @Entity({ name: DATED })
 class DatedBefore {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.date().nullable().precision(0).columnType('timestamp')) at?: Date | null;
 }
 
 @Entity({ name: DATED })
 class DatedAfter {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.date().nullable()) at?: Date | null;
 }
 
@@ -57,7 +57,7 @@ const SHAPE = 'drift_sync_shape';
   ],
 })
 class ShapeBefore {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(100)) email?: string | null;
   @Field(f.string().nullable().length(20)) region?: string | null;
   @Field(f.string().nullable().length(20)) code?: string | null;
@@ -72,7 +72,7 @@ class ShapeBefore {
   ],
 })
 class ShapeAfter {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(100)) email?: string | null;
   @Field(f.string().nullable().length(20)) region?: string | null;
   @Field(f.string().nullable().length(20)) code?: string | null;
@@ -87,7 +87,7 @@ class ShapeAfter {
   ],
 })
 class ShapeUnique {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().unique().length(100)) email?: string | null;
   @Field(f.string().nullable().length(20)) region?: string | null;
   @Field(f.string().nullable().length(20)) code?: string | null;
@@ -102,7 +102,7 @@ class ShapeUnique {
   ],
 })
 class ShapeNoEmail {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(20)) region?: string | null;
   @Field(f.string().nullable().length(20)) code?: string | null;
 }
@@ -112,7 +112,7 @@ const RENAMED = 'drift_sync_renamed';
 /** An indexed subtitle, and a parent by foreign key, named as their fields are. */
 @Entity({ name: RENAMED, indexes: (titledBefore, index) => [index([titledBefore.subTitle])] })
 class TitledBefore {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(100)) subTitle?: string | null;
   @Field(
     f
@@ -126,7 +126,7 @@ class TitledBefore {
 /** The same columns in snake case, as a naming strategy switched to it spells them. */
 @Entity({ name: RENAMED, indexes: (titledAfter, index) => [index([titledAfter.subTitle])] })
 class TitledAfter {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(100).name('sub_title')) subTitle?: string | null;
   @Field(
     f
@@ -143,14 +143,14 @@ const RETYPED = 'drift_sync_retyped';
 /** A code kept as text. */
 @Entity({ name: RETYPED })
 class CodedAsText {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(20)) code?: string | null;
 }
 
 /** The same code as a number. */
 @Entity({ name: RETYPED })
 class CodedAsNumber {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) code?: number | null;
 }
 
@@ -160,14 +160,14 @@ const POSTS = 'drift_sync_posts';
 /** A table under its old name. */
 @Entity({ name: ARTICLES })
 class Article {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(77)) summary?: string | null;
 }
 
 /** The same columns under a new name. */
 @Entity({ name: POSTS })
 class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(77)) summary?: string | null;
 }
 
@@ -176,14 +176,14 @@ const WIDENED = 'drift_sync_widened';
 /** A short name. */
 @Entity({ name: WIDENED })
 class NamedShort {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(50)) name?: string | null;
 }
 
 /** The same name, longer. */
 @Entity({ name: WIDENED })
 class NamedLong {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().length(100)) name?: string | null;
 }
 
@@ -399,7 +399,7 @@ const INDEXED = 'drift_index_user';
   ],
 })
 class IndexedUser {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.string().nullable()) status?: string | null;
   @Field(f.number().nullable()) tenantId?: number | null;
@@ -416,7 +416,7 @@ class IndexedUser {
   ],
 })
 class IndexedUserEdited {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) email?: string | null;
   @Field(f.string().nullable()) status?: string | null;
   @Field(f.number().nullable()) tenantId?: number | null;
@@ -456,7 +456,7 @@ const CLASSED = 'drift_index_classed';
   ],
 })
 class ClassedData {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.jsonb().nullable()) data?: object | null;
 }
 

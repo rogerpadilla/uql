@@ -15,7 +15,7 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
   checks: (ledger, check) => [check({ balance: { $gte: 0 } }), check(sql`${ledger.spent} >= ${ledger.refunded}`)],
 })
 class Ledger {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) balance?: number | null;
   @Field(f.number().nullable()) spent?: number | null;
   @Field(f.number().nullable()) refunded?: number | null;
@@ -28,14 +28,14 @@ class Ledger {
   ],
 })
 class Account {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) emailAddress?: string | null;
   @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
 @Entity()
 class Scored {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) rawScore?: number | null;
   @Computed((scored) =>
     f
@@ -49,7 +49,7 @@ class Scored {
 
 const Line = defineEntity({
   name: 'Line',
-  fields: { id: f.number().id(), unitPrice: f.number().nullable(), qty: f.number().nullable() },
+  fields: { id: f.number().autoIncrement(), unitPrice: f.number().nullable(), qty: f.number().nullable() },
 }).computed((line) => ({
   total: f
     .number()
@@ -91,7 +91,7 @@ describe('SQL an entity declares', () => {
   it('should write the vector a predicate compares against as its literal, like any other value', () => {
     @Entity({ checks: (near, check) => [check({ embedding: { $near: { $vector: [1, 2, 3], $lt: 0.5 } } })] })
     class Near {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) embedding?: number[] | null;
     }
     expect(ddl(new PostgresDialect(), Near)).toContain(`CHECK ("embedding" <=> '[1,2,3]'::vector < 0.5)`);
@@ -113,7 +113,7 @@ describe('a date SQL an entity declares compares against', () => {
     const epoch = new Date(0);
     @Entity({ checks: (dated, check) => [check({ closedAt: { $gte: epoch } }), check({ closedAt: { $in: [epoch] } })] })
     class Dated {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.date().nullable()) closedAt?: Date | null;
     }
     const pg = ddl(new PostgresDialect(), Dated);
@@ -135,7 +135,7 @@ type TicketShape = {
 const ticketIndexedWhere = (where: EntityWhereMeta<TicketShape>): AbstractType<object> => {
   @Entity({ indexes: (ticket, index) => [index([ticket.status], { name: 'ticket_idx', where })] })
   class Ticket implements TicketShape {
-    @Field(f.number().id()) id?: number;
+    @Field(f.number().autoIncrement()) id?: number;
     @Field(f.string().nullable()) status?: string | null;
     @Field(f.number().nullable()) priority?: number | null;
     @Field(f.date().nullable()) closedAt?: Date | null;

@@ -14,7 +14,7 @@ const schemaOf = (entities: readonly AbstractType<object>[], naming?: NamingStra
 // Test entities
 @Entity()
 class User {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -29,7 +29,7 @@ class User {
 
 @Entity()
 class Post {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -47,7 +47,7 @@ class Post {
 
 @Entity({ name: 'categories' })
 class Category {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable().unique())
@@ -121,7 +121,7 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class Child2 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .text()
@@ -142,12 +142,12 @@ describe('SchemaASTBuilder', () => {
     it("should emit a relation's own onDelete/onUpdate over the global default", () => {
       @Entity()
       class FkParent {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @OneToMany({ entity: () => FkChild, mappedBy: (fkChild) => fkChild.parent }) children?: FkChild[];
       }
       @Entity()
       class FkChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .number()
@@ -166,7 +166,7 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class PlainChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .number()
@@ -193,12 +193,12 @@ describe('SchemaASTBuilder', () => {
     it("should fall back to the FK field's own onDelete when no relation sets one", () => {
       @Entity()
       class FkOnFieldParent {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       // No @ManyToOne at all: a bare FK field is a foreign key of its own, and still takes its cascade.
       @Entity()
       class FkOnFieldOnlyChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .number()
@@ -211,7 +211,7 @@ describe('SchemaASTBuilder', () => {
       // A declared relation with no onDelete of its own inherits the field's, so the two never drift.
       @Entity()
       class FkOnFieldWithRelationChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .number()
@@ -225,7 +225,7 @@ describe('SchemaASTBuilder', () => {
       // The relation's own onDelete still wins over a disagreeing field.
       @Entity()
       class FkOnFieldOverriddenChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .number()
@@ -249,11 +249,11 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Parent3 {
         @Field(f.column('int').id())
-        id?: number;
+        id!: number;
       }
       @Entity()
       class Child3 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         // An explicit `type` must win over resolving the column from `references`, which would
         // otherwise inherit 'int' from Parent3.id.
         @Field(
@@ -310,11 +310,11 @@ describe('SchemaASTBuilder', () => {
     it('should handle OneToOne owning side', () => {
       @Entity()
       class Profile11 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class User11 {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @OneToOne({
           entity: () => Profile11,
           references: (user11, profile11) => [{ local: user11.profileId, foreign: profile11.id }],
@@ -333,7 +333,7 @@ describe('SchemaASTBuilder', () => {
         indexes: (covered, index) => [index([covered.tenantId], { include: [covered.createdAt], name: 'cov_idx' })],
       })
       class Covered {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable().name('tenant_id')) tenantId?: number | null;
         @Field(f.date().nullable().name('created_at')) createdAt?: Date | null;
       }
@@ -359,7 +359,7 @@ describe('SchemaASTBuilder', () => {
     it('should skip inlined computed fields', () => {
       @Entity()
       class ComputedUser {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Computed((row) =>
           f
             .string()
@@ -383,7 +383,7 @@ describe('SchemaASTBuilder', () => {
         ],
       })
       class IndexedUser {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) firstName?: string | null;
         @Field(f.string().nullable()) lastName?: string | null;
         @Field(f.boolean().nullable()) active?: boolean | null;
@@ -409,7 +409,7 @@ describe('SchemaASTBuilder', () => {
         ],
       })
       class BadComposite {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       const ast = schemaOf([BadComposite]);
       expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
@@ -423,12 +423,12 @@ describe('SchemaASTBuilder', () => {
   describe('foreign key indexes', () => {
     @Entity()
     class FkBlog {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
 
     @Entity()
     class FkTag {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
 
     const indexedColumns = (ast: SchemaAST, table: string) =>
@@ -437,7 +437,7 @@ describe('SchemaASTBuilder', () => {
     it('should index a foreign key the entity does not index itself', () => {
       @Entity()
       class FkPost {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
@@ -456,7 +456,7 @@ describe('SchemaASTBuilder', () => {
 
       @Entity()
       class FkCity {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) cityCountry?: string | null;
         @Field(f.string().nullable()) cityArea?: string | null;
         @ManyToOne({
@@ -475,14 +475,14 @@ describe('SchemaASTBuilder', () => {
     it('should not index a foreign key again under an index the entity declares', () => {
       @Entity({ indexes: (fkLeading, index) => [index([fkLeading.fkBlogId, fkLeading.title])] })
       class FkLeading {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) title?: string | null;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       @Entity()
       class FkFieldIndexed {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkBlog)
@@ -508,19 +508,19 @@ describe('SchemaASTBuilder', () => {
             .id()
             .references(() => FkBlog),
         )
-        fkBlogId?: number;
+        fkBlogId!: number;
         @Field(
           f
             .number()
             .id()
             .references(() => FkTag),
         )
-        fkTagId?: number;
+        fkTagId!: number;
       }
 
       @Entity()
       class FkBlogOwner {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkBlog)
@@ -544,7 +544,7 @@ describe('SchemaASTBuilder', () => {
     it('should index a foreign key an expression index only reads', () => {
       @Entity({ indexes: (fkExpression, index) => [index([sql`ABS(${fkExpression.fkBlogId})`])] })
       class FkExpression {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
@@ -557,20 +557,20 @@ describe('SchemaASTBuilder', () => {
     it('should index a foreign key an index leads with but cannot look it up by', () => {
       @Entity({ indexes: (fkPartial, index) => [index([fkPartial.fkBlogId], { where: { live: true } })] })
       class FkPartial {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.boolean().nullable()) live?: boolean | null;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       @Entity({ indexes: (fkFulltext, index) => [index([fkFulltext.fkBlogId], { type: 'fulltext' })] })
       class FkFulltext {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
       @Entity({ indexes: (fkPrefix, index) => [index([{ column: fkPrefix.fkBlogId, prefixLength: 4 }])] })
       class FkPrefix {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => FkBlog).nullable()) fkBlogId?: number | null;
       }
 
@@ -584,7 +584,7 @@ describe('SchemaASTBuilder', () => {
     it('should leave a foreign key unindexed when its field opts out', () => {
       @Entity()
       class FkUnindexed {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(
           f
             .references(() => FkBlog)
@@ -608,7 +608,7 @@ describe('SchemaASTBuilder', () => {
         ],
       })
       class Covering {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) tenantId?: number | null;
       }
       const table = schemaOf([Covering]).getTable('Covering');
@@ -621,7 +621,7 @@ describe('SchemaASTBuilder', () => {
     it('should skip an index on a column the table has not got', () => {
       @Entity()
       class RenamedColumn {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index()) name?: string | null;
       }
 
@@ -634,11 +634,11 @@ describe('SchemaASTBuilder', () => {
     it('should skip a relation to an entity outside the set it builds', () => {
       @Entity()
       class OutsideParent {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class InsideChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => OutsideParent).nullable()) parentId?: number | null;
       }
 
@@ -651,11 +651,11 @@ describe('SchemaASTBuilder', () => {
     it('should make an integer key auto-increment unless it says otherwise', () => {
       @Entity()
       class AutoInc {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class NoAutoInc {
-        @Field(f.number().id().autoIncrement(false)) id?: number;
+        @Field(f.number().id()) id!: number;
       }
 
       const ast = schemaOf([AutoInc, NoAutoInc]);
@@ -667,16 +667,16 @@ describe('SchemaASTBuilder', () => {
     it('should not auto-increment a key shared with the row it references, however declared', () => {
       @Entity()
       class Holder {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class SharedDecorated {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().id()) id!: number;
         @OneToOne({ entity: () => Holder, references: (shared) => shared.id }) holder?: Holder;
       }
       @Entity()
       class SharedReference {
-        @Field(f.references(() => Holder).id()) id?: number;
+        @Field(f.references(() => Holder).id()) id!: number;
       }
       const SharedSchema = defineEntity({ name: 'SharedSchema', fields: { id: f.number().id() } }).relations((rel) => ({
         holder: () => rel.oneToOne(Holder, { references: (shared) => shared.id }),
@@ -693,7 +693,7 @@ describe('SchemaASTBuilder', () => {
     it('should name an index declared as `true` after its table and column', () => {
       @Entity()
       class DefaultIndex {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index()) name?: string | null;
       }
 
@@ -703,17 +703,17 @@ describe('SchemaASTBuilder', () => {
     it('should relate a to-one through the column its references name, to the key of its target', () => {
       @Entity()
       class Target {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class Source {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) targetId?: number | null;
         @ManyToOne({ entity: () => Target, references: (source) => source.targetId }) target?: Target;
       }
       @Entity()
       class Member {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) groupIdKey?: number | null;
         @ManyToOne({
           entity: () => Target,
@@ -735,7 +735,7 @@ describe('SchemaASTBuilder', () => {
     it('should use custom index name from entity', () => {
       @Entity()
       class CustomIndex {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable().index('my_custom_idx')) name?: string | null;
       }
       const ast = schemaOf([CustomIndex]);
@@ -745,7 +745,7 @@ describe('SchemaASTBuilder', () => {
     it('should name a partial index by its predicate, so an edited predicate is a new name', () => {
       @Entity({ name: 'Order', indexes: (liveOrder, index) => [index([liveOrder.total], { where: { live: true } })] })
       class LiveOrder {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) total?: number | null;
         @Field(f.boolean().nullable()) live?: boolean | null;
       }
@@ -754,7 +754,7 @@ describe('SchemaASTBuilder', () => {
         indexes: (archivedOrder, index) => [index([archivedOrder.total], { where: { live: false } })],
       })
       class ArchivedOrder {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) total?: number | null;
         @Field(f.boolean().nullable()) live?: boolean | null;
       }
@@ -770,7 +770,7 @@ describe('SchemaASTBuilder', () => {
     it('should give each table inheriting an index its own derived name', () => {
       @Entity({ abstract: true, indexes: (regional, index) => [index([regional.region])] })
       class Regional {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) region?: string | null;
       }
       @Entity()
@@ -787,11 +787,11 @@ describe('SchemaASTBuilder', () => {
     it('should drop a foreign key whose columns do not resolve to the tables it joins', () => {
       @Entity()
       class UnresolvedParent {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
       }
       @Entity()
       class UnresolvedChild {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.references(() => UnresolvedParent).nullable()) parentId?: number | null;
       }
 

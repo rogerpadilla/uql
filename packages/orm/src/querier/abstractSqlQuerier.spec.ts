@@ -16,7 +16,7 @@ import { TunedItem } from './vectorTuning-test.js';
 
 @Entity()
 class HydratedChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.jsonb().nullable())
   payload?: Json<{ b?: number }> | null;
@@ -28,7 +28,7 @@ class HydratedChild {
 
 @Entity()
 class HydratedParent {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.json().nullable())
   settings?: Json<{ a?: number }> | null;

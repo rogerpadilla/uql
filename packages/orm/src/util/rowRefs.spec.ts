@@ -6,7 +6,7 @@ import { sql, rowRefs } from './sql.js';
 
 @Entity()
 class Author {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable().name('full_name')) name?: string | null;
   @Computed((author) =>
     f
@@ -21,7 +21,7 @@ class Author {
 
 @Entity()
 class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
 }

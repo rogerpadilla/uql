@@ -16,7 +16,7 @@ import {
 } from '../index.js';
 
 class Company {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }
 
@@ -25,7 +25,7 @@ class StringKeyed {
 }
 
 export class Pointer {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(
     f
       .string()
@@ -44,7 +44,7 @@ export class Pointer {
 }
 
 class Project {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Company).nullable()) ownerId?: number | null;
   @ManyToOne({ entity: () => Company, references: (project) => project.ownerId }) owner?: Company;
 }
@@ -57,7 +57,7 @@ class Unrelated {
 }
 
 export class Employee {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().id()) id!: number;
 
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
@@ -102,7 +102,7 @@ abstract class Authored {
 }
 
 export class Contract extends Authored {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error the owning side of a one-to-one holds its foreign key the same way
   @OneToOne({ entity: () => Company }) vendor?: Company;
 }
@@ -112,18 +112,18 @@ abstract class Unkeyed {
   @ManyToOne({ entity: () => Company, references: (unkeyed) => unkeyed.ownerId }) owner?: Company;
 }
 export class Keyed extends Unkeyed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Company).nullable()) ownerId?: number | null;
 }
 
 class Berth {
   [idKey]?: 'dock' | 'slot';
   @Field(f.string().id()) dock?: string;
-  @Field(f.number().id()) slot?: number;
+  @Field(f.number().id()) slot!: number;
 }
 
 export class Mooring {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) companyCode?: string | null;
   // @ts-expect-error a foreign key holds the value of the key it references, and `Company.id` is a number
   @ManyToOne({ entity: () => Company, references: (mooring) => mooring.companyCode }) company?: Company;
@@ -158,12 +158,12 @@ class Ledger {
 }
 
 class Note {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 /** A column holds every value of the key it joins: a wider one does, a narrower one does not. */
 export class Entry {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) ledgerCode?: string | null;
   @ManyToOne({ entity: () => Ledger, references: (entry) => entry.ledgerCode }) ledger?: Ledger;
   @Field(f.string().nullable()) noteRef?: Uuid | null;
@@ -172,7 +172,7 @@ export class Entry {
 }
 
 class Review {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Field(f.number().nullable()) berthSlot?: number | null;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
@@ -182,7 +182,7 @@ class Review {
 
 /** `mappedBy` names the member of the target holding this side's key: its relation, or its one column. */
 export class Reviewed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @OneToMany({ entity: () => Review, mappedBy: (review) => review.company }) byRelation?: Review[];
   @OneToMany({ entity: () => Review, mappedBy: (review) => review.companyId }) byColumn?: Review[];
   // @ts-expect-error a method holds no key
@@ -194,20 +194,20 @@ export class Reviewed {
 export class ReviewedBerth {
   [idKey]?: 'dock' | 'slot';
   @Field(f.string().id()) dock?: string;
-  @Field(f.number().id()) slot?: number;
+  @Field(f.number().id()) slot!: number;
   // @ts-expect-error one column cannot hold a composite key: map it by the relation on the other side
   @OneToMany({ entity: () => Review, mappedBy: (review) => review.berthSlot }) reviews?: Review[];
 }
 
 export class Docking {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error a column references one key, and `Berth`'s is composite
   @Field(f.references(() => Berth).nullable()) berthId?: number | null;
 }
 
 /** A hook runs on the row with the querier's context, so it takes nothing else. */
 export class Hooked {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @BeforeInsert() touch(): void {}
   @BeforeInsert() async audit(ctx: HookContext): Promise<void> {
     await ctx.querier.count(Hooked, {});

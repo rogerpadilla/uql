@@ -6,7 +6,7 @@ import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 /** An FTS5 table, which SQLite's `$text` searches: UQL does not create one, so it is made here by hand. */
 @Entity({ name: 'fts_doc' })
 class FtsDoc {
-  @Field(f.number().id().name('rowid')) id?: number;
+  @Field(f.number().autoIncrement().name('rowid')) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.string().nullable()) bodyText?: string | null;
 }

@@ -12,7 +12,7 @@ import { Migrator } from './migrator.js';
 /** What `onUpdate` already does: the database computes it, but only in the statement uql emits. */
 @Entity({ name: 'StampTouch' })
 class StampTouch {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Field(
     f
@@ -25,7 +25,7 @@ class StampTouch {
 
 @Entity({ name: 'StampNote' })
 class StampNote {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Computed((row) =>
     f
@@ -41,7 +41,7 @@ class StampNote {
 
 @Entity({ name: 'StampClocks' })
 class StampClocks {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) body?: string | null;
   @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly editedAt?: Date | null;
   @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly savedAt?: Date | null;
@@ -50,7 +50,7 @@ class StampClocks {
 /** A stamp reading a column of its own row: the row as written, on every engine. */
 @Entity({ name: 'StampNext' })
 class StampNext {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) count?: number | null;
   @Computed((row) =>
     f
@@ -65,7 +65,7 @@ class StampNext {
 /** A code held as text, which a test retypes. */
 @Entity({ name: 'StampRetyped' })
 class StampCoded {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) code?: string | null;
   @Computed((row) =>
     f
@@ -148,7 +148,7 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
   it('should still stamp once its table is retyped', async () => {
     @Entity({ name: 'StampRetyped' })
     class Retyped {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) code?: number | null;
       @Computed((row) =>
         f

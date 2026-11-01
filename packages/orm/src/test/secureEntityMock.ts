@@ -16,7 +16,7 @@ declare module '../type/index.js' {
   },
 })
 export class SecureRelated {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   tenantId?: number | null;
@@ -26,7 +26,7 @@ export class SecureRelated {
 
 @Entity()
 export class SecureParent {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.references(() => SecureRelated).nullable())
   relatedId?: number | null;
@@ -44,7 +44,7 @@ export class SecureParent {
   },
 })
 export class SecureChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   tenantId?: number | null;
@@ -64,7 +64,7 @@ export class SecureChild {
 /** No filters of its own, so a count over the junction to it stays junction-only. */
 @Entity()
 export class PlainChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.references(() => SecureCollection).nullable())
   collectionId?: number | null;
@@ -75,7 +75,7 @@ export class PlainChild {
 /** A many-to-many's junction: each side joins by the one column referencing it. */
 @Entity()
 class SecureCollectionChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
@@ -85,7 +85,7 @@ class SecureCollectionChild {
 
 @Entity()
 class SecureCollectionPlain {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
@@ -96,7 +96,7 @@ class SecureCollectionPlain {
 /** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
 @Entity()
 class SecureCollectionRenamed {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(
     f
@@ -117,7 +117,7 @@ class SecureCollectionRenamed {
 /** A soft-deletable junction: an unlinked row must not count as a link. */
 @Entity()
 class SecureCollectionLink {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.references(() => SecureCollection).nullable())
   secureCollectionId?: number | null;
@@ -134,7 +134,7 @@ class SecureCollectionLink {
 
 @Entity()
 export class SecureCollection {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @OneToMany({ entity: () => SecureChild, mappedBy: (secureChild) => secureChild.collectionId })
   children?: SecureChild[];

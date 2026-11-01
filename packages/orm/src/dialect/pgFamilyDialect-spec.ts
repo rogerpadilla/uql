@@ -26,7 +26,7 @@ import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from './abstractSqlDi
 /** A uuid column beside a JSON one, which compare only as text: Postgres has no `text = uuid`. */
 @Entity()
 class OwnedDoc {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.uuid().nullable()) ownerId?: string | null;
   @Field(f.jsonb().nullable()) meta?: Json<{ owner?: string }> | null;
 }
@@ -284,7 +284,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldUpsertWithTwoFallbackUpdateColumns() {
     @Entity({ name: 'UpsertFallbackWidget' })
     class UpsertFallbackWidget {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) email!: string | null;
       @Field(
         f
@@ -827,7 +827,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ],
     })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }
@@ -854,7 +854,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ],
     })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }
@@ -892,7 +892,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldFormatVector() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.column('vector').nullable()) vec!: number[] | null;
     }
     const { sql: statement, values } = this.exec((ctx) =>
@@ -1525,7 +1525,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity({ indexes: (listing, index) => [index([listing.name, listing.description], { type: 'fulltext' })] })
     class Listing {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
       @Field(f.string().nullable()) name?: string | null;
       @Field(f.string().nullable()) description?: string | null;
     }

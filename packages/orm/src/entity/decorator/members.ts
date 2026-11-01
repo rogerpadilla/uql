@@ -55,7 +55,7 @@ type MemberContext<O, P, N, M, Filled, Key, Lock> = ClassFieldDecoratorContext<O
     ? unknown
     : { readonly __propertyMustAdmit: M }) &
   FilledIfBranded<O, N, Filled> &
-  ([Key] extends [true] ? KeyIsNamed<O> : unknown) &
+  ([Key] extends [false] ? unknown : [Key] extends ['supplied'] ? KeyIsNamed<O> & KeyIsRequired<P> : KeyIsNamed<O>) &
   ([Lock] extends [true] ? VersionIsBranded<O> : unknown);
 
 /** An {@link AdmittingDecorator} for a column: its class is the decorator's own, and `K` is the key it references, `never` if none. */
@@ -90,14 +90,14 @@ type FieldDecorator<O, V> = ColumnDecorator<
   Narrowable<V> | NullOf<O>,
   NullOf<O>,
   O extends FilledOptions ? true : false,
-  IsKey<O>,
+  IsKey<O, V>,
   O extends { readonly version: true } ? true : false,
   ReferencedKeyOf<O>
 >;
 
 /**
  * Declares a persisted field, the property checked against the column: `@Field(f.string()) name!: string;`, and
- * `@Field(f.string().nullable()) bio?: string | null;` for a column holding `null`. A key is `f.number().id()`.
+ * `@Field(f.string().nullable()) bio?: string | null;` for a column holding `null`. A key is `f.number().autoIncrement()`.
  * @example `@Field(f.references(() => User).nullable()) userId?: number | null;`
  */
 export function Field<O, V>(column: Column<O, V>): FieldDecorator<O, V>;
@@ -135,8 +135,19 @@ type ComputedAdmits<C> = C extends RelationAggregate<infer V> ? V : C extends Co
 /** A JSON column with no schema holds any document, which the property narrows: `Json<Settings>`. */
 type Narrowable<V> = IsEqual<V, Json> extends true ? JsonBrand | readonly JsonBrand[] : V;
 
-/** Whether the column is a key, which the class has to name. */
-type IsKey<O> = O extends { readonly isId: true } ? true : false;
+/**
+ * Whether the column is a key, which the class has to name, and `'supplied'` where no engine fills it: a text key is
+ * one MongoDB fills, which an entity cannot rule out.
+ */
+type IsKey<O, V> = O extends { readonly isId: true }
+  ? O extends FilledOptions
+    ? true
+    : O extends { readonly references: unknown }
+      ? 'supplied'
+      : [V] extends [number | bigint]
+        ? 'supplied'
+        : true
+  : false;
 
 /**
  * A key the type level cannot name, reported on each key column that leaves it unnamed. Where no `idKey`
@@ -144,6 +155,9 @@ type IsKey<O> = O extends { readonly isId: true } ? true : false;
  * `EntityId` and every by-id method are then typed against a column that is not the key.
  */
 type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNeedsIdKeyBrand: true } : unknown;
+
+/** A key nothing fills cannot be `?`, which would let an insert leave it out. */
+type KeyIsRequired<P> = undefined extends P ? { readonly __keyNothingFillsMustBeRequired: true } : unknown;
 
 /**
  * An optimistic lock the type level cannot see. `version: true` is what makes the column a lock at run

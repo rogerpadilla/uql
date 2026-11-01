@@ -14,7 +14,7 @@ export class Post {
   [versionKey]?: 'revision';
   [filledKey]?: 'status' | 'views';
 
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) title!: string;
   @Field(f.string().nullable()) subtitle?: string | null;
   @Field(f.enum(['draft', 'published']).default('draft')) status!: 'draft' | 'published';
@@ -34,7 +34,7 @@ export class Post {
 
 @Entity()
 export class Author {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.authorId }) posts?: Post[];
   @Computed((author) => author.posts.count()) readonly postCount?: number;
   @Computed((author) => author.posts.max((post) => post.views)) readonly topViews?: number | null;
@@ -63,13 +63,13 @@ export class Mistakes {
 @Entity()
 export class Unnamed {
   // @ts-expect-error a key not named `id`, `_id` or `uuid` needs the `idKey` brand
-  @Field(f.number().id()) key?: number;
+  @Field(f.number().autoIncrement()) key?: number;
 }
 
 @Entity()
 export class Unfilled {
   [filledKey]?: 'count';
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   // @ts-expect-error a field the brand lets an insert leave out needs something to fill it
   @Field(f.number()) count!: number;
 }

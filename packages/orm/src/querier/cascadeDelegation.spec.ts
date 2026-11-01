@@ -12,7 +12,7 @@ import { sql } from '../util/sql.js';
 /** Only the constraint: the database removes the children, so the querier does nothing about them. */
 @Entity()
 class DelegatedParent {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -24,7 +24,7 @@ class DelegatedParent {
 
 @Entity()
 class DelegatedChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())
@@ -41,7 +41,7 @@ class DelegatedChild {
 /** Only `cascade: 'delete'`: no constraint to lean on, so the walk has to happen here. */
 @Entity()
 class WalkedParent {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string().nullable())
@@ -53,7 +53,7 @@ class WalkedParent {
 
 @Entity()
 class WalkedChild {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.number().nullable())

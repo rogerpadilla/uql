@@ -19,7 +19,7 @@ export class PostgresQuerierIt extends PgLikeQuerierIt {
   async shouldEstimateNoRowsForATableThatDoesNotExist() {
     @Entity({ name: 'uql_never_created' })
     class NeverCreated {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     onTestFinished(() => {
       removeEntity(NeverCreated);

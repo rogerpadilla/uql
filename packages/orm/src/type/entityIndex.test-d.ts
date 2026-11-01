@@ -25,7 +25,7 @@ declare function indexOf<E>(indexes: IndexSection<E>): void;
   ],
 })
 export class Article {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.vector(3).nullable()) embedding?: number[] | null;
 }
@@ -40,7 +40,7 @@ indexOf<Article>((article, index) => [index([{ column: article.title, weight: 'A
  */
 @Entity()
 export class NonVectorIndexWithDistance {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
 }
 
@@ -54,7 +54,7 @@ indexOf<NonVectorIndexWithDistance>((nonVectorIndexWithDistance, index) => [
 
 @Entity()
 export class MissingMetric {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable()) embedding?: number[] | null;
 }
 
@@ -73,7 +73,7 @@ indexOf<MissingMetric>((missingMetric, index) => [index([missingMetric.embedding
   indexes: (post, index) => [index([{ column: post.title, order: 'desc' }, post.id])],
 })
 export class Post {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.references(() => Article).nullable()) articleId?: number | null;
   @ManyToOne({ entity: () => Article, references: (post) => post.articleId }) author?: Article;
@@ -93,7 +93,7 @@ indexOf<Post>((post, index) => [index([post.titel])]);
   indexes: (covering, index) => [index([covering.title], { include: [covering.id] })],
 })
 export class Covering {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
 }
 
@@ -116,7 +116,7 @@ indexOf<Covering>((covering, index) => [index([covering.title], { include: [cove
   ],
 })
 export class SoftDeleted {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.date().nullable()) deletedAt?: Date | null;
   @Field(f.references(() => Article).nullable()) articleId?: number | null;
@@ -162,7 +162,7 @@ indexOf<SoftDeleted>((softDeleted, index) => [index([softDeleted.title], { where
   ],
 })
 export class JsonIndexed {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.json().nullable()) kind?: Json<{
     theme: { color: string; count: number };

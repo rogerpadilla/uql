@@ -6,12 +6,12 @@
 import type { Json, Querier } from '../index.js';
 
 class Writer {
-  id!: number;
+  id?: number;
   name!: string;
 }
 
 class Post {
-  id!: number;
+  id?: number;
   title!: string;
   kind?: Json<{
     public?: 0 | 1;
@@ -165,7 +165,7 @@ export async function jsonDotPathSafety() {
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 class Setting {
-  id!: number;
+  id?: number;
   value?: Json<JsonValue>;
 }
 

@@ -21,15 +21,15 @@ import { MsSqlDialect } from './mssqlDialect.js';
 @Entity()
 class StockLevel {
   [idKey]?: 'warehouseId' | 'productId';
-  @Field(f.number().id()) warehouseId?: number;
-  @Field(f.number().id()) productId?: number;
+  @Field(f.number().id()) warehouseId!: number;
+  @Field(f.number().id()) productId!: number;
   @Field(f.number().nullable()) quantity?: number | null;
 }
 
 /** An inlined field, whose SQL reads the row's other columns. */
 @Entity()
 class Shout {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) first!: string;
   @Field(f.number().nullable()) age?: number | null;
   @Computed((row) => f.string().as(sql`${row.first} + '!'`)) readonly shout?: string;
@@ -112,7 +112,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   shouldEstimateTheCountOfATableInItsOwnSchema() {
     @Entity({ schema: 'sales' })
     class Order {
-      @Field(f.number().id()) id?: number;
+      @Field(f.number().autoIncrement()) id?: number;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Order));
     expect(sql).toContain(` AND s.name = ${this.ph(2)}`);
@@ -602,8 +602,8 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
 @Entity()
 class Enrolment {
   [idKey]?: 'studentId' | 'courseId';
-  @Field(f.number().id()) studentId?: number;
-  @Field(f.number().id()) courseId?: number;
+  @Field(f.number().id()) studentId!: number;
+  @Field(f.number().id()) courseId!: number;
   @Field(f.string().nullable()) grade?: string | null;
 }
 

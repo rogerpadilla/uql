@@ -97,7 +97,7 @@ class TestSqlDialect extends AbstractSqlDialect {
 /** A field the strategy names, one named outright, and an inlined computed one, for `refs()` to render. */
 @Entity()
 class RefLedger {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
   @Field(f.number().nullable())
   creditLimit?: number | null;
@@ -493,7 +493,7 @@ describe('AbstractSqlDialect', () => {
       const order = refs(() => LaterOrder, 'o');
       @Entity()
       class EarlierCheckout {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Computed((checkout) =>
           f.string().as(sql`(SELECT ${order.state} FROM ${tableOf(order)} WHERE ${order.checkoutId} = ${checkout.id})`),
         )
@@ -501,7 +501,7 @@ describe('AbstractSqlDialect', () => {
       }
       @Entity()
       class LaterOrder {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number()) checkoutId!: number;
         @Field(f.string()) state!: string;
       }
@@ -597,7 +597,7 @@ describe('AbstractSqlDialect', () => {
     it('should name the table the way the dialect does, its schema included', () => {
       @Entity({ schema: 'books' })
       class LedgerEntry {
-        @Field(f.number().id()) id?: number;
+        @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) transactionId?: number | null;
       }
       const entry = refs(LedgerEntry, 'e');

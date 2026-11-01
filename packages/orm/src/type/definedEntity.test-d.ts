@@ -11,7 +11,7 @@ import { currentTimestamp, sql } from '../util/index.js';
 export const Author = defineEntity({
   name: 'Author',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     name: f.string(),
     bio: f.string().nullable(),
     mentorId: f.number().nullable(),
@@ -52,7 +52,7 @@ export const label = (author: Author): string => `${author.name} (${author.books
 export const Book = defineEntity({
   name: 'Book',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     title: f.string(),
     subtitle: f.string().nullable(),
     stock: f.number().default(0),
@@ -74,7 +74,7 @@ export const Book = defineEntity({
 
 export const Tag = defineEntity({
   name: 'Tag',
-  fields: { id: f.number().id(), label: f.string().unique() },
+  fields: { id: f.number().autoIncrement(), label: f.string().unique() },
 });
 
 export const BookTag = defineEntity({
@@ -132,19 +132,19 @@ export async function writesReadTheDerivedKeys() {
 export function definitionsAreChecked() {
   defineEntity({
     name: 'Typo',
-    fields: { id: f.number().id() },
+    fields: { id: f.number().autoIncrement() },
   })
     // @ts-expect-error a column the entity does not declare
     .indexes((typo, index) => [index([typo.idd])]);
   defineEntity({
     name: 'BadInverse',
-    fields: { id: f.number().id() },
+    fields: { id: f.number().autoIncrement() },
   })
     // @ts-expect-error `mappedBy` names a member of the target
     .relations((rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.auther }) }));
   defineEntity({
     name: 'BadComputed',
-    fields: { id: f.number().id(), title: f.string().nullable() },
+    fields: { id: f.number().autoIncrement(), title: f.string().nullable() },
   }).computed((badComputed) => ({
     shout: f
       .string()
@@ -154,19 +154,19 @@ export function definitionsAreChecked() {
   }));
   defineEntity({
     name: 'BadHook',
-    fields: { id: f.number().id(), title: f.string().nullable() },
+    fields: { id: f.number().autoIncrement(), title: f.string().nullable() },
   })
     // @ts-expect-error a hook reads the row's columns
     .hooks({ beforeInsert: [(row) => row.titel] });
   defineEntity({
     name: 'BadOption',
     // @ts-expect-error an option no column takes
-    fields: { id: f.number().id().nulable() },
+    fields: { id: f.number().autoIncrement().nulable() },
   });
   defineEntity({
     name: 'BadFamily',
     fields: {
-      id: f.number().id(),
+      id: f.number().autoIncrement(),
       // @ts-expect-error 'length' belongs to a string column
       count: f.number().nullable().length(10),
       // @ts-expect-error a version starts at 0 and the lock owns it from there
@@ -186,7 +186,7 @@ declare const tagsSchema: StandardSchemaV1<unknown, string[]>;
 export const Profiled = defineEntity({
   name: 'Profiled',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     loose: f.json().nullable(),
     settings: f.json(settingsSchema).nullable(),
     tags: f.jsonb(tagsSchema).nullable(),
@@ -259,7 +259,7 @@ export const Anthology = defineEntity({
   }),
 );
 
-defineEntity({ name: 'EarlyCount', fields: { id: f.number().id() } }).computed((early) => ({
+defineEntity({ name: 'EarlyCount', fields: { id: f.number().autoIncrement() } }).computed((early) => ({
   // @ts-expect-error a computed field reads its own columns, never a relation
   n: early.books.count(),
 }));
@@ -275,7 +275,7 @@ export async function inheritedRelationsAggregate() {
 export const Review = defineEntity({
   name: 'Review',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     bookId: f.number(),
     slug: f.string().nullable(),
     replyToId: f.number().nullable(),
@@ -303,7 +303,7 @@ class Publisher {
 }
 defineEntity({
   name: 'Imprint',
-  fields: { id: f.number().id(), publisherId: f.number().nullable(), label: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), publisherId: f.number().nullable(), label: f.string().nullable() },
 }).relations((rel) => ({
   publisher: () => rel.manyToOne(Publisher, { references: (imprint) => imprint.publisherId }),
   // @ts-expect-error `label` is a string, and a publisher's key a number
@@ -314,7 +314,7 @@ defineEntity({
 export const Ebook = defineEntity({ name: 'Ebook', extends: Book, fields: { format: f.string().nullable() } });
 defineEntity({
   name: 'Download',
-  fields: { id: f.number().id(), ebookId: f.number().nullable(), code: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), ebookId: f.number().nullable(), code: f.string().nullable() },
 }).relations((rel) => ({
   ebook: () => rel.manyToOne(Ebook, { references: (download) => download.ebookId }),
   // @ts-expect-error `code` is a string, and an ebook's inherited key a number
@@ -324,18 +324,18 @@ defineEntity({
 defineEntity({
   name: 'Misnumbered',
   // @ts-expect-error a String column cannot hold a numeric member
-  fields: { id: f.number().id(), status: f.enum(['draft', 2]).nullable() },
+  fields: { id: f.number().autoIncrement(), status: f.enum(['draft', 2]).nullable() },
 });
 
 defineEntity({
   name: 'Misshapen',
   // @ts-expect-error a shape describes a JSON column's payload, so only a JSON column takes one
-  fields: { id: f.number().id(), title: f.string().nullable().shape({ lang: String }) },
+  fields: { id: f.number().autoIncrement(), title: f.string().nullable().shape({ lang: String }) },
 });
 
 defineEntity({
   name: 'Watched',
-  fields: { id: f.number().id(), title: f.string().nullable(), live: f.boolean().nullable() },
+  fields: { id: f.number().autoIncrement(), title: f.string().nullable(), live: f.boolean().nullable() },
 })
   // @ts-expect-error a trigger watches the entity's columns
   .triggers((watched, trigger) => [trigger({ on: 'beforeUpdate', of: [watched.titl], run: () => sql`select 1` })])
@@ -345,7 +345,7 @@ defineEntity({
   });
 
 /** A section takes only what its helper made: TypeScript never checks a literal a callback returns, so `uniqe` would pass. */
-defineEntity({ name: 'Bare', fields: { id: f.number().id(), title: f.string() } })
+defineEntity({ name: 'Bare', fields: { id: f.number().autoIncrement(), title: f.string() } })
   // @ts-expect-error an index is `index(columns, options)`, never a bare literal
   .indexes((bare) => [{ columns: [bare.title], uniqe: true }])
   // @ts-expect-error a check is `check(where, name)`
@@ -358,18 +358,18 @@ defineEntity({ name: 'Bare', fields: { id: f.number().id(), title: f.string() } 
   indexes: (bare) => [{ columns: [bare.title] }],
 })
 export class BareDecorated {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) title?: string;
 }
 
 /** Columns paired by hand hold the same type, as a single foreign key holds its target's key. */
 export const Coded = defineEntity({
   name: 'Coded',
-  fields: { id: f.number().id(), code: f.string() },
+  fields: { id: f.number().autoIncrement(), code: f.string() },
 });
 export const CodeHolder = defineEntity({
   name: 'CodeHolder',
-  fields: { id: f.number().id(), coded: f.string().nullable(), counted: f.number().nullable() },
+  fields: { id: f.number().autoIncrement(), coded: f.string().nullable(), counted: f.number().nullable() },
 }).relations((rel) => ({
   byCode: () => rel.manyToOne(Coded, { references: (h, c) => [{ local: h.coded, foreign: c.code }] }),
   // @ts-expect-error a number column cannot hold a text code
@@ -380,7 +380,7 @@ export const Pointed = defineEntity({ name: 'Pointed', fields: { id: f.string().
 export const Pointing = defineEntity({
   name: 'Pointing',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     pointedId: f.string().nullable(),
   },
 }).relations((rel) => ({
@@ -390,7 +390,7 @@ export const Pointing = defineEntity({
 export const Shouting = defineEntity({
   name: 'Shouting',
   fields: {
-    id: f.number().id(),
+    id: f.number().autoIncrement(),
     // @ts-expect-error a computed column belongs in `.computed()`, else the row would make an insert write it
     shout: f.string().as(sql`'x'`),
   },
@@ -399,22 +399,22 @@ export const Shouting = defineEntity({
 /** A foreign key is a relation: a column never names its target, and a defined entity's section names none. */
 export const RelationOnlyNode = defineEntity({
   name: 'RelationOnlyNode',
-  fields: { id: f.number().id(), parentId: f.number().nullable() },
+  fields: { id: f.number().autoIncrement(), parentId: f.number().nullable() },
 }).relations((rel) => ({
   parent: () => rel.manyToOne(RelationOnlyNode, { references: (node) => node.parentId }),
 }));
 
-export const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().id() } });
+export const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().autoIncrement() } });
 /** A bigint foreign key over a number key: the runtime holds both as numbers, so the type takes either way. */
 export const BigintEntry = defineEntity({
   name: 'BigintEntry',
-  fields: { id: f.number().id(), ledgerId: f.bigint().nullable() },
+  fields: { id: f.number().autoIncrement(), ledgerId: f.bigint().nullable() },
 }).relations((rel) => ({
   ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
 }));
 export const NumberEntry = defineEntity({
   name: 'NumberEntry',
-  fields: { id: f.bigint().id(), ledgerId: f.number().nullable() },
+  fields: { id: f.bigint().autoIncrement(), ledgerId: f.number().nullable() },
 }).relations((rel) => ({
   ledger: () => rel.manyToOne(Ledger, { references: (entry) => entry.ledgerId }),
 }));
@@ -423,12 +423,16 @@ export const NumberEntry = defineEntity({
 export const LiteralKey = defineEntity({ name: 'LiteralKey', fields: { code: f.enum(['a', 'b']).id() } });
 export const TextHolder = defineEntity({
   name: 'TextHolder',
-  fields: { id: f.number().id(), codeId: f.string().nullable() },
+  fields: { id: f.number().autoIncrement(), codeId: f.string().nullable() },
 }).relations((rel) => ({
   literal: () => rel.manyToOne(LiteralKey, { references: (holder) => holder.codeId }),
 }));
 
-const AbstractHolder = defineEntity({ name: 'AbstractHolder', abstract: true, fields: { id: f.number().id() } });
-defineEntity({ name: 'HoldsAbstract', fields: { id: f.number().id(), holderId: f.number() } })
+const AbstractHolder = defineEntity({
+  name: 'AbstractHolder',
+  abstract: true,
+  fields: { id: f.number().autoIncrement() },
+});
+defineEntity({ name: 'HoldsAbstract', fields: { id: f.number().autoIncrement(), holderId: f.number() } })
   // @ts-expect-error a relation needs a table to join, and an abstract base is never one
   .relations((rel) => ({ holder: () => rel.manyToOne(AbstractHolder, { references: (r) => r.holderId }) }));

@@ -10,7 +10,7 @@ import type { Json } from './utility.js';
 @Entity()
 class Ledger {
   [idKey]?: 'id' | 'alternateKey';
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().id()) id!: number;
 
   @Field(f.string().nullable()) note?: string | null;
   @Field(f.string()) code?: string;
@@ -22,7 +22,7 @@ class Ledger {
   @Field(f.string()) wide?: string | null;
 
   // A key is NOT NULL on every engine, a composite one's every column too.
-  @Field(f.number().id()) alternateKey?: number;
+  @Field(f.number().id()) alternateKey!: number;
 
   // A family the property narrows: `numeric` reads as exact text, `bigint` either number kind, `jsonb` any document.
   @Field(f.column('numeric').nullable()) amount?: string | null;

@@ -2,7 +2,6 @@ import { canonicalToColumnType, isVectorCategory } from '../../schema/canonicalT
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ColumnNode } from '../../schema/types.js';
 import { DATE_PRECISION } from '../../util/date.js';
-import { isAutoIncrement } from '../../util/field.util.js';
 import { jsonDocument } from '../../util/object.util.js';
 import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
 import { quoted, sqlTag } from './sourceLiteral.js';
@@ -24,12 +23,8 @@ const METHOD_SOURCE = {
   ],
   // A column is NOT NULL unless it says otherwise; a key is a key, which holds no null.
   nullable: (col) => (col.nullable && !col.isPrimaryKey ? ['.nullable()'] : []),
-  isPrimaryKey: (col) => (col.isPrimaryKey ? ['.id()'] : []),
-  // Generates where `isAutoIncrement` says, which only a column the database treats otherwise contradicts.
-  isAutoIncrement: (col) =>
-    isAutoIncrement({ type: canonicalToColumnType(col.type) }, ownsSoleKey(col)) === col.isAutoIncrement
-      ? []
-      : [col.isAutoIncrement ? '.autoIncrement()' : '.autoIncrement(false)'],
+  isPrimaryKey: (col) => (col.isPrimaryKey && !col.isAutoIncrement ? ['.id()'] : []),
+  isAutoIncrement: (col) => (col.isPrimaryKey && col.isAutoIncrement ? ['.autoIncrement()'] : []),
   isUnique: (col) => (col.isUnique ? ['.unique()'] : []),
   defaultValue: (col) => {
     const value = defaultSource(col);
@@ -44,16 +39,6 @@ const METHOD_SOURCE = {
   // The graph link: a foreign key becomes a relation decorator, emitted beside the field rather than in it.
   table: null,
 } as const satisfies Record<keyof ColumnNode, MethodSource | null>;
-
-/** The AST's reading of the entity's `ownsSoleKey`: the table's whole key, and not the key of a row it references. */
-function ownsSoleKey(col: ColumnNode): boolean {
-  const { primaryKey, outgoingRelations } = col.table;
-  return (
-    col.isPrimaryKey &&
-    primaryKey?.columns.length === 1 &&
-    !outgoingRelations.some(({ from }) => from.columns.includes(col))
-  );
-}
 
 /** Whether to write `type`'s precision: not for a timestamp at a `Date`'s milliseconds, its default. */
 function writesPrecision(type: ColumnNode['type']): boolean {

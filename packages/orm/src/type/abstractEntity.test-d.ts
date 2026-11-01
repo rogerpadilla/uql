@@ -14,7 +14,7 @@ export abstract class StampedBase {
 
 @Entity()
 export class Post extends StampedBase {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().autoIncrement()) id?: number;
 }
 
 declare const querier: Querier;
@@ -42,7 +42,11 @@ export const StampedSchema = defineEntity({
   fields: { at: f.date().nullable() },
 }).indexes((stamped, index) => [index([stamped.at])]);
 
-export const Visit = defineEntity({ name: 'Visit', extends: StampedSchema, fields: { id: f.number().id() } });
+export const Visit = defineEntity({
+  name: 'Visit',
+  extends: StampedSchema,
+  fields: { id: f.number().autoIncrement() },
+});
 
 export async function aSchemaBaseIsNotQueried() {
   await querier.count(Visit);
@@ -52,7 +56,7 @@ export async function aSchemaBaseIsNotQueried() {
 
 @Entity()
 export class Comment {
-  @Field(f.number().id()) id?: number;
+  @Field(f.number().id()) id!: number;
   // @ts-expect-error an abstract base has no table, so a relation cannot join to it
   @ManyToOne({ entity: () => StampedBase, references: (comment) => comment.id }) stamp?: StampedBase;
 }
@@ -78,7 +82,7 @@ export async function aBrowserClientRefusesAnAbstractBase() {
 export const StampedRecord = defineEntity({
   name: 'StampedRecord',
   abstract: true,
-  fields: { id: f.number().id(), createdAt: f.date().default(currentTimestamp) },
+  fields: { id: f.number().autoIncrement(), createdAt: f.date().default(currentTimestamp) },
 });
 
 export const Stocked = defineEntity({
