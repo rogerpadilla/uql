@@ -2,7 +2,7 @@ import { Entity, f, Field } from 'uql-orm';
 
 @Entity()
 export class Todo {
-  @Field(f.number().id())
+  @Field(f.number().autoIncrement())
   id?: number;
 
   @Field(f.string())
