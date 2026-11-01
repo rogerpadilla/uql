@@ -10,9 +10,17 @@ export const postgresConnection = (database = 'test') => ({
   database,
 });
 
+const COCKROACH_PORT = 26257;
+
+/** Where the CockroachDB container answers: set `UQL_COCKROACH_HOST` where something else holds the port on `0.0.0.0`. */
+const cockroachHost = process.env['UQL_COCKROACH_HOST'] ?? '0.0.0.0';
+
+/** The host as a connection string writes it, an IPv6 address bracketed. */
+export const cockroachAddress = `${cockroachHost.includes(':') ? `[${cockroachHost}]` : cockroachHost}:${COCKROACH_PORT}`;
+
 export const cockroachConnection = (database = 'defaultdb') => ({
-  host: '0.0.0.0',
-  port: 26257,
+  host: cockroachHost,
+  port: COCKROACH_PORT,
   user: 'root',
   database,
 });

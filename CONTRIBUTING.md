@@ -4,7 +4,7 @@
 
 1. **Fork the repository** and create your branch from `main`.
 2. **Install dependencies** using `bun install`. `bun run build` also needs Node on the path: it runs the package on Node and Bun.
-3. **Start the databases**: `docker compose up -d --wait`.
+3. **Start the databases**: `docker compose up -d --wait`. If something else holds a port, such as an editor forwarding `127.0.0.1:26257`, stop it, or set `UQL_COCKROACH_HOST=::1`.
 4. **Run tests** to ensure a clean state: `bun run test`.
 
 ## How to Contribute

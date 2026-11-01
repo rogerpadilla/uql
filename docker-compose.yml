@@ -116,6 +116,9 @@ services:
     container_name: uql-libsql
     ports:
       - 8090:8080
+    # Its data is test tables, and a Docker restart left the store unreadable: the server then exits on every start.
+    tmpfs:
+      - /var/lib/sqld
     healthcheck: &libsql-healthcheck
       test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/8080']
       interval: 5s
@@ -128,6 +131,8 @@ services:
     container_name: uql-turso
     ports:
       - 8091:8080
+    tmpfs:
+      - /var/lib/sqld
     healthcheck: *libsql-healthcheck
 
   cockroachdb:

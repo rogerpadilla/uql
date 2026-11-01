@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.111.0] - 2026-11-01
+
+- **Breaking:** a generated key says so: `.autoIncrement()` makes a numeric column the primary key the database generates, as `f.number().autoIncrement()`, in place of `.id()`. `.id()` alone is now a key the caller supplies. `.autoIncrement(false)` is gone, and `npx uql-codemod` rewrites sole numeric keys.
+- **Breaking:** an insert has to name a key nothing fills, on `defineEntity` and on a decorated class, where a generated key is `id?` or listed in `[filledKey]`. `@Field` refuses `?` on a numeric or `.references()` key nothing fills.
+- **Fixed:** on MySQL, an insert reports a key filled by a column default, a batch included.
+- **Fixed:** on SQLite, a supplied integer key is `INT`, so a row with no key is refused instead of numbered. An existing table reads as no drift.
+- A generated entity declares a key the database fills `?`, and leaves a serial on a column that is no key to the database.
+
 ## [0.110.0] - 2026-10-31
 
 - A column constructor's type argument narrows what a row holds: `f.uuid<UserId>()` for a brand, `f.json<Settings>()` for a payload with no schema. `.narrow<T>()` is gone.

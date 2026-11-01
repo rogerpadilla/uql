@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cockroachConnection } from '../test/index.js';
+import { cockroachAddress, cockroachConnection } from '../test/index.js';
 import { CrdbQuerierPool } from './crdbQuerierPool.js';
 
 const { user, database } = cockroachConnection();
-const live = '127.0.0.1:26257';
+const live = cockroachAddress;
 const unused = '127.0.0.1:1';
 const urlOf = (hosts: string) => `postgres://${user}@${hosts}/${database}?sslmode=disable`;
 
