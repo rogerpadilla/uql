@@ -51,6 +51,16 @@ describe('SqliteQuerierPool on bun:sqlite', () => {
     expect(res.changes).toBe(1);
   });
 
+  /** `REGEXP` is the pool's own function, which `bun:sqlite` takes like the other drivers. */
+  it('should match REGEXP, folding case under (?i)', async () => {
+    const querier = await seed();
+    await querier.run`INSERT INTO t (s) VALUES ('Alpha'), ('beta')`;
+
+    const rows = await querier.all<{ s: string }>`SELECT s FROM t WHERE s REGEXP ${'(?i)^a'}`;
+
+    expect(rows).toEqual([{ s: 'Alpha' }]);
+  });
+
   it('should bind values and read rows back', async () => {
     const querier = await seed();
     await querier.run`INSERT INTO t (s) VALUES (${'bound'})`;

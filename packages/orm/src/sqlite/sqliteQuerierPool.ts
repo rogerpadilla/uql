@@ -27,8 +27,8 @@ export class SqliteQuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqlit
   }
 
   /**
-   * `bun:sqlite` rejects option keys it does not know, so `extensions` is stripped out, and opens only a
-   * path, so a serialized database - which better-sqlite3 takes as its filename - is deserialized there instead.
+   * `extensions` is uql's, so it never reaches the driver. `bun:sqlite` opens only a path, so a serialized
+   * database, which better-sqlite3 takes as its filename, is deserialized there instead.
    */
   protected override async createDb(): Promise<LocalSqliteDatabase> {
     const { extensions, ...driverOpts } = this.opts ?? {};

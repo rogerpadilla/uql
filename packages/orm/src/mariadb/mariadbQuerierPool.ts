@@ -1,10 +1,17 @@
-import { createPool, type Pool } from 'mariadb';
+import { createPool, type Pool, type SqlError } from 'mariadb';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { attachPoolErrorHandler, type ErrorEmittingPool } from '../util/index.js';
+import { attachPoolErrorHandler } from '../util/index.js';
 import { MariaDialect } from './mariaDialect.js';
 import { MariadbQuerier } from './mariadbQuerier.js';
+
+declare module 'mariadb' {
+  /** The pool is an `EventEmitter` firing 'error' on a connection it cannot open or clean up, which its types leave out. */
+  interface Pool {
+    on(ev: 'error', callback: (err: SqlError) => void): Pool;
+  }
+}
 
 type PoolConfig = Exclude<Parameters<typeof createPool>[0], string>;
 
@@ -18,12 +25,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
     // reads as its UTC text, which hydration decodes, since the connector would take it for local time
     // whatever `timezone` says; that only sets the session's zone, UTC, so `NOW()` agrees.
     this.pool = createPool({ timezone: 'Z', dateStrings: true, ...opts });
-    // `mariadb` fires 'error' at runtime without declaring it, hence the cast; this makes it visible.
-    attachPoolErrorHandler(
-      this.pool as unknown as ErrorEmittingPool,
-      'MariaDB pool connection encountered an error',
-      extra?.logger,
-    );
+    attachPoolErrorHandler(this.pool, 'MariaDB pool connection encountered an error', extra?.logger);
   }
 
   async getQuerier() {

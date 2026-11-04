@@ -20,7 +20,7 @@ export type LocalSqlitePoolOptions = {
 export type LocalSqliteDatabase = {
   prepare(sql: string): SqlitePreparedStatement;
   loadExtension(path: string): void;
-  /** Defines a SQL function, which `bun:sqlite` cannot. */
+  /** Defines a SQL function, which `bun:sqlite` has only in its newer releases. */
   function?(name: string, options: { deterministic: boolean }, fn: (...args: SqlValue[]) => SqlValue): unknown;
   close(): unknown;
 };

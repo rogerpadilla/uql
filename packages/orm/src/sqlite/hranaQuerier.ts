@@ -8,7 +8,7 @@ import type { SqliteDialect } from './sqliteDialect.js';
 export type HranaInValue = SqliteBindValue | ArrayBuffer | Date;
 
 export type HranaResultSet = {
-  rows: unknown[];
+  rows: RawRow[];
   rowsAffected: number;
 };
 
@@ -104,5 +104,5 @@ export class HranaQuerier extends AbstractSqlQuerier {
 
 /** A result set as the querier reads it: Hrana's rows, read by column name, their wide integers decoded. */
 function executionOf({ rows, rowsAffected }: HranaResultSet): SqlExecution {
-  return { rows: (rows as RawRow[]).map(decodeBigInts), changes: rowsAffected };
+  return { rows: rows.map(decodeBigInts), changes: rowsAffected };
 }
