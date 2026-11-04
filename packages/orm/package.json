@@ -55,7 +55,7 @@
     "clean": "rimraf dist .tsconfig.tsbuildinfo"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": ">=0.5.0 <0.6",
+    "@electric-sql/pglite": ">=0.5.10 <0.6",
     "@libsql/client": ">=0.6.0 <0.19",
     "@neondatabase/serverless": ">=0.9.0 <2",
     "@nestjs/common": ">=10.0.0 <13",
@@ -123,13 +123,13 @@
     }
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.14",
-    "@electric-sql/pglite-pgvector": "0.0.15",
+    "@electric-sql/pglite": "0.5.15",
+    "@electric-sql/pglite-pgvector": "0.0.16",
     "@libsql/client": "^0.18.0",
     "@neondatabase/serverless": "^1.2.0",
-    "@nestjs/common": "^12.3.2",
-    "@nestjs/core": "^12.3.2",
-    "@nestjs/testing": "^12.3.2",
+    "@nestjs/common": "^12.3.3",
+    "@nestjs/core": "^12.3.3",
+    "@nestjs/testing": "^12.3.3",
     "@tursodatabase/database": "^0.8.3",
     "@tursodatabase/serverless": "^1.4.1",
     "@types/better-sqlite3": "^9.6.0",

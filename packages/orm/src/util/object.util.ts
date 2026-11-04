@@ -1,5 +1,8 @@
 import type { EntityMeta, JsonScalar } from '../type/index.js';
 
+/** Does nothing: a listener or `catch` that only has to be there. `undefined` rather than `void`, so `.catch(noop)` keeps `T | undefined`. */
+export const noop = (): undefined => undefined;
+
 /** Whether `value` is a {@link JsonScalar}, which `$addToSet` and an `=` on a JSON path compare by equality. */
 export function isJsonScalar(value: unknown): value is JsonScalar {
   return typeof value === 'string' || typeof value === 'boolean' || Number.isFinite(value);

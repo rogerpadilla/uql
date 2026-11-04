@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlQuerier } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
 
 /**
@@ -40,7 +41,7 @@ export abstract class AbstractSharedHandleQuerierPool<
     this.opening = undefined;
     // An open still in flight is awaited rather than abandoned: closing is what releases its file or port.
     // One that failed leaves nothing to close, and `getQuerier` already reported it to its own caller.
-    const db = await opening?.catch(() => undefined);
+    const db = await opening?.catch(noop);
     await db?.close();
   }
 }

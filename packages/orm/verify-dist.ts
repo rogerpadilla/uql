@@ -251,8 +251,8 @@ async function checkSizeBudgets(): Promise<void> {
  * {@link checkRuntimes} runs them.
  */
 function checkDeclarationsStandalone(checkDir: string, installed: string): void {
-  const output = typeCheck(checkDir);
-  const inConsumer = consumerErrors(output, checkDir, installed);
+  const diagnostics = [...typeCheck(checkDir), ...typeCheck(checkDir, LOOSE)];
+  const inConsumer = consumerErrors(diagnostics, checkDir, installed);
   if (inConsumer.length) {
     refuse(
       'a consumer cannot use the published surface',
@@ -261,7 +261,7 @@ function checkDeclarationsStandalone(checkDir: string, installed: string): void 
         'now need `experimentalDecorators`, or a name moved off the root entry, that promise is broken.',
     );
   }
-  const unresolved = ownUnresolvedNames(output, checkDir, installed);
+  const unresolved = ownUnresolvedNames(diagnostics, installed);
   if (unresolved.length) {
     refuse(
       'the published types do not stand on their own in a consumer project',
@@ -358,61 +358,85 @@ function installConsumerProject(): { checkDir: string; installed: string } {
       // A class emits a parameter property as `T | undefined`, which only this flag tells from an interface's `T`.
       exactOptionalPropertyTypes: true,
     },
-    reexports,
+    { ...reexports, 'refused.ts': REFUSED },
   );
   return { checkDir, installed };
 }
 
-/** tsc's diagnostics for that project, empty when it is clean. */
-function typeCheck(checkDir: string): string {
+/** The same project without `strictNullChecks`, which tsc refuses beside `exactOptionalPropertyTypes`. */
+const LOOSE = ['--strictNullChecks', 'false', '--exactOptionalPropertyTypes', 'false'];
+
+/** What has to stay refused under both, an unused `@ts-expect-error` being an error. */
+const REFUSED = /*ts*/ `import { Entity, f, Field } from 'uql-orm';
+@Entity() export class SuppliedKeyOptional {
+  // @ts-expect-error a key nothing fills cannot be \`?\`, which would let an insert leave it out
+  @Field(f.number().id()) id?: number;
+}
+`;
+
+/** A tsc error, its file resolved to an absolute path. */
+type Diagnostic = { readonly file: string; readonly row: string; readonly code: string; readonly message: string };
+
+/** tsc's errors for that project, under `flags` on top of its tsconfig, none when it is clean. */
+function typeCheck(checkDir: string, flags: readonly string[] = []): Diagnostic[] {
+  return tscOutput(checkDir, flags)
+    .split('\n')
+    .flatMap((line) => {
+      const match = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line);
+      if (!match) return [];
+      const [, reported, row, , code, message] = match;
+      return [{ file: resolve(checkDir, reported), row, code, message }];
+    });
+}
+
+function tscOutput(checkDir: string, flags: readonly string[]): string {
   try {
     // `cwd` pins what the reported paths are relative to, which is how they are matched against `dist`.
-    execFileSync(join(pkgDir, '../../node_modules/.bin/tsc'), ['-p', checkDir], { encoding: 'utf8', cwd: checkDir });
+    execFileSync(join(pkgDir, '../../node_modules/.bin/tsc'), ['-p', checkDir, ...flags], {
+      encoding: 'utf8',
+      cwd: checkDir,
+    });
     return '';
   } catch (error) {
     return (error as { stdout?: string }).stdout ?? '';
   }
 }
 
+/** Each diagnostic once, as both runs report most of them. */
+const listed = (diagnostics: readonly Diagnostic[], base: string) => [
+  ...new Set(diagnostics.map(({ file, row, code, message }) => `${relative(base, file)}(${row}): ${code}: ${message}`)),
+];
+
 /**
  * Diagnostics in the consumer's own files rather than in `dist`. {@link ownUnresolvedNames} discards
  * these deliberately - another package's declarations are that package's problem - which would also
  * discard the fixture that applies the declarations, so it is read separately.
  */
-function consumerErrors(output: string, checkDir: string, installed: string): string[] {
-  const problems: string[] = [];
-  for (const line of output.split('\n')) {
-    const match = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line);
-    if (!match) continue;
-    const [, reported, row, , code, message] = match;
-    const file = resolve(checkDir, reported);
-    if (file.startsWith(join(installed, 'dist'))) continue;
-    problems.push(`${relative(checkDir, file)}(${row}): ${code}: ${message}`);
-  }
-  return problems;
+function consumerErrors(diagnostics: readonly Diagnostic[], checkDir: string, installed: string): string[] {
+  return listed(
+    diagnostics.filter(({ file }) => !file.startsWith(join(installed, 'dist'))),
+    checkDir,
+  );
 }
 
 /** The diagnostics that are this package's problem: our own `dist`, minus what an absent peer explains. */
-function ownUnresolvedNames(output: string, checkDir: string, installed: string): string[] {
+function ownUnresolvedNames(diagnostics: readonly Diagnostic[], installed: string): string[] {
   /** Declared optional, so a consumer who does not use that driver does not have its types either. */
   const isPeer = (specifier: string) => PEERS.includes(packageOf(specifier));
   /** A declaration file that imports a Node-only driver is Node-only, and its consumer has `@types/node`. */
   const driverBound = (file: string) => importsOf(file).some(isPeer);
 
-  const unresolved: string[] = [];
-  for (const line of output.split('\n')) {
-    const match = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line);
-    if (!match) continue;
-    const [, reported, row, , code, message] = match;
-    const file = resolve(checkDir, reported);
-    // Another package's declarations are that package's problem, not ours.
-    if (!file.startsWith(join(installed, 'dist'))) continue;
-    // An uninstalled optional peer, which is the expected state for a consumer who does not use it.
-    if (code === 'TS2307') continue;
-    if (code === 'TS2591' && driverBound(file)) continue;
-    unresolved.push(`${relative(installed, file)}(${row}): ${code}: ${message}`);
-  }
-  return unresolved;
+  return listed(
+    diagnostics.filter(
+      ({ file, code }) =>
+        // Another package's declarations are that package's problem, not ours.
+        file.startsWith(join(installed, 'dist')) &&
+        // An uninstalled optional peer, which is the expected state for a consumer who does not use it.
+        code !== 'TS2307' &&
+        !(code === 'TS2591' && driverBound(file)),
+    ),
+    installed,
+  );
 }
 
 // The only fatal one: the three below all read `dist`, so a missing path there makes them meaningless.

@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import type { QuerierPool, QuerySql, SqlDialectName, SqlQuerier } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import { sql } from '../util/sql.js';
 import { fnv1a } from '../util/string.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -78,7 +79,7 @@ export async function holdingLock<T>(
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
   }
   const result = await work().catch(async (error: unknown) => {
-    await lock.release().catch(() => {});
+    await lock.release().catch(noop);
     throw error;
   });
   await lock.release();

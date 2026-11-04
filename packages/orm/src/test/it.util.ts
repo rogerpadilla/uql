@@ -4,6 +4,7 @@ import { Migrator } from '../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import type { QuerierPool, QuerySql } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import { sql } from '../util/sql.js';
 
 /**
@@ -46,11 +47,7 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
     await querier.run`DROP TABLE IF EXISTS uqlConstrainedChild`;
     await querier.run`DROP TABLE IF EXISTS uqlConstrainedParent`;
   };
-  const rejection = (statement: QuerySql) =>
-    querier.run(statement).then(
-      () => undefined,
-      (err: unknown) => err,
-    );
+  const rejection = (statement: QuerySql) => querier.run(statement).then(noop, (err: unknown) => err);
 
   await dropPair();
   try {

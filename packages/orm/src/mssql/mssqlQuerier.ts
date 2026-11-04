@@ -1,6 +1,7 @@
 import mssql from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { IsolationLevel, RawRow, TransactionOptions } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
 
@@ -88,7 +89,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
       yield* rows;
     } finally {
       // The cancel reports itself as an error on the stream, and the loop that would hear it is gone.
-      rows.on('error', () => {});
+      rows.on('error', noop);
       request.cancel();
       await completed;
     }

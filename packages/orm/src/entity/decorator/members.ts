@@ -55,13 +55,22 @@ type MemberContext<O, P, N, M, Filled, Key, Lock> = ClassFieldDecoratorContext<O
     ? unknown
     : { readonly __propertyMustAdmit: M }) &
   FilledIfBranded<O, N, Filled> &
-  ([Key] extends [false] ? unknown : [Key] extends ['supplied'] ? KeyIsNamed<O> & KeyIsRequired<P> : KeyIsNamed<O>) &
+  ([Key] extends [false] ? unknown : KeyIsNamed<O>) &
   ([Lock] extends [true] ? VersionIsBranded<O> : unknown);
 
 /** An {@link AdmittingDecorator} for a column: its class is the decorator's own, and `K` is the key it references, `never` if none. */
 type ColumnDecorator<V, M, Filled, Key, Lock, K = never> = <This, P extends V | undefined, N extends PropertyKey>(
   value: undefined,
   context: MemberContext<This, P, N, M, Filled, Key, Lock> & PropertyHoldsKey<P, K>,
+) => void;
+
+/**
+ * A {@link ColumnDecorator} for a key nothing fills, its own signature so no other property pays for its check.
+ * `P extends V` refuses the `undefined` an insert could pass, wherever `strictNullChecks` tells it apart.
+ */
+type SuppliedKeyDecorator<V, K> = <This, P extends V, N extends PropertyKey>(
+  value: undefined,
+  context: MemberContext<This, P, N, never, false, true, false> & PropertyHoldsKey<P, K> & KeyIsRequired<This, N>,
 ) => void;
 
 /** Refuses a property that does not hold the key a column references: a builder cannot say, a property brands what it does not. */
@@ -86,14 +95,17 @@ type FilledIfBranded<O, N, Filled> = [Filled] extends [true]
     : unknown;
 
 /** What `Field` answers: a column's own checks, and that a property holds the key its column references. */
-type FieldDecorator<O, V> = ColumnDecorator<
-  Narrowable<V> | NullOf<O>,
-  NullOf<O>,
-  O extends FilledOptions ? true : false,
-  IsKey<O, V>,
-  O extends { readonly version: true } ? true : false,
-  ReferencedKeyOf<O>
->;
+type FieldDecorator<O, V> =
+  IsKey<O, V> extends 'supplied'
+    ? SuppliedKeyDecorator<V, ReferencedKeyOf<O>>
+    : ColumnDecorator<
+        Narrowable<V> | NullOf<O>,
+        NullOf<O>,
+        O extends FilledOptions ? true : false,
+        IsKey<O, V>,
+        O extends { readonly version: true } ? true : false,
+        ReferencedKeyOf<O>
+      >;
 
 /**
  * Declares a persisted field, the property checked against the column: `@Field(f.string()) name!: string;`, and
@@ -156,8 +168,12 @@ type IsKey<O, V> = O extends { readonly isId: true }
  */
 type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNeedsIdKeyBrand: true } : unknown;
 
-/** A key nothing fills cannot be `?`, which would let an insert leave it out. */
-type KeyIsRequired<P> = undefined extends P ? { readonly __keyNothingFillsMustBeRequired: true } : unknown;
+/** A key nothing fills cannot be `?`, which would let an insert leave it out: read off the key, as its type cannot tell without `strictNullChecks`. */
+type KeyIsRequired<O, N> = N extends keyof O
+  ? {} extends Pick<O, N>
+    ? { readonly __keyNothingFillsMustBeRequired: true }
+    : unknown
+  : unknown;
 
 /**
  * An optimistic lock the type level cannot see. `version: true` is what makes the column a lock at run

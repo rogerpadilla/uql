@@ -1,21 +1,12 @@
-import { Pool, type PoolConfig, types } from 'pg';
+import type { PoolConfig } from 'pg';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
-import { wireTypes } from '../postgres/pgWireTypes.js';
 import type { ExtraOptions } from '../type/index.js';
 import { CockroachDialect } from './cockroachDialect.js';
 
-/**
- * QuerierPool for CockroachDB using the `pg` driver Pool.
- */
+/** QuerierPool for CockroachDB using the `pg` driver Pool. */
 export class CrdbQuerierPool extends AbstractPgQuerierPool<CockroachDialect> {
-  declare readonly pool: Pool;
-
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(
-      new CockroachDialect(dialectOptionsFrom(extra)),
-      new Pool({ keepAlive: true, types: wireTypes(types), ...opts }),
-      extra,
-    );
+    super(new CockroachDialect(dialectOptionsFrom(extra)), opts, extra);
   }
 }

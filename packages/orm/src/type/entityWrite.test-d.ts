@@ -233,6 +233,12 @@ export class SharedKeyOptional {
 }
 
 @Entity()
+export class SuppliedKeyAdmittingUndefined {
+  // @ts-expect-error ...nor where its type lets an insert pass `undefined`
+  @Field(f.number().id()) id!: number | undefined;
+}
+
+@Entity()
 export class SuppliedKeyListed {
   [filledKey]?: 'id';
   // @ts-expect-error the brand lets an insert leave it out, so something has to fill it

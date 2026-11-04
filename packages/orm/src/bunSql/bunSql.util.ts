@@ -1,7 +1,8 @@
 import type { SQL } from 'bun';
 import type { PrimaryKey, RawRow, SqlDialectName } from '../type/index.js';
+import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { decodeWideNumber } from '../util/wideNumber.js';
+import { decodeBigInts, decodeWideNumber } from '../util/wideNumber.js';
 
 /** The header a `bun:sql` result carries next to its rows. */
 export type BunSqlHeader = {
@@ -23,11 +24,13 @@ export type BunSqlConn = Pick<SQL, 'unsafe'> & { release(): void };
 export type BunSqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb';
 
 /**
- * The rows a statement touched: `count` on Postgres, `affectedRows` on MySQL (whose `count` is 0 on a
- * write), in that order; `undefined` to leave it to the returned rows.
+ * A `bun:sql` result as the querier reads it: its rows, each BIGINT decoded exactly; the rows it touched,
+ * `affectedRows` on MySQL (whose `count` is 0 on a write) then `count` on Postgres, `undefined` to leave it to
+ * the rows; and a MySQL-family insert's id, by the same wide-integer rule.
  */
-export function getAffectedRows(res: BunSqlResult): number | undefined {
-  return res.affectedRows || res.count || undefined;
+export function bunSqlExecution(res: BunSqlResult): SqlExecution {
+  const id = typeof res.lastInsertRowid === 'bigint' ? decodeWideNumber(res.lastInsertRowid) : res.lastInsertRowid;
+  return { rows: Array.from(res, decodeBigInts), changes: res.affectedRows || res.count || undefined, id };
 }
 
 /**
@@ -100,8 +103,3 @@ const ELSEWHERE: ReadonlyMap<string, SqlDialectName> = new Map([
   ['sqlite', 'sqlite'],
   ['sqlite3', 'sqlite'],
 ]);
-
-/** The id a MySQL-family insert reports, by the same wide-integer rule as every other BIGINT. */
-export function getInsertId(res: BunSqlResult): PrimaryKey | undefined {
-  return typeof res.lastInsertRowid === 'bigint' ? decodeWideNumber(res.lastInsertRowid) : res.lastInsertRowid;
-}

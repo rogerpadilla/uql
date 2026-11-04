@@ -702,7 +702,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * Rows written past each engine's limits on its own server: SQL Server's 2098 values and 1000 rows, PGlite's
+   * Rows written past each engine's limits on its own server: SQL Server's 2098 values and 1000 rows, Neon's
    * 32767, and a MySQL upsert filling 65535. The id lists' split is pinned in `sqliteQuerier.spec.ts`.
    */
   async shouldWriteRowsPastEveryLimit() {

@@ -1,24 +1,20 @@
+import { Pool, type PoolConfig, types } from 'pg';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { attachPoolErrorHandler } from '../util/index.js';
-import { type PgAnyClient, PgQuerier } from './pgQuerier.js';
+import { PgQuerier } from './pgQuerier.js';
+import { wireTypes } from './pgWireTypes.js';
 
-export interface PgAnyPool {
-  connect: () => Promise<PgAnyClient>;
-  end: () => Promise<void>;
-  on(event: 'error', listener: (err: Error) => void): unknown;
-}
-
-/** A Postgres-wire pool of {@link PgQuerier}s, attaching the error handler that keeps a dropped connection from crashing the process. */
+/** A `pg` pool of {@link PgQuerier}s, whose error handler keeps a dropped connection from crashing the process. */
 export abstract class AbstractPgQuerierPool<D extends AbstractSqlDialect> extends AbstractSqlQuerierPool<PgQuerier, D> {
-  constructor(
-    dialect: D,
-    readonly pool: PgAnyPool,
-    extra?: ExtraOptions,
-  ) {
+  readonly pool: Pool;
+
+  constructor(dialect: D, opts: PoolConfig, extra?: ExtraOptions) {
     super(dialect, extra);
-    attachPoolErrorHandler(pool, 'Idle Postgres pool client encountered an error', extra?.logger);
+    // keepAlive cuts down, but cannot stop, a NAT or firewall silently dropping an idle remote connection.
+    this.pool = new Pool({ keepAlive: true, types: wireTypes(types), ...opts });
+    attachPoolErrorHandler(this.pool, 'Idle Postgres pool client encountered an error', extra?.logger);
   }
 
   async getQuerier() {

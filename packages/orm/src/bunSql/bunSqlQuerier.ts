@@ -1,7 +1,6 @@
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { SqlExecution } from '../util/sql.util.js';
-import { decodeBigInts } from '../util/wideNumber.js';
-import { type BunSqlConn, type BunSqlResult, getAffectedRows, getInsertId } from './bunSql.util.js';
+import { type BunSqlConn, type BunSqlResult, bunSqlExecution } from './bunSql.util.js';
 
 /**
  * A querier for `bun:sql` over a reserved connection, so raw SQL goes through `pool.sql` rather than
@@ -13,8 +12,7 @@ export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
    * every value is bound.
    */
   protected override async execute(sql: string, values?: unknown[]): Promise<SqlExecution> {
-    const res = await this.getConn().unsafe<BunSqlResult>(sql, values);
-    return { rows: Array.from(res, decodeBigInts), changes: getAffectedRows(res), id: getInsertId(res) };
+    return bunSqlExecution(await this.getConn().unsafe<BunSqlResult>(sql, values));
   }
 
   protected override async releaseConn(conn: BunSqlConn) {

@@ -5,10 +5,9 @@ import { PgQuerier } from '../postgres/pgQuerier.js';
 import { wireTypes } from '../postgres/pgWireTypes.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import { NeonDialect } from './neonDialect.js';
 import { type NeonHttp, NeonQuerier } from './neonQuerier.js';
-
-const ignoreError = () => {};
 
 /**
  * A WebSocket session of one querier's own, ended where a pooled client would be handed back. A socket error while
@@ -16,7 +15,7 @@ const ignoreError = () => {};
  */
 class NeonSession extends Client {
   release(): Promise<void> {
-    this.on('error', ignoreError);
+    this.on('error', noop);
     return this.end();
   }
 }

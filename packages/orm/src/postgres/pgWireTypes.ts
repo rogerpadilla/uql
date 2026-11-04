@@ -5,8 +5,7 @@ import { decodeWideNumber } from '../util/wideNumber.js';
 /**
  * The registry every pg-family driver exposes as `types`: `pg`'s own, and `@neondatabase/serverless`'s
  * reimplementation of it. Taken as a parameter rather than imported, because `uql-orm/neon` must not
- * pull `pg` into an edge bundle that has no such peer installed - the same reason
- * `abstractPgQuerierPool.ts` keeps its `pg` imports type-only.
+ * pull `pg` into an edge bundle that has no such peer installed.
  */
 type PgTypes = {
   getTypeParser(oid: number, format?: 'text' | 'binary'): Decode;

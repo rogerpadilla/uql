@@ -7,11 +7,11 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { DriverCapabilities, ExtraOptions, SqlPoolCompat } from '../type/index.js';
-import { decodeBigInts } from '../util/wideNumber.js';
+import { noop } from '../util/object.util.js';
 import {
   type BunSqlDialectName,
   type BunSqlResult,
-  getAffectedRows,
+  bunSqlExecution,
   inferDialectName,
   normalizeBunOpts,
 } from './bunSql.util.js';
@@ -61,12 +61,10 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
             values?.map((value) => this.dialect.normalizeValue(value)),
           )
           .then((res) => {
-            const rows = Array.from(res, decodeBigInts);
-            return { rows, rowCount: getAffectedRows(res) ?? rows.length };
+            const { rows, changes } = bunSqlExecution(res);
+            return { rows, rowCount: changes ?? rows.length };
           }),
-      on: () => {
-        /* no-op for event listeners */
-      },
+      on: noop,
     };
   }
 

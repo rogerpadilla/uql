@@ -84,6 +84,7 @@ import {
   isClass,
   defaultReadKeys,
   holdsForeignKey,
+  noop,
 } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
@@ -1763,7 +1764,7 @@ export abstract class AbstractQuerier implements Querier {
   private nested<T>(parent: TransactionScope, callback: () => Promise<T>): Promise<T> {
     const scope = newScope(this, this.#slot, parent);
     const run = parent.nested.then(() => inTransaction(scope, () => this.savepointed(scope, parent, callback)));
-    parent.nested = run.catch(() => undefined);
+    parent.nested = run.catch(noop);
     return run;
   }
 
@@ -2026,7 +2027,7 @@ export abstract class AbstractQuerier implements Querier {
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const res = this.taskQueue.then(task);
-    this.taskQueue = res.catch(() => {});
+    this.taskQueue = res.catch(noop);
     return res;
   }
 

@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.111.2] - 2026-11-04
+
+- **Fixed:** a project without `strictNullChecks` can declare a key it supplies, such as a composite key's `.references()` columns, with `!`.
+- `@Field` refuses a key nothing fills whose type admits `undefined` (`id!: number | undefined`), as it does one declared `?`.
+- PGlite needs 0.5.10 or later, and binds 65535 values a statement like a Postgres server, so a large insert splits into fewer statements.
+
 ## [0.111.1] - 2026-11-01
 
 - `insertOne`, `insertMany`, `saveOne` and `saveMany` resolve to a defined key, `number` for `id?: number`, with no `!`.

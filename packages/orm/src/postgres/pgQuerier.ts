@@ -1,5 +1,6 @@
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { RawRow } from '../type/index.js';
+import { noop } from '../util/object.util.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { type PgResult, pgExecution } from './pgExecution.js';
 
@@ -12,8 +13,6 @@ export interface PgAnyClient {
   release(discard?: boolean): void | Promise<void>;
 }
 
-const ignoreError = () => {};
-
 /**
  * Querier for every client with node-postgres' API: `pg` itself, for Postgres and CockroachDB, and
  * Neon's serverless driver; the dialect is whichever the pool built.
@@ -24,7 +23,7 @@ export class PgQuerier extends AbstractPoolQuerier<PgAnyClient> {
    * the process: the querier hears it while it holds the client, and what it hands the client back to after it.
    */
   protected override acquired(conn: PgAnyClient): PgAnyClient {
-    conn.on('error', ignoreError);
+    conn.on('error', noop);
     return conn;
   }
 
@@ -38,7 +37,7 @@ export class PgQuerier extends AbstractPoolQuerier<PgAnyClient> {
   }
 
   protected override async releaseConn(conn: PgAnyClient, discard: boolean) {
-    conn.removeListener('error', ignoreError);
+    conn.removeListener('error', noop);
     await conn.release(discard);
   }
 }
