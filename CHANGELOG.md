@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.112.0] - 2026-11-04
+
+- A relation decorator takes its target first, as `rel.*` does: `@ManyToOne(() => User, { references: (post) => post.authorId })`, `@OneToMany(() => Post)`. `uql-codemod` rewrites the `entity` option.
+- **Fixed:** a defined entity's aggregate can read its own to-many, as a tree's `childCount: () => folder.children.count()` does; a thunk returning no aggregate is refused on first read.
+- The docs and `uql-codemod` name a defined entity's rows `export interface Post extends InstanceType<typeof Post> {}`, so hovers print `Post`.
+
 ## [0.111.2] - 2026-11-04
 
 - **Fixed:** a project without `strictNullChecks` can declare a key it supplies, such as a composite key's `.references()` columns, with `!`.

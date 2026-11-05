@@ -12,7 +12,7 @@ import { postgresConnection } from './connections.js';
 class Company {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string()) name!: string;
-  @OneToMany({ entity: () => User, mappedBy: (user) => user.company }) users?: User[];
+  @OneToMany(() => User, { mappedBy: (user) => user.company }) users?: User[];
 }
 
 @Entity({ name: 'AllocUser' })
@@ -22,7 +22,7 @@ class User {
   @Field(f.string()) email!: string;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
   @Field(f.number().nullable()) createdAt?: number | null;
-  @ManyToOne({ entity: () => Company, references: (user) => user.companyId }) company?: Company;
+  @ManyToOne(() => Company, { references: (user) => user.companyId }) company?: Company;
 }
 
 /**

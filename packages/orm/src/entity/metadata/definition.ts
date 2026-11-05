@@ -149,10 +149,8 @@ const KEY_MAP = new Proxy({}, { get: (_, key) => key });
 
 function addRelation<E>(meta: EntityMeta<E>, key: string, registration: RelationRegistration): void {
   const { entity } = meta;
-  if (!registration.entity) {
-    throw new UqlUsageError(
-      `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
-    );
+  if (typeof registration.entity !== 'function') {
+    throw new UqlUsageError(`'${entity.name}.${key}' needs its target first, e.g. '@ManyToOne(() => Company)'.`);
   }
   if (registration.through && registration.references) {
     throw new UqlUsageError(
@@ -420,7 +418,7 @@ function fieldsOf(name: string, values: Readonly<Record<string, unknown>>): Reco
       if (field instanceof RelationAggregate) {
         return [key, aggregateField(field)];
       }
-      // The types refuse anything else; an untyped caller still reaches here.
+      // The types refuse anything else, but for an aggregate thunk, whose constraint cannot read what it returns.
       if (!isColumn(field)) {
         throw new UqlUsageError(`'${name}.${key}' is neither a column nor an aggregate: declare it as one`);
       }

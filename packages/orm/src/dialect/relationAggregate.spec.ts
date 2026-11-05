@@ -19,7 +19,7 @@ class Task {
       .references(() => Project),
   )
   projectId?: number | null;
-  @ManyToOne({ entity: () => Project, references: (task) => task.projectId }) project?: Project;
+  @ManyToOne(() => Project, { references: (task) => task.projectId }) project?: Project;
   @Field(f.number().nullable()) hours?: number | null;
   @Field(f.boolean().nullable()) done?: boolean | null;
 }
@@ -54,10 +54,10 @@ class Project {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) owner?: string | null;
 
-  @OneToMany({ entity: () => Task, mappedBy: (task) => task.project })
+  @OneToMany(() => Task, { mappedBy: (task) => task.project })
   tasks?: Task[];
 
-  @ManyToMany({ entity: () => Tag, through: () => ProjectTag })
+  @ManyToMany(() => Tag, { through: () => ProjectTag })
   tags?: Tag[];
 
   @Computed((project) => project.tasks.count())
@@ -185,7 +185,7 @@ describe('relation aggregate', () => {
       @Entity()
       class Stored {
         @Field(f.number().autoIncrement()) id?: number;
-        @OneToMany({ entity: () => Task, mappedBy: (task) => task.project }) tasks?: Task[];
+        @OneToMany(() => Task, { mappedBy: (task) => task.project }) tasks?: Task[];
         @Field(untypedColumn({ computed: memberRefs<{ tasks: Task[] }>().tasks.count(), stored: true }))
         readonly taskCount?: number;
       }

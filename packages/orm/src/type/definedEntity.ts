@@ -101,6 +101,12 @@ export type AggregateFields = {
   readonly [key: string]: () => RelationAggregate<unknown> | Column<{ readonly computed: QuerySql }>;
 };
 
+/**
+ * What `relations` constrains its aggregates to: a thunk returning `void`, which TypeScript checks without reading what it
+ * returns. Reading it would read a tree's own to-many while its type is inferred (TS7022); first read refuses a wrong value.
+ */
+type AggregateThunks = { readonly [key: string]: () => void };
+
 /** The aggregate fields a `relations` callback declares, as a row reads them, never written. */
 export type AggregateRow<A> = {
   readonly [K in keyof A]-?: A[K] extends () => infer F ? FieldValue<F> : never;
@@ -209,7 +215,7 @@ type DefinedSections<Row, Key, Columns, B, Abstract> = {
    * The relations, each read lazily so entities pointing at each other declare in either order, and the values
    * read over the to-many ones, its base's too: `(author) => ({ postCount: () => author.posts.count() })`.
    */
-  relations<const R, const A extends AggregateFields = {}>(
+  relations<const R, const A extends AggregateThunks = {}>(
     relations: (rel: RelationBuilder<Columns>) => R,
     aggregates?: (
       refs: RefMap<Columns> & AggregateRefs<R> & ToManyRefs<B, Exclude<ToManyRelationKey<B>, keyof R>>,

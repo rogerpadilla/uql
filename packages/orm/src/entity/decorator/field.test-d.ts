@@ -35,7 +35,7 @@ export class Post {
 @Entity()
 export class Author {
   @Field(f.number().autoIncrement()) id?: number;
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.authorId }) posts?: Post[];
+  @OneToMany(() => Post, { mappedBy: (post) => post.authorId }) posts?: Post[];
   @Computed((author) => author.posts.count()) readonly postCount?: number;
   @Computed((author) => author.posts.max((post) => post.views)) readonly topViews?: number | null;
 }

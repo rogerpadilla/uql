@@ -237,14 +237,13 @@ export class EntityCodeGenerator {
     const relatedClassName = this.options.classNameTransformer(rel.to.table.name);
     const references = this.referencesSource(rel, relatedClassName);
     const options = [
-      `entity: () => ${relatedClassName}`,
       ...(references ? [`references: ${references}`] : []),
       ...(rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION ? [`onDelete: '${rel.onDelete}'`] : []),
       ...(rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION ? [`onUpdate: '${rel.onUpdate}'`] : []),
     ];
     return [
       ...this.syncDoc(`Relation to ${rel.to.table.name} via ${rel.from.columns.map((c) => c.name).join(', ')}`),
-      `  @${rel.type}({ ${options.join(', ')} })`,
+      `  @${rel.type}(() => ${relatedClassName}${options.length ? `, { ${options.join(', ')} }` : ''})`,
       `  ${this.owningPropertyName(rel)}?: ${relatedClassName};`,
     ].join('\n');
   }
@@ -302,7 +301,7 @@ export class EntityCodeGenerator {
     const many = inverseType === 'OneToMany' || inverseType === 'ManyToMany';
     return [
       ...this.syncDoc(`Inverse relation from ${rel.from.table.name}`),
-      `  @${inverseType}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`,
+      `  @${inverseType}(() => ${relatedClassName}, { mappedBy: (${param}) => ${inverse} })`,
       `  ${this.inversePropertyName(rel)}?: ${relatedClassName}${many ? '[]' : ''};`,
     ].join('\n');
   }

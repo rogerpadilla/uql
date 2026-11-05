@@ -238,6 +238,12 @@ export function decoratorName(node: ts.Decorator): string | undefined {
 
 /** The decorators declaring a field: `@Field`, and `@Id` for the key the class names. */
 export const FIELD_DECORATORS: ReadonlySet<string | undefined> = new Set(['Field', 'Id']);
+export const RELATION_DECORATORS: ReadonlySet<string | undefined> = new Set([
+  'OneToOne',
+  'ManyToOne',
+  'OneToMany',
+  'ManyToMany',
+]);
 
 /** Where the line holding offset `at` of `text` starts. */
 export function lineStartOf(text: string, at: number): number {

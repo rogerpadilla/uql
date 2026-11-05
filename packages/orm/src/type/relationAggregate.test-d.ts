@@ -15,7 +15,7 @@ class Ticket {
       .references(() => Board),
   )
   boardId?: number | null;
-  @ManyToOne({ entity: () => Board, references: (ticket) => ticket.boardId }) board?: Board;
+  @ManyToOne(() => Board, { references: (ticket) => ticket.boardId }) board?: Board;
   @Field(f.number().nullable()) points?: number | null;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.boolean().nullable()) open?: boolean | null;
@@ -25,7 +25,7 @@ class Ticket {
 class Board {
   @Field(f.number().autoIncrement()) id?: number;
 
-  @OneToMany({ entity: () => Ticket, mappedBy: (ticket) => ticket.board })
+  @OneToMany(() => Ticket, { mappedBy: (ticket) => ticket.board })
   tickets?: Ticket[];
 
   @Computed((board) => board.tickets.count())

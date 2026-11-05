@@ -38,7 +38,7 @@ export const Book = defineEntity({
     }),
     (book) => ({ tagCount: () => book.tags.count() }),
   );
-export type Book = InstanceType<typeof Book>;
+export interface Book extends InstanceType<typeof Book> {}
 ```
 
 The decorated form reads the same columns: `@Field(f.string().nullable()) subtitle?: string | null`,
@@ -61,13 +61,14 @@ Each is forced by TypeScript inferring entities that point at each other.
 
 | Shape                                                                  | Why                                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Each relation is a thunk, `author: () => rel.manyToOne(...)`           | its target is read lazily; a thunked target alone (`entity: () => Author`) is TS2506                                                                                                                                                                                                                                                               |
+| Each relation is a thunk, `author: () => rel.manyToOne(...)`           | its target is read lazily; a thunked target alone (`rel.manyToOne(() => Author)`) is TS2506                                                                                                                                                                                                                                                        |
 | `relations` is last; its second callback's aggregate fields are thunks | a section after it would read a target while that target is inferred; an aggregate field reads the relations just inferred, lazily                                                                                                                                                                                                                 |
 | Sections are methods, after `fields`                                   | the columns are fixed before any callback is checked, so no section infers the call again                                                                                                                                                                                                                                                          |
 | A foreign key is a relation, never a column's target                   | A column naming its target reads that target while it is inferred, a cycle (TS7022, TS2615) for entities pointing at each other. A key shared by several entities is one relation helper typed by the key's shape, `(rel: RelationBuilder<{ workspaceId: string }>) => ({ workspace: () => rel.manyToOne(Workspace, ...) })`, which does not cycle |
 | `mappedBy` names a member by key; a foreign key's type is carried      | typing by kind reads the target's property types mid-inference; its key type rides on its class, a symbol-keyed marker                                                                                                                                                                                                                             |
 | `computed` is its own section                                          | a callback inside `fields` reads the columns being inferred, so its row is `any` (TS7006)                                                                                                                                                                                                                                                          |
 | `indexes`, `checks`, `hooks` see the columns                           | the full row includes relations, which only exists once they are inferred                                                                                                                                                                                                                                                                          |
+| An aggregate field is constrained to `() => void`                      | TypeScript checks a thunk against it without reading what it returns, which for a tree would read its own to-many mid-inference; first read refuses a value that is no aggregate                                                                                                                                                                   |
 | `filters` may follow `relations`, and then sees the full row           | the relations are inferred by then, so a filter reading through them cycles nowhere, across files too                                                                                                                                                                                                                                              |
 | An entry is a helper call, `index(columns, options)`                   | TypeScript checks a literal passed as an argument for excess keys, never one returned from a callback                                                                                                                                                                                                                                              |
 
@@ -87,8 +88,8 @@ A read over the same model, `findMany` with two columns, a filter and a populate
 shape: uql's first costs ~4,100 (defined) or ~3,400 (decorators) and each further one ~150; MikroORM's first
 ~45,000 and each further one ~360. With its first read, uql's model costs less in total.
 
-Per copy, the defined form's cost is mostly its relations (a many-to-one ~470 and a one-to-many ~200, ~220 of
-that the foreign key's type check), then a computed column ~260 and an index ~150; a column is ~15. A decorated field costs
+Per copy, the defined form's cost is mostly its relations (an entity's first many-to-one ~400, ~160 of it the foreign key's
+type check, cached per entity and key type, so a further one costs ~85, and a one-to-many ~140), then a computed column ~260 and an index ~150; a column is ~15. A decorated field costs
 ~100, ~60 of it the checks on its property (the column's `null`, the `filledKey` and `versionKey` brands, a named key),
 which run per field because TypeScript infers each decorator's context. The relation options take `cascade`,
 `onDelete` and `onUpdate` from their own non-generic types: picked off `RelationOptions<E, O>`, they made the first

@@ -22,7 +22,7 @@ class LabelLink {
 @Entity({ name: 'uql_label_post' })
 class LabelPost {
   @Field(f.number().autoIncrement()) id?: number;
-  @ManyToMany({ entity: () => LinkedLabel, through: () => LabelLink, cascade: true }) labels?: LinkedLabel[];
+  @ManyToMany(() => LinkedLabel, { through: () => LabelLink, cascade: true }) labels?: LinkedLabel[];
 }
 
 describe('a many-to-many on rows the database keys', () => {

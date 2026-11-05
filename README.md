@@ -60,7 +60,7 @@ export class User {
   @Field(f.string().unique())
   email!: string;
 
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
+  @OneToMany(() => Post, { mappedBy: (post) => post.author })
   posts?: Post[];
 }
 
@@ -78,7 +78,7 @@ export class Post {
   @Field(f.references(() => User).nullable())
   authorId?: number | null;
 
-  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
+  @ManyToOne(() => User, { references: (post) => post.authorId })
   author?: User;
 }
 ```
@@ -100,8 +100,8 @@ export const Post = defineEntity({
   author: () => rel.manyToOne(User, { references: (post) => post.authorId }),
 }));
 
-// One name for the entity and its rows, as a class has: a function takes `post: Post`.
-export type Post = InstanceType<typeof Post>;
+// One name for the entity and its rows, as a class has: a function takes `post: Post`, and hovers and errors print `Post`.
+export interface Post extends InstanceType<typeof Post> {}
 ```
 
 ### 2. A pool, and the migrations it drives

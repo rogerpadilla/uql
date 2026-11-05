@@ -76,7 +76,7 @@ export class Post {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.references(() => Article).nullable()) articleId?: number | null;
-  @ManyToOne({ entity: () => Article, references: (post) => post.articleId }) author?: Article;
+  @ManyToOne(() => Article, { references: (post) => post.articleId }) author?: Article;
 }
 
 // @ts-expect-error a column is read off the refs, never named by a string
@@ -120,7 +120,7 @@ export class SoftDeleted {
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.date().nullable()) deletedAt?: Date | null;
   @Field(f.references(() => Article).nullable()) articleId?: number | null;
-  @ManyToOne({ entity: () => Article, references: (softDeleted) => softDeleted.articleId }) author?: Article;
+  @ManyToOne(() => Article, { references: (softDeleted) => softDeleted.articleId }) author?: Article;
 }
 
 // @ts-expect-error an expression's refs are the entity's fields

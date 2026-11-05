@@ -282,7 +282,7 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain(
-        "@ManyToOne({ entity: () => User, references: (post) => post.authorId, onDelete: 'CASCADE', onUpdate: 'CASCADE' })",
+        "@ManyToOne(() => User, { references: (post) => post.authorId, onDelete: 'CASCADE', onUpdate: 'CASCADE' })",
       );
     });
 
@@ -309,7 +309,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('posts');
       assertDefined(result);
 
-      expect(result.code).toContain('@ManyToOne({ entity: () => User, references: (post) => post.authorId })');
+      expect(result.code).toContain('@ManyToOne(() => User, { references: (post) => post.authorId })');
     });
 
     it('should name the foreign key a relation joins on, so no column has to be named after the relation', () => {
@@ -335,7 +335,7 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain('@ManyToOne({ entity: () => User, references: (post) => post.writtenBy })');
+      expect(result.code).toContain('@ManyToOne(() => User, { references: (post) => post.writtenBy })');
       expect(result.code).toContain('user?: User;');
     });
 
@@ -366,7 +366,7 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain(
-        '@ManyToOne({ entity: () => User, references: (post, user) => [{ local: post.authorCode, foreign: user.code }] })',
+        '@ManyToOne(() => User, { references: (post, user) => [{ local: post.authorCode, foreign: user.code }] })',
       );
     });
 
@@ -996,7 +996,7 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain('@OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.user })');
+      expect(result.code).toContain('@OneToOne(() => Profile, { mappedBy: (profile) => profile.user })');
       expect(result.code).toContain('profiles?: Profile;');
     });
 

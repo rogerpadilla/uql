@@ -23,7 +23,7 @@ class User {
   @Field(f.string().nullable())
   email?: string | null;
 
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
+  @OneToMany(() => Post, { mappedBy: (post) => post.author })
   posts?: Post[];
 }
 
@@ -38,7 +38,7 @@ class Post {
   @Field(f.text().nullable())
   content?: string | null;
 
-  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
+  @ManyToOne(() => User, { references: (post) => post.authorId })
   author?: User;
 
   @Field(f.number().nullable().name('author_id'))
@@ -143,7 +143,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkParent {
         @Field(f.number().autoIncrement()) id?: number;
-        @OneToMany({ entity: () => FkChild, mappedBy: (fkChild) => fkChild.parent }) children?: FkChild[];
+        @OneToMany(() => FkChild, { mappedBy: (fkChild) => fkChild.parent }) children?: FkChild[];
       }
       @Entity()
       class FkChild {
@@ -156,8 +156,7 @@ describe('SchemaASTBuilder', () => {
         )
         parentId?: number | null;
         // The action lives on the owning side, which is the side that holds the key.
-        @ManyToOne({
-          entity: () => FkParent,
+        @ManyToOne(() => FkParent, {
           references: (fkChild) => fkChild.parentId,
           onDelete: 'CASCADE',
           onUpdate: 'RESTRICT',
@@ -174,7 +173,7 @@ describe('SchemaASTBuilder', () => {
             .references(() => FkParent),
         )
         parentId?: number | null;
-        @ManyToOne({ entity: () => FkParent, references: (plainChild) => plainChild.parentId }) parent?: FkParent;
+        @ManyToOne(() => FkParent, { references: (plainChild) => plainChild.parentId }) parent?: FkParent;
       }
 
       const ast = schemaOf([FkParent, FkChild, PlainChild]);
@@ -220,7 +219,7 @@ describe('SchemaASTBuilder', () => {
             .onDelete('CASCADE'),
         )
         parentId?: number | null;
-        @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId }) parent?: FkOnFieldParent;
+        @ManyToOne(() => FkOnFieldParent, { references: (child) => child.parentId }) parent?: FkOnFieldParent;
       }
       // The relation's own onDelete still wins over a disagreeing field.
       @Entity()
@@ -234,7 +233,7 @@ describe('SchemaASTBuilder', () => {
             .onDelete('CASCADE'),
         )
         parentId?: number | null;
-        @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId, onDelete: 'SET NULL' })
+        @ManyToOne(() => FkOnFieldParent, { references: (child) => child.parentId, onDelete: 'SET NULL' })
         parent?: FkOnFieldParent;
       }
 
@@ -315,8 +314,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class User11 {
         @Field(f.number().autoIncrement()) id?: number;
-        @OneToOne({
-          entity: () => Profile11,
+        @OneToOne(() => Profile11, {
           references: (user11, profile11) => [{ local: user11.profileId, foreign: profile11.id }],
         })
         profile?: Profile11;
@@ -459,8 +457,7 @@ describe('SchemaASTBuilder', () => {
         @Field(f.number().autoIncrement()) id?: number;
         @Field(f.string().nullable()) cityCountry?: string | null;
         @Field(f.string().nullable()) cityArea?: string | null;
-        @ManyToOne({
-          entity: () => FkRegion,
+        @ManyToOne(() => FkRegion, {
           references: (fkCity, fkRegion) => [
             { local: fkCity.cityCountry, foreign: fkRegion.country },
             { local: fkCity.cityArea, foreign: fkRegion.area },
@@ -672,7 +669,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class SharedDecorated {
         @Field(f.number().id()) id!: number;
-        @OneToOne({ entity: () => Holder, references: (shared) => shared.id }) holder?: Holder;
+        @OneToOne(() => Holder, { references: (shared) => shared.id }) holder?: Holder;
       }
       @Entity()
       class SharedReference {
@@ -709,14 +706,13 @@ describe('SchemaASTBuilder', () => {
       class Source {
         @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) targetId?: number | null;
-        @ManyToOne({ entity: () => Target, references: (source) => source.targetId }) target?: Target;
+        @ManyToOne(() => Target, { references: (source) => source.targetId }) target?: Target;
       }
       @Entity()
       class Member {
         @Field(f.number().autoIncrement()) id?: number;
         @Field(f.number().nullable()) groupIdKey?: number | null;
-        @ManyToOne({
-          entity: () => Target,
+        @ManyToOne(() => Target, {
           references: (member, target) => [{ local: member.groupIdKey, foreign: target.id }],
         })
         group?: Target;

@@ -112,7 +112,7 @@ export function replaced(node: ts.Node, text: Replacement): Edit {
   return { ...original(node), text };
 }
 
-export function inserted(node: ts.Node, text: string): Edit {
+export function inserted(node: ts.Node, text: Replacement): Edit {
   return { start: node.getStart(), end: node.getStart(), text };
 }
 
@@ -130,8 +130,9 @@ export function replacingUses(node: ts.Node, uses: readonly ts.Node[], text: str
 
 /**
  * Removes elements of a comma-separated list, at least one of them kept, with the separators that would dangle.
- * Each removed element takes the text up to the next item; the removed run at the end takes the separator before
- * it, so the ranges never overlap. `source` is passed because a tree from `ts.parseJsonText` has no `getStart()`.
+ * Each removed element takes the text up to the next item, short of that item's comments; the removed run at the end
+ * takes the separator before it, so the ranges never overlap. `source` is passed because a tree from
+ * `ts.parseJsonText` has no `getStart()`.
  */
 export function removeFromList(
   items: readonly ts.Node[],
@@ -140,11 +141,13 @@ export function removeFromList(
 ): readonly Edit[] {
   const kept = items.map((item) => !removed.includes(item));
   const lastKept = kept.lastIndexOf(true);
+  const upTo = (item: ts.Node, next: ts.Node): Span =>
+    ts.getLeadingCommentRanges(source.text, next.pos)?.length
+      ? { start: item.pos, end: next.pos }
+      : { start: item.getStart(source), end: next.getStart(source) };
   const between = items
     .slice(0, lastKept + 1)
-    .flatMap((item, at) =>
-      kept[at] ? [] : [{ start: item.getStart(source), end: items[at + 1].getStart(source), text: '' }],
-    );
+    .flatMap((item, at) => (kept[at] ? [] : [{ ...upTo(item, items[at + 1]), text: '' }]));
   const trailing = items.slice(lastKept + 1);
   if (!trailing.length) {
     return between;

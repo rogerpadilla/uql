@@ -24,7 +24,7 @@ class Basket {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) label?: string | null;
 
-  @OneToMany({ entity: () => Line, mappedBy: (line) => line.basketId })
+  @OneToMany(() => Line, { mappedBy: (line) => line.basketId })
   lines?: Line[];
 
   @Computed((basket) => basket.lines.count())

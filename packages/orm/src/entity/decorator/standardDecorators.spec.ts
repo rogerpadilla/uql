@@ -84,14 +84,14 @@ describe('standard decorators', () => {
     @Entity()
     class Owner {
       @Field(f.number().autoIncrement()) id?: number;
-      @OneToMany({ entity: () => Owned, mappedBy: (owned) => owned.owner }) owned?: Owned[];
+      @OneToMany(() => Owned, { mappedBy: (owned) => owned.owner }) owned?: Owned[];
     }
 
     @Entity()
     class Owned {
       @Field(f.number().autoIncrement()) id?: number;
       @Field(f.references(() => Owner).nullable()) ownerId?: number | null;
-      @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
+      @ManyToOne(() => Owner, { references: (owned) => owned.ownerId }) owner?: Owner;
     }
 
     expect(getMeta(Owned).relations['owner']?.entity?.()).toBe(Owner);
@@ -146,15 +146,15 @@ describe('standard decorators', () => {
     }).toThrow(/needs a 'type'/);
   });
 
-  it('should refuse a relation with no entity getter', () => {
+  it('should refuse a relation whose target is no getter, as the options it used to take', () => {
     expect(() => {
       @Entity()
       class NoTarget {
         @Field(f.number().autoIncrement()) id?: number;
-        // @ts-expect-error deliberately omitted
-        @ManyToOne({}) other?: NoTarget;
+        // @ts-expect-error the target comes first, as a getter
+        @ManyToOne({ entity: () => NoTarget }) other?: NoTarget;
       }
       return NoTarget;
-    }).toThrow(/needs an 'entity' getter/);
+    }).toThrow("'NoTarget.other' needs its target first, e.g. '@ManyToOne(() => Company)'.");
   });
 });

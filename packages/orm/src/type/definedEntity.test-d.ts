@@ -44,7 +44,7 @@ export const Author = defineEntity({
           .as(sql`${author.books.max((book) => book.stock)} - ${author.id}`),
     }),
   );
-export type Author = InstanceType<typeof Author>;
+export interface Author extends InstanceType<typeof Author> {}
 
 /** Behaviour over a row is a function of it: a read row is plain data. */
 export const label = (author: Author): string => `${author.name} (${author.books?.length ?? 0})`;
@@ -403,6 +403,32 @@ export const RelationOnlyNode = defineEntity({
 }).relations((rel) => ({
   parent: () => rel.manyToOne(RelationOnlyNode, { references: (node) => node.parentId }),
 }));
+
+/** A tree: its aggregates read its own to-many relation. */
+export const Folder = defineEntity({
+  name: 'Folder',
+  fields: { id: f.number().autoIncrement(), size: f.number(), parentId: f.number().nullable() },
+}).relations(
+  (rel) => ({
+    parent: () => rel.manyToOne(Folder, { references: (folder) => folder.parentId }),
+    children: () => rel.oneToMany(Folder, { mappedBy: (folder) => folder.parent }),
+  }),
+  (folder) => ({
+    childCount: () => folder.children.count(),
+    childSize: () => folder.children.sum((child) => child.size),
+  }),
+);
+export const EagerAggregate = defineEntity({
+  name: 'EagerAggregate',
+  fields: { id: f.number().autoIncrement() },
+}).relations(
+  (rel) => ({ folders: () => rel.oneToMany(Folder) }),
+  // @ts-expect-error an aggregate field is a thunk
+  (agg) => ({ eager: agg.folders.count() }),
+);
+expectTypeOf<InstanceType<typeof Folder>['childCount']>().toEqualTypeOf<number>();
+expectTypeOf<InstanceType<typeof Folder>['childSize']>().toEqualTypeOf<number>();
+expectTypeOf<NonNullable<InstanceType<typeof Folder>['children']>>().toEqualTypeOf<InstanceType<typeof Folder>[]>();
 
 export const Ledger = defineEntity({ name: 'Ledger', fields: { id: f.number().autoIncrement() } });
 /** A bigint foreign key over a number key: the runtime holds both as numbers, so the type takes either way. */

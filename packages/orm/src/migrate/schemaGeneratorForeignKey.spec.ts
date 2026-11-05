@@ -30,7 +30,7 @@ class FkEmployee {
       .onDelete('CASCADE'),
   )
   companyId?: number | null;
-  @ManyToOne({ entity: () => FkCompany, references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
+  @ManyToOne(() => FkCompany, { references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
 }
 
 /** The one referential action nothing else in these entities declares. */
@@ -44,7 +44,7 @@ class FkSetDefault {
       .onDelete('SET DEFAULT'),
   )
   companyId?: number | null;
-  @ManyToOne({ entity: () => FkCompany, references: (fkSetDefault) => fkSetDefault.companyId }) company?: FkCompany;
+  @ManyToOne(() => FkCompany, { references: (fkSetDefault) => fkSetDefault.companyId }) company?: FkCompany;
 }
 
 /** A key that is not the default big integer, which is what catches a serial spelled independently. */

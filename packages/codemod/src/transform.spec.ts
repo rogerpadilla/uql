@@ -73,7 +73,7 @@ const STUBS = `
 
 /** The findings for a missing option and the removed `Relation`; each is matched within its `file:line: ` prefix. */
 const NO_TYPE = "has no 'type': declare its column as a builder, such as `f.string()`";
-const NO_ENTITY = "has no 'entity': name its target, `entity: () => Target`";
+const NO_ENTITY = "has no 'entity': pass its target first, `@ManyToOne(() => Target)`";
 const RELATION_IMPORT = "'Relation' was removed; write the property's type without it, and drop the import";
 
 /** {@link STUBS} without `Field`, for the cases where the codemod writes the `Field` import itself. */
@@ -137,6 +137,57 @@ export class User {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
 }`);
+  });
+
+  it("should pass each relation's target first, after the rewrites that read its options", () => {
+    const { text, unresolved } = codemodFile(
+      `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+@Entity()
+export class User {
+  @Id({ type: Number }) id?: number;
+  @OneToMany({ entity: () => Post, mappedBy: 'author' }) posts?: Post[];
+}
+@Entity()
+export class Post {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number }) authorId?: number;
+  @ManyToOne({ entity: () => User }) author?: User;
+}`,
+      {},
+      true,
+      transformFile,
+    );
+    expect(unresolved).toEqual([]);
+    expect(text).toBe(`import { f, Entity, Field, ManyToOne, OneToMany } from 'uql-orm';
+@Entity()
+export class User {
+  @Field(f.number().autoIncrement()) id?: number;
+  @OneToMany(() => Post, { mappedBy: (post) => post.author }) posts?: Post[];
+}
+@Entity()
+export class Post {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.number().nullable()) authorId?: number | null;
+  @ManyToOne(() => User, { references: (post) => post.authorId }) author?: User;
+}`);
+  });
+
+  it('should leave a relation already passing its target first', () => {
+    const written = `import { Entity, f, Field, ManyToOne, OneToMany } from 'uql-orm';
+@Entity()
+export class User {
+  @Field(f.number().autoIncrement()) id?: number;
+  @OneToMany(() => Post) posts?: Post[];
+}
+@Entity()
+export class Post {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.references(() => User)) authorId?: number;
+  @ManyToOne(() => User, { references: (post) => post.authorId }) author?: User;
+}`;
+    const { text, unresolved } = codemodFile(written, {}, true, transformFile);
+    expect(unresolved).toEqual([]);
+    expect(text).toBe(written);
   });
 });
 
@@ -232,7 +283,7 @@ export const Company = defineEntity({
   .relations((rel) => ({
     posts: () => rel.oneToMany(Post, { mappedBy: (post) => post.company }),
   }));
-export type Company = InstanceType<typeof Company>;
+export interface Company extends InstanceType<typeof Company> {}
 
 export const Post = defineEntity({
   name: 'Post',
@@ -255,7 +306,7 @@ export const Post = defineEntity({
     company: () => rel.manyToOne(Company, { references: (post, company) => [{ local: post.companyId, foreign: company.id }], onDelete: 'CASCADE' }),
     editor: () => rel.manyToOne(Company, { references: (post) => post.editorId }),
   }));
-export type Post = InstanceType<typeof Post>;
+export interface Post extends InstanceType<typeof Post> {}
 `);
   });
 

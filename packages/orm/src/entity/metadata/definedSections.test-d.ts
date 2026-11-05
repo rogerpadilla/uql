@@ -35,7 +35,7 @@ export const Book = defineEntity({
     ],
   })
   .relations((rel) => ({ author: () => rel.manyToOne(Author, { references: (book) => book.authorId }) }));
-export type Book = InstanceType<typeof Book>;
+export interface Book extends InstanceType<typeof Book> {}
 
 export const Author = defineEntity({
   name: 'Author',
@@ -44,7 +44,7 @@ export const Author = defineEntity({
   (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
   (author) => ({ bookCount: () => author.books.count(), topStock: () => author.books.max((book) => book.stock) }),
 );
-export type Author = InstanceType<typeof Author>;
+export interface Author extends InstanceType<typeof Author> {}
 
 export const Node = defineEntity({
   name: 'Node',
@@ -57,8 +57,10 @@ export function row(book: Book, author: Author) {
   expectTypeOf(book.status).toEqualTypeOf<'draft' | 'published'>();
   expectTypeOf(book.meta).toEqualTypeOf<Json<{ lang: string }> | null | undefined>();
   expectTypeOf(book.shout).toEqualTypeOf<string>();
-  expectTypeOf(book.author).toEqualTypeOf<Author | undefined>();
-  expectTypeOf(author.books).toEqualTypeOf<Book[] | undefined>();
+  expectTypeOf(book.author).toEqualTypeOf<InstanceType<typeof Author> | undefined>();
+  expectTypeOf(author.books).toEqualTypeOf<InstanceType<typeof Book>[] | undefined>();
+  expectTypeOf<Author>().toExtend<InstanceType<typeof Author>>();
+  expectTypeOf<InstanceType<typeof Author>>().toMatchTypeOf<Author>();
   expectTypeOf(author.bookCount).toEqualTypeOf<number>();
   expectTypeOf(author.topStock).toEqualTypeOf<number | null>();
   expectTypeOf(book[idKey]).toEqualTypeOf<'id' | undefined>();

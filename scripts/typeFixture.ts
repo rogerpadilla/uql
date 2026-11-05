@@ -15,7 +15,7 @@ import { Settings, Tags } from './payloads.js';
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.number().nullable()) size?: number | null;
-  @OneToMany({ entity: () => User, mappedBy: (u) => u.company }) users?: User[];
+  @OneToMany(() => User, { mappedBy: (u) => u.company }) users?: User[];
 }
 @Entity() export class User {
   @Field(f.number().autoIncrement()) id?: number;
@@ -24,7 +24,7 @@ import { Settings, Tags } from './payloads.js';
   @Field(f.number().nullable()) age?: number | null;
   @Field(f.date().nullable()) createdAt?: Date | null;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
-  @ManyToOne({ entity: () => Company, references: (u) => u.companyId }) company?: Company;
+  @ManyToOne(() => Company, { references: (u) => u.companyId }) company?: Company;
 }
 @Entity() export class Membership {
   [idKey]?: 'userId' | 'companyId';
@@ -35,8 +35,7 @@ import { Settings, Tags } from './payloads.js';
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) memberUserId?: number | null;
   @Field(f.number().nullable()) memberCompanyId?: number | null;
-  @ManyToOne({
-    entity: () => Membership,
+  @ManyToOne(() => Membership, {
     references: (s, m) => [{ local: s.memberUserId, foreign: m.userId }, { local: s.memberCompanyId, foreign: m.companyId }],
   })
   member?: Membership;
@@ -94,13 +93,13 @@ export class Indexed${i} {
   @Field(f.date().nullable()) createdAt?: Date | null;
   @Field(f.json(Settings).nullable()) settings?: Json<{ theme: string; rating: number }> | null;
   @Field(f.json(Tags).nullable()) tags?: Json<string[]> | null;
-  @OneToMany({ entity: () => Child${i}, mappedBy: (child) => child.parent }) children?: Child${i}[];
+  @OneToMany(() => Child${i}, { mappedBy: (child) => child.parent }) children?: Child${i}[];
   @Computed((row) => row.children.count()) readonly childCount?: number;
 }
 @Entity() export class Child${i} {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Indexed${i}).nullable()) parentId?: number | null;
-  @ManyToOne({ entity: () => Indexed${i}, references: (child) => child.parentId }) parent?: Indexed${i};
+  @ManyToOne(() => Indexed${i}, { references: (child) => child.parentId }) parent?: Indexed${i};
 }
 ${read('Indexed', i)}`;
 
@@ -149,7 +148,7 @@ ${wideColumns}
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().references(() => Wide${i}).nullable()) wideId?: number | null;
 ${wideColumns}
-  @ManyToOne({ entity: () => Wide${i}, references: (child) => child.wideId }) wide?: Wide${i};
+  @ManyToOne(() => Wide${i}, { references: (child) => child.wideId }) wide?: Wide${i};
 }`;
 
 /** How many of each block the project holds, none unless stated. */

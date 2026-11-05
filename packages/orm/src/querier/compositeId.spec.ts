@@ -18,9 +18,9 @@ class Enrolment {
   studentId!: number;
   @Field(f.string().id())
   courseId?: string;
-  @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolment })
+  @OneToMany(() => Note, { mappedBy: (note) => note.enrolment })
   notes?: Note[];
-  @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
+  @ManyToMany(() => Badge, { through: () => EnrolmentBadge })
   badges?: Badge[];
   @Field(f.string().nullable()) grade?: string | null;
 }
@@ -41,8 +41,7 @@ class EnrolmentBadge {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) enrolmentStudentId?: number | null;
   @Field(f.string().nullable()) enrolmentCourseId?: string | null;
-  @ManyToOne({
-    entity: () => Enrolment,
+  @ManyToOne(() => Enrolment, {
     references: (enrolmentBadge, enrolment) => [
       { local: enrolmentBadge.enrolmentStudentId, foreign: enrolment.studentId },
       { local: enrolmentBadge.enrolmentCourseId, foreign: enrolment.courseId },
@@ -50,7 +49,7 @@ class EnrolmentBadge {
   })
   enrolment?: Enrolment;
   @Field(f.number().nullable()) badgeId?: number | null;
-  @ManyToOne({ entity: () => Badge, references: (enrolmentBadge) => enrolmentBadge.badgeId }) badge?: Badge;
+  @ManyToOne(() => Badge, { references: (enrolmentBadge) => enrolmentBadge.badgeId }) badge?: Badge;
 }
 
 /**
@@ -63,8 +62,7 @@ class Note {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) enrolmentStudentId?: number | null;
   @Field(f.string().nullable()) enrolmentCourseId?: string | null;
-  @ManyToOne({
-    entity: () => Enrolment,
+  @ManyToOne(() => Enrolment, {
     references: (note, enrolment) => [
       { local: note.enrolmentStudentId, foreign: enrolment.studentId },
       { local: note.enrolmentCourseId, foreign: enrolment.courseId },
@@ -119,7 +117,7 @@ class Term {
   [idKey]?: 'year' | 'season';
   @Field(f.number().id()) year!: number;
   @Field(f.string().id()) season?: string;
-  @OneToMany({ entity: () => Session, mappedBy: (session) => session.term, cascade: 'delete' })
+  @OneToMany(() => Session, { mappedBy: (session) => session.term, cascade: 'delete' })
   sessions?: Session[];
 }
 
@@ -128,8 +126,7 @@ class Session {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.number().nullable()) termYear?: number | null;
   @Field(f.string().nullable()) termSeason?: string | null;
-  @ManyToOne({
-    entity: () => Term,
+  @ManyToOne(() => Term, {
     references: (session, term) => [
       { local: session.termYear, foreign: term.year },
       { local: session.termSeason, foreign: term.season },
@@ -453,8 +450,7 @@ describe('a composite key across a relation', () => {
     @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) enrolmentStudentId?: number | null;
     @Field(f.string().nullable()) enrolmentCourseId?: string | null;
-    @ManyToOne({
-      entity: () => Enrolment,
+    @ManyToOne(() => Enrolment, {
       references: (attendance, enrolment) => [
         { local: attendance.enrolmentStudentId, foreign: enrolment.studentId },
         { local: attendance.enrolmentCourseId, foreign: enrolment.courseId },

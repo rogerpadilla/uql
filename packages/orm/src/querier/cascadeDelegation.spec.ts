@@ -18,7 +18,7 @@ class DelegatedParent {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @OneToMany({ entity: () => DelegatedChild, mappedBy: (delegatedChild) => delegatedChild.parent })
+  @OneToMany(() => DelegatedChild, { mappedBy: (delegatedChild) => delegatedChild.parent })
   children?: DelegatedChild[];
 }
 
@@ -30,8 +30,7 @@ class DelegatedChild {
   @Field(f.number().nullable())
   parentId?: number | null;
 
-  @ManyToOne({
-    entity: () => DelegatedParent,
+  @ManyToOne(() => DelegatedParent, {
     references: (delegatedChild, delegatedParent) => [{ local: delegatedChild.parentId, foreign: delegatedParent.id }],
     onDelete: 'CASCADE',
   })
@@ -47,7 +46,7 @@ class WalkedParent {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @OneToMany({ entity: () => WalkedChild, mappedBy: (walkedChild) => walkedChild.parent, cascade: 'delete' })
+  @OneToMany(() => WalkedChild, { mappedBy: (walkedChild) => walkedChild.parent, cascade: 'delete' })
   children?: WalkedChild[];
 }
 
@@ -59,8 +58,7 @@ class WalkedChild {
   @Field(f.number().nullable())
   parentId?: number | null;
 
-  @ManyToOne({
-    entity: () => WalkedParent,
+  @ManyToOne(() => WalkedParent, {
     references: (walkedChild, walkedParent) => [{ local: walkedChild.parentId, foreign: walkedParent.id }],
   })
   parent?: WalkedParent;

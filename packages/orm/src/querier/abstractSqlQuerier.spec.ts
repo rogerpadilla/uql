@@ -22,7 +22,7 @@ class HydratedChild {
   payload?: Json<{ b?: number }> | null;
   @Field(f.references(() => HydratedParent).nullable())
   parentId?: number | null;
-  @ManyToOne({ entity: () => HydratedParent, references: (hydratedChild) => hydratedChild.parentId })
+  @ManyToOne(() => HydratedParent, { references: (hydratedChild) => hydratedChild.parentId })
   parent?: HydratedParent;
 }
 
@@ -34,7 +34,7 @@ class HydratedParent {
   settings?: Json<{ a?: number }> | null;
   @Field(f.string().nullable())
   name?: string | null;
-  @OneToMany({ entity: () => HydratedChild, mappedBy: (hydratedChild) => hydratedChild.parent })
+  @OneToMany(() => HydratedChild, { mappedBy: (hydratedChild) => hydratedChild.parent })
   children?: HydratedChild[];
 }
 

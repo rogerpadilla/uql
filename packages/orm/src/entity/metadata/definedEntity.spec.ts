@@ -110,7 +110,7 @@ it("should keep a defined entity's own relation over its decorated base's", () =
   class Stall {
     @Field(f.number().autoIncrement()) id?: number;
     @Field(f.references(() => Keeper).nullable()) keeperId?: number | null;
-    @ManyToOne({ entity: () => Keeper, references: (stall) => stall.keeperId }) keeper?: Keeper;
+    @ManyToOne(() => Keeper, { references: (stall) => stall.keeperId }) keeper?: Keeper;
   }
   const Pen = defineEntity({ name: 'Pen', extends: Stall, fields: { minderId: f.number().nullable() } }).relations(
     (rel) => ({ keeper: () => rel.manyToOne(Keeper, { references: (pen) => pen.minderId }) }),
@@ -132,7 +132,7 @@ it('should read a column an owning to-one joins by as holding its key, as an f.r
   class Note {
     @Field(f.string().id()) id?: string;
     @Field(f.string()) writerId!: string;
-    @ManyToOne({ entity: () => Writer, references: (note) => note.writerId }) writer?: Writer;
+    @ManyToOne(() => Writer, { references: (note) => note.writerId }) writer?: Writer;
   }
 
   expect(referenceKeys(getMeta(Essay))).toEqual(new Set(['writerId']));
@@ -182,7 +182,7 @@ it('should not auto-increment a numeric key a one-to-one shares with its target'
   @Entity()
   class Visa {
     @Field(f.number().id()) id!: number;
-    @OneToOne({ entity: () => Person, references: (visa) => visa.id }) person?: Person;
+    @OneToOne(() => Person, { references: (visa) => visa.id }) person?: Person;
   }
 
   expect(generatesKey(getMeta(Passport))).toBe(false);
@@ -260,11 +260,10 @@ it("should keep an entity's own aggregate over its defined base's", () => {
   expect(getMeta(Kennel).fields.pupStat?.computed).toMatchObject({ spec: { op: '$count' } });
 });
 
-/** An aggregate field the registry cannot read as a column or an aggregate is refused on first read, not stored. */
+/** A thunk of a plain value compiles, as its type would read a tree's own relation mid-inference, so first read refuses it. */
 it('should refuse an aggregate field that is neither a column nor an aggregate, on first read', () => {
   const Tally = defineEntity({ name: 'Tally', fields: { id: f.number().autoIncrement() } }).relations(
     () => ({}),
-    // @ts-expect-error an aggregate field is a thunk of a column or an aggregate, never a plain value
     () => ({ total: () => 1 }),
   );
   expect(() => getMeta(Tally)).toThrow("'Tally.total' is neither a column nor an aggregate: declare it as one");

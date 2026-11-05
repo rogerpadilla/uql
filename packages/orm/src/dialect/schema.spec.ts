@@ -35,7 +35,7 @@ class Order {
   @Field(f.references(() => Customer).nullable())
   customerId?: number | null;
 
-  @ManyToOne({ entity: () => Customer, references: (order) => order.customerId })
+  @ManyToOne(() => Customer, { references: (order) => order.customerId })
   customer?: Customer;
 }
 

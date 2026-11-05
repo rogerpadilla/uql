@@ -27,13 +27,13 @@ export abstract class BaseEntity {
   @Field(f.references(() => Company).nullable())
   companyId?: string | null;
 
-  @ManyToOne({ entity: () => Company, references: (baseEntity) => baseEntity.companyId })
+  @ManyToOne(() => Company, { references: (baseEntity) => baseEntity.companyId })
   company?: Company;
 
   @Field(f.references(() => User).nullable())
   creatorId?: string | null;
 
-  @ManyToOne({ entity: () => User, references: (baseEntity) => baseEntity.creatorId })
+  @ManyToOne(() => User, { references: (baseEntity) => baseEntity.creatorId })
   creator?: User;
 
   @Field(f.number().nullable().onInsert(Date.now))
@@ -98,7 +98,7 @@ export class Profile extends BaseEntity {
   // Narrows the inherited m1 relation to 1-1. A real field rather than `declare`, because the standard
   // decorator spec has nothing to decorate on a `declare` member; the initializer marks the shadowing as
   // deliberate.
-  @OneToOne({ entity: () => User, references: (profile) => profile.creatorId })
+  @OneToOne(() => User, { references: (profile) => profile.creatorId })
   override creator?: User = undefined;
 }
 
@@ -113,10 +113,10 @@ export class User extends BaseEntity {
   @Field(f.string().nullable().eager(false))
   password?: string | null;
 
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
+  @OneToOne(() => Profile, { mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
 
-  @OneToMany({ entity: () => User, mappedBy: (user) => user.creator })
+  @OneToMany(() => User, { mappedBy: (user) => user.creator })
   users?: User[];
 }
 
@@ -201,7 +201,7 @@ export class LedgerAccount extends BaseEntity {
   @Field(f.references(() => LedgerAccount).nullable())
   parentLedgerId?: string | null;
 
-  @ManyToOne({ entity: () => LedgerAccount, references: (ledgerAccount) => ledgerAccount.parentLedgerId })
+  @ManyToOne(() => LedgerAccount, { references: (ledgerAccount) => ledgerAccount.parentLedgerId })
   parentLedger?: LedgerAccount;
 }
 
@@ -231,7 +231,7 @@ export class Tax extends BaseEntity {
   @Field(f.references(() => TaxCategory).nullable())
   categoryId?: string | null;
 
-  @ManyToOne({ entity: () => TaxCategory, references: (tax) => tax.categoryId })
+  @ManyToOne(() => TaxCategory, { references: (tax) => tax.categoryId })
   category?: TaxCategory;
 
   @Field(f.string().nullable())
@@ -244,7 +244,7 @@ export class MeasureUnitCategory extends BaseEntity {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
+  @OneToMany(() => MeasureUnit, { mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
 
   /** A relation aggregate, read only where a query names it, and never counting a soft-deleted unit. */
@@ -268,8 +268,7 @@ export class MeasureUnit extends BaseEntity {
   @Field(f.references(() => MeasureUnitCategory).nullable())
   categoryId?: string | null;
 
-  @ManyToOne({
-    entity: () => MeasureUnitCategory,
+  @ManyToOne(() => MeasureUnitCategory, {
     references: (measureUnit) => measureUnit.categoryId,
     cascade: 'persist',
   })
@@ -310,25 +309,25 @@ export class Item extends BaseEntity {
   @Field(f.references(() => LedgerAccount).nullable())
   buyLedgerAccountId?: string | null;
 
-  @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.buyLedgerAccountId })
+  @ManyToOne(() => LedgerAccount, { references: (item) => item.buyLedgerAccountId })
   buyLedgerAccount?: LedgerAccount;
 
   @Field(f.references(() => LedgerAccount).nullable())
   saleLedgerAccountId?: string | null;
 
-  @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.saleLedgerAccountId })
+  @ManyToOne(() => LedgerAccount, { references: (item) => item.saleLedgerAccountId })
   saleLedgerAccount?: LedgerAccount;
 
   @Field(f.references(() => Tax).nullable())
   taxId?: string | null;
 
-  @ManyToOne({ entity: () => Tax, references: (item) => item.taxId })
+  @ManyToOne(() => Tax, { references: (item) => item.taxId })
   tax?: Tax;
 
   @Field(f.references(() => MeasureUnit).nullable())
   measureUnitId?: string | null;
 
-  @ManyToOne({ entity: () => MeasureUnit, references: (item) => item.measureUnitId })
+  @ManyToOne(() => MeasureUnit, { references: (item) => item.measureUnitId })
   measureUnit?: MeasureUnit;
 
   @Field(f.number().nullable())
@@ -337,7 +336,7 @@ export class Item extends BaseEntity {
   @Field(f.boolean().nullable())
   inventoryable?: boolean | null;
 
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
+  @ManyToMany(() => Tag, { through: () => ItemTag, cascade: true })
   tags?: Tag[];
 
   /**
@@ -353,7 +352,7 @@ export class Tag extends BaseEntity {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
+  @ManyToMany(() => Item, { mappedBy: (item) => item.tags })
   items?: Item[];
 
   /** The same aggregate from the inverse side of the many-to-many, counting the junction's rows. */
@@ -375,8 +374,7 @@ export class ItemTag {
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({
-    entity: () => ItemAdjustment,
+  @OneToMany(() => ItemAdjustment, {
     mappedBy: (itemAdjustment) => itemAdjustment.inventoryAdjustment,
     cascade: true,
   })
@@ -394,7 +392,7 @@ export class ItemAdjustment extends BaseEntity {
   @Field(f.references(() => Item).nullable())
   itemId?: string | null;
 
-  @ManyToOne({ entity: () => Item, references: (itemAdjustment) => itemAdjustment.itemId })
+  @ManyToOne(() => Item, { references: (itemAdjustment) => itemAdjustment.itemId })
   item?: Item;
 
   @Field(f.number().nullable())
@@ -406,14 +404,13 @@ export class ItemAdjustment extends BaseEntity {
   @Field(f.references(() => Storehouse).nullable())
   storehouseId?: string | null;
 
-  @ManyToOne({ entity: () => Storehouse, references: (itemAdjustment) => itemAdjustment.storehouseId })
+  @ManyToOne(() => Storehouse, { references: (itemAdjustment) => itemAdjustment.storehouseId })
   storehouse?: Storehouse;
 
   @Field(f.references(() => InventoryAdjustment).nullable())
   inventoryAdjustmentId?: string | null;
 
-  @ManyToOne({
-    entity: () => InventoryAdjustment,
+  @ManyToOne(() => InventoryAdjustment, {
     references: (itemAdjustment) => itemAdjustment.inventoryAdjustmentId,
   })
   inventoryAdjustment?: InventoryAdjustment;
@@ -433,8 +430,7 @@ export class Invoice {
   @Field(f.string().nullable())
   description?: string | null;
 
-  @OneToMany({
-    entity: () => InvoiceLine,
+  @OneToMany(() => InvoiceLine, {
     mappedBy: (invoiceLine) => invoiceLine.invoice,
     cascade: true,
   })
@@ -452,7 +448,7 @@ export class InvoiceLine {
   @Field(f.references(() => Invoice).nullable())
   invoiceId?: number | null;
 
-  @ManyToOne({ entity: () => Invoice, references: (invoiceLine) => invoiceLine.invoiceId })
+  @ManyToOne(() => Invoice, { references: (invoiceLine) => invoiceLine.invoiceId })
   invoice?: Invoice;
 }
 
@@ -496,7 +492,7 @@ export class TypedRow {
   @Field(f.date().nullable().columnType('date')) day?: Date | null;
   @Field(f.column('blob').nullable()) bytes?: Uint8Array | null;
   @Field(f.references(() => TypedGroup).nullable()) groupId?: number | null;
-  @ManyToOne({ entity: () => TypedGroup, references: (typedRow) => typedRow.groupId }) group?: TypedGroup;
+  @ManyToOne(() => TypedGroup, { references: (typedRow) => typedRow.groupId }) group?: TypedGroup;
 }
 
 /** Holds {@link TypedRow}s, so a populated row can be read back beside a read of its own. */
@@ -504,7 +500,7 @@ export class TypedRow {
 export class TypedGroup {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) name?: string | null;
-  @OneToMany({ entity: () => TypedRow, mappedBy: (typedRow) => typedRow.group }) rows?: TypedRow[];
+  @OneToMany(() => TypedRow, { mappedBy: (typedRow) => typedRow.group }) rows?: TypedRow[];
 }
 
 @Entity()
@@ -569,8 +565,8 @@ export class VectorDoc {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.vector(3).nullable()) vec?: number[] | null;
-  @OneToMany({ entity: () => VectorChunk, mappedBy: (chunk) => chunk.doc }) chunks?: VectorChunk[];
-  @ManyToMany({ entity: () => VectorChunk, through: () => VectorCitation }) cited?: VectorChunk[];
+  @OneToMany(() => VectorChunk, { mappedBy: (chunk) => chunk.doc }) chunks?: VectorChunk[];
+  @ManyToMany(() => VectorChunk, { through: () => VectorCitation }) cited?: VectorChunk[];
   /** A column of a many-to-many's targets, which a junction row does not carry. */
   @Computed((doc) => doc.cited.max((chunk) => chunk.name)) readonly lastCited?: string | null;
 }
@@ -581,7 +577,7 @@ export class VectorChunk {
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.vector(3).nullable()) vec?: number[] | null;
   @Field(f.references(() => VectorDoc).nullable()) vectorDocId?: string | null;
-  @ManyToOne({ entity: () => VectorDoc, references: (chunk) => chunk.vectorDocId }) doc?: VectorDoc;
+  @ManyToOne(() => VectorDoc, { references: (chunk) => chunk.vectorDocId }) doc?: VectorDoc;
 }
 
 @Entity()
@@ -619,7 +615,7 @@ export class JsonRecord {
 export class JsonHolder {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.string().nullable()) name?: string | null;
-  @OneToMany({ entity: () => JsonValue, mappedBy: (jsonValue) => jsonValue.holder }) values?: JsonValue[];
+  @OneToMany(() => JsonValue, { mappedBy: (jsonValue) => jsonValue.holder }) values?: JsonValue[];
 }
 
 /** A JSON column holding any value, a bare string included, which reads back as the string it is. */
@@ -628,7 +624,7 @@ export class JsonValue {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.number().nullable()) position?: number | null;
   @Field(f.references(() => JsonHolder).nullable()) holderId?: string | null;
-  @ManyToOne({ entity: () => JsonHolder, references: (jsonValue) => jsonValue.holderId }) holder?: JsonHolder;
+  @ManyToOne(() => JsonHolder, { references: (jsonValue) => jsonValue.holderId }) holder?: JsonHolder;
   @Field(f.json().nullable()) value?: Json<string | number | boolean | { [key: string]: unknown } | unknown[]> | null;
 }
 
@@ -663,7 +659,7 @@ export class Reply {
       .name('author'),
   )
   authorId?: string | null;
-  @ManyToOne({ entity: () => User, references: (reply) => reply.authorId }) author?: User;
+  @ManyToOne(() => User, { references: (reply) => reply.authorId }) author?: User;
 }
 
 /** A to-one target several {@link Shipment}s may point at, written before the row holding its key. */
@@ -684,13 +680,13 @@ export class Waybill extends BaseEntity {
 export class Shipment extends BaseEntity {
   @Field(f.string().nullable()) name?: string | null;
   @Field(f.references(() => Carrier).nullable()) carrierId?: string | null;
-  @ManyToOne({ entity: () => Carrier, references: (shipment) => shipment.carrierId, cascade: 'persist' })
+  @ManyToOne(() => Carrier, { references: (shipment) => shipment.carrierId, cascade: 'persist' })
   carrier?: Carrier;
   @Field(f.references(() => Waybill).nullable()) waybillId?: string | null;
-  @OneToOne({ entity: () => Waybill, references: (shipment) => shipment.waybillId, cascade: 'persist' })
+  @OneToOne(() => Waybill, { references: (shipment) => shipment.waybillId, cascade: 'persist' })
   waybill?: Waybill;
-  @OneToMany({ entity: () => Parcel, mappedBy: (parcel) => parcel.shipment, cascade: true }) parcels?: Parcel[];
-  @ManyToMany({ entity: () => Label, through: () => ShipmentLabel, cascade: true }) labels?: Label[];
+  @OneToMany(() => Parcel, { mappedBy: (parcel) => parcel.shipment, cascade: true }) parcels?: Parcel[];
+  @ManyToMany(() => Label, { through: () => ShipmentLabel, cascade: true }) labels?: Label[];
   @Field(
     f
       .number()
@@ -706,7 +702,7 @@ export class Parcel extends BaseEntity {
   @Field(f.string().nullable()) content?: string | null;
   @Field(f.number().nullable()) weight?: number | null;
   @Field(f.references(() => Shipment).nullable()) shipmentId?: string | null;
-  @ManyToOne({ entity: () => Shipment, references: (parcel) => parcel.shipmentId }) shipment?: Shipment;
+  @ManyToOne(() => Shipment, { references: (parcel) => parcel.shipmentId }) shipment?: Shipment;
 }
 
 @Entity()
@@ -755,9 +751,9 @@ export class Cohort {
   @Field(f.number().id()) year!: number;
   @Field(f.string().id()) track?: string;
   @Field(f.string().nullable()) title?: string | null;
-  @OneToMany({ entity: () => Seminar, mappedBy: (seminar) => seminar.cohort, cascade: true }) seminars?: Seminar[];
-  @ManyToMany({ entity: () => Skill, through: () => CohortSkill, cascade: true }) skills?: Skill[];
-  @ManyToMany({ entity: () => Label, through: () => CohortLabel, cascade: true }) labels?: Label[];
+  @OneToMany(() => Seminar, { mappedBy: (seminar) => seminar.cohort, cascade: true }) seminars?: Seminar[];
+  @ManyToMany(() => Skill, { through: () => CohortSkill, cascade: true }) skills?: Skill[];
+  @ManyToMany(() => Label, { through: () => CohortLabel, cascade: true }) labels?: Label[];
 }
 
 /** A sole-key child of a {@link Cohort}, and a parent of composite targets itself. */
@@ -767,15 +763,14 @@ export class Seminar {
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.number().nullable()) cohortYear?: number | null;
   @Field(f.string().nullable()) cohortTrack?: string | null;
-  @ManyToOne({
-    entity: () => Cohort,
+  @ManyToOne(() => Cohort, {
     references: (seminar, cohort) => [
       { local: seminar.cohortYear, foreign: cohort.year },
       { local: seminar.cohortTrack, foreign: cohort.track },
     ],
   })
   cohort?: Cohort;
-  @ManyToMany({ entity: () => Skill, through: () => SeminarSkill, cascade: true }) skills?: Skill[];
+  @ManyToMany(() => Skill, { through: () => SeminarSkill, cascade: true }) skills?: Skill[];
 }
 
 /** A many-to-many target whose key is two columns. */
@@ -793,8 +788,7 @@ export class CohortSkill {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.number().nullable()) cohortYear?: number | null;
   @Field(f.string().nullable()) cohortTrack?: string | null;
-  @ManyToOne({
-    entity: () => Cohort,
+  @ManyToOne(() => Cohort, {
     references: (link, cohort) => [
       { local: link.cohortYear, foreign: cohort.year },
       { local: link.cohortTrack, foreign: cohort.track },
@@ -803,8 +797,7 @@ export class CohortSkill {
   cohort?: Cohort;
   @Field(f.string().nullable()) skillArea?: string | null;
   @Field(f.string().nullable()) skillName?: string | null;
-  @ManyToOne({
-    entity: () => Skill,
+  @ManyToOne(() => Skill, {
     references: (link, skill) => [
       { local: link.skillArea, foreign: skill.area },
       { local: link.skillName, foreign: skill.name },
@@ -819,8 +812,7 @@ export class CohortLabel {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
   @Field(f.number().nullable()) cohortYear?: number | null;
   @Field(f.string().nullable()) cohortTrack?: string | null;
-  @ManyToOne({
-    entity: () => Cohort,
+  @ManyToOne(() => Cohort, {
     references: (link, cohort) => [
       { local: link.cohortYear, foreign: cohort.year },
       { local: link.cohortTrack, foreign: cohort.track },
@@ -837,8 +829,7 @@ export class SeminarSkill {
   @Field(f.references(() => Seminar).nullable()) seminarId?: string | null;
   @Field(f.string().nullable()) skillArea?: string | null;
   @Field(f.string().nullable()) skillName?: string | null;
-  @ManyToOne({
-    entity: () => Skill,
+  @ManyToOne(() => Skill, {
     references: (link, skill) => [
       { local: link.skillArea, foreign: skill.area },
       { local: link.skillName, foreign: skill.name },

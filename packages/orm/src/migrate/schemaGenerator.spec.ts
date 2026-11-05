@@ -53,7 +53,7 @@ class TestPost {
   @Field(f.references(() => TestUser).nullable())
   authorId?: number | null;
 
-  @ManyToOne({ entity: () => TestUser, references: (testPost) => testPost.authorId })
+  @ManyToOne(() => TestUser, { references: (testPost) => testPost.authorId })
   author?: TestUser;
 }
 

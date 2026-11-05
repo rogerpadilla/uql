@@ -93,7 +93,7 @@ class AggregateLine {
 class AggregateDoc {
   @Field(f.number().autoIncrement())
   id?: number;
-  @OneToMany({ entity: () => AggregateLine, mappedBy: (line) => line.docId })
+  @OneToMany(() => AggregateLine, { mappedBy: (line) => line.docId })
   lines?: AggregateLine[];
   @Computed((doc) => doc.lines.max((line) => line.price, { $sort: { price: -1 }, $limit: 2 }))
   readonly topPrice?: number | null;
@@ -641,8 +641,8 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Shelf {
       @Field(f.string().id()) id?: string;
-      @OneToMany({ entity: () => Book, mappedBy: (book) => book.shelfId }) books?: Book[];
-      @OneToMany({ entity: () => Lamp, mappedBy: (lamp) => lamp.shelfId }) lamps?: Lamp[];
+      @OneToMany(() => Book, { mappedBy: (book) => book.shelfId }) books?: Book[];
+      @OneToMany(() => Lamp, { mappedBy: (lamp) => lamp.shelfId }) lamps?: Lamp[];
     }
     @Entity()
     class Book {
@@ -2366,8 +2366,7 @@ class MongoDialectSpec implements Spec {
       @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) enrolmentStudentId?: number | null;
       @Field(f.string().nullable()) enrolmentCourseId?: string | null;
-      @ManyToOne({
-        entity: () => Enrolment,
+      @ManyToOne(() => Enrolment, {
         references: (attendance, enrolment) => [
           { local: attendance.enrolmentStudentId, foreign: enrolment.studentId },
           { local: attendance.enrolmentCourseId, foreign: enrolment.courseId },
@@ -2439,7 +2438,7 @@ class MongoDialectSpec implements Spec {
     class Card {
       @Field(f.string().id()) id?: string;
       @Field(f.string().name('folder')) folderId!: string;
-      @ManyToOne({ entity: () => Folder, references: (card) => card.folderId }) folder?: Folder;
+      @ManyToOne(() => Folder, { references: (card) => card.folderId }) folder?: Folder;
     }
     const hex = '507f191e810c19729de860ea';
     const stored = { _id: new ObjectId(hex), folder: new ObjectId(hex) };

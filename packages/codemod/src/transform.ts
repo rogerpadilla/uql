@@ -56,6 +56,7 @@ import {
 } from './keyMaps.js';
 import { toMigrationBuilders } from './migrationBuilders.js';
 import { relationTargetFor } from './relationTarget.js';
+import { toRelationTargets } from './relationTargets.js';
 import { statementTemplate } from './statementSql.js';
 import {
   arrayElements,
@@ -73,9 +74,9 @@ import {
   optionsOf,
   propertyKey,
   propertyValue,
+  RELATION_DECORATORS,
 } from './syntax.js';
 
-const RELATION_DECORATORS = new Set(['OneToOne', 'ManyToOne', 'OneToMany', 'ManyToMany']);
 const TO_ONE_DECORATORS = new Set(['OneToOne', 'ManyToOne']);
 const TO_ONE_CARDINALITIES = new Set(['11', 'm1']);
 
@@ -805,22 +806,39 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
       renameSqlOption(options, 'virtual', 'computed', node, owner, ctx);
     }
     if (RELATION_DECORATORS.has(name)) {
-      reportMissingOption(decorator, node, ctx, {
-        option: 'entity',
-        satisfiedBy: ['entity'],
-        advice: 'name its target, `entity: () => Target`',
-      });
-      if (options.kind === 'literal') {
-        const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
-        rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
-      }
-      if (options.kind === 'literal' && TO_ONE_DECORATORS.has(name)) {
-        addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx, node);
-      }
+      rewriteRelation(decorator, name, node, owner, ctx);
     }
   }
   if (decorators.length) {
     dropDeclare(node, ctx);
+  }
+}
+
+/** A relation decorator holding its target as `entity`, which a later pass moves first; one passing it first is current. */
+function rewriteRelation(
+  decorator: ts.Decorator,
+  name: string,
+  node: ts.PropertyDeclaration,
+  owner: Owner,
+  ctx: Context,
+): void {
+  const [first] = ts.isCallExpression(decorator.expression) ? decorator.expression.arguments : [];
+  if (first && isCallback(first)) {
+    return;
+  }
+  reportMissingOption(decorator, node, ctx, {
+    option: 'entity',
+    satisfiedBy: ['entity'],
+    advice: 'pass its target first, `@ManyToOne(() => Target)`',
+  });
+  const options = decoratorOptions(decorator);
+  if (options.kind !== 'literal') {
+    return;
+  }
+  const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
+  rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
+  if (TO_ONE_DECORATORS.has(name)) {
+    addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx, node);
   }
 }
 
@@ -916,7 +934,7 @@ export function transformFile(
   const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
   const migrated = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
   const { unresolved } = migrated;
-  const text = toGeneratedKeys(source.fileName, migrated.text);
+  const text = toRelationTargets(source.fileName, toGeneratedKeys(source.fileName, migrated.text));
   return {
     fileName: source.fileName,
     text,

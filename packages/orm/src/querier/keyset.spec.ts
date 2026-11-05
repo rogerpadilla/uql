@@ -36,7 +36,7 @@ class Order {
   spot?: string | null;
   @Field(f.vector(3).nullable()) embedding?: number[] | null;
   @Field(f.references(() => Customer).nullable()) customerId?: string | null;
-  @ManyToOne({ entity: () => Customer, references: (order) => order.customerId }) customer?: Customer;
+  @ManyToOne(() => Customer, { references: (order) => order.customerId }) customer?: Customer;
 }
 
 @Entity()
@@ -44,7 +44,7 @@ class Customer {
   @Field(f.string().id()) id?: string;
   @Field(f.string().nullable()) name?: string | null;
   @Computed((customer) => customer.orders.count()) orderCount?: number;
-  @OneToMany({ entity: () => Order, mappedBy: (order) => order.customer }) orders?: Order[];
+  @OneToMany(() => Order, { mappedBy: (order) => order.customer }) orders?: Order[];
 }
 
 const meta = getMeta(Order);

@@ -272,7 +272,7 @@ class Shelf {
   @Field(f.number().autoIncrement())
   id?: number;
 
-  @OneToMany({ entity: () => ShelvedBook, mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
+  @OneToMany(() => ShelvedBook, { mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
   books?: ShelvedBook[];
 
   @AfterLoad()
@@ -292,8 +292,7 @@ class ShelvedBook {
   @Field(f.string().nullable())
   title?: string | null;
 
-  @ManyToOne({
-    entity: () => Shelf,
+  @ManyToOne(() => Shelf, {
     references: (shelvedBook, shelf) => [{ local: shelvedBook.shelfId, foreign: shelf.id }],
   })
   shelf?: Shelf;
@@ -312,7 +311,7 @@ class Author {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author, cascade: 'persist' })
+  @OneToMany(() => Tome, { mappedBy: (tome) => tome.author, cascade: 'persist' })
   tomes?: Tome[];
 
   @AfterLoad()
@@ -332,7 +331,7 @@ class Tome {
   @Field(f.references(() => Author).nullable())
   authorId?: number | null;
 
-  @ManyToOne({ entity: () => Author, references: (tome) => tome.authorId })
+  @ManyToOne(() => Author, { references: (tome) => tome.authorId })
   author?: Author;
 
   @AfterLoad()
@@ -350,7 +349,7 @@ class HookedAuthor {
   @Field(f.string().nullable())
   name?: string | null;
 
-  @OneToMany({ entity: () => HookedTome, mappedBy: (tome) => tome.author, cascade: 'persist' })
+  @OneToMany(() => HookedTome, { mappedBy: (tome) => tome.author, cascade: 'persist' })
   tomes?: HookedTome[];
 
   @BeforeUpdate()
@@ -371,7 +370,7 @@ class HookedTome {
   @Field(f.references(() => HookedAuthor).nullable())
   authorId?: number | null;
 
-  @ManyToOne({ entity: () => HookedAuthor, references: (tome) => tome.authorId })
+  @ManyToOne(() => HookedAuthor, { references: (tome) => tome.authorId })
   author?: HookedAuthor;
 }
 

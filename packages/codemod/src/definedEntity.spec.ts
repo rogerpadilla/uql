@@ -45,7 +45,7 @@ export const Post = defineEntity({
   .relations((rel) => ({
     author: () => rel.manyToOne(User, { references: (post) => post.authorId }),
   }));
-export type Post = InstanceType<typeof Post>;
+export interface Post extends InstanceType<typeof Post> {}
 `);
   });
 
@@ -81,7 +81,7 @@ const Line = defineEntity({
     parts: () => rel.oneToMany(Part, { mappedBy: (part) => part.line }),
     tags: () => rel.manyToMany(Tag, { through: () => LineTag }),
   }));
-type Line = InstanceType<typeof Line>;
+interface Line extends InstanceType<typeof Line> {}
 `);
   });
 
@@ -129,7 +129,7 @@ const Article = defineEntity({
   .relations((rel) => ({
     author: () => rel.manyToOne(User, { references: (article) => article.authorId }),
   }));
-type Article = InstanceType<typeof Article>;
+interface Article extends InstanceType<typeof Article> {}
 `);
     expect(notes).toEqual([
       "/entities.ts:8: 'stamp' runs as a hook of the row now, no longer a method of 'Article': call sites need the function",
@@ -149,7 +149,7 @@ const Seat = defineEntity({
   name: 'Seat',
   fields: { code: f.string().id() },
 });
-type Seat = InstanceType<typeof Seat>;
+interface Seat extends InstanceType<typeof Seat> {}
 `);
   });
 
@@ -232,7 +232,7 @@ const Counted = defineEntity({
     total: () => counted.items.count(),
     top: () => counted.items.max((item) => item.amount),
   }));
-type Counted = InstanceType<typeof Counted>;
+interface Counted extends InstanceType<typeof Counted> {}
 `);
   });
 
@@ -311,7 +311,7 @@ const Task = defineEntity({
 })
   .triggers((task, trigger) => [trigger({ on: 'afterInsert', run: audit }), trigger({ on: 'beforeUpdate', run: stamp })])
   .filters({ open: { where: { done: false } }, mine: { where: { owner: 'me' } } });
-type Task = InstanceType<typeof Task>;
+interface Task extends InstanceType<typeof Task> {}
 `);
   });
 
@@ -333,7 +333,7 @@ const Page = defineEntity({
   },
 })
   .computed((page) => ({ total: f.number().nullable().as(sql\`1\`) }));
-type Page = InstanceType<typeof Page>;`);
+interface Page extends InstanceType<typeof Page> {}`);
   });
 
   it.each([
@@ -461,7 +461,7 @@ uql.defineEntity; const Tag = defineEntity({
   fields: { id: f.number().id() },
 })
   .indexes((tag, index) => [index([tag.id])]);
-type Tag = InstanceType<typeof Tag>;
+interface Tag extends InstanceType<typeof Tag> {}
 `);
   });
 
@@ -604,7 +604,7 @@ const Post = defineEntity({
     },
 })
     .indexes((post, index) => [index([post.title])]);
-type Post = InstanceType<typeof Post>;
+interface Post extends InstanceType<typeof Post> {}
 `);
   });
 

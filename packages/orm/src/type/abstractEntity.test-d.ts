@@ -58,7 +58,7 @@ export async function aSchemaBaseIsNotQueried() {
 export class Comment {
   @Field(f.number().id()) id!: number;
   // @ts-expect-error an abstract base has no table, so a relation cannot join to it
-  @ManyToOne({ entity: () => StampedBase, references: (comment) => comment.id }) stamp?: StampedBase;
+  @ManyToOne(() => StampedBase, { references: (comment) => comment.id }) stamp?: StampedBase;
 }
 void Comment;
 

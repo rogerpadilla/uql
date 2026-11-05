@@ -18,15 +18,15 @@ export class User {
   @Field(f.column('int').nullable().name('manager_id'))
   managerId?: number | null;
 
-  @ManyToOne({ entity: () => User, references: (user) => user.managerId })
+  @ManyToOne(() => User, { references: (user) => user.managerId })
   manager?: User;
 
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
+  @OneToMany(() => Post, { mappedBy: (post) => post.author })
   authorPosts?: Post[];
 
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.editor })
+  @OneToMany(() => Post, { mappedBy: (post) => post.editor })
   editorPosts?: Post[];
 
-  @OneToMany({ entity: () => User, mappedBy: (user) => user.manager })
+  @OneToMany(() => User, { mappedBy: (user) => user.manager })
   users?: User[];
 }

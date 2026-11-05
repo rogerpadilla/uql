@@ -16,6 +16,7 @@ import {
   type QuerySql,
   type ReferencedKey,
   RelationAggregate,
+  type RelationCardinality,
   type RelationManyToManyOptions,
   type RelationManyToOneOptions,
   type RelationOneToManyOptions,
@@ -185,41 +186,50 @@ type VersionIsBranded<This> = [VersionKey<This>] extends [never]
   : unknown;
 
 /**
- * `E` comes from the mandatory `entity` getter, so the context can insist the property really holds that
- * entity: `@ManyToOne({ entity: () => Other })` on a `Company` field stops compiling, and a to-many
- * cardinality on a non-array property does too. `entity` is required because nothing reflects it now.
- * `O` is inferred from the class the decorator sits on, which types `references`' own side.
+ * `E` comes from the target getter, so the context can insist the property really holds that entity:
+ * `@ManyToOne(() => Other)` on a `Company` field stops compiling, and a to-many cardinality on a non-array
+ * property does too. `O` is inferred from the class the decorator sits on, which types `references`' own side.
  */
-type WithEntity<E, O> = O & { readonly entity: EntityGetter<E> };
-
-function relation<E extends object, O, V>(opts: RelationOptions<E, O>): MemberDecorator<V, O> {
+function relation<E extends object, O, V>(
+  cardinality: RelationCardinality,
+  entity: EntityGetter<E>,
+  opts?: Omit<RelationOptions<E, O>, 'cardinality' | 'entity'>,
+): MemberDecorator<V, O> {
   return (_value, context) => {
-    memberRegistrations(context.metadata).relations[String(context.name)] = relationRegistration(opts);
+    memberRegistrations(context.metadata).relations[String(context.name)] = relationRegistration({
+      cardinality,
+      entity,
+      ...opts,
+    });
   };
 }
 
 export function OneToOne<E extends object, O>(
-  opts: WithEntity<E, RelationOneToOneOptions<E, O>>,
+  entity: EntityGetter<E>,
+  opts: RelationOneToOneOptions<E, O>,
 ): MemberDecorator<E | undefined, O> {
-  return relation<E, O, E | undefined>({ cardinality: '11', ...opts });
+  return relation<E, O, E | undefined>('11', entity, opts);
 }
 
 export function ManyToOne<E extends object, O>(
-  opts: WithEntity<E, RelationManyToOneOptions<E, O>>,
+  entity: EntityGetter<E>,
+  opts?: RelationManyToOneOptions<E, O>,
 ): MemberDecorator<E | undefined, O> {
-  return relation<E, O, E | undefined>({ cardinality: 'm1', ...opts });
+  return relation<E, O, E | undefined>('m1', entity, opts);
 }
 
 export function OneToMany<E extends object, O>(
-  opts: WithEntity<E, RelationOneToManyOptions<E, O>>,
+  entity: EntityGetter<E>,
+  opts?: RelationOneToManyOptions<E, O>,
 ): MemberDecorator<readonly E[] | undefined, O> {
-  return relation<E, O, readonly E[] | undefined>({ cardinality: '1m', ...opts });
+  return relation<E, O, readonly E[] | undefined>('1m', entity, opts);
 }
 
 export function ManyToMany<E extends object, O>(
-  opts: WithEntity<E, RelationManyToManyOptions<E, O>>,
+  entity: EntityGetter<E>,
+  opts: RelationManyToManyOptions<E, O>,
 ): MemberDecorator<readonly E[] | undefined, O> {
-  return relation<E, O, readonly E[] | undefined>({ cardinality: 'mm', ...opts });
+  return relation<E, O, readonly E[] | undefined>('mm', entity, opts);
 }
 
 /** What a hook method is called with: the row as `this`, and the querier's context. */

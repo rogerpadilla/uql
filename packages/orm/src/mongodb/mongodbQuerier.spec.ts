@@ -29,9 +29,9 @@ class Author {
 class Post {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
-  @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
+  @ManyToOne(() => Author, { references: (post) => post.authorId }) author?: Author;
   @Field(f.references(() => Author).nullable()) reviewerId?: number | null;
-  @ManyToOne({ entity: () => Author, references: (post) => post.reviewerId }) reviewer?: Author;
+  @ManyToOne(() => Author, { references: (post) => post.reviewerId }) reviewer?: Author;
 }
 
 /** A trigger and a stamp, neither of which MongoDB can run. */
@@ -83,7 +83,7 @@ class Chunk {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) text?: string | null;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
-  @ManyToOne({ entity: () => Author, references: (chunk) => chunk.authorId }) author?: Author;
+  @ManyToOne(() => Author, { references: (chunk) => chunk.authorId }) author?: Author;
   @Field(f.column('vector').nullable()) embedding?: number[] | null;
 }
 

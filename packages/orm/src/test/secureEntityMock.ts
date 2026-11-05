@@ -30,7 +30,7 @@ export class SecureParent {
   id?: number;
   @Field(f.references(() => SecureRelated).nullable())
   relatedId?: number | null;
-  @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
+  @ManyToOne(() => SecureRelated, { references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
 
@@ -57,7 +57,7 @@ export class SecureChild {
       .softDelete(() => Date.now()),
   )
   deletedAt?: number | null;
-  @ManyToOne({ entity: () => SecureCollection, references: (secureChild) => secureChild.collectionId })
+  @ManyToOne(() => SecureCollection, { references: (secureChild) => secureChild.collectionId })
   collection?: SecureCollection;
 }
 
@@ -68,7 +68,7 @@ export class PlainChild {
   id?: number;
   @Field(f.references(() => SecureCollection).nullable())
   collectionId?: number | null;
-  @ManyToOne({ entity: () => SecureCollection, references: (plainChild) => plainChild.collectionId })
+  @ManyToOne(() => SecureCollection, { references: (plainChild) => plainChild.collectionId })
   collection?: SecureCollection;
 }
 
@@ -136,14 +136,14 @@ class SecureCollectionLink {
 export class SecureCollection {
   @Field(f.number().autoIncrement())
   id?: number;
-  @OneToMany({ entity: () => SecureChild, mappedBy: (secureChild) => secureChild.collectionId })
+  @OneToMany(() => SecureChild, { mappedBy: (secureChild) => secureChild.collectionId })
   children?: SecureChild[];
-  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionChild })
+  @ManyToMany(() => SecureChild, { through: () => SecureCollectionChild })
   taggedChildren?: SecureChild[];
-  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionPlain })
+  @ManyToMany(() => PlainChild, { through: () => SecureCollectionPlain })
   plainChildren?: PlainChild[];
-  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionLink })
+  @ManyToMany(() => PlainChild, { through: () => SecureCollectionLink })
   linkedChildren?: PlainChild[];
-  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionRenamed })
+  @ManyToMany(() => SecureChild, { through: () => SecureCollectionRenamed })
   renamedChildren?: SecureChild[];
 }

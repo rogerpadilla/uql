@@ -25,14 +25,14 @@ class MigNote {
 @Entity()
 class MigAuthor {
   @Field(f.number().autoIncrement()) id?: number;
-  @OneToMany({ entity: () => MigBook, mappedBy: (book) => book.author }) books?: MigBook[];
+  @OneToMany(() => MigBook, { mappedBy: (book) => book.author }) books?: MigBook[];
 }
 
 @Entity()
 class MigBook {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => MigAuthor).nullable()) authorId?: number | null;
-  @ManyToOne({ entity: () => MigAuthor, references: (book) => book.authorId }) author?: MigAuthor;
+  @ManyToOne(() => MigAuthor, { references: (book) => book.authorId }) author?: MigAuthor;
 }
 
 /** A migrator on an in-memory SQLite database, its migrations in a directory of their own. */

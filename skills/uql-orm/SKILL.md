@@ -67,7 +67,7 @@ export class User {
   @Field(f.string().unique())
   email!: string;
 
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
+  @OneToMany(() => Post, { mappedBy: (post) => post.author })
   posts?: Post[];
 }
 
@@ -82,7 +82,7 @@ export class Post {
   @Field(f.references(() => User).nullable())
   authorId?: string | null;
 
-  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
+  @ManyToOne(() => User, { references: (post) => post.authorId })
   author?: User;
 }
 ```
@@ -92,7 +92,7 @@ export class Post {
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
 - A JSON column's property is `Json<T>`: `settings?: Json<{ theme?: string }> | null`. A plain object type reads as a relation, which `$where`, `$sort` and the update operators refuse.
-- `mappedBy` and `references` may be left out where only one member fits. `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names the junction entity. `cascade: true` writes related rows with their row, in one transaction on SQL and, on MongoDB, inside one the caller opens; an update replaces a to-many's rows.
+- A relation decorator takes its target first, then its options, as `rel.*` does. `mappedBy` and `references` may be left out where only one member fits, and then the options too: `@OneToMany(() => Post)`. `@ManyToMany(() => Tag, { through: () => PostTag })` names the junction entity. `cascade: true` writes related rows with their row, in one transaction on SQL and, on MongoDB, inside one the caller opens; an update replaces a to-many's rows.
 - A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring entity options but no table is `@Entity({ abstract: true, ... }) abstract class`, which cannot be queried.
 - Optimistic lock: `@Field(f.version())` with `[versionKey]?: 'version'` on the class. An update, and an upsert or save of a row that exists, must carry the version it read; a stale one throws `UqlOptimisticLockError`.
 - Computed fields are `readonly`: ``@Computed((u) => f.string().as(sql`${u.first} || ' ' || ${u.last}`))``, `.stored()` for a generated column, or a relation aggregate, `@Computed((user) => user.posts.count())`.
@@ -120,7 +120,7 @@ export const Author = defineEntity({
   (rel) => ({ books: () => rel.oneToMany(Book, { mappedBy: (book) => book.author }) }),
   (author) => ({ bookCount: () => author.books.count() }),
 );
-export type Author = InstanceType<typeof Author>;
+export interface Author extends InstanceType<typeof Author> {}
 
 export const Book = defineEntity({
   name: 'Book',
@@ -138,7 +138,7 @@ export const Book = defineEntity({
   }));
 ```
 
-- Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it.
+- Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it. Name its rows with an interface, `export interface Author extends InstanceType<typeof Author> {}`: hovers and errors then print `Author`, which a type alias expands.
 - `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `hooks`, then `relations` last; only a `filters` reading through relations follows it.
 - A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.

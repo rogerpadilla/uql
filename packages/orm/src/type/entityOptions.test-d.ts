@@ -145,7 +145,7 @@ expectType<MethodKey<WithMethods>>('name');
 class Employee {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Company).nullable()) companyId?: number | null;
-  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
+  @ManyToOne(() => Company, { references: (employee) => employee.companyId }) company?: Company;
 }
 
 class EmployeeProject {
@@ -156,20 +156,20 @@ class EmployeeProject {
 
 export class Staffed {
   @Field(f.number().autoIncrement()) id?: number;
-  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.company }) staff?: Employee[];
+  @OneToMany(() => Employee, { mappedBy: (employee) => employee.company }) staff?: Employee[];
   // A pivot is its own entity, unrelated to the target's shape.
-  @ManyToMany({ entity: () => Employee, through: () => EmployeeProject }) contractors?: Employee[];
+  @ManyToMany(() => Employee, { through: () => EmployeeProject }) contractors?: Employee[];
   // @ts-expect-error a misspelled key is not a member of the target
-  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.compnayId }) misspelled?: Employee[];
+  @OneToMany(() => Employee, { mappedBy: (employee) => employee.compnayId }) misspelled?: Employee[];
   // @ts-expect-error a string names a key a rename cannot follow; only the callback form exists
-  @OneToMany({ entity: () => Employee, mappedBy: 'companyId' }) named?: Employee[];
+  @OneToMany(() => Employee, { mappedBy: 'companyId' }) named?: Employee[];
   // @ts-expect-error a to-many needs to say how to reach its children
-  @ManyToMany({ entity: () => Employee }) unjoined?: Employee[];
+  @ManyToMany(() => Employee) unjoined?: Employee[];
   // @ts-expect-error an inverse side holds no foreign key for an action to apply to
-  @OneToMany({ entity: () => Employee, mappedBy: (employee) => employee.company, onDelete: 'CASCADE' })
+  @OneToMany(() => Employee, { mappedBy: (employee) => employee.company, onDelete: 'CASCADE' })
   acted?: Employee[];
   // @ts-expect-error a to-one joins through no junction
-  @OneToOne({ entity: () => Company, through: () => EmployeeProject }) pivoted?: Company;
+  @OneToOne(() => Company, { through: () => EmployeeProject }) pivoted?: Company;
 }
 
 // ─── @Entity: its options read the decorated class ───

@@ -21,7 +21,7 @@ class PostAudit {
       .references(() => Post),
   )
   postId?: number | null;
-  @ManyToOne({ entity: () => Post, references: (audit) => audit.postId }) post?: Post;
+  @ManyToOne(() => Post, { references: (audit) => audit.postId }) post?: Post;
   @Field(f.string().nullable()) status?: string | null;
   @Field(f.number().nullable()) hits?: number | null;
   @Computed((row) =>

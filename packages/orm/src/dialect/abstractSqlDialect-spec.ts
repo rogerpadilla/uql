@@ -70,7 +70,7 @@ class InlineRow {
 class RenamedParent {
   @Field(f.number().autoIncrement().name('parent_pk'))
   id?: number;
-  @OneToMany({ entity: () => RenamedChild, mappedBy: (renamedChild) => renamedChild.parentId })
+  @OneToMany(() => RenamedChild, { mappedBy: (renamedChild) => renamedChild.parentId })
   children?: RenamedChild[];
 }
 

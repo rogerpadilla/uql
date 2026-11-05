@@ -38,7 +38,7 @@ class VectorNote {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.vector(3).nullable()) vec!: number[] | null;
   @Field(f.references(() => VectorItem).nullable()) itemId?: number | null;
-  @ManyToOne({ entity: () => VectorItem, references: (note) => note.itemId }) item?: VectorItem;
+  @ManyToOne(() => VectorItem, { references: (note) => note.itemId }) item?: VectorItem;
 }
 
 /**
@@ -699,7 +699,7 @@ describe('vector query-time tuning', () => {
     class MariaVecDoc {
       @Field(f.number().autoIncrement()) id?: number;
       @Field(f.vector(3).nullable()) vec!: number[] | null;
-      @OneToMany({ entity: () => MariaVecChunk, mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
+      @OneToMany(() => MariaVecChunk, { mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
       chunks?: MariaVecChunk[];
     }
     const maria = new MariaDialect();

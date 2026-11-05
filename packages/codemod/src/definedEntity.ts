@@ -351,7 +351,7 @@ function definedOf(
   }
   const prefix = exported ? 'export ' : '';
   return {
-    text: `${prefix}const ${name} = defineEntity({\n${lines.map((line) => `${unit}${line},`).join('\n')}\n});\n${prefix}type ${name} = InstanceType<typeof ${name}>;`,
+    text: `${prefix}const ${name} = defineEntity({\n${lines.map((line) => `${unit}${line},`).join('\n')}\n});\n${prefix}interface ${name} extends InstanceType<typeof ${name}> {}`,
     notes,
   };
 }

@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { sqlPools, syncedPool } from '../../test/sqlPools.js';
 import { Author, label } from './definedFixture/author.js';
 import { Book } from './definedFixture/book.js';
+import { Folder } from './definedFixture/folder.js';
 
 describe.each(sqlPools('test_defined'))('a defined entity on %s', (_engine, connect) => {
-  const pool = syncedPool(connect, [Author, Book]);
+  const pool = syncedPool(connect, [Author, Book, Folder]);
 
   it('should write and read rows, its defaults, computed column, version, hook and relations', async () => {
     const authorId = await pool().insertOne(Author, { name: 'Ada' });
@@ -40,6 +41,26 @@ describe.each(sqlPools('test_defined'))('a defined entity on %s', (_engine, conn
     expect(authors).toEqual([
       { name: 'Cy', bookCount: 2, topStock: 7 },
       { name: 'Di', bookCount: 0, topStock: null },
+    ]);
+  });
+
+  /** A tree's aggregates read its own to-many. */
+  it('should read an aggregate over a self-referencing relation', async () => {
+    const root = await pool().insertOne(Folder, { name: 'root', size: 0, parentId: null });
+    await pool().insertMany(Folder, [
+      { name: 'a', size: 2, parentId: Number(root) },
+      { name: 'b', size: 5, parentId: Number(root) },
+    ]);
+
+    const folders = await pool().findMany(Folder, {
+      $select: { name: true, childCount: true, childSize: true },
+      $sort: { name: 'asc' },
+    });
+
+    expect(folders).toEqual([
+      { name: 'a', childCount: 0, childSize: 0 },
+      { name: 'b', childCount: 0, childSize: 0 },
+      { name: 'root', childCount: 2, childSize: 7 },
     ]);
   });
 

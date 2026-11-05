@@ -11,7 +11,7 @@ import type { KeyMap, Querier } from './index.js';
 @Entity()
 class Studio {
   @Field(f.number().autoIncrement()) id?: number;
-  @OneToMany({ entity: () => Movie, mappedBy: (movie) => movie.studio }) movies?: Movie[];
+  @OneToMany(() => Movie, { mappedBy: (movie) => movie.studio }) movies?: Movie[];
 }
 
 @Entity({
@@ -33,7 +33,7 @@ class Movie {
       .references(() => Studio),
   )
   studioId?: number | null;
-  @ManyToOne({ entity: () => Studio, references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
+  @ManyToOne(() => Studio, { references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
   studio?: Studio;
   @Field(
     f
@@ -42,7 +42,7 @@ class Movie {
       .references(() => Cinema),
   )
   cinemaId?: number | null;
-  @ManyToOne({ entity: () => Cinema, references: (movie) => movie.cinemaId }) venue?: Cinema;
+  @ManyToOne(() => Cinema, { references: (movie) => movie.cinemaId }) venue?: Cinema;
   @Computed((movie) =>
     f
       .number()
@@ -69,7 +69,7 @@ class Cinema {
       .as(sql`upper(${cinema.city})`),
   )
   label?: string | null;
-  @OneToMany({ entity: () => Movie, mappedBy: (movie) => movie.cinemaId }) films?: Movie[];
+  @OneToMany(() => Movie, { mappedBy: (movie) => movie.cinemaId }) films?: Movie[];
   @Computed((cinema) => cinema.films.count({ $where: { rating: { $gt: 0 } } })) readonly filmCount?: number;
   @Computed((cinema) => cinema.films.max((movie) => movie.rating)) readonly topRating?: number | null;
   @BeforeInsert() touch(): void {}

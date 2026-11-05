@@ -17,14 +17,14 @@ class TextDoc {
   @Field(f.string().nullable()) title?: string | null;
   @Field(f.string().nullable()) bodyText?: string | null;
   @Field(f.references(() => TextShelf).nullable()) shelfId?: string | null;
-  @ManyToOne({ entity: () => TextShelf, references: (doc) => doc.shelfId }) shelf?: TextShelf;
+  @ManyToOne(() => TextShelf, { references: (doc) => doc.shelfId }) shelf?: TextShelf;
 }
 
 /** What holds the documents, for a search run inside a populated relation. */
 @Entity({ name: 'text_search_shelf' })
 class TextShelf {
   @Field(f.string().id().onInsert(uuidv7)) id?: string;
-  @OneToMany({ entity: () => TextDoc, mappedBy: (doc) => doc.shelf }) docs?: TextDoc[];
+  @OneToMany(() => TextDoc, { mappedBy: (doc) => doc.shelf }) docs?: TextDoc[];
 }
 
 /**

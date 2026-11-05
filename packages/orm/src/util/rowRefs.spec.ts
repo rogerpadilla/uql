@@ -16,14 +16,14 @@ class Author {
   )
   loud?: string | null;
   @Computed((author) => author.posts.count()) postCount?: number;
-  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
+  @OneToMany(() => Post, { mappedBy: (post) => post.author }) posts?: Post[];
 }
 
 @Entity()
 class Post {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.references(() => Author).nullable()) authorId?: number | null;
-  @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
+  @ManyToOne(() => Author, { references: (post) => post.authorId }) author?: Author;
 }
 
 describe('rowRefs', () => {

@@ -1,5 +1,6 @@
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { applyEdits, editedText } from './edits.js';
+import { applyEdits, editedText, removeFromList } from './edits.js';
 
 describe('applyEdits', () => {
   it('splices each edit where it was read, whatever order they were found in', () => {
@@ -66,5 +67,24 @@ describe('editedText', () => {
 
     expect(text).toBe('abXYZef');
     expect([0, 1, 2, 4, 5, 6].map(sourceOffset)).toEqual([0, 1, 2, 2, 4, 5]);
+  });
+});
+
+describe('removeFromList', () => {
+  const removing = (text: string, at: number) => {
+    const source = ts.createSourceFile('/list.ts', text, ts.ScriptTarget.Latest, true);
+    const [statement] = source.statements;
+    const list = ts.isExpressionStatement(statement) ? statement.expression : undefined;
+    if (!list || !ts.isArrayLiteralExpression(list)) throw new TypeError(`no array in ${text}`);
+    return applyEdits(text, removeFromList(list.elements, [list.elements[at]], source));
+  };
+
+  it('takes the separator after an element, or before the last one', () => {
+    expect(removing('[a, b, c]', 0)).toBe('[b, c]');
+    expect(removing('[a, b, c]', 2)).toBe('[a, b]');
+  });
+
+  it("keeps the next element's comment with it", () => {
+    expect(removing('[\n  a,\n  // why\n  b,\n]', 0)).toBe('[\n  // why\n  b,\n]');
   });
 });

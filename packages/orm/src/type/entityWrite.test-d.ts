@@ -12,7 +12,7 @@ class Author {
   [filledKey]?: 'id';
   @Field(f.uuid().id().onInsert(uuidv7)) id!: string;
   @Field(f.string()) name!: string;
-  @OneToMany({ entity: () => Article, mappedBy: (article) => article.author }) articles?: Article[];
+  @OneToMany(() => Article, { mappedBy: (article) => article.author }) articles?: Article[];
 }
 
 @Entity()
@@ -23,7 +23,7 @@ class Article {
   @Field(f.number().default(0)) views?: number;
   @Field(f.string().nullable()) summary?: string | null;
   @Field(f.references(() => Author).nullable()) authorId?: string | null;
-  @ManyToOne({ entity: () => Author, references: (article) => article.authorId }) author?: Author;
+  @ManyToOne(() => Author, { references: (article) => article.authorId }) author?: Author;
 }
 
 @Entity()

@@ -33,9 +33,9 @@ export class Post {
   @Field(f.column('vector').dimensions(3).nullable())
   embedding?: number[] | null;
 
-  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
+  @ManyToOne(() => User, { references: (post) => post.authorId })
   author?: User;
 
-  @ManyToOne({ entity: () => User, references: (post) => post.editorId })
+  @ManyToOne(() => User, { references: (post) => post.editorId })
   editor?: User;
 }

@@ -26,6 +26,6 @@ export const Author = defineEntity({
       topStock: () => author.books.max((book) => book.stock),
     }),
   );
-export type Author = InstanceType<typeof Author>;
+export interface Author extends InstanceType<typeof Author> {}
 
 export const label = (author: Author): string => `${author.name} (${author.books?.length ?? 0})`;
