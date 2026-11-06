@@ -1,50 +1,48 @@
 # Changelog
 
-Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
+Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
 ## [0.113.0] - 2026-11-06
 
-- **Breaking:** `createApi({ pool, include, contextOf, use })` replaces `createRequestHandler`: mount it with `toFetchHandler(api)`, `toExpress(api)` (no `express.json()` needed) or `toRequestHandler(api)`, or call `api.call(call, context)` from tRPC, oRPC or any transport. `createFetchHandler`, `querierMiddleware` and `errorHandler` are gone.
-- **Breaking:** middleware, `use: [(call, context, next) => next(call)]`, replaces the `pre`, `preSave`, `preFilter` and `post` hooks; `serve(Entity, { use })` runs it on that entity's calls alone.
-- **Breaking:** the wire is `{base}/:entity/:op`, the rest of the call one JSON object: a read is `GET ?q=` (or `HEAD`, `QUERY`, `POST`), a write a `POST` with an `application/json` body. The REST routes, `CRUD_ROUTES`, `HttpMethod` and `basePath` are gone.
-- **Breaking:** `createClientQuerier(httpTransport(url))` replaces `HttpQuerier` and answers what the pool answers (rows, a count, `[rows, count]`), not `{ data, count }`; `on()` and `silent` are gone.
-- **Breaking:** a failure answers `{ error: { message, status, kind, path } }`, `path` pointing at the refused value in the call. Only a `UqlError` answers its own status and message: a middleware or hook refuses with `new UqlRequestError('unauthorized', 401)`, and any other error by its kind or a generic 500.
-- `serve(Entity, { ops, members })` declares what a client may do to an entity and each field: a field it may not read cannot be selected, filtered or sorted by, and is left out of every read.
-- `createQueryOptions(transport)` answers TanStack Query options keyed by the call a read makes, with `uql.key(User)` to invalidate every read of an entity.
-- A `security` filter's `ops` holds it to some statements: `ops: ['insert', 'update', 'delete']` lets anyone read a row and only its author write it.
-- The NestJS module's `getContext` is `contextOf`, and may be async; `uql-codemod` renames it.
+- **Breaking (http):** `createApi({ pool, include, contextOf, use })` replaces `createRequestHandler`: serve it with `toFetchHandler`, `toExpress` or `toRequestHandler`, or call `api.call(call, context)` from tRPC or oRPC. Middleware, `use: [(call, context, next) => next(call)]`, replaces the `pre`, `preSave`, `preFilter` and `post` hooks.
+- **Breaking (http):** the wire is `{base}/:entity/:op`, the call one JSON object, read by `GET ?q=` and written by a JSON `POST`; the REST routes are gone.
+- **Breaking (http):** a failure answers `{ error: { message, status, kind, path } }`, and only a `UqlError` answers its own status and message: refuse a client with `new UqlRequestError('unauthorized', 401)`.
+- **Breaking (client):** `createClientQuerier(httpTransport(url))` replaces `HttpQuerier`, and answers what the pool answers, not `{ data, count }`.
+- **Breaking (nestjs):** `getContext` is `contextOf`, and may be async.
+- `serve(Entity, { ops, members })` declares what a client may do to each entity and field, `createQueryOptions` answers TanStack Query options keyed by the call a read makes, and a `security` filter's `ops` holds it to some statements: anyone reads a row, only its author writes it.
+- `uql-codemod` unwraps the client's results, renames `getContext`, and names what replaces each removed export.
 
 ## [0.112.1] - 2026-11-05
 
-- **Fixed:** a `Date` and a `bigint` cross HTTP as the entity holds them: `HttpQuerier` reads rows and the keys a write answers as their types say, a `Date` and not its ISO text, and the handler stores and compares what the browser sends, filters and update operators included.
-- `uql-orm/browser` ships no prebuilt `uql-browser.min.js`; every condition resolves the module entry.
-- **Fixed:** a `$where` value that is a class instance, such as a `URL`, is compared, where its condition was silently dropped.
-- **Fixed:** a `LOWER` or `UPPER` default no longer drifts on every MariaDB sync.
+- **Fixed (http):** a `Date` and a `bigint` cross HTTP as the entity holds them, in rows, the keys a write answers, filters and updates.
+- **Fixed (querier):** a `$where` value that is a class instance, such as a `URL`, is compared instead of dropped.
+- **Fixed (mariadb):** a `LOWER` or `UPPER` default no longer drifts on every sync.
+- `uql-orm/browser` ships no prebuilt `uql-browser.min.js`.
 
 ## [0.112.0] - 2026-11-04
 
-- A relation decorator takes its target first, as `rel.*` does: `@ManyToOne(() => User, { references: (post) => post.authorId })`, `@OneToMany(() => Post)`. `uql-codemod` rewrites the `entity` option.
-- **Fixed:** a defined entity's aggregate can read its own to-many, as a tree's `childCount: () => folder.children.count()` does; a thunk returning no aggregate is refused on first read.
-- The docs and `uql-codemod` name a defined entity's rows `export interface Post extends InstanceType<typeof Post> {}`, so hovers print `Post`.
+- A relation decorator takes its target first, as `rel.*` does: `@ManyToOne(() => User, { references: (post) => post.authorId })`. `uql-codemod` rewrites it.
+- **Fixed (entity):** a defined entity's aggregate can read its own to-many, as `childCount: () => folder.children.count()` does.
+- `uql-codemod` names a defined entity's rows `interface Post extends InstanceType<typeof Post> {}`, so hovers print `Post`.
 
 ## [0.111.2] - 2026-11-04
 
-- **Fixed:** a project without `strictNullChecks` can declare a key it supplies, such as a composite key's `.references()` columns, with `!`.
-- `@Field` refuses a key nothing fills whose type admits `undefined` (`id!: number | undefined`), as it does one declared `?`.
-- PGlite needs 0.5.10 or later, and binds 65535 values a statement like a Postgres server, so a large insert splits into fewer statements.
+- **Fixed (types):** without `strictNullChecks`, a key you supply, such as a composite key's `.references()` column, can be declared with `!`.
+- `@Field` refuses a key nothing fills typed `| undefined`, as it does one declared `?`.
+- PGlite needs 0.5.10 or later, and binds 65535 values a statement, so a large insert splits into fewer.
 
 ## [0.111.1] - 2026-11-01
 
-- `insertOne`, `insertMany`, `saveOne` and `saveMany` resolve to a defined key, `number` for `id?: number`, with no `!`.
-- An insert on a SQL engine refuses a key it leaves out unless the entity declares what fills it: `.autoIncrement()`, `.default()` or `.onInsert()`. A default only the table states now needs declaring.
+- An insert or a save resolves to a defined key, `number` for `id?: number`, with no `!`.
+- An insert on a SQL engine refuses a key it leaves out unless the entity declares what fills it (`.autoIncrement()`, `.default()`, `.onInsert()`).
 
 ## [0.111.0] - 2026-11-01
 
-- **Breaking:** `f.number().autoIncrement()` is a generated key. `.id()` alone is now a key you supply, and `.autoIncrement(false)` is gone. `npx uql-codemod` rewrites numeric keys.
-- **Breaking:** an insert must name a key nothing fills. `@Field` refuses `?` on a numeric or `.references()` key nothing fills.
-- **Fixed:** MySQL reports ids a column default fills, batches included.
-- **Fixed:** SQLite supplied integer keys are `INT`, so a missing key is refused, not numbered.
-- **Fixed:** `exactOptionalPropertyTypes` projects can pass a pool to `Config`.
+- **Breaking (entity):** `f.number().autoIncrement()` is a generated key; `.id()` alone is a key you supply, and `.autoIncrement(false)` is gone. `uql-codemod` rewrites numeric keys.
+- **Breaking (entity):** an insert must name a key nothing fills, and `@Field` refuses `?` on a numeric or `.references()` one.
+- **Fixed (mysql):** ids a column default fills are reported, batches included.
+- **Fixed (sqlite):** a supplied integer key is `INT`, so a missing one is refused, not numbered.
+- **Fixed (types):** an `exactOptionalPropertyTypes` project can pass a pool to `Config`.
 
 ## [0.110.0] - 2026-10-31
 
