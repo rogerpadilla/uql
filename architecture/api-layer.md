@@ -1,6 +1,6 @@
 # API layer
 
-**Built**, but for the client typed by the server (open, below). One operation layer every transport shares, REST over HTTP as the one transport uql ships, one client over any transport, and a declared exposure policy.
+**Built** (0.113.0). One operation layer every transport shares, an HTTP protocol uql owns, one client over any transport, and a declared exposure policy.
 
 ## The problem
 
@@ -86,11 +86,10 @@ Roles that see different fields are two APIs on two paths. A policy resolved per
 - **Exposure on the field** (`wireable`, Remult's `includeInApi`). It is a property of the surface, not the data: an admin API and a public one serve the same `User` with different fields, and a flag on the column couples the model to one transport.
 - **REST routes per op** (`GET /user`, `PATCH /user/:id`, `DELETE /user/:id`). uql's ops do not map onto verbs (`saveOne` is an upsert, two ops would be `PATCH`), an option would need a header, and a filter on a write would have to fit a URL. One rule, `POST /:entity/:op`, holds every write.
 - **Delegating the protocol to tRPC or oRPC.** They integrate through `api.call`; the HTTP contract stays uql's, so it does not change with a framework's version.
+- **A client typed by the server's exposure** (`createClientQuerier<typeof api>`). Measured at about 26% more type instantiations a call, to turn a 403 that names the field into a compile error.
 - **Options in headers** (a `Prefer` header). A header does not cross tRPC or oRPC, costs a CORS preflight, and needs `Vary` to cache.
 
 ## Open
-
-- **A client typed by the server.** `createClientQuerier<typeof api>(transport)`, importing the API's type alone, would make `$select: { passwordHash: true }` a compile error, not a 403. Narrowing reaches every depth a relation does, so each read would map each related entity's type through its exposure, on top of what `QueryFindResult` already costs a read; it waits for a measurement on `bun run ts.perf` that says it stays near today's.
 
 - **Live queries.** A read the client subscribes to, answered again when a write changes it. Re-running each subscription after uql's own writes, under the subscriber's context (Remult's way), misses any other writer and needs a pub/sub across instances; reading each engine's change stream (logical replication, binlog, change streams) sees every writer but SQLite, D1 and libSQL have none. A `GET ?q=` with `Accept: text/event-stream` is the shape the wire leaves room for.
 - **Procedures.** Custom logic beside the ops, declared in `serve` per entity or at the top level, a name never shadowing an op.
