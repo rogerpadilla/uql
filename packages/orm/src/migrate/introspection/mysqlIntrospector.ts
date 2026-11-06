@@ -225,6 +225,12 @@ type MysqlColumnRow = {
   generated_as: string | null;
 };
 
+/** The functions MariaDB prints by an alias, each with the name SQL declares it by. */
+const MARIADB_ALIASES: Readonly<Record<string, string>> = { lcase: 'lower', ucase: 'upper' };
+
+/** A quoted literal, kept as it is, or an alias called. */
+const MARIADB_ALIAS = new RegExp(`'(?:[^']|'')*'|\\b(?:${Object.keys(MARIADB_ALIASES).join('|')})(?=\\()`, 'gi');
+
 /**
  * MariaDB reads out of the same `information_schema` as MySQL, save for one column type it does not
  * have: `JSON` there is an alias for `LONGTEXT` plus a `json_valid()` check constraint named after
@@ -249,9 +255,15 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
     );
   }
 
-  /** MariaDB prints a literal quoted, as SQL reads it (`'it''s'`), so an unquoted default is SQL. */
+  /**
+   * MariaDB prints a literal quoted, as SQL reads it (`'it''s'`), so an unquoted default is SQL, a function it
+   * prints by an alias named as declared ({@link MARIADB_ALIASES}).
+   */
   protected override sqlText(defaultValue: string): string | undefined {
-    return defaultValue.startsWith("'") ? undefined : defaultValue;
+    if (defaultValue.startsWith("'")) {
+      return undefined;
+    }
+    return defaultValue.replace(MARIADB_ALIAS, (match) => MARIADB_ALIASES[match.toLowerCase()] ?? match);
   }
 
   /** Whether an index is MariaDB's vector index, and the distance it was built for. */

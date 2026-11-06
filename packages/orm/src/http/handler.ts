@@ -24,6 +24,7 @@ import {
   type RouteMatch,
 } from './contract.js';
 import { parseQueryParams, type WireCursors, type WireFlags } from './query.js';
+import { readWireData, readWireQuery, writeWireData } from './wireRow.js';
 
 /**
  * Framework-normalized request: adapters (express, fetch, ...) reduce their native
@@ -171,7 +172,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
   ): Promise<HandlerResponse> {
     const meta = getMeta(entity);
     // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
-    const query = parseQueryParams<E>(method === 'QUERY' ? req.body : req.query);
+    const query = readWireQuery(meta, parseQueryParams<E>(method === 'QUERY' ? req.body : req.query));
     const { method: verb } = CRUD_ROUTES[op];
     // What the client sent, before the hooks: a relation a hook adds is the server's own to add.
     assertServed(meta, query, served);
@@ -187,12 +188,14 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
       // A read acquires and releases; a write is one transaction, so a failing cascade takes its parent with it.
       const envelope = await (verb === 'GET' ? resolved.withQuerier(execute) : resolved.transaction(execute));
       await post?.(hookCtx, envelope);
-      return { status: 200, body: envelope };
+      return { status: 200, body: { ...envelope, data: writeWireData(meta, envelope.data, CRUD_ROUTES[op].answers) } };
     });
 
     /** Runs `op`, reading the query and body after the hooks, which may have reshaped or reassigned them. */
     async function execute(querier: Querier): Promise<RequestSuccessResponse<unknown>> {
-      const { query, body } = hookCtx;
+      const { query } = hookCtx;
+      // A write's rows as the entity holds them: JSON carried each `Date` and `bigint` as text.
+      const body = readWireData(meta, hookCtx.body, 'rows');
       const { hardDelete = false, count: counts } = query;
       const scoped =
         id === undefined

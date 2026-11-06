@@ -204,7 +204,8 @@ const BUDGETS: Record<string, number> = {
   '.': 12_000,
   './postgres': 48_600,
   './migrate': 69_200,
-  './browser': 2_100,
+  // The client reads rows back by the entity's metadata (`http/wireRow.ts`), which any entity it is handed has loaded.
+  './browser': 11_200,
 };
 
 async function checkSizeBudgets(): Promise<void> {

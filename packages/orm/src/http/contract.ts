@@ -1,13 +1,17 @@
 import { queryErrorKind } from '../querier/queryError.js';
 import type { AbstractType, UniversalQuerier } from '../type/index.js';
-// the specific util modules, not the barrel, so the browser bundle does not pull in entity metadata
+// the specific util modules, not the barrel, which reaches every dialect helper and would land in the browser bundle
 import { getKeys } from '../util/object.util.js';
 import { kebabCase } from '../util/string.util.js';
 import type { QueryErrorKind } from '../util/uqlError.js';
 
+/** What a route answers in `data`, which says how its values cross JSON: rows, a page of them, keys, or a count. */
+export type WireAnswer = 'rows' | 'page' | 'ids' | 'count';
+
 type RouteShape = {
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly path: '' | `/${string}`;
+  readonly answers: WireAnswer;
 };
 
 /**
@@ -16,19 +20,19 @@ type RouteShape = {
  * (or routing a non-existent one) is a compile error.
  */
 export const CRUD_ROUTES = {
-  findMany: { method: 'GET', path: '' },
-  findManyPage: { method: 'GET', path: '/page' },
-  findOne: { method: 'GET', path: '/one' },
-  count: { method: 'GET', path: '/count' },
-  findOneById: { method: 'GET', path: '/:id' },
-  insertOne: { method: 'POST', path: '' },
-  insertMany: { method: 'POST', path: '/many' },
-  saveOne: { method: 'PUT', path: '' },
-  saveMany: { method: 'PUT', path: '/many' },
-  updateMany: { method: 'PATCH', path: '' },
-  updateOneById: { method: 'PATCH', path: '/:id' },
-  deleteOneById: { method: 'DELETE', path: '/:id' },
-  deleteMany: { method: 'DELETE', path: '' },
+  findMany: { method: 'GET', path: '', answers: 'rows' },
+  findManyPage: { method: 'GET', path: '/page', answers: 'page' },
+  findOne: { method: 'GET', path: '/one', answers: 'rows' },
+  count: { method: 'GET', path: '/count', answers: 'count' },
+  findOneById: { method: 'GET', path: '/:id', answers: 'rows' },
+  insertOne: { method: 'POST', path: '', answers: 'ids' },
+  insertMany: { method: 'POST', path: '/many', answers: 'ids' },
+  saveOne: { method: 'PUT', path: '', answers: 'ids' },
+  saveMany: { method: 'PUT', path: '/many', answers: 'ids' },
+  updateMany: { method: 'PATCH', path: '', answers: 'count' },
+  updateOneById: { method: 'PATCH', path: '/:id', answers: 'count' },
+  deleteOneById: { method: 'DELETE', path: '/:id', answers: 'count' },
+  deleteMany: { method: 'DELETE', path: '', answers: 'count' },
 } as const satisfies Partial<Record<keyof UniversalQuerier, RouteShape>>;
 
 export type CrudOperation = keyof typeof CRUD_ROUTES;

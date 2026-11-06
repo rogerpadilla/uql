@@ -73,6 +73,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Whether `value` is an object literal, or one with no prototype, which a query-string parser hands back: what a
+ * query, a payload and JSON are built of. A `Date`, bytes, SQL and any class instance are objects too, but not maps.
+ */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 /** A shallow copy of `value` without `keys`. */
 export function omitKeys<T extends object>(value: T, keys: Iterable<string>): T {
   const copy = { ...value };
@@ -120,22 +132,7 @@ export function entityName<E>(meta: EntityMeta<E>): string {
  * is what a `$where` map and a composite key's id object both are; an array is a list of either.
  */
 export function isScalarId(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return false;
-  }
-  // `null` as well as `Object.prototype`: an object with no prototype is what a query-string parser
-  // hands back (`qs`, express's `req.params`), and reading one as a bare id would name one column
-  // with a map of several.
-  const proto = Object.getPrototypeOf(value);
-  return proto !== Object.prototype && proto !== null;
-}
-
-/** Whether `value` is a plain object naming columns, the one shape a `$where` takes. */
-export function isWhereMap(value: unknown): value is Record<string, unknown> {
-  return !Array.isArray(value) && !isScalarId(value);
+  return !Array.isArray(value) && !isPlainObject(value);
 }
 
 /** What `text` spells as JSON, or nothing where it is no JSON at all. */

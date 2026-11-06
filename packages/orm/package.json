@@ -26,11 +26,7 @@
     "./http": "./dist/http/index.js",
     "./express": "./dist/express/index.js",
     "./nestjs": "./dist/nestjs/index.js",
-    "./browser": {
-      "types": "./dist/browser/index.d.ts",
-      "import": "./dist/browser/index.js",
-      "default": "./dist/browser/uql-browser.min.js"
-    },
+    "./browser": "./dist/browser/index.js",
     "./libsql": "./dist/libsql/index.js",
     "./turso": "./dist/turso/index.js",
     "./turso/local": "./dist/turso/local.js",
@@ -49,8 +45,7 @@
   "scripts": {
     "prepack": "bun run build && cp ../../README.md . && cp -R ../../skills .",
     "postpack": "rm -r README.md skills && npm pkg delete gitHead",
-    "compile.browser": "bun build src/browser/index.ts --minify --sourcemap=linked --format=esm --target=browser --outdir=dist/browser --entry-naming 'uql-browser.min.[ext]'",
-    "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run verify-dist.ts",
+    "build": "bun run clean && tsc -b tsconfig.build.json && bun run verify-dist.ts",
     "start": "tsc --watch",
     "clean": "rimraf dist .tsconfig.tsbuildinfo"
   },
@@ -139,9 +134,9 @@
     "@types/ws": "^8.18.2",
     "better-sqlite3": "^13.0.3",
     "express": "^5.3.0",
-    "mariadb": "^3.5.4",
+    "mariadb": "^3.5.5",
     "mongodb": "^7.8.0",
-    "mssql": "^12.7.13",
+    "mssql": "^12.7.14",
     "mysql2": "^3.24.6",
     "pg": "^8.23.1",
     "pg-query-stream": "^4.17.1",

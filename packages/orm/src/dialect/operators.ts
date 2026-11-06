@@ -17,9 +17,8 @@ import {
   REF_KEY,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
-import { isOperatorMap } from '../util/dialect.util.js';
 import { aggregateOf, isInlinedExpression } from '../util/field.util.js';
-import { getKeys, hasKeys, isOperatorKey, isRecord, isWhereMap, someKey } from '../util/object.util.js';
+import { getKeys, hasKeys, isOperatorKey, isPlainObject, isRecord, someKey } from '../util/object.util.js';
 import { escapeRegExp } from '../util/string.util.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 
@@ -61,7 +60,7 @@ export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
     someKey(where, (key) =>
       isGroupOp(key)
         ? groupClauses(key, where[key]).some((clause) => clause instanceof QuerySql || namesRows(clause))
-        : !(isWhereMap(where[key]) && !hasKeys(where[key])),
+        : !(isPlainObject(where[key]) && !hasKeys(where[key])),
     )
   );
 }
@@ -107,7 +106,7 @@ export function fieldsRead<E>(meta: EntityMeta<E>, where: QueryWhere<E>): Readon
  * anything else `$eq`. Each key is checked here, once, refused as `refusal` where it is no operator.
  */
 export function whereOperators(val: unknown, refusal: string): [QueryWhereFieldOp, unknown][] {
-  const ops = Array.isArray(val) ? { $in: val } : isOperatorMap(val) ? val : { $eq: val };
+  const ops = Array.isArray(val) ? { $in: val } : isPlainObject(val) ? val : { $eq: val };
   return Object.entries(ops).map(([op, value]) => {
     if (!isFieldOp(op)) {
       throw new UqlUsageError(`${refusal}: ${op}`);
@@ -205,7 +204,7 @@ export function sizeComparisons(size: unknown): [keyof QuerySizeComparisonOps, u
   if (typeof size === 'number') {
     return [['$eq', size]];
   }
-  if (!isOperatorMap(size)) {
+  if (!isPlainObject(size)) {
     throw new UqlUsageError(`$size expects a number or bounds, got ${kindOf(size)}`);
   }
   const comparisons = Object.entries(size).filter(([, bound]) => bound !== undefined);

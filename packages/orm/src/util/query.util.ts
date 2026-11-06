@@ -13,7 +13,7 @@ import type {
   QueryWhere,
   QueryWhereArray,
 } from '../type/index.js';
-import { entityName, getKeys, isRecord, isScalarId, isWhereMap } from './object.util.js';
+import { entityName, getKeys, isPlainObject, isScalarId } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
@@ -89,7 +89,7 @@ export function whereIds<E>(meta: EntityMeta<E>, ids: EntityId<E> | EntityId<E>[
  * and a scalar read as a map has no keys, so the statement would match every row.
  */
 export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
-  if (!isWhereMap(where)) {
+  if (!isPlainObject(where)) {
     throw new UqlUsageError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
   }
 }
@@ -130,14 +130,7 @@ function undefinedPath(value: unknown): string[] | undefined {
 
 /** An array or a plain object: what a filter nests, and not a `Date`, a `sql` or a driver's value. */
 function isWalkable(value: unknown): value is Readonly<Record<string, unknown>> {
-  if (Array.isArray(value)) {
-    return true;
-  }
-  if (!isRecord(value)) {
-    return false;
-  }
-  const proto: unknown = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
+  return Array.isArray(value) || isPlainObject(value);
 }
 
 /** A parsed `$sort` direction: whether it is descending, and where it puts nulls if it says. */

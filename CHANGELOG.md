@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.112.1] - 2026-11-05
+
+- **Fixed:** a `Date` and a `bigint` cross HTTP as the entity holds them: `HttpQuerier` reads rows and the keys a write answers as their types say, a `Date` and not its ISO text, and the handler stores and compares what the browser sends, filters and update operators included.
+- `uql-orm/browser` ships no prebuilt `uql-browser.min.js`; every condition resolves the module entry.
+- **Fixed:** a `$where` value that is a class instance, such as a `URL`, is compared, where its condition was silently dropped.
+- **Fixed:** a `LOWER` or `UPPER` default no longer drifts on every MariaDB sync.
+
 ## [0.112.0] - 2026-11-04
 
 - A relation decorator takes its target first, as `rel.*` does: `@ManyToOne(() => User, { references: (post) => post.authorId })`, `@OneToMany(() => Post)`. `uql-codemod` rewrites the `entity` option.

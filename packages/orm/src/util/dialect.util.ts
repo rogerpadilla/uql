@@ -47,6 +47,7 @@ import {
   hasKeys,
   isJsonScalar,
   isOperatorObject,
+  isPlainObject,
   isRecord,
   someKey,
 } from './object.util.js';
@@ -763,26 +764,9 @@ function namedKeys(map: unknown): string[] {
   return isRecord(map) ? getKeys(map).filter((key) => map[key]) : [];
 }
 
-/**
- * Whether `value` is a map of comparison operators rather than a value to compare against. Only a
- * plain object qualifies: `Date`, `QuerySql`, `Uint8Array` and arrays are all `typeof 'object'`, and
- * reading their keys as operators drops the condition (a `Date` has none) or throws on an array's
- * indices. Shared by the SQL and MongoDB builders, whose `$where` and `$having` all face this.
- */
-export function isOperatorMap(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    !(value instanceof Date) &&
-    !(value instanceof Uint8Array) &&
-    !(value instanceof QuerySql)
-  );
-}
-
 /** A JSON object, matched by what it holds: a plain object with no operator key. */
 export function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return isOperatorMap(value) && !isOperatorObject(value);
+  return isPlainObject(value) && !isOperatorObject(value);
 }
 
 /**

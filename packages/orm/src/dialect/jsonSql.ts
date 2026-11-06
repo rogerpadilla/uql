@@ -1,7 +1,6 @@
 import { type FieldOptions, type FieldType, QuerySql } from '../type/index.js';
-import { isOperatorMap } from '../util/dialect.util.js';
 import { columnFamily, declaresNotNull, jsonPathKeys } from '../util/field.util.js';
-import { isOperatorKey, someKey } from '../util/object.util.js';
+import { isOperatorKey, isPlainObject, someKey } from '../util/object.util.js';
 import { JSON_SKIP_KEY } from './aliases.js';
 
 /**
@@ -156,5 +155,5 @@ export function holdsOperator(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some(holdsOperator);
   }
-  return isOperatorMap(value) && someKey(value, (key) => isOperatorKey(key) || holdsOperator(value[key]));
+  return isPlainObject(value) && someKey(value, (key) => isOperatorKey(key) || holdsOperator(value[key]));
 }

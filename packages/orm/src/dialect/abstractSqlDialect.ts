@@ -108,7 +108,7 @@ import {
   foldJson,
   type JsonArrayWrites,
   writesKeys,
-  isOperatorMap,
+  isPlainObject,
   isOperatorKey,
   isVectorSearch,
   type KeyJoin,
@@ -1412,7 +1412,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     };
     const conditions = values.map((value) => {
       const holds =
-        isOperatorMap(value) || Array.isArray(value)
+        isPlainObject(value) || Array.isArray(value)
           ? this.jsonHolds(ctx, element, value, scope)
           : [this.jsonElemEquals(ctx, slot, alias, value)];
       return jsonElemExists(from, holds, this.jsonElemHint);
@@ -3346,7 +3346,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     near: unknown,
     prefix: string | undefined,
   ): string {
-    if (!isOperatorMap(near)) {
+    if (!isPlainObject(near)) {
       throw new UqlUsageError(`$near on '${key}' expects an object of its $vector and bounds, got ${kindOf(near)}`);
     }
     const bounds = Object.entries(near).filter(([op, val]) => !VECTOR_QUERY_KEY_SET.has(op) && val !== undefined);

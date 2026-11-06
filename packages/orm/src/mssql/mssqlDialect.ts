@@ -45,7 +45,7 @@ import type {
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
 import { isExactDecimal, isInlinedExpression, jsonPathKeys } from '../util/field.util.js';
-import { assertNonNegativeInteger, definedEntries, isOperatorMap, keySet, RETURNED_ID } from '../util/index.js';
+import { assertNonNegativeInteger, definedEntries, isPlainObject, keySet, RETURNED_ID } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -97,7 +97,7 @@ function openJsonType(value: unknown): number {
   if (Array.isArray(value)) {
     return OPENJSON_TYPE.array;
   }
-  if (isOperatorMap(value)) {
+  if (isPlainObject(value)) {
     return OPENJSON_TYPE.object;
   }
   if (typeof value === 'number') {

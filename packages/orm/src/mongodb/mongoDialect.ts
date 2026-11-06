@@ -90,7 +90,7 @@ import {
   type JsonWrites,
   writesKeys,
   isJsonUpdateOp,
-  isOperatorMap,
+  isPlainObject,
   isOperatorObject,
   isRecord,
   isVectorSearch,
@@ -699,7 +699,7 @@ export class MongoDialect extends AbstractDialect {
       }
       // An object or an array is matched by what it holds, as the SQL engines read it, where native `$all`
       // compares the whole element. MongoDB takes `$elemMatch` there only when every value is one.
-      if (op === '$all' && Array.isArray(val) && val.some((value) => Array.isArray(value) || isOperatorMap(value))) {
+      if (op === '$all' && Array.isArray(val) && val.some((value) => Array.isArray(value) || isPlainObject(value))) {
         result[op] = this.allHolding(val);
         continue;
       }
@@ -744,7 +744,7 @@ export class MongoDialect extends AbstractDialect {
     if (Array.isArray(value)) {
       return this.transformOperators({ $all: value });
     }
-    if (!isOperatorMap(value)) {
+    if (!isPlainObject(value)) {
       return value;
     }
     return isOperatorObject(value) ? this.transformOperators(value) : this.containment(value);
@@ -759,7 +759,7 @@ export class MongoDialect extends AbstractDialect {
       if (Array.isArray(value)) {
         return { $elemMatch: { $all: this.allHolding(value) } };
       }
-      return { $elemMatch: isOperatorMap(value) ? this.held(value) : { $eq: value } };
+      return { $elemMatch: isPlainObject(value) ? this.held(value) : { $eq: value } };
     });
   }
 
@@ -1947,7 +1947,7 @@ export class MongoDialect extends AbstractDialect {
   private allHeld(ref: string, values: readonly unknown[], read: (value: unknown) => unknown): unknown {
     return allOf(
       values.map((value) =>
-        isOperatorMap(value) || Array.isArray(value)
+        isPlainObject(value) || Array.isArray(value)
           ? anyElement(ref, this.heldExpression('$$this', value, read))
           : { $cond: [{ $isArray: ref }, { $in: [read(value), ref] }, false] },
       ),
@@ -1961,7 +1961,7 @@ export class MongoDialect extends AbstractDialect {
       // Classified exactly as the SQL side classifies a `$where`/`$having` value, so the two agree
       // on identical input. Keeping only numbers and objects dropped a string or boolean without a
       // word, handing back every group instead of the filtered ones.
-      if (isOperatorMap(condition)) {
+      if (isPlainObject(condition)) {
         filter[alias] = this.transformOperators(condition, 'unsupported HAVING operator');
       } else {
         filter[alias] = Array.isArray(condition) ? { $in: condition } : condition;

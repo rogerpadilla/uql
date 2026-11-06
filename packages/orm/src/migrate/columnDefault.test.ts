@@ -25,6 +25,14 @@ class DefaultNote {
       .default(sql`coalesce(NULL, 'a')`),
   )
   derived?: string | null;
+  /** SQL MariaDB prints by an alias, `lcase('UCASE(Zz)')`, the alias inside the literal its own text. */
+  @Field(
+    f
+      .string()
+      .nullable()
+      .default(sql`LOWER('UCASE(Zz)')`),
+  )
+  lowered?: string | null;
   @Field(f.jsonb().nullable().default([])) tags?: Json<string[]> | null;
   /** Keys in another order, and spacing, than Postgres keeps them. */
   @Field(
@@ -63,6 +71,7 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
     expect(row.spelled).toBe('CURRENT_TIMESTAMP');
     expect(Math.abs(Number(row.createdAt) - Date.now())).toBeLessThan(60_000);
     expect(row.derived).toBe('a');
+    expect(row.lowered).toBe('ucase(zz)');
     expect([row.tags, row.settings, row.state]).toEqual([[], { a: [1, 2], b: 1 }, 'draft']);
     // The clock in the text and digits a bound `Date` takes, so the row matches itself read back.
     expect(await pool().count(DefaultNote, { $where: { id, createdAt: row.createdAt } })).toBe(1);
