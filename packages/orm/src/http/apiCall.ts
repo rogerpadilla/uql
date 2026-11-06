@@ -40,8 +40,8 @@ export type ApiCall<E, Op extends ApiOp = ApiOp> = Op extends ApiOp ? CallOf<E, 
 export type ApiNext<E> = (call: ApiCall<E>) => Promise<unknown>;
 
 /**
- * Runs around each call to one entity: reshape it before `next`, abort by throwing (a numeric `status` on the error
- * is honored), or reshape what `next` resolves to, the result as the entity holds it. `context` is the transport's.
+ * Runs around each call to one entity: reshape it before `next`, abort by throwing (a `UqlRequestError` answers its
+ * status), or reshape what `next` resolves to, the result as the entity holds it. `context` is the transport's.
  */
 export type EntityMiddleware<E, Ctx = unknown> = (call: ApiCall<E>, context: Ctx, next: ApiNext<E>) => Promise<unknown>;
 

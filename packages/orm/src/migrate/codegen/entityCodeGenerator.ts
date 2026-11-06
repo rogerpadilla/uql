@@ -317,8 +317,8 @@ function formatTypeDescription(type: CanonicalType): string {
 
 /**
  * A column's property as source, declared the way every read and insert types it: present (`!`) where
- * the column is NOT NULL, left out of an insert (`?`) where a default fills it (a single-column key stays
- * `!`, which an insert leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
+ * the column is NOT NULL, left out of an insert (`?`) where a default or an auto-increment fills it, a key
+ * included, `| null` where it holds NULL, `readonly` where the database computes it.
  */
 function propertySource(col: ColumnNode, propertyName: string): string {
   const type = col.type.category === 'json' ? 'Json' : canonicalToTypeScript(col.type);

@@ -5,7 +5,8 @@ description: >
   on PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, SQL Server, MongoDB, Turso, Neon, D1 and PGlite.
   Use when a project imports uql-orm, or when defining entities (@Entity, defineEntity), triggers or filters
   (soft delete, multi-tenancy), querying ($where, $populate, findMany, aggregate), writing (insertMany, upsertOne,
-  updateMany, returning), transactions, raw SQL (sql, refs) or migrations (uql-migrate) with it. UQL is not Prisma,
+  updateMany, returning), transactions, raw SQL (sql, refs), migrations (uql-migrate), or serving queries to a client
+  (createApi, serve, createClientQuerier, createQueryOptions) with it. UQL is not Prisma,
   Drizzle, TypeORM or MikroORM: their APIs do not carry over.
 ---
 
@@ -91,8 +92,6 @@ export class Post {
 - A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the version uql fills. A key the database generates is `@Field(f.number().autoIncrement()) id?: number` (`f.bigint().autoIncrement()` past 2^53); `.id()` alone generates nothing, so `f.number().id()` is a key the caller supplies and `@Field` refuses `?` on it, as on a `.references()` key. A NOT NULL field something fills (`.default()`, `.onInsert()`, a generated key) stays `!` when listed in the class's `[filledKey]?: 'id' | 'createdAt'`: inserts may omit it, reads always have it. MongoDB fills a text key declared `?` and `_id`. `insertOne`, `insertMany`, `saveOne` and `saveMany` resolve to a defined key, so no `!`; an upsert's may be `undefined`. On SQL engines an insert leaving out a key nothing declared fills throws before writing. `defineEntity` works all of this out.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
-- Serve entities to a client with `createApi({ pool, include, contextOf, use })` from `uql-orm/http`, mounted under a versioned base as `toFetchHandler(api)` on a catch-all, `app.use('/api/v1', toExpress(api))` (`uql-orm/express`) or `toRequestHandler(api)`; the wire is `{base}/:entity/:op` (`GET ?q=` or a JSON `POST` for reads, a JSON `POST` for writes) and a failure answers `{ error: { message, status, kind, path } }`, or called inside a tRPC or oRPC procedure as `api.call(input, ctx.req)`, which checks the call itself. `include` is required and fences relations too; `serve(User, { ops: ['read', 'update'], members: { passwordHash: false, role: ['read'], password: ['insert'] }, use: [...] })` narrows one, where a member's `read` covers select, filter, sort and aggregate and an unlisted member keeps every op. A middleware is `(call, context, next) => next(call)`: the API's `use` runs on every call, a `serve`'s on its entity's alone, typed by it (`call.op === 'insertOne'` types `call.payload` as a row). `.eager(false)` only leaves a field out of a read naming no fields, so a client's `$select` still reads it: hide a secret (`password`, a token) with `members: { password: false }`. Scope tenants with a `security` filter and `contextOf`, never a middleware; without `contextOf` a call keeps its caller's context.
-- The client is `createClientQuerier(httpTransport('/api/v1'))` from `uql-orm/browser`, or `createClientQuerier((call) => trpc.uql.mutate(call))` over any transport; it answers what the pool answers (rows, not `{ data }`) and reads rows back by the entity it is handed, which must be registered (importing its class does it): a `Date` field is a `Date` and a `bigint` exact, so its rows are not plain JSON and a cache persisting them needs a serializer. For TanStack Query, `const uql = createQueryOptions(transport)` and `useQuery(uql((db) => db.findMany(User, q)))`: the key is the call the read makes (`['uql', 'user', 'findMany', { query }]`), so it cannot drift from the fetch, and `uql.key(User)` invalidates every read of `User`.
 - A JSON column's property is `Json<T>`: `settings?: Json<{ theme?: string }> | null`. A plain object type reads as a relation, which `$where`, `$sort` and the update operators refuse.
 - A relation decorator takes its target first, then its options, as `rel.*` does. `mappedBy` and `references` may be left out where only one member fits, and then the options too: `@OneToMany(() => Post)`. `@ManyToMany(() => Tag, { through: () => PostTag })` names the junction entity. `cascade: true` writes related rows with their row, in one transaction on SQL and, on MongoDB, inside one the caller opens; an update replaces a to-many's rows.
 - A class inherits its base's fields, relations, hooks, filters, indexes, checks and triggers. A base of fields alone needs no `@Entity()`; one declaring entity options but no table is `@Entity({ abstract: true, ... }) abstract class`, which cannot be queried.
@@ -196,7 +195,7 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Signatures: https://uql-orm.dev/querying/methods.md
+- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `estimatedCount`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Signatures: https://uql-orm.dev/querying/methods.md
 - Query keys: `$select`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`, `$lock`. `$select: { password: false }` reads every field but `password`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
 - Results are narrowed to what the query selected and populated, at every depth. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`, or `QueryFindResult<User, typeof query>` for a query declared `as const satisfies Query<User>`. A function forwarding a query keeps the narrowing typed `<E extends object, const Q extends Query<E>>(entity: Type<E>, q: Captured<Query<E>, Q>): Promise<QueryFindResult<E, Q>[]>`.
 - `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent. A populated to-many is always a list. A to-one is optional unless `$required: true`, which keeps only the parents that have one.
@@ -266,6 +265,32 @@ await pool.transaction(async (querier) => {
 - `querier.onCommit(fn)` runs `fn` after the outermost commit, never on rollback.
 - A transaction opened in one place and ended in another uses `beginTransaction`, `commitTransaction` and `rollbackTransaction`. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 - A `findManyStream` holds its querier until the loop ends, refusing other statements meanwhile: run them after the loop, or on another connection.
+
+## Serving to a client
+
+A query is JSON, so a browser sends it as it is and the server checks it against what each entity exposes.
+
+```ts
+import { createApi, serve, toFetchHandler } from 'uql-orm/http';
+
+const api = createApi<Request>({
+  pool,
+  include: [Post, serve(User, { ops: ['read', 'update'], members: { email: ['read'] } })],
+  contextOf: (req) => ({ tenantId: tenantOf(req) }), // from a verified session or JWT
+});
+
+export const handler = toFetchHandler(api); // on a catch-all under /api/v1
+```
+
+- `include` is required, and its entities are the only ones a call reaches, through a relation too. Mount the API under a versioned base: `toFetchHandler(api)` for any fetch runtime (Hono, Next.js, Bun, Workers), `app.use('/api/v1', toExpress(api))` from `uql-orm/express`, or `toRequestHandler(api)` for any other framework. Inside a tRPC or oRPC procedure call `api.call(input, ctx)`, which checks the call itself; `.input(parseWireCall)` types it.
+- The wire is `{base}/:entity/:op` (`/api/v1/user/findMany`), the entity's kebab-cased class name and a client method: a read is `GET ?q=<call as JSON>` (or a JSON body by `POST` or `QUERY`: `httpTransport(url, { readMethod: 'POST' })`), a write a JSON `POST`. A success answers `{ data }`, a failure `{ error: { message, status, kind, path } }`.
+- `serve(Entity, { ops, members, use })` narrows one entity. `ops` lists what it takes of `'read'`, `'insert'`, `'update'`, `'delete'`; `members` maps a field or relation to `false` or a list of `'read'`, `'insert'`, `'update'`, and a member left out takes everything. `read` covers every clause naming the member (`$select`, `$where`, `$sort`, `$count`, `$populate`), and a read with no `$select` leaves out what it may not read. `.eager(false)` is no guard, since a client's `$select` still reads it: hide a secret with `members: { password: false }`.
+- A middleware is `(call, context, next) => next(call)`, run after the call is checked: reshape the call before `next`, or what `next` resolves to after it. The API's `use` runs on every call, a `serve`'s on its entity's alone, typed by it (`call.op === 'insertOne'` types `call.payload` as a row). Refuse a client with `throw new UqlRequestError('unauthorized', 401)` from `uql-orm`; any other error answers generically by its kind, or `500`.
+- Scope tenants with a `security` filter and `contextOf`, never with a middleware adding to `$where`. Without `contextOf` a call keeps its caller's context. On NestJS, `UqlModule.forRoot({ pool, contextOf })` does the same for your own routes.
+- The API serves one entity per call: no `aggregate`, upsert, stream or transaction. Write your own routes for those beside it; `toFetchHandler` answers `404` and `toExpress` falls through to `next()` on paths it does not serve.
+- The client is `createClientQuerier(httpTransport('/api/v1'))` from `uql-orm/browser`, or `createClientQuerier((call) => trpc.uql.mutate(call))` over any transport. It has the pool's find, `count`, `exists`, insert, save, update and delete methods and answers what they answer (rows, not `{ data }`), reading each row back by its entity, which must be registered (importing it does): a `Date` field is a `Date` and a `bigint` exact, so a cache persisting rows needs a serializer. `httpTransport` rejects with a `RequestError` carrying `status`, `kind` and `path`.
+- For TanStack Query, `const uql = createQueryOptions(transport)` and `useQuery(uql((db) => db.findMany(User, q)))`: the key is the call the read makes (`['uql', 'user', 'findMany', { query }]`), so it cannot drift from the fetch, and `uql.key(User)` invalidates every read of `User`.
+- A server bundle that minifies class names must keep them, or pass the same `entityPath` to `createApi` and `createClientQuerier`.
 
 ## Migrations
 

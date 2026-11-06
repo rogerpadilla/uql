@@ -151,8 +151,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /**
    * Insert records in as few statements as the bind limit allows, resolving to their ids in payload order, or
-   * the rows `returning` reads back. Ids are exact everywhere but MySQL, which infers them from its header and
-   * reports `undefined` rather than a guess for a generated key that is not `AUTO_INCREMENT`.
+   * the rows `returning` reads back.
    */
   insertMany<
     E extends object,
