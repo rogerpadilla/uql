@@ -1,4 +1,4 @@
-import type { CrudOperation } from '../../http/contract.js';
+import type { ApiOp } from '../../http/wireCall.js';
 /**
  * Keeps {@link ClientQuerier} in step with {@link UniversalQuerier} where each side is still written by
  * hand: the key coverage against a reviewed server-only list, and the option-less writes. Type-checked
@@ -56,8 +56,8 @@ export type MissingOnClient = AssertEmpty<Exclude<keyof UniversalQuerier, Server
 /** The client declares a method the server contract does not have. */
 export type ExtraOnClient = AssertEmpty<Exclude<keyof ClientQuerier, keyof UniversalQuerier>>;
 
-/** Every wire operation in `CRUD_ROUTES` has a client method. */
-export type CoversEveryCrudOperation = AssertEmpty<Exclude<CrudOperation, keyof ClientQuerier>>;
+/** Every op the API serves has a client method. */
+export type CoversEveryApiOp = AssertEmpty<Exclude<ApiOp, keyof ClientQuerier>>;
 
 declare const server: UniversalQuerier;
 declare const client: ClientQuerier;
@@ -138,13 +138,12 @@ export async function clientServerParity() {
   await client.count(Article, { $where: { id: 1 } });
 
   const serverExists: boolean = await server.exists(Article, { $where: { id: 1 } });
-  const clientExists: boolean = (await client.exists(Article, { $where: { id: 1 } })).data;
+  const clientExists: boolean = await client.exists(Article, { $where: { id: 1 } });
   void serverExists;
   void clientExists;
 
-  const serverInsertedId: number | undefined = await server.insertOne(Article, { id: 1, title: 'a' });
-  const clientInserted = await client.insertOne(Article, { id: 1, title: 'a' });
-  const clientInsertedId: number | undefined = clientInserted.data;
+  const serverInsertedId: number = await server.insertOne(Article, { id: 1, title: 'a' });
+  const clientInsertedId: number = await client.insertOne(Article, { id: 1, title: 'a' });
   void serverInsertedId;
   void clientInsertedId;
 
@@ -175,7 +174,7 @@ export async function clientServerParity() {
  * `IdValue` differ: a single key reads alike either way.
  */
 export async function writesReportOneShapeOnBothSides(server: UniversalQuerier, client: ClientQuerier) {
-  type Id = { studentId?: number; courseId?: string } | undefined;
+  type Id = { studentId?: number; courseId?: string };
   const row = { studentId: 1, courseId: 'maths', grade: 'A' };
 
   const serverInserted: Id = await server.insertOne(Enrolment, row);
@@ -183,10 +182,10 @@ export async function writesReportOneShapeOnBothSides(server: UniversalQuerier, 
   const serverSaved: Id = await server.saveOne(Enrolment, row);
   const serverSavedMany: Id[] = await server.saveMany(Enrolment, [row]);
 
-  const clientInserted: Id = (await client.insertOne(Enrolment, row)).data;
-  const clientInsertedMany: Id[] = (await client.insertMany(Enrolment, [row])).data;
-  const clientSaved: Id = (await client.saveOne(Enrolment, row)).data;
-  const clientSavedMany: Id[] = (await client.saveMany(Enrolment, [row])).data;
+  const clientInserted: Id = await client.insertOne(Enrolment, row);
+  const clientInsertedMany: Id[] = await client.insertMany(Enrolment, [row]);
+  const clientSaved: Id = await client.saveOne(Enrolment, row);
+  const clientSavedMany: Id[] = await client.saveMany(Enrolment, [row]);
 
   return [
     serverInserted,

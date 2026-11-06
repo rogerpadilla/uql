@@ -1,6 +1,7 @@
 import ts from 'typescript';
 import { BUILDER_NAMES, isBuilder, toBuilders } from './builders.js';
 import { foldClassDecorators } from './classOptions.js';
+import { rewriteClientAwait } from './clientCalls.js';
 import { rewriteColumnRefs } from './columnRefs.js';
 import {
   type Context,
@@ -333,6 +334,21 @@ function rewriteClassDecorators(node: ts.ClassLikeDeclaration, ctx: Context): vo
       reportEntityMembers(options, ctx);
     }
   }
+}
+
+/** `UqlModule.forRoot({ getContext })`, and its async form, as `{ contextOf }`, which the NestJS module names it now. */
+function rewriteModuleCall(call: ts.CallExpression, ctx: Context): void {
+  const callee = call.expression;
+  const [options] = call.arguments;
+  if (
+    !options ||
+    !ts.isPropertyAccessExpression(callee) ||
+    !['forRoot', 'forRootAsync'].includes(callee.name.text) ||
+    uqlExport(callee.expression, ctx.checker) !== 'UqlModule'
+  ) {
+    return;
+  }
+  renameOption(optionsOf(options), 'getContext', 'contextOf', call, ctx);
 }
 
 /**
@@ -975,6 +991,7 @@ export function rewriteLegacy(
     }
     if (ts.isCallExpression(node)) {
       rewriteDefineCall(node, ctx);
+      rewriteModuleCall(node, ctx);
       rewriteUpsertCall(node, ctx);
       if (importsUql) {
         rewriteBuilderCall(node, ctx);
@@ -986,6 +1003,9 @@ export function rewriteLegacy(
     }
     if (ts.isPropertyAssignment(node)) {
       rewriteStatementKeys(node, ctx);
+    }
+    if (ts.isAwaitExpression(node)) {
+      rewriteClientAwait(node, ctx);
     }
     if (importsUql && ts.isVariableDeclaration(node)) {
       rewriteUpsertResult(node, ctx);

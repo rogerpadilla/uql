@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
 import { Entity, f, Field, getMeta, OneToMany } from '../entity/index.js';
-import { parseQueryParams } from '../http/query.js';
+import { parseWireQuery } from '../http/wireQuery.js';
 import {
   anyUuid,
   Company,
@@ -2117,7 +2117,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   /** A list is the raw form, which JSON cannot carry: a name in one arrives from an untyped client. */
   shouldRefuseAFieldNameInA$selectList() {
-    const query = parseQueryParams<User>({ $select: '["password"]' });
+    const query = parseWireQuery<User>({ $select: ['password'] });
     expect(() => this.exec((ctx) => this.dialect.find(ctx, User, query))).toThrow(
       'a $select list takes sql() expressions only, not a string: name fields in its map form, { field: true }',
     );

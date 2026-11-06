@@ -101,7 +101,10 @@ export interface ColumnBuilder<in out O, in out V, F extends Family> extends Col
   /** The column's name, where it is not the field's. */
   name(column: string): With<O, V, { readonly name: string }, F>;
   comment(text: string): With<O, V, { readonly comment: string }, F>;
-  /** Leaves the column out of a read naming no fields. */
+  /**
+   * Leaves the column out of a read naming no fields. A read naming it still gets it, so it keeps no secret from a
+   * client: an API's `serve(Entity, { members: { field: false } })` does.
+   */
   eager(eager: false): With<O, V, { readonly eager: false }, F>;
   /** The SQL type where it differs from the one the builder implies; an engine's own, `sql`citext``, verbatim. */
   columnType(type: ColumnType): With<O, V, { readonly columnType: ColumnType }, F>;

@@ -27,6 +27,7 @@ import type {
   QueryKeyset,
   QueryOne,
   QueryOptions,
+  StatementOptions,
   QueryPage,
   QueryPopulate,
   QuerySearch,
@@ -195,7 +196,7 @@ function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E
 function upsertsByReading<E extends object>(meta: EntityMeta<E>, q: QueryUpsert<E>, rows: readonly object[]): boolean {
   return (
     meta.version !== undefined ||
-    securityConditions(meta).length > 0 ||
+    securityConditions(meta, ['read', 'insert', 'update']).length > 0 ||
     writesRelations(meta, q.$update ? [...rows, q.$update] : rows)
   );
 }
@@ -289,13 +290,13 @@ export type ReportingWrites = {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts: QueryOptions,
+    opts: StatementOptions,
     keys: readonly FieldKey<E>[],
   ): Promise<E[]>;
   delete<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts: QueryOptions,
+    opts: StatementOptions,
     keys: readonly FieldKey<E>[],
   ): Promise<E[]>;
   /** Inserts `rows`, reporting each in their order and placing its key on it, as `internalInsertMany` does. */
@@ -348,6 +349,12 @@ async function runCallbacks(callbacks: readonly (() => unknown)[]): Promise<void
     await callback();
   }
 }
+
+/**
+ * What an upsert or a restore reads and updates rows with: soft-deleted ones too, since a key holds across both, held
+ * to the `security` filters an update is.
+ */
+const UPDATING_DELETED: StatementOptions = { ...withDeleted(), access: 'update' };
 
 const STREAM_HOLDS_QUERIER =
   'a stream is reading on this querier: run the statement after its loop, or on another querier';
@@ -482,7 +489,7 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalFindMany<E extends object>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<E[]>;
 
   /**
@@ -538,7 +545,7 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalFindManyStream<E extends object>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): AsyncIterable<E>;
 
   /** Find many records and count every match, the entity passed first or as the query's `$entity`. */
@@ -568,7 +575,7 @@ export abstract class AbstractQuerier implements Querier {
   protected async internalFindManyAndCount<E extends object>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<[E[], number]> {
     return Promise.all([
       this.internalFindMany(entity, q, opts),
@@ -876,10 +883,11 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'updateMany', q, opts);
     const meta = getMeta(entity);
-    const { returning, ...rest } = opts ?? {};
+    const { returning, ...given } = opts ?? {};
+    const rest: StatementOptions = { ...given, access: 'update' };
     const keys = returnedKeys(meta, returning);
     if (!keys) {
-      return this.updateMatching(entity, q, payload, opts);
+      return this.updateMatching(entity, q, payload, rest);
     }
     const reportingWrites = this.reportingWrites(meta, 'update');
     const reporting = (row: object) =>
@@ -909,7 +917,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     row: E,
-    opts: QueryOptions,
+    opts: StatementOptions,
     keys: readonly FieldKey<E>[],
   ): Promise<Partial<E>[]> {
     const meta = getMeta(entity);
@@ -929,7 +937,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     settled?: EntityId<E>[],
   ): Promise<number> {
     const meta = getMeta(entity);
@@ -948,7 +956,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     row: UpdatePayload<E>,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     lockKey: FieldKey<E> | undefined,
     settled?: EntityId<E>[],
   ): Promise<number> {
@@ -1020,7 +1028,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     row: UpdatePayload<E>,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     unwritten: number,
   ): Promise<number> {
     return writesColumns(getMeta(entity), row) ? this.internalUpdateMany(entity, q, row, opts) : unwritten;
@@ -1060,7 +1068,7 @@ export abstract class AbstractQuerier implements Querier {
   private async settleIds<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<EntityId<E>[]> {
     const meta = getMeta(entity);
     const rows = await this.readForWrite(entity, idOnlyQuery(meta, q), opts);
@@ -1073,7 +1081,7 @@ export abstract class AbstractQuerier implements Querier {
    * the transaction is the guard: libSQL and Turso take the write lock at `BEGIN`, SQLite fails the racer, and so
    * does MongoDB inside a transaction the caller opens.
    */
-  private readForWrite<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]> {
+  private readForWrite<E extends object>(entity: Type<E>, q: Query<E>, opts?: StatementOptions): Promise<E[]> {
     const held = this.dialect.features.rowLocks && this.scopeHere() ? { ...q, $lock: true } : q;
     return this.internalFindMany(entity, held, opts);
   }
@@ -1088,7 +1096,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<number>;
 
   async restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number> {
@@ -1108,7 +1116,7 @@ export abstract class AbstractQuerier implements Querier {
     // No version: a restore only undoes the stamp a delete left, which takes none either, and two of
     // them racing agree on the result anyway. A lock is for content, and a restore writes none.
     return this.hooked(entity, 'Update', [{ [meta.softDelete]: null }], ([row]) =>
-      this.updateRows(entity, { ...q, $where }, row, withDeleted(), undefined),
+      this.updateRows(entity, { ...q, $where }, row, UPDATING_DELETED, undefined),
     );
   }
 
@@ -1271,13 +1279,15 @@ export abstract class AbstractQuerier implements Querier {
         const assigned = foundRowAssigned(meta, q, row);
         if (assigned) {
           const $where = q.$where ? whereAnd(whereIds(meta, id), [q.$where]) : whereIds(meta, id);
-          await this.updateRows(entity, { $where }, assigned, withDeleted(), meta.version).catch((error: unknown) => {
-            // Still at its version, so its `$where` excluded it: kept, as an unversioned row is.
-            if (q.$where && error instanceof UqlOptimisticLockError && error.actual === error.expected) {
-              return 0;
-            }
-            throw error;
-          });
+          await this.updateRows(entity, { $where }, assigned, UPDATING_DELETED, meta.version).catch(
+            (error: unknown) => {
+              // Still at its version, so its `$where` excluded it: kept, as an unversioned row is.
+              if (q.$where && error instanceof UqlOptimisticLockError && error.actual === error.expected) {
+                return 0;
+              }
+              throw error;
+            },
+          );
         }
       }
       const inserts = rows.filter((_, index) => ids[index] === undefined);
@@ -1352,10 +1362,11 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'deleteMany', q, opts);
     const meta = getMeta(entity);
-    const { returning, ...rest } = opts ?? {};
+    const { returning, ...given } = opts ?? {};
+    const rest: StatementOptions = { ...given, access: 'delete' };
     const keys = returnedKeys(meta, returning);
     if (!keys) {
-      return this.deleteRows(entity, q, opts);
+      return this.deleteRows(entity, q, rest);
     }
     const read = [...keys, ...meta.ids];
     // A soft delete stamps the rows, which a `RETURNING` would report stamped rather than as they were.
@@ -1396,7 +1407,7 @@ export abstract class AbstractQuerier implements Querier {
   private async deleteRows<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
     read?: E[],
   ): Promise<number> {
     const meta = getMeta(entity);
@@ -1431,7 +1442,7 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalDeleteMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<number>;
 
   saveOne<
@@ -1700,7 +1711,7 @@ export abstract class AbstractQuerier implements Querier {
    * delete stamps those that can be stamped and keeps the rest, junction links included, for a restore.
    * `EntityId` because a settled composite row is an object, which {@link childrenOf} reads each foreign key column out of.
    */
-  private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts: QueryOptions) {
+  private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts: StatementOptions) {
     const meta = getMeta(entity);
     const soft = deletionOf(meta, opts).stamp !== undefined;
     for (const relKey of cascadingRelations(meta, 'delete')) {
@@ -1927,7 +1938,7 @@ export abstract class AbstractQuerier implements Querier {
     const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
     const byConflict = new Map<string, E | undefined>();
     for (const q of this.keyedReads(keys, distinct, [...new Set([...select, ...keys])])) {
-      for (const row of await this.readForWrite(entity, q, withDeleted())) {
+      for (const row of await this.readForWrite(entity, q, UPDATING_DELETED)) {
         const key = rowKey(row, keys);
         byConflict.set(key, byConflict.has(key) ? undefined : row);
       }

@@ -3,7 +3,7 @@ import { Computed, Entity, f, Field, getMeta, ManyToOne, OneToMany, removeEntity
 import { assertDefined } from '../test/index.js';
 import type { Json, QueryKeyset } from '../type/index.js';
 import { sql } from '../util/sql.js';
-import { UqlUsageError } from '../util/uqlError.js';
+import { type UqlErrorOptions, UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
 
 @Entity({
@@ -83,100 +83,119 @@ describe('keysetRead', () => {
     );
   });
 
-  it.each<[string, QueryKeyset<Order>, string]>([
+  it.each<[string, QueryKeyset<Order>, string, UqlErrorOptions]>([
     [
       'no sort',
       { $limit: 2 },
       "a page of 'Order' sorts by nothing, which two rows can share: add 'id' or a unique, non-null field to the end of $sort",
+      { path: ['$sort'] },
     ],
     [
       'a sort two rows can share',
       { $sort: { createdAt: -1 }, $limit: 2 },
       "a page of 'Order' sorts by createdAt, which two rows can share: add 'id' or a unique, non-null field to the end of $sort",
+      { path: ['$sort'] },
     ],
     [
       'a unique field holding nulls, which every engine lets repeat',
       { $sort: { ref: 1 }, $limit: 2 },
       "a page of 'Order' sorts by ref, which two rows can share: add 'id' or a unique, non-null field to the end of $sort",
+      { path: ['$sort'] },
     ],
     [
       'a partial unique index, which leaves the rows outside it free to tie',
       { $sort: { batch: 1 }, $limit: 2 },
       "a page of 'Order' sorts by batch, which two rows can share: add 'id' or a unique, non-null field to the end of $sort",
+      { path: ['$sort'] },
     ],
     [
       'a JSON column',
       { $sort: { meta: 1, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'meta': a json column holds no one value a cursor can compare past",
+      { path: ['$sort', 'meta'] },
     ],
     [
       'a vector column',
       { $sort: { embedding: 1, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'embedding': a vector column holds no one value a cursor can compare past",
+      { path: ['$sort', 'embedding'] },
     ],
     [
       'a blob column',
       { $sort: { digest: 1, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'digest': a blob column holds no one value a cursor can compare past",
+      { path: ['$sort', 'digest'] },
     ],
     [
       'a timestamp keeping digits past the millisecond a Date holds',
       { $sort: { exactAt: 1, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'exactAt': it keeps 6 fractional digits, and a cursor the milliseconds a Date holds",
+      { path: ['$sort', 'exactAt'] },
     ],
     [
       'a relation',
       { $sort: { customer: { name: 1 }, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'customer': a relation's value is read through a join that its filter would not keep",
+      { path: ['$sort', 'customer'] },
     ],
     [
       'a JSON path',
       { $sort: { 'meta.rank': 1, id: 1 }, $limit: 2 },
       "cannot page 'Order' by 'meta.rank': a cursor compares fields, and this is none",
+      { path: ['$sort', 'meta.rank'] },
     ],
     [
       'a relevance',
       { $sort: { $text: 'desc', id: 1 }, $limit: 2 },
       "cannot page 'Order' by '$text': a relevance is scored per row, not stored on it",
+      { path: ['$sort', '$text'] },
     ],
     [
       'a vector distance',
       { $sort: { embedding: { $vector: [1, 2, 3] }, id: 1 }, $limit: 2 },
       `cannot page 'Order' by 'embedding': a vector distance is approximate, so "past this one" is no stable page`,
+      { path: ['$sort', 'embedding'] },
     ],
     [
       'a deduplication',
       { $sort: { id: 1 }, $limit: 2, $distinct: true },
       "a page of 'Order' takes no $distinct: its rows are a grouping, which the cursor compares no column of",
+      { path: ['$distinct'] },
     ],
     [
       'both cursors',
       { $sort: { id: 1 }, $limit: 2, $after: 'a', $before: 'b' },
       "a page of 'Order' reads past one cursor, $after or $before, not both",
+      { path: ['$before'] },
     ],
     [
       'a size of no rows',
       { $sort: { id: 1 }, $limit: 0 },
       "a page of 'Order' holds a positive whole number of rows, and $limit is 0",
+      { path: ['$limit'] },
     ],
     [
       'a fractional size',
       { $sort: { id: 1 }, $limit: 1.5 },
       "a page of 'Order' holds a positive whole number of rows, and $limit is 1.5",
+      { path: ['$limit'] },
     ],
     [
       'a raw projection',
       { $select: [sql`1`], $sort: { id: 1 }, $limit: 2 },
       "a page of 'Order' selects fields, which its cursor is read off",
+      { path: ['$select'] },
     ],
-  ])('should refuse %s', (_, q, message) => {
-    expect(() => lowest(q)).toThrow(new UqlUsageError(message));
+  ])('should refuse %s', (_, q, message, opts) => {
+    expect(() => lowest(q)).toThrow(new UqlUsageError(message, opts));
   });
 
   it('should refuse an offset, which reaches here untyped through `/http`', () => {
     const untyped = { $sort: { id: 1 }, $limit: 2, $skip: 4 } as const;
     expect(() => lowest(untyped)).toThrow(
-      new UqlUsageError("a page of 'Order' takes no $skip: an offset reintroduces the drift a cursor removes"),
+      new UqlUsageError("a page of 'Order' takes no $skip: an offset reintroduces the drift a cursor removes", {
+        path: ['$skip'],
+      }),
     );
   });
 
@@ -186,7 +205,9 @@ describe('keysetRead', () => {
 
   it('should refuse sorting by a relation aggregate', () => {
     expect(() => keysetRead(getMeta(Customer), { $sort: { orderCount: -1, id: 1 }, $limit: 2 }, true)).toThrow(
-      new UqlUsageError("cannot page 'Customer' by 'orderCount': an aggregate is computed per row, not stored on it"),
+      new UqlUsageError("cannot page 'Customer' by 'orderCount': an aggregate is computed per row, not stored on it", {
+        path: ['$sort', 'orderCount'],
+      }),
     );
   });
 

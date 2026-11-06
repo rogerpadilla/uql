@@ -36,11 +36,16 @@ export type QueryOptions = {
 };
 
 /**
- * What a statement is rendered with, on top of the options its caller passed. Kept apart from
- * {@link QueryOptions} because that one is public - it is the third argument of every querier method -
- * and none of this is a caller's to set: an alias is the dialect's to choose and to spell.
+ * What a statement runs with, on top of the options its caller passed. Kept apart from {@link QueryOptions}
+ * because that one is public, the third argument of every querier method, and none of this is a caller's to set.
  */
-export type QueryRenderOptions = QueryOptions & {
+export type StatementOptions = QueryOptions & {
+  /** What the statement does, which picks the `security` filters scoping it: a read by default. A write's reads take its own. */
+  readonly access?: EntityAccess;
+};
+
+/** What a statement is rendered with: an alias is the dialect's to choose and to spell. */
+export type QueryRenderOptions = StatementOptions & {
   /** The alias columns are read off, escaped by the dialect unless {@link escapedPrefix} spells it. */
   prefix?: string;
   /**
@@ -131,6 +136,12 @@ export type FilterWhere<E> = QueryWhere<E> | ((context: UqlContext | undefined) 
  */
 export type FilterOnMissing = 'skip' | 'throw';
 
+/** What a field takes: reading it (select, filter, sort, distinct, aggregate) and writing it. */
+export type FieldAccess = 'read' | 'insert' | 'update';
+
+/** What a statement does to an entity's rows: a field's access, and deleting rows, which no field has a part in. */
+export type EntityAccess = FieldAccess | 'delete';
+
 /**
  * Authoring shape for `@Entity({ filters })` and `defineEntity`'s `.filters()`.
  */
@@ -143,6 +154,7 @@ export type FilterOptions<E = unknown> = {
       readonly security?: false;
       /** What to do when {@link FilterOptions.where} returns `undefined`. Defaults to `skip`. */
       readonly onMissing?: FilterOnMissing;
+      readonly ops?: never;
     }
   | {
       /**
@@ -151,6 +163,11 @@ export type FilterOptions<E = unknown> = {
        */
       readonly security: true;
       readonly onMissing?: 'throw';
+      /**
+       * The statements it holds, every one by default: `['insert', 'update', 'delete']` lets anyone read a row
+       * and only its author write it. An update or a delete reads the rows it changes, so read ones hold it too.
+       */
+      readonly ops?: readonly EntityAccess[];
     }
 );
 

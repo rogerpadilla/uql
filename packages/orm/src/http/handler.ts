@@ -1,307 +1,73 @@
-import { withContext } from '../context/context.js';
-import { getMeta, soleIdOf } from '../entity/index.js';
-import type {
-  Type,
-  EntityMeta,
-  Querier,
-  QuerierPool,
-  Query,
-  RelationMeta,
-  RequestSuccessResponse,
-  AbstractType,
-  UpdateWrite,
-  UqlContext,
-} from '../type/index.js';
-import { isRecord } from '../util/object.util.js';
-import { whereWith } from '../util/query.util.js';
-import { UqlUsageError } from '../util/uqlError.js';
-import {
-  CRUD_ROUTES,
-  type CrudOperation,
-  entityPath,
-  type HttpMethod,
-  matchRoute,
-  type RouteMatch,
-} from './contract.js';
-import { parseQueryParams, type WireCursors, type WireFlags } from './query.js';
-import { readWireData, readWireQuery, writeWireData } from './wireRow.js';
+import { UqlRequestError } from '../util/uqlError.js';
+import type { Api } from './api.js';
+import { type HandlerResponse, toErrorResponse } from './errors.js';
+import { decodeRequest, type HttpRequest, isJson } from './route.js';
+import type { ApiOp } from './wireCall.js';
 
-/**
- * Framework-normalized request: adapters (express, fetch, ...) reduce their native
- * request to this shape and get back a status + JSON body.
- */
-export type HandlerRequest<Ctx = unknown> = {
-  readonly method: string;
-  readonly entityPath: string;
-  readonly subPath?: string;
-  /**
-   * raw query-string entries; JSON values may still be stringified.
-   */
-  readonly query?: Record<string, unknown>;
-  /**
-   * parsed JSON body.
-   */
-  readonly body?: unknown;
-  /**
-   * adapter-supplied request context (express `req`, fetch `Request`, ...), passed through to hooks.
-   */
+/** A request to `/{entityPath}/{op}` as a framework adapter reduces it, with what `contextOf` and middleware get. */
+export type HandlerRequest<Ctx = unknown> = Omit<HttpRequest, 'op'> & {
+  readonly op: string;
+  /** The adapter's own request (express `req`, fetch `Request`, ...): the auth and tenant source. */
   readonly context: Ctx;
 };
 
-export type HandlerResponse = {
-  readonly status: number;
-  readonly body: unknown;
-};
-
-export type RequestHookContext<E extends object, Ctx = unknown> = {
-  readonly meta: EntityMeta<E>;
-  readonly op: CrudOperation;
-  readonly method: HttpMethod;
-  /** The parsed query, to reshape in place. Scope rows with a `security` filter instead, which a client cannot override. */
-  query: Query<E> & WireFlags & WireCursors;
-  /**
-   * request payload - reassignable for sanitization or field injection.
-   */
-  body?: unknown;
-  /**
-   * adapter-supplied request context - the auth/tenant source (e.g. `req.user`).
-   */
-  readonly context: Ctx;
-};
-
-export type RequestHook<Ctx = unknown> = <E extends object>(ctx: RequestHookContext<E, Ctx>) => void | Promise<void>;
-
-export type ResponseHook<Ctx = unknown> = <E extends object>(
-  ctx: RequestHookContext<E, Ctx>,
-  envelope: RequestSuccessResponse<unknown>,
-) => void | Promise<void>;
-
-export type RequestHandlerOptions<Ctx = unknown> = {
-  /**
-   * The entities served, and the only ones a request reaches, through a relation too: nothing is served
-   * by being defined, so an entity holding secrets (a session's token) stays off the wire unless named.
-   */
-  include: readonly Type<object>[];
-  /** The URL segment an entity is addressed by, its kebab-cased class name by default; the browser client takes the same option. */
-  entityPath?: (entity: AbstractType<unknown>) => string;
-  /**
-   * Allow augment any kind of request before it runs. Hooks may be async
-   * and abort the request by throwing (a numeric `status` on the error is honored).
-   */
-  pre?: RequestHook<Ctx>;
-  /**
-   * Allow augment a save request (POST | PUT | PATCH) before it runs.
-   */
-  preSave?: RequestHook<Ctx>;
-  /**
-   * Allow augment a filter request (GET | DELETE) before it runs.
-   */
-  preFilter?: RequestHook<Ctx>;
-  /**
-   * Shape the successful response before it is sent: strip sensitive fields,
-   * derive presentation fields, or coerce null data. Mutate `envelope.data` in place
-   * or reassign it. Runs after the operation (and after commit for writes).
-   */
-  post?: ResponseHook<Ctx>;
-  /**
-   * Derive the ambient {@link UqlContext} (e.g. `{ tenantId, userId }`) from the adapter request.
-   * The whole request runs inside `withContext`, so parameterized/`security` filters are scoped
-   * automatically. Derive tenant/auth from a verified source (session, JWT) - never trust the client.
-   */
-  getContext?: (context: Ctx) => UqlContext | undefined | Promise<UqlContext | undefined>;
-  /**
-   * The pool this handler runs on. A function is called per request, after `getContext`, with the
-   * adapter's request and the context that resolved from it - which is what lets one deployment
-   * serve a database per tenant, where a process-wide default could only serve one.
-   */
-  pool: QuerierPool | ((context: Ctx, appContext: UqlContext) => QuerierPool | Promise<QuerierPool>);
-};
-
 /**
- * Returns `undefined` synchronously for an unknown entity or route so adapters can fall through
- * (e.g. express `next()`); rejects with the original error on failure so adapters map it
- * (e.g. `toErrorResponse`).
+ * Answers a request with a status and a JSON body, a failure included, or `undefined` for an entity or an op the API
+ * does not serve, so an adapter can fall through (express `next()`).
  */
-export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse> | undefined;
+export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse | undefined>;
 
-/** `Company (crm.Company)`: the class, and the table it maps, which is what tells two apart. */
-function tableOf(entity: Type<object>): string {
-  const meta = getMeta(entity);
-  return `${entity.name} (${meta.schema ? `${meta.schema}.${meta.name}` : meta.name})`;
+/** The API over HTTP for any framework: mount it on `{base}/:entityPath/:op`, e.g. `/api/v1/:entityPath/:op`. */
+export function toRequestHandler<Ctx>(api: Api<Ctx>): RequestHandler<Ctx> {
+  return async ({ op, ...req }) => (api.serves(req.entityPath, op) ? answerRequest(api, { ...req, op }) : undefined);
 }
 
-export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx>): RequestHandler<Ctx> {
-  const { include: entities, pre, preSave, preFilter, post, getContext, pool } = opts;
-  const pathOf = opts.entityPath ?? entityPath;
-
-  // Refused rather than defaulted to every entity defined, which would serve whatever one registers.
-  if (!entities?.length) {
-    throw new UqlUsageError("name the entities the handler serves in 'include': it serves those alone");
+/** Answers a request to an op the API serves (`api.serves`) with a status and a JSON body, a failure included. */
+export async function answerRequest<Ctx>(
+  api: Api<Ctx>,
+  { context, ...req }: HandlerRequest<Ctx> & { readonly op: ApiOp },
+): Promise<HandlerResponse> {
+  try {
+    return { status: 200, body: { data: await api.call(decodeRequest(req), context) } };
+  } catch (err) {
+    return toErrorResponse(err);
   }
+}
 
-  // All of them at once, so fixing the first collision does not just reveal the next.
-  const byPath = Map.groupBy(entities, pathOf);
-  const collisions = [...byPath].filter(([, clashing]) => clashing.length > 1);
-  if (collisions.length) {
-    const lines = collisions.map(([path, clashing]) => `  /${path} <- ${clashing.map(tableOf).join(', ')}`);
-    throw new UqlUsageError(
-      `every entity below shares a route with another, so all but the first are unreachable:\n${lines.join('\n')}\n` +
-        "A route is the kebab-cased class name unless 'entityPath' says otherwise. Name them apart, " +
-        "pass an 'entityPath', or pass only one of them in 'include'.",
-    );
-  }
-  const entityByPath = new Map<string, Type<object>>([...byPath].map(([path, [entity]]) => [path, entity]));
-  const served = new Set(entities);
-
-  return (req) => {
-    const entity = entityByPath.get(req.entityPath);
-    if (!entity) {
-      return undefined;
+/**
+ * The API as `(request: Request) => Promise<Response>`, for any fetch-native runtime (Hono, Next.js route handlers,
+ * Bun.serve, Cloudflare Workers, SvelteKit, Astro), handing the `Request` to the API as its context. Mount it on a
+ * catch-all under the API's base: it reads the last two segments of the path as the entity and the op.
+ */
+export function toFetchHandler(api: Api<Request>): (request: Request) => Promise<Response> {
+  return async (request) => {
+    const url = new URL(request.url);
+    const [entityPath = '', op = ''] = url.pathname.split('/').filter(Boolean).slice(-2).map(decodedSegment);
+    if (!api.serves(entityPath, op)) {
+      return answer(toErrorResponse(new UqlRequestError('Not Found', 404)));
     }
-    const match = matchRoute(req.method, req.subPath);
-    if (!match) {
-      return undefined;
+    const { method } = request;
+    const contentType = request.headers.get('content-type');
+    const q = url.searchParams.get('q') ?? undefined;
+    try {
+      // Read only where it is JSON: any other body is refused unread.
+      const body = request.body && isJson(contentType) ? await request.text() : undefined;
+      return answer(await answerRequest(api, { method, entityPath, op, q, body, contentType, context: request }));
+    } catch (err) {
+      return answer(toErrorResponse(err));
     }
-    return run(entity, match, req);
   };
-
-  async function run<E extends object>(
-    entity: Type<E>,
-    { op, method, id }: RouteMatch,
-    req: HandlerRequest<Ctx>,
-  ): Promise<HandlerResponse> {
-    const meta = getMeta(entity);
-    // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
-    const query = readWireQuery(meta, parseQueryParams<E>(method === 'QUERY' ? req.body : req.query));
-    const { method: verb } = CRUD_ROUTES[op];
-    // What the client sent, before the hooks: a relation a hook adds is the server's own to add.
-    assertServed(meta, query, served);
-    assertServed(meta, req.body, served);
-    const hookCtx: RequestHookContext<E, Ctx> = { meta, op, method, query, body: req.body, context: req.context };
-    const appContext = (await getContext?.(req.context)) ?? {};
-    // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
-    return withContext(appContext, async () => {
-      await pre?.(hookCtx);
-      await (verb === 'GET' || verb === 'DELETE' ? preFilter : preSave)?.(hookCtx);
-      // Resolved after the hooks: one that aborts the request must not reach the pool at all.
-      const resolved = typeof pool === 'function' ? await pool(req.context, appContext) : pool;
-      // A read acquires and releases; a write is one transaction, so a failing cascade takes its parent with it.
-      const envelope = await (verb === 'GET' ? resolved.withQuerier(execute) : resolved.transaction(execute));
-      await post?.(hookCtx, envelope);
-      return { status: 200, body: { ...envelope, data: writeWireData(meta, envelope.data, CRUD_ROUTES[op].answers) } };
-    });
-
-    /** Runs `op`, reading the query and body after the hooks, which may have reshaped or reassigned them. */
-    async function execute(querier: Querier): Promise<RequestSuccessResponse<unknown>> {
-      const { query } = hookCtx;
-      // A write's rows as the entity holds them: JSON carried each `Date` and `bigint` as text.
-      const body = readWireData(meta, hookCtx.body, 'rows');
-      const { hardDelete = false, count: counts } = query;
-      const scoped =
-        id === undefined
-          ? query
-          : { ...query, $where: whereWith(soleIdOf(meta, 'the HTTP handler'), id, query.$where) };
-      switch (op) {
-        case 'findOne':
-        case 'findOneById': {
-          const data = await querier.findOne(entity, scoped);
-          return { data, count: data ? 1 : 0 };
-        }
-        case 'count': {
-          const count = await querier.count(entity, query);
-          return { data: count, count };
-        }
-        case 'findMany': {
-          if (!counts) {
-            return { data: await querier.findMany(entity, query) };
-          }
-          // `findManyAndCount` counts every matching row, whereas `count` would count only the page `$limit` takes.
-          const [data, count] = await querier.findManyAndCount(entity, query);
-          return { data, count };
-        }
-        case 'findManyPage': {
-          const { $limit } = query;
-          if ($limit === undefined) {
-            throw new UqlUsageError('a page names how many rows it holds in $limit');
-          }
-          return { data: await querier.findManyPage(entity, { ...query, $limit }) };
-        }
-        case 'insertOne':
-          return { data: await querier.insertOne(entity, rowOf(body) as E), count: 1 };
-        case 'saveOne':
-          return { data: await querier.saveOne(entity, rowOf(body) as E), count: 1 };
-        case 'insertMany': {
-          const data = await querier.insertMany(entity, rowsOf(body) as E[]);
-          return { data, count: data.length };
-        }
-        case 'saveMany': {
-          const data = await querier.saveMany(entity, rowsOf(body) as E[]);
-          return { data, count: data.length };
-        }
-        // A write returns how many rows it changed, and the querier still refuses a delete that names no rows.
-        case 'updateMany':
-        case 'updateOneById': {
-          const count = await querier.updateMany(entity, scoped, rowOf(body) as UpdateWrite<E>);
-          return { data: count, count };
-        }
-        case 'deleteMany':
-        case 'deleteOneById': {
-          const count = await querier.deleteMany(entity, scoped, { hardDelete });
-          return { data: count, count };
-        }
-      }
-    }
-  }
 }
 
-/** The one row a write sends: a JSON object, refused otherwise as a malformed query is. */
-function rowOf(body: unknown): object {
-  if (!isRecord(body)) {
-    throw new UqlUsageError('the body must be a JSON object');
-  }
-  return body;
+function answer({ status, body, headers }: HandlerResponse): Response {
+  return Response.json(body, { status, ...(headers && { headers }) });
 }
 
-/** The rows a `many` write sends: a JSON array of objects. */
-function rowsOf(body: unknown): object[] {
-  if (!Array.isArray(body) || !body.every(isRecord)) {
-    throw new UqlUsageError('the body must be a JSON array of rows');
-  }
-  return body;
-}
-
-/**
- * Refuses a relation, at any depth of what a client sent, leading to an entity this handler does not
- * serve: `include` fences the routes, and this the rows a `$populate`, a filter, a sort, a tally or a
- * written row would otherwise reach through them. Every `$` clause holds keys of the entity it sits on.
- */
-function assertServed<E>(
-  meta: EntityMeta<E>,
-  sent: unknown,
-  served: ReadonlySet<AbstractType<object>>,
-  path = '',
-): void {
-  if (Array.isArray(sent)) {
-    for (const item of sent) {
-      assertServed(meta, item, served, path);
-    }
-    return;
-  }
-  if (typeof sent !== 'object' || sent === null) {
-    return;
-  }
-  const relations: Readonly<Record<string, RelationMeta | undefined>> = meta.relations;
-  for (const [key, value] of Object.entries(sent)) {
-    const relation = Object.hasOwn(relations, key) ? relations[key] : undefined;
-    if (relation) {
-      const target = relation.entity();
-      const at = path ? `${path}.${key}` : key;
-      if (!served.has(target)) {
-        throw new UqlUsageError(`'${at}' reaches '${target.name}', which this handler does not serve`);
-      }
-      assertServed(getMeta(target), value, served, at);
-    } else if (key.startsWith('$')) {
-      assertServed(meta, value, served, path);
-    }
+/** A path segment as it names an entity or an op: one that does not decode names nothing, so answers 404. */
+function decodedSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return '';
   }
 }

@@ -45,7 +45,7 @@ import type {
   Query,
   QueryAggregate,
   QueryGroupOp,
-  QueryOptions,
+  StatementOptions,
   QueryPager,
   QuerySelectValue,
   QuerySortMap,
@@ -462,7 +462,7 @@ export class MongoDialect extends AbstractDialect {
   public where<E extends Document>(
     entity: AbstractType<E>,
     where: QueryWhere<E> = {},
-    opts: QueryOptions = {},
+    opts: StatementOptions = {},
   ): Filter<E> {
     const meta = getMeta(entity);
     // Filters are applied once, here at the scope entry point; recursion uses `renderFilter`.
@@ -478,7 +478,7 @@ export class MongoDialect extends AbstractDialect {
   public matchStages<E extends Document>(
     entity: AbstractType<E>,
     where: QueryWhere<E> = {},
-    opts: QueryOptions = {},
+    opts: StatementOptions = {},
     fields: readonly string[] = [],
     lookup: Lookup = { stages: [], temps: [] },
   ): MongoAggregationPipelineEntry<Document>[] {
@@ -1127,7 +1127,7 @@ export class MongoDialect extends AbstractDialect {
    * How a read runs, its ordering and aggregates read once for both the routing and the run: the one place
    * deciding how a read is scored and ranked, a root vector search through Atlas.
    */
-  public readPlan<E extends Document>(entity: AbstractType<E>, q: Query<E>, opts?: QueryOptions): MongoRead {
+  public readPlan<E extends Document>(entity: AbstractType<E>, q: Query<E>, opts?: StatementOptions): MongoRead {
     const vector = this.extractVectorSort(q.$sort);
     if (vector) {
       return { pipeline: this.vectorSearchPipeline(entity, q, vector, opts) };
@@ -1170,7 +1170,7 @@ export class MongoDialect extends AbstractDialect {
     entity: AbstractType<E>,
     q: Query<E>,
     vectorSort: ExtractedVectorSort<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     // Atlas ranks the rows already, so the exact distance is computed only where something reads it: its
     // `$project`, or the other keys, which only break its ties.
@@ -1202,7 +1202,7 @@ export class MongoDialect extends AbstractDialect {
   public aggregationPipeline<E extends Document>(
     entity: AbstractType<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     // A vector search here is one no `$vectorSearch` lifted, a relation's inside its lookup, which Atlas cannot reach.
     const vector = this.extractVectorSort(q.$sort);
@@ -1215,7 +1215,7 @@ export class MongoDialect extends AbstractDialect {
   private scanPipeline<E extends Document>(
     entity: AbstractType<E>,
     q: Query<E>,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     sort: MongoSortPlan,
     aggregates: readonly string[],
     nearest: readonly MongoScore[],
@@ -1683,7 +1683,7 @@ export class MongoDialect extends AbstractDialect {
   public buildAggregateStages<E extends Document>(
     entity: AbstractType<E>,
     q: QueryAggregate<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
     const { joins, where } = resolveGroupJoins(meta, q);
@@ -2007,7 +2007,7 @@ export class MongoDialect extends AbstractDialect {
     search: QueryVectorSearch,
     where: QueryWhere<E> | undefined,
     limit: number,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
     candidates?: number,
   ): MongoAggregationPipelineEntry<Document> {
     const meta = getMeta(entity);

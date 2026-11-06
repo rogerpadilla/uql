@@ -63,13 +63,13 @@ export type EngineName = (typeof ENGINE_NAMES)[DialectName] | 'Cloudflare D1' | 
  * **first** on purpose: when no signature matches, TypeScript reports the error of the *last* one, so a
  * typo'd query key is reported as itself rather than as a missing `$entity`.
  */
-type DualRead<K extends keyof ReadQueries<object, never>, R extends keyof ReadResults<'server', unknown>> = (<
+type DualRead<K extends keyof ReadQueries<object, never>, R extends keyof ReadResults<unknown>> = (<
   E extends object,
   const Q extends ReadQueries<E, QuerySql>[K] & { $entity: Type<E> },
 >(
   q: Captured<ReadQueries<E, QuerySql>[K] & { $entity: Type<E> }, Q>,
   opts?: QueryOptions,
-) => ReadResults<'server', QueryFindResult<E, Q>>[R]) &
+) => ReadResults<QueryFindResult<E, Q>>[R]) &
   EntityRead<K, R, 'server', QueryOptions>;
 
 /** Each method below taking a query takes the entity first or as the query's `$entity`, as {@link DualRead} does. */

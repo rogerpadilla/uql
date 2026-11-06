@@ -10,7 +10,7 @@ Include the version, the database engine, and the smallest query or entity that 
 
 - A value that reaches the database as SQL instead of a bound parameter.
 - A `security` filter, soft-delete filter or tenant context that a query method fails to apply.
-- A request to the `/http` handler that reads or writes what its `include` list does not allow.
+- A call to an API (`createApi`) that reads or writes what its `include` list or an entity's `serve` exposure does not allow.
 
 SQL passed to `sql.text`, or built by string concatenation, is trusted by design and out of scope: the [Raw SQL guide](https://uql-orm.dev/querying/raw-sql) says so.
 

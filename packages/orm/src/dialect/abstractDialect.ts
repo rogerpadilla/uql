@@ -8,7 +8,7 @@ import type {
   InsertIdSource,
   NamingStrategy,
   Query,
-  QueryOptions,
+  StatementOptions,
   QueryWhere,
   AbstractType,
 } from '../type/index.js';
@@ -160,7 +160,7 @@ export abstract class AbstractDialect {
    * new query scope, so a scope cannot be rendered with its `security: true` filters skipped.
    * Recursion within one scope renders the returned map directly instead.
    */
-  protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhere<E> {
+  protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: StatementOptions): QueryWhere<E> {
     assertWhere(meta, where);
     const scoped = applyFilters(meta, where, opts);
     assertNoUndefined(scoped, `$where on '${entityName(meta)}'`);

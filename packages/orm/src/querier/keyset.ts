@@ -94,21 +94,36 @@ export function keysetRead<E extends object>(
   return { query, page };
 }
 
-/** Refuses a page query with `$skip`, both cursors, `$distinct`, or a `$limit` that is not a positive integer. */
-function assertPageable<E>(meta: EntityMeta<E>, q: QueryKeyset<E>): void {
-  const refuse = (why: string) => new UqlUsageError(`a page of '${entityName(meta)}' ${why}`);
+/** The clauses {@link assertPageable} reads, which any query has: a client's names none it must. */
+type PageClauses = {
+  readonly $limit?: number;
+  readonly $after?: string;
+  readonly $before?: string;
+  readonly $distinct?: unknown;
+};
+
+/**
+ * Refuses a page query with `$skip`, both cursors, `$distinct`, or a `$limit` that is not a positive integer, each
+ * refusal naming the clause at fault: what a page needs, for the API to check a client's query by.
+ */
+export function assertPageable<E, Q extends PageClauses>(
+  meta: EntityMeta<E>,
+  q: Q,
+): asserts q is Q & { readonly $limit: number } {
+  const refuse = (why: string, clause: string) =>
+    new UqlUsageError(`a page of '${entityName(meta)}' ${why}`, { path: [clause] });
   // The type forbids `$skip`, but untyped input from `/http` can still carry one.
   if ('$skip' in q && q.$skip !== undefined) {
-    throw refuse('takes no $skip: an offset reintroduces the drift a cursor removes');
+    throw refuse('takes no $skip: an offset reintroduces the drift a cursor removes', '$skip');
   }
   if (q.$after !== undefined && q.$before !== undefined) {
-    throw refuse('reads past one cursor, $after or $before, not both');
+    throw refuse('reads past one cursor, $after or $before, not both', '$before');
   }
   if (q.$distinct) {
-    throw refuse('takes no $distinct: its rows are a grouping, which the cursor compares no column of');
+    throw refuse('takes no $distinct: its rows are a grouping, which the cursor compares no column of', '$distinct');
   }
-  if (!Number.isInteger(q.$limit) || q.$limit < 1) {
-    throw refuse(`holds a positive whole number of rows, and $limit is ${q.$limit}`);
+  if (q.$limit === undefined || !Number.isInteger(q.$limit) || q.$limit < 1) {
+    throw refuse(`holds a positive whole number of rows, and $limit is ${q.$limit}`, '$limit');
   }
 }
 
@@ -116,7 +131,8 @@ function assertPageable<E>(meta: EntityMeta<E>, q: QueryKeyset<E>): void {
 function pageOrder<E>(meta: EntityMeta<E>, q: QueryKeyset<E>, nullsSortLowest: boolean): PageKey<E>[] {
   const sort = q.$sort ?? {};
   return getKeys(sort).map((key) => {
-    const refuse = (why: string) => new UqlUsageError(`cannot page '${entityName(meta)}' by '${key}': ${why}`);
+    const refuse = (why: string) =>
+      new UqlUsageError(`cannot page '${entityName(meta)}' by '${key}': ${why}`, { path: ['$sort', key] });
     if (key === '$text') {
       throw refuse('a relevance is scored per row, not stored on it');
     }
@@ -178,6 +194,7 @@ function totalPrefix<E>(meta: EntityMeta<E>, order: readonly PageKey<E>[]): Page
   throw new UqlUsageError(
     `a page of '${entityName(meta)}' sorts by ${order.map(({ key }) => key).join(', ') || 'nothing'}, which two rows ` +
       `can share: add ${meta.ids.length ? `'${meta.ids.join("', '")}' or ` : ''}a unique, non-null field to the end of $sort`,
+    { path: ['$sort'] },
   );
 }
 
@@ -258,7 +275,9 @@ function anyOf<E>(alternatives: QueryWhere<E>[]): QueryWhere<E> {
  */
 function projectedKeys<E>(meta: EntityMeta<E>, q: QueryKeyset<E>): readonly FieldKey<E>[] {
   if (isSelectList(q.$select)) {
-    throw new UqlUsageError(`a page of '${entityName(meta)}' selects fields, which its cursor is read off`);
+    throw new UqlUsageError(`a page of '${entityName(meta)}' selects fields, which its cursor is read off`, {
+      path: ['$select'],
+    });
   }
   return normalizeScalarFieldSelection(meta, q.$select);
 }

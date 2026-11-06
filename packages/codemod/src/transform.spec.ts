@@ -208,6 +208,20 @@ const UQL_ORM_0_99 = {
   }`,
 };
 
+/** The browser client as 0.112 typed it, resolving each call to the envelope its route answered. */
+const UQL_ORM_0_112 = {
+  '/node_modules/uql-orm/package.json': '{ "name": "uql-orm", "types": "index.d.ts" }',
+  '/node_modules/uql-orm/index.d.ts': `export declare class HttpQuerier {
+    constructor(basePath: string);
+    findMany(entity: unknown, q?: unknown): Promise<{ data: unknown[]; count?: number }>;
+    findManyAndCount(entity: unknown, q?: unknown): Promise<{ data: unknown[]; count: number }>;
+    deleteMany(entity: unknown, q: unknown): Promise<{ data: number; count?: number }>;
+  }
+  export interface Querier {
+    findMany(entity: unknown, q?: unknown): Promise<unknown[]>;
+  }`,
+};
+
 /** The repo's own config, whose paths resolve `uql-orm` to its source, so a rewritten file is checked against today's API. */
 const REPO_CONFIG = ts.getParsedCommandLineOfConfigFile(
   fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
@@ -1888,16 +1902,97 @@ let q: Query<object>; let n = SnakeCaseNamingStrategy;
 `);
   });
 
-  it("renames /http's hook types and the lock error, leaving the entity HookContext alone", () => {
-    const { text } = codemodFile(`import type { Hook, HookContext } from 'uql-orm/http';
-import { type HookContext as EntityHookContext, UqlLockUsageError } from 'uql-orm';
-let a: Hook; let b: HookContext<object>; let c: EntityHookContext; let d = UqlLockUsageError;
+  it("renames /http's op type and the lock error", () => {
+    const { text } = codemodFile(`import type { CrudOperation } from 'uql-orm/http';
+import { UqlLockUsageError } from 'uql-orm';
+let a: CrudOperation; let d = UqlLockUsageError;
 `);
 
-    expect(text).toBe(`import type { RequestHook, RequestHookContext } from 'uql-orm/http';
-import { type HookContext as EntityHookContext, UqlUsageError } from 'uql-orm';
-let a: RequestHook; let b: RequestHookContext<object>; let c: EntityHookContext; let d = UqlUsageError;
+    expect(text).toBe(`import type { ApiOp } from 'uql-orm/http';
+import { UqlUsageError } from 'uql-orm';
+let a: ApiOp; let d = UqlUsageError;
 `);
+  });
+
+  it("renames the NestJS module's getContext to contextOf, in both forms", () => {
+    const { text } = codemodFile(`import { UqlModule } from 'uql-orm/nestjs';
+UqlModule.forRoot({ pool, getContext: (req) => ({ tenantId: req.tid }) });
+UqlModule.forRootAsync({ useFactory, getContext });
+`);
+
+    expect(text).toBe(`import { UqlModule } from 'uql-orm/nestjs';
+UqlModule.forRoot({ pool, contextOf: (req) => ({ tenantId: req.tid }) });
+UqlModule.forRootAsync({ useFactory, contextOf: getContext });
+`);
+  });
+
+  it("unwraps the client's envelope where its result is read, leaving the pool's alone", () => {
+    const { text, unresolved } = codemodFile(
+      `import { HttpQuerier, type Querier } from 'uql-orm';
+declare const client: HttpQuerier;
+declare const pool: Querier;
+const { data: users } = await client.findMany(User, {});
+const { data } = await client.findMany(User, {});
+const named = (await client.findMany(User, {})).data;
+const { data: rows, count } = await client.findManyAndCount(User, {});
+await client.deleteMany(User, { $where: {} });
+const { data: own } = await pool.findMany(User, {});
+const envelope = await client.findMany(User, {});
+const { data: some, ...rest } = await client.findMany(User, {});
+const other = (await fetchIt()).data;
+const settled = await pending;
+const { data: only } = await client.findManyAndCount(User, {});
+const { count: total } = await client.findManyAndCount(User, {});
+const counted = await client.findManyAndCount(User, {});
+const listed = (await client.findManyAndCount(User, {})).data;
+const tally = (await client.findManyAndCount(User, {})).count;
+const size = (await client.findMany(User, {})).count;
+const wide = (await (client as HttpQuerier & { extra: 1 }).findMany(User, {})).data;
+`,
+      UQL_ORM_0_112,
+    );
+
+    expect(text).toBe(`import { HttpQuerier, type Querier } from 'uql-orm';
+declare const client: HttpQuerier;
+declare const pool: Querier;
+const users = await client.findMany(User, {});
+const data = await client.findMany(User, {});
+const named = (await client.findMany(User, {}));
+const [rows, count] = await client.findManyAndCount(User, {});
+await client.deleteMany(User, { $where: {} });
+const { data: own } = await pool.findMany(User, {});
+const envelope = await client.findMany(User, {});
+const { data: some, ...rest } = await client.findMany(User, {});
+const other = (await fetchIt()).data;
+const settled = await pending;
+const [only] = await client.findManyAndCount(User, {});
+const [, total] = await client.findManyAndCount(User, {});
+const counted = await client.findManyAndCount(User, {});
+const listed = (await client.findManyAndCount(User, {}))[0];
+const tally = (await client.findManyAndCount(User, {}))[1];
+const size = (await client.findMany(User, {})).count;
+const wide = (await (client as HttpQuerier & { extra: 1 }).findMany(User, {})).data;
+`);
+    expect(unresolved).toEqual([
+      expect.stringContaining("'findMany' answers the value now, not `{ data, count }`"),
+      expect.stringContaining("'findMany' answers the value now, not `{ data, count }`"),
+      expect.stringContaining(
+        "'findManyAndCount' answers the value now, not `{ data, count }`: read its result as it is, `[rows, count]`",
+      ),
+      expect.stringContaining("'findMany' answers the value now, not `{ data, count }`"),
+      expect.stringContaining("'HttpQuerier' was removed"),
+    ]);
+  });
+
+  it('reports the HTTP handler and client it replaced', () => {
+    const { unresolved } = codemodFile(`import { createFetchHandler } from 'uql-orm/http';
+import { HttpQuerier } from 'uql-orm/browser';
+`);
+
+    expect(unresolved[0]).toContain("'createFetchHandler' was removed; build the API with `createApi(opts)`");
+    expect(unresolved[1]).toContain(
+      "'HttpQuerier' was removed; use `createClientQuerier(httpTransport(url, defaults))`",
+    );
   });
 
   it('writes a literal statement to a querier as a tagged call, which needs no import', () => {

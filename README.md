@@ -143,7 +143,7 @@ const posts = await pool.findMany(Post, {
 
 The result is typed to what the query selected: `posts[0].author?.email` compiles, `posts[0].likes` does not.
 
-The same queries run from the browser too: [serve them over HTTP](https://uql-orm.dev/http), scoped to the signed-in user by [filters no `$where` can widen](https://uql-orm.dev/multi-tenancy).
+The same queries run from the browser too: [serve them over REST, tRPC or oRPC](https://uql-orm.dev/http), each field exposed as you declare, scoped to the signed-in user by [filters no `$where` can widen](https://uql-orm.dev/multi-tenancy).
 
 ## Why UQL?
 

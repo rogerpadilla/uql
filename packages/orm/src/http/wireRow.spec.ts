@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, f, Field, getMeta, OneToMany } from '../entity/index.js';
 import type { Json } from '../type/index.js';
-import { readWireData, readWireQuery, writeWireData } from './wireRow.js';
+import { readWireData, readWirePayload, readWireQuery, writeWireData } from './wireRow.js';
 
 @Entity()
 class WireAccount {
@@ -50,6 +50,34 @@ describe('wire rows', () => {
     });
   });
 
+  it('carries rows beside their count, converting the rows alone', () => {
+    const meta = getMeta(WireOrder);
+    const sent = writeWireData(meta, [[{ id: 1, total: 5n }], 9], 'rowsAndCount');
+    expect(sent).toEqual([[{ id: 1, total: '5' }], 9]);
+    expect(readWireData(meta, sent, 'rowsAndCount')).toEqual([[{ id: 1, total: 5n }], 9]);
+  });
+
+  it('reads a composite key back as the row of its columns', () => {
+    const Line = defineEntity({ name: 'WireLine', fields: { orderId: f.bigint().id(), lineNo: f.number().id() } });
+    expect(readWireData(getMeta(Line), [{ orderId: '9007199254740993', lineNo: 1 }], 'ids')).toEqual([
+      { orderId: 9007199254740993n, lineNo: 1 },
+    ]);
+  });
+
+  it('hands back a counted answer that is no pair as it is, for the querier to refuse', () => {
+    expect(readWireData(getMeta(WireOrder), 3, 'rowsAndCount')).toBe(3);
+  });
+
+  /** A transport with a serializer of its own (superjson) hands over values already as the entity holds them. */
+  it('reads back a row its transport already typed as it is', () => {
+    const at = new Date('2026-06-01T10:00:00.123Z');
+    expect(readWireData(getMeta(Ledger), { id: 1, at, accountId: 2n ** 60n }, 'rows')).toEqual({
+      id: 1,
+      at,
+      accountId: 2n ** 60n,
+    });
+  });
+
   it('hands back the rows and the page it converts nothing of as they are', () => {
     const page = { items: [{ id: 1, text: 'a' }], count: 1 };
     expect(writeWireData(getMeta(WireNote), page, 'page')).toBe(page);
@@ -93,8 +121,8 @@ describe('wire rows', () => {
   });
 
   it("reads an update's operands back, and a query's populated and counted relations", () => {
-    expect(readWireData(getMeta(WireOrder), { total: { $inc: '1' } }, 'rows')).toEqual({ total: { $inc: 1n } });
-    expect(readWireData(getMeta(WireOrder), { total: 'abc' }, 'rows')).toEqual({ total: 'abc' });
+    expect(readWirePayload(getMeta(WireOrder), { total: { $inc: '1' } })).toEqual({ total: { $inc: 1n } });
+    expect(readWirePayload(getMeta(WireOrder), { total: 'abc' })).toEqual({ total: 'abc' });
     const at = '2026-06-01T00:00:00.000Z';
     expect(
       readWireQuery(getMeta(WireAccount), {

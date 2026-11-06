@@ -8,13 +8,42 @@ import { type Edit, inserted, removeFromList, removeStatement, replaced } from '
  */
 const REMOVED_EXPORTS = new Map([
   ['Relation', "write the property's type without it, and drop the import"],
-  [
-    'setQuerierPool',
-    'pass the pool where it is used: `createFetchHandler({ pool, include })`, `querierMiddleware({ pool, include })`',
-  ],
+  ['setQuerierPool', 'pass the pool where it is used: `createApi({ pool, include })`'],
   ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
   ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
-  ['ClientQuerierPool', "construct the `HttpQuerier` where it is used, `new HttpQuerier('/api')`"],
+  ['ClientQuerierPool', "build the client where it is used: `createClientQuerier(httpTransport('/api/v1'))`"],
+  [
+    'HttpQuerier',
+    'use `createClientQuerier(httpTransport(url, defaults))`, which answers what the pool answers: `rows`, not `{ data }`',
+  ],
+  ['HttpQuerierDefaults', '`httpTransport` takes `headers` and `readMethod`; `createClientQuerier` takes `entityPath`'],
+  ['createRequestHandler', 'build the API with `createApi(opts)`, then `toRequestHandler(api)`'],
+  [
+    'createFetchHandler',
+    'build the API with `createApi(opts)`, then `toFetchHandler(api)`, mounted on a catch-all under the base',
+  ],
+  ['querierMiddleware', 'build the API with `createApi(opts)`, then `toExpress(api)`'],
+  ['errorHandler', '`toExpress` answers every failure itself'],
+  ['RequestHandlerOptions', 'use `ApiOptions`'],
+  ['MiddlewareOptions', 'use `ApiOptions`'],
+  ...['RequestHook', 'RequestHookContext', 'ResponseHook'].map(
+    (name) =>
+      [
+        name,
+        'write a middleware, `(call, context, next) => next(call)`, in `use` or `serve(Entity, { use })`',
+      ] as const,
+  ),
+  ['RequestFindOptions', '`findManyAndCount` reads the count; a call takes `CallOptions`'],
+  ['RequestNotification', 'wrap the transport: `createClientQuerier((call, opts) => ...)`'],
+  ['RequestCallback', 'wrap the transport: `createClientQuerier((call, opts) => ...)`'],
+  ['WireFlags', "a call's `hardDelete` is a field of the `WireCall`; `findManyAndCount` is an op of its own"],
+  ...['RequestSuccessResponse', 'RequestCountedSuccessResponse', 'QuerierResult', 'QuerierCountedResult'].map(
+    (name) => [name, 'the client answers what the server does: the value, not an envelope'] as const,
+  ),
+  ...['CRUD_ROUTES', 'CrudRoute', 'HttpMethod'].map(
+    (name) =>
+      [name, 'a call is `POST {base}/:entity/:op`, a read also `GET {base}/:entity/:op?q=`: see `encodeCall`'] as const,
+  ),
   ['QueryWhereFieldMap', 'use `QueryWhere`'],
   ['QueryStreamProjected', 'use `QueryProjected`'],
   ['RelationMappedBy', "a 'mappedBy' is `(keys: KeyMap<E>) => Key<E>` now"],
@@ -122,8 +151,8 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['UqlLockUsageError', { to: 'UqlUsageError' }],
   [LEGACY_SQL_TAG, { to: SQL_TAG }],
   [`uql-orm/util#${LEGACY_SQL_TAG}`, { to: SQL_TAG, from: 'uql-orm' }],
-  ['uql-orm/http#Hook', { to: 'RequestHook' }],
-  ['uql-orm/http#HookContext', { to: 'RequestHookContext' }],
+  ['uql-orm/http#CrudOperation', { to: 'ApiOp' }],
+  ['uql-orm/browser#RequestOptions', { to: 'CallOptions' }],
   ...UTIL_ROOT_EXPORTS.map((name) => [`uql-orm/util#${name}`, { to: name, from: 'uql-orm' }] as const),
 ]);
 

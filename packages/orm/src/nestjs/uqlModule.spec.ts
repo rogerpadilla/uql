@@ -15,7 +15,7 @@ describe('UqlModule', () => {
   const pool = createMockQuerierPool(new PostgresDialect(), async () => createMockQuerier());
   vi.spyOn(pool, 'end');
 
-  it('should provide the pool via the injection token and set the default pool', async () => {
+  it('should provide the pool via the injection token', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [UqlModule.forRoot({ pool })],
     }).compile();
@@ -38,14 +38,14 @@ describe('UqlModule', () => {
     expect(pool.end).toHaveBeenCalledTimes(1);
   });
 
-  it('should register the context interceptor only when getContext is provided', () => {
+  it('should register the context interceptor only when contextOf is provided', () => {
     const has = (mod: { providers?: unknown[] }) =>
       (mod.providers ?? []).some((p) => (p as { provide?: unknown }).provide === APP_INTERCEPTOR);
     expect(has(UqlModule.forRoot({ pool }))).toBe(false);
-    expect(has(UqlModule.forRoot({ pool, getContext: () => ({}) }))).toBe(true);
+    expect(has(UqlModule.forRoot({ pool, contextOf: () => ({}) }))).toBe(true);
   });
 
-  it('should build the pool from a factory with injected dependencies, and set the default pool', async () => {
+  it('should build the pool from a factory with injected dependencies', async () => {
     const CONFIG = Symbol('CONFIG');
     @Module({ providers: [{ provide: CONFIG, useValue: { pool } }], exports: [CONFIG] })
     class ConfigTestModule {}
@@ -80,6 +80,23 @@ describe('UqlContextInterceptor', () => {
 
     await firstValueFrom(interceptor.intercept(execContext, next));
     expect(seen).toEqual({ tenantId: 7 });
+  });
+
+  /** A context read from a session store or a verified token is a promise, as the API's `contextOf` may be. */
+  it('should await a context the request resolves asynchronously', async () => {
+    let seen: unknown;
+    const interceptor = new UqlContextInterceptor<{ tid: number }>(async (req) => ({ tenantId: req.tid }));
+    const next: CallHandler = {
+      handle: () =>
+        new Observable((subscriber) => {
+          seen = getContext();
+          subscriber.next(undefined);
+          subscriber.complete();
+        }),
+    };
+
+    await firstValueFrom(interceptor.intercept(new ExecutionContextHost([{ tid: 8 }]), next));
+    expect(seen).toEqual({ tenantId: 8 });
   });
 
   it('should run the handler in an empty context where the request resolves none', async () => {

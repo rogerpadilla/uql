@@ -143,9 +143,12 @@ export function lacksValueOnInsert(field: FieldOptions): boolean {
   );
 }
 
-/** Whether `key` is a field of `meta`, as opposed to a relation, a JSON path or an unknown key. */
+/**
+ * Whether `key` is a field of `meta`, as opposed to a relation, a JSON path or an unknown key: an own key alone, so
+ * a client's `constructor` is none.
+ */
 export function isFieldKey<E>(meta: EntityMeta<E>, key: string): key is FieldKey<E> {
-  return meta.fields[key] !== undefined;
+  return Object.hasOwn(meta.fields, key) && meta.fields[key] !== undefined;
 }
 
 /** The fields `meta` declares whose options `pick` accepts, in declaration order, each as the entity's own key. */

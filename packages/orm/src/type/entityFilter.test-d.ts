@@ -98,6 +98,13 @@ export const Post = defineEntity({
 export const skippingSecurityFilter: FilterOptions<Invoice> = { where: {}, security: true, onMissing: 'skip' };
 export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active' }, onMissing: 'skip' };
 
+// A security filter may hold some statements alone; a convenience one is turned off per call instead.
+export const writesOnlyFilter: FilterOptions<Invoice> = { where: { tenantId: 1 }, security: true, ops: ['update'] };
+// @ts-expect-error 'publish' is not a statement a filter holds
+export const unknownOpFilter: FilterOptions<Invoice> = { where: { tenantId: 1 }, security: true, ops: ['publish'] };
+// @ts-expect-error only a security filter names the statements it holds
+export const convenienceOpsFilter: FilterOptions<Invoice> = { where: { status: 'active' }, ops: ['update'] };
+
 @Entity({
   filters: {
     // @ts-expect-error `softDelete` is reserved for the filter `@Field({ softDelete })` registers

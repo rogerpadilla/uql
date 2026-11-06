@@ -15,7 +15,10 @@ export { deleteFrom, insertInto, refuse, type TriggerUpsert, updateTable, upsert
 export {
   type QueryErrorKind,
   UqlError,
+  type UqlErrorOptions,
+  type UqlErrorPath,
   UqlOptimisticLockError,
+  UqlRequestError,
   UqlSecurityError,
   UqlUsageError,
 } from './util/uqlError.js';

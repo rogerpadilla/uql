@@ -4,7 +4,7 @@ import type { EntityMeta, FieldMeta, RelationKey } from '../type/index.js';
 import { decodeDate } from '../util/date.js';
 import { aggregateOf, columnFamily } from '../util/field.util.js';
 import { cachedIn, definedEntries, isPlainObject } from '../util/object.util.js';
-import type { WireAnswer } from './contract.js';
+import type { WireAnswer } from './wireCall.js';
 
 type Convert = (value: unknown) => unknown;
 
@@ -35,7 +35,8 @@ const received: FieldConvert = (field) => {
       }
     };
   }
-  return columnFamily(type) === 'date' ? (text) => decodeDate(String(text)) : undefined;
+  // A transport carrying a `Date` as one (superjson) hands it over read already.
+  return columnFamily(type) === 'date' ? (text) => (text instanceof Date ? text : decodeDate(String(text))) : undefined;
 };
 
 /** `data` as JSON is to carry it, by what its route `answers`; the client reads it back by {@link readWireData}. */
@@ -43,9 +44,14 @@ export function writeWireData<E>(meta: EntityMeta<E>, data: unknown, answers: Wi
   return across(meta, data, answers, SENDING);
 }
 
-/** `data` JSON carried, a response or a write's body, read back as the entity holds it by what it `answers`. */
+/** `data` JSON carried, a response, read back as the entity holds it by what it `answers`. */
 export function readWireData<E>(meta: EntityMeta<E>, data: unknown, answers: WireAnswer): unknown {
   return across(meta, data, answers, RECEIVING);
+}
+
+/** A write's payload JSON carried, a row, a list of rows or an update's changes, read back as the entity holds it. */
+export function readWirePayload<E>(meta: EntityMeta<E>, payload: unknown): unknown {
+  return convert(meta, payload, RECEIVING);
 }
 
 /**
@@ -88,6 +94,14 @@ function across<E>(meta: EntityMeta<E>, data: unknown, answers: WireAnswer, way:
       return data;
     case 'rows':
       return convert(meta, data, way);
+    case 'rowsAndCount': {
+      if (!Array.isArray(data)) {
+        return data;
+      }
+      const [rows, count] = data;
+      const converted = convert(meta, rows, way);
+      return converted === rows ? data : [converted, count];
+    }
     case 'page': {
       if (!isPlainObject(data)) {
         return data;

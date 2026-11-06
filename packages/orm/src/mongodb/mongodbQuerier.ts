@@ -27,7 +27,7 @@ import type {
   QueryUpsert,
   QueryWhere,
   QueryPage,
-  QueryOptions,
+  StatementOptions,
   QueryPager,
   QuerySearch,
   RawRow,
@@ -96,7 +96,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     return this.serialize(() => this.timed(label, undefined, () => task(this.#session)));
   }
 
-  protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+  protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: StatementOptions) {
     if (asksForNoRows(q)) {
       return [];
     }
@@ -109,7 +109,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   protected override async *internalFindManyStream<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ) {
     if (asksForNoRows(q)) {
       return;
@@ -129,7 +129,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   private readCursor<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     session: ClientSession | undefined,
   ): AggregationCursor<E> | FindCursor<E> {
     const read = this.dialect.readPlan(entity, q, opts);
@@ -147,7 +147,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     q: Query<E>,
     sort: Sort,
-    opts: QueryOptions | undefined,
+    opts: StatementOptions | undefined,
     session: ClientSession | undefined,
   ) {
     const cursor = this.collection(entity).find<E>({}, { session });
@@ -177,7 +177,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   protected override async internalAggregate<E extends Document>(
     entity: Type<E>,
     q: QueryAggregate<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<RawRow[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     const rows = await this.execute('internalAggregate', (session) =>
@@ -194,7 +194,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   protected override async internalFindManyAndCount<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<[E[], number]> {
     if (!q.$distinct && !hasRequiredJoin(getMeta(entity), q)) {
       return super.internalFindManyAndCount(entity, q, opts);
@@ -215,7 +215,11 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   /** The pipeline `countDocuments` runs, spelled out so a relation condition gets its lookups and a page its stages. */
-  protected override async internalCount<E extends Document>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {
+  protected override async internalCount<E extends Document>(
+    entity: Type<E>,
+    q: QueryPage<E>,
+    opts?: StatementOptions,
+  ) {
     if (asksForNoRows(q)) {
       return 0;
     }
@@ -256,7 +260,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     qm: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ) {
     refuseTriggers(entity);
     const { filter, update } = this.updateOperation(entity, qm.$where, payload, opts);
@@ -271,7 +275,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     where: QueryWhere<E> | undefined,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): { filter: Filter<E>; update: UpdateFilter<E> } {
     const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
     return { filter: this.dialect.where(entity, where, opts), update: this.dialect.getUpdateFilter<E>(persistable) };
@@ -354,7 +358,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   protected override async internalDeleteMany<E extends Document>(
     entity: Type<E>,
     qm: QuerySearch<E>,
-    opts: QueryOptions = {},
+    opts: StatementOptions = {},
   ) {
     refuseTriggers(entity);
     const { stamp, opts: read } = deletionOf(getMeta(entity), opts);

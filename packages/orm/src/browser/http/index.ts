@@ -1,2 +1,1 @@
-export * from './bus.js';
-export * from './http.js';
+export * from './httpTransport.js';

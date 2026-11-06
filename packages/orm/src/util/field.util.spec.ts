@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { Computed, Entity, f, Field } from '../entity/index.js';
 import { getMeta } from '../entity/index.js';
-import { aggregateField, columnFamily, declaresNotNull, hasTriggers, isIntegerColumn } from './field.util.js';
+import { User } from '../test/index.js';
+import {
+  aggregateField,
+  columnFamily,
+  declaresNotNull,
+  hasTriggers,
+  isFieldKey,
+  isIntegerColumn,
+} from './field.util.js';
 import { memberRefs, sql } from './sql.js';
 
 describe('columnFamily', () => {
@@ -45,6 +53,18 @@ describe('columnFamily', () => {
     expect(columnFamily(null)).toBe(undefined);
     expect(columnFamily(undefined)).toBe(undefined);
     expect(columnFamily({})).toBe(undefined);
+  });
+});
+
+describe('isFieldKey', () => {
+  /** A client names keys: `constructor` and `toString` are every object's, and no entity's field. */
+  it("should take an entity's own fields alone, never a key of Object's prototype", () => {
+    const meta = getMeta(User);
+
+    expect(isFieldKey(meta, 'name')).toBe(true);
+    expect(isFieldKey(meta, 'profile')).toBe(false);
+    expect(isFieldKey(meta, 'constructor')).toBe(false);
+    expect(isFieldKey(meta, 'toString')).toBe(false);
   });
 });
 

@@ -2,6 +2,18 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. No internals, sizes or tests.
 
+## [0.113.0] - 2026-11-06
+
+- **Breaking:** `createApi({ pool, include, contextOf, use })` replaces `createRequestHandler`: mount it with `toFetchHandler(api)`, `toExpress(api)` (no `express.json()` needed) or `toRequestHandler(api)`, or call `api.call(call, context)` from tRPC, oRPC or any transport. `createFetchHandler`, `querierMiddleware` and `errorHandler` are gone.
+- **Breaking:** middleware, `use: [(call, context, next) => next(call)]`, replaces the `pre`, `preSave`, `preFilter` and `post` hooks; `serve(Entity, { use })` runs it on that entity's calls alone.
+- **Breaking:** the wire is `{base}/:entity/:op`, the rest of the call one JSON object: a read is `GET ?q=` (or `HEAD`, `QUERY`, `POST`), a write a `POST` with an `application/json` body. The REST routes, `CRUD_ROUTES`, `HttpMethod` and `basePath` are gone.
+- **Breaking:** `createClientQuerier(httpTransport(url))` replaces `HttpQuerier` and answers what the pool answers (rows, a count, `[rows, count]`), not `{ data, count }`; `on()` and `silent` are gone.
+- **Breaking:** a failure answers `{ error: { message, status, kind, path } }`, `path` pointing at the refused value in the call. Only a `UqlError` answers its own status and message: a middleware or hook refuses with `new UqlRequestError('unauthorized', 401)`, and any other error by its kind or a generic 500.
+- `serve(Entity, { ops, members })` declares what a client may do to an entity and each field: a field it may not read cannot be selected, filtered or sorted by, and is left out of every read.
+- `createQueryOptions(transport)` answers TanStack Query options keyed by the call a read makes, with `uql.key(User)` to invalidate every read of an entity.
+- A `security` filter's `ops` holds it to some statements: `ops: ['insert', 'update', 'delete']` lets anyone read a row and only its author write it.
+- The NestJS module's `getContext` is `contextOf`, and may be async; `uql-codemod` renames it.
+
 ## [0.112.1] - 2026-11-05
 
 - **Fixed:** a `Date` and a `bigint` cross HTTP as the entity holds them: `HttpQuerier` reads rows and the keys a write answers as their types say, a `Date` and not its ISO text, and the handler stores and compares what the browser sends, filters and update operators included.

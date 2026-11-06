@@ -163,6 +163,71 @@ it('should refuse a write against a security condition that is not field equalit
   );
 });
 
+@Entity({
+  filters: {
+    tenant: {
+      where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
+      security: true,
+    },
+    author: {
+      where: (ctx) => (ctx?.['userId'] != null ? { authorId: ctx['userId'] as number } : undefined),
+      security: true,
+      ops: ['insert', 'update', 'delete'],
+    },
+  },
+})
+class Authored {
+  @Field(f.number().autoIncrement())
+  id?: number;
+  @Field(f.number().nullable())
+  companyId?: number | null;
+  @Field(f.number().nullable())
+  authorId?: number | null;
+}
+
+const asAuthor = <T>(fn: () => T) => withContext({ tenantId: 5, userId: 7 }, fn);
+
+it('should scope a read by the security filters holding reads alone', () => {
+  expect(asAuthor(() => applyFilters(getMeta(Authored), {}))).toEqual({ $and: [{ companyId: 5 }] });
+});
+
+it('should scope an update and a delete by their own security filters and the read ones', () => {
+  const meta = getMeta(Authored);
+  const scoped = { $and: [{ companyId: 5 }, { authorId: 7 }] };
+  expect(asAuthor(() => applyFilters(meta, {}, { access: 'update' }))).toEqual(scoped);
+  expect(asAuthor(() => applyFilters(meta, {}, { access: 'delete' }))).toEqual(scoped);
+});
+
+it('should not resolve a security filter the statement is not held to', () => {
+  expect(withContext({ tenantId: 5 }, () => applyFilters(getMeta(Authored), {}))).toEqual({ $and: [{ companyId: 5 }] });
+});
+
+it('should hold a write to the security filters holding its own access alone', () => {
+  const rows: Authored[] = [{ id: 1 }];
+  asAuthor(() => guardWrite(getMeta(Authored), rows, 'insert'));
+  expect(rows).toEqual([{ id: 1, companyId: 5, authorId: 7 }]);
+  const write = () => asAuthor(() => guardWrite(getMeta(Authored), [{ authorId: 8 }], 'update'));
+  expect(write).toThrow("'Authored' row sets 'authorId' outside security filter 'author'");
+});
+
+@Entity({
+  filters: {
+    published: { where: { status: 'published' }, security: true, ops: ['read'] },
+  },
+})
+class Published {
+  @Field(f.number().autoIncrement())
+  id?: number;
+  @Field(f.string().nullable())
+  status?: string | null;
+}
+
+it('should leave a write payload free of a security filter holding reads alone', () => {
+  const rows: Published[] = [{ status: 'draft' }];
+  guardWrite(getMeta(Published), rows, 'insert');
+  expect(rows).toEqual([{ status: 'draft' }]);
+});
+
 it('should read a condition resolving to {} as no restriction, merging nothing', () => {
   @Entity({
     filters: {

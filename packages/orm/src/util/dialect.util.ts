@@ -4,6 +4,7 @@ import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
   type CascadeType,
+  type EntityAccess,
   type EntityData,
   type EntityIndexMeta,
   type EntityMeta,
@@ -33,6 +34,7 @@ import {
   type QueryVectorSearch,
   type QueryWhere,
   type RelationKey,
+  type StatementOptions,
   resolveAggregateOp,
   type UpdatePayload,
   type VectorDistance,
@@ -574,7 +576,7 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
  * `$where` with the entity's active filters merged in, against the ambient {@link UqlContext}. A convenience
  * filter yields to a `$where` on its key; a `security` one is always ANDed, from {@link securityConditions}.
  */
-export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: QueryOptions): QueryWhere<E> {
+export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: StatementOptions): QueryWhere<E> {
   if (!meta.filters) {
     return whereMap;
   }
@@ -592,17 +594,29 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
     }
   }
   const merged = result as QueryWhere<E>;
-  const security = securityConditions(meta).map(([, condition]) => condition);
+  const security = securityConditions(meta, SCOPED_BY[opts?.access ?? 'read']).map(([, condition]) => condition);
   return security.length ? whereAnd(merged, security) : merged;
 }
 
+/** The accesses whose `security` filters scope a statement: an update or a delete reads the rows it changes too. */
+const SCOPED_BY: Readonly<Record<EntityAccess, readonly EntityAccess[]>> = {
+  read: ['read'],
+  insert: ['insert'],
+  update: ['read', 'update'],
+  delete: ['read', 'delete'],
+};
+
 /**
- * Each `security` filter's condition, by name, resolved against the ambient context. One resolving to
- * `{}`, a trusted context's "no restriction", is left out. Reads AND these in; writes are held to them.
+ * The condition of each `security` filter holding any of `accesses`, by name, resolved against the ambient context.
+ * One resolving to `{}`, a trusted context's "no restriction", is left out. Reads AND these in; writes are held to them.
  */
-export function securityConditions<E>(meta: EntityMeta<E>): [name: string, condition: QueryWhere<E>][] {
+export function securityConditions<E>(
+  meta: EntityMeta<E>,
+  accesses: readonly EntityAccess[],
+): [name: string, condition: QueryWhere<E>][] {
   return Object.entries(meta.filters ?? {}).flatMap(([name, filter]) => {
-    const condition = filter.security ? resolveFilter(meta, name, filter) : undefined;
+    const holds = filter.security && (!filter.ops || filter.ops.some((op) => accesses.includes(op)));
+    const condition = holds ? resolveFilter(meta, name, filter) : undefined;
     return condition && hasKeys(condition) ? [[name, condition]] : [];
   });
 }
@@ -628,7 +642,7 @@ export function guardWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
   rows: readonly R[],
   write: 'insert' | 'update',
 ): void {
-  for (const [name, condition] of securityConditions(meta)) {
+  for (const [name, condition] of securityConditions(meta, [write])) {
     const values: Record<string, unknown> = condition;
     const keys = fieldKeys(meta, () => true).filter((key) => Object.hasOwn(values, key));
     const equalities = keys.length === getKeys(values).length;
@@ -770,10 +784,10 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * A page operand, checked before it reaches an engine. These arrive from page arithmetic and from
- * REST query strings (`parseQueryParams` yields `NaN` for a non-numeric one), and each engine's own
- * complaint names neither the clause nor the value - or, for `$limit: 0`, quietly means something
- * else. Shared so every backend rejects the same input.
+ * A page operand, checked before it reaches an engine. These arrive from page arithmetic and from a
+ * client's call, where JSON carries a fraction or a negative alike, and each engine's own complaint
+ * names neither the clause nor the value - or, for `$limit: 0`, quietly means something else.
+ * Shared so every backend rejects the same input.
  */
 export function assertNonNegativeInteger(value: number, clause: string): number {
   if (!Number.isInteger(value) || value < 0) {

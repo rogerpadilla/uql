@@ -190,6 +190,30 @@ export class TenantNote {
   title?: string | null;
 }
 
+/** A security filter holding writes alone: anyone reads a note, only its author writes it. */
+@Entity({
+  filters: {
+    author: {
+      where: (ctx) => {
+        const userId = ctx?.['userId'];
+        return ctx?.['system'] ? {} : typeof userId === 'string' ? { authorId: userId } : undefined;
+      },
+      security: true,
+      ops: ['insert', 'update', 'delete'],
+    },
+  },
+})
+export class AuthoredNote {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  authorId?: string | null;
+
+  @Field(f.string().nullable())
+  title?: string | null;
+}
+
 @Entity()
 export class LedgerAccount extends BaseEntity {
   @Field(f.string().nullable())

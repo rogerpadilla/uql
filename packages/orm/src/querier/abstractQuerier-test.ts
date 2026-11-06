@@ -5,6 +5,7 @@ import {
   anyUuid,
   assertDefined,
   Company,
+  AuthoredNote,
   Carrier,
   Label,
   Parcel,
@@ -56,6 +57,7 @@ import { queryErrorKind } from './queryError.js';
 const thrownValue = (thrown: unknown) => thrown;
 const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantId }, fn);
 const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
+const asUser = <T>(userId: string, fn: () => Promise<T>) => withContext({ userId }, fn);
 
 /** The rows a find matched are those each tally counted, by id. */
 const expectSameRows = (rows: readonly { id?: unknown }[], tallies: readonly { id?: unknown; n: number }[]) => {
@@ -3203,6 +3205,50 @@ export abstract class AbstractQuerierIt<
 
     expect(await asSystem(() => this.querier.updateOneById(TenantNote, id, { tenantId: 'c' }))).toBe(1);
     expect(await asTenant('c', () => this.querier.count(TenantNote))).toBe(1);
+  }
+
+  async shouldReadEveryAuthorsNote() {
+    await asUser('a', () => this.querier.insertOne(AuthoredNote, { title: 'mine' }));
+    await asUser('b', () => this.querier.insertOne(AuthoredNote, { title: 'theirs' }));
+
+    expect(await this.querier.count(AuthoredNote)).toBe(2);
+  }
+
+  async shouldUpdateAndDeleteOnlyItsAuthorsNotes() {
+    await asUser('a', () => this.querier.insertOne(AuthoredNote, { title: 'mine' }));
+    const theirs = await asUser('b', () => this.querier.insertOne(AuthoredNote, { title: 'theirs' }));
+    assertDefined(theirs);
+    const everyNote = { $where: { title: { $ne: '' } } };
+
+    expect(await asUser('a', () => this.querier.updateOneById(AuthoredNote, theirs, { title: 'taken' }))).toBe(0);
+    expect(await asUser('a', () => this.querier.deleteOneById(AuthoredNote, theirs))).toBe(0);
+    expect(await asUser('a', () => this.querier.updateMany(AuthoredNote, everyNote, { title: 'edited' }))).toBe(1);
+    expect(await asUser('a', () => this.querier.deleteMany(AuthoredNote, everyNote))).toBe(1);
+
+    const rows = await this.querier.findMany(AuthoredNote, { $select: { authorId: true, title: true } });
+    expect(rows).toEqual([{ authorId: 'b', title: 'theirs' }]);
+  }
+
+  async shouldRefuseAnInsertForAnotherAuthor() {
+    const refused = await asUser('a', () =>
+      this.querier.insertOne(AuthoredNote, { authorId: 'b', title: 'forged' }),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.count(AuthoredNote)).toBe(0);
+  }
+
+  async shouldRefuseASaveOfAnotherAuthorsNote() {
+    const theirs = await asUser('b', () => this.querier.insertOne(AuthoredNote, { title: 'theirs' }));
+    assertDefined(theirs);
+
+    const refused = await asUser('a', () => this.querier.saveOne(AuthoredNote, { id: theirs, title: 'taken' })).catch(
+      thrownValue,
+    );
+
+    expect(queryErrorKind(refused)).toBe('uniqueViolation');
+    const row = await this.querier.findOneById(AuthoredNote, theirs, { $select: { title: true } });
+    expect(row).toEqual({ title: 'theirs' });
   }
 
   async shouldFindOne() {

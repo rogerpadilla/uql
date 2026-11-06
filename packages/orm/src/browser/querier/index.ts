@@ -1,1 +1,2 @@
-export * from './httpQuerier.js';
+export * from './clientQuerier.js';
+export * from './queryOptions.js';

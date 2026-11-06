@@ -185,13 +185,21 @@ describe('Dual API Pattern: $entity field support', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
       await querier.deleteMany(MeasureUnitCategory, { $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(MeasureUnitCategory, { $where: { id: '1' } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        { $where: { id: '1' } },
+        { access: 'delete' },
+      );
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
       await querier.deleteMany({ $entity: MeasureUnitCategory, $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(MeasureUnitCategory, { $where: { id: '1' } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        { $where: { id: '1' } },
+        { access: 'delete' },
+      );
     });
 
     it('should pass options correctly with entity-as-argument pattern', async () => {
@@ -200,7 +208,7 @@ describe('Dual API Pattern: $entity field support', () => {
       expect(querier.deleteManyMock).toHaveBeenCalledWith(
         MeasureUnitCategory,
         { $where: { id: '1' } },
-        { hardDelete: true },
+        { hardDelete: true, access: 'delete' },
       );
     });
 
@@ -210,7 +218,7 @@ describe('Dual API Pattern: $entity field support', () => {
       expect(querier.deleteManyMock).toHaveBeenCalledWith(
         MeasureUnitCategory,
         { $where: { id: '1' } },
-        { hardDelete: true },
+        { hardDelete: true, access: 'delete' },
       );
     });
   });
@@ -219,12 +227,9 @@ describe('Dual API Pattern: $entity field support', () => {
     it('should update the entity its query names', async () => {
       const updateSpy = vi.spyOn(querier, 'internalUpdateMany').mockResolvedValue(1);
       await querier.updateMany({ $entity: User, $where: { id: '1' } }, { name: 'n' });
-      expect(updateSpy).toHaveBeenCalledWith(
-        User,
-        { $where: { id: '1' } },
-        expect.objectContaining({ name: 'n' }),
-        undefined,
-      );
+      expect(updateSpy).toHaveBeenCalledWith(User, { $where: { id: '1' } }, expect.objectContaining({ name: 'n' }), {
+        access: 'update',
+      });
     });
 
     it('should restore the entity its query names', async () => {
@@ -234,7 +239,7 @@ describe('Dual API Pattern: $entity field support', () => {
         MeasureUnitCategory,
         expect.objectContaining({ $where: expect.objectContaining({ id: '1', deletedAt: { $ne: null } }) }),
         expect.objectContaining({ deletedAt: null }),
-        { filters: { softDelete: false } },
+        { filters: { softDelete: false }, access: 'update' },
       );
     });
 
@@ -324,7 +329,7 @@ describe('Dual API Pattern: $entity field support', () => {
         MeasureUnitCategory,
         expect.objectContaining({ $where: expect.objectContaining({ id: '1', deletedAt: { $ne: null } }) }),
         expect.objectContaining({ deletedAt: null }),
-        { filters: { softDelete: false } },
+        { filters: { softDelete: false }, access: 'update' },
       );
     });
 
@@ -335,7 +340,7 @@ describe('Dual API Pattern: $entity field support', () => {
         MeasureUnitCategory,
         expect.objectContaining({ $where: expect.objectContaining({ id: '7', deletedAt: { $ne: null } }) }),
         expect.objectContaining({ deletedAt: null }),
-        { filters: { softDelete: false } },
+        { filters: { softDelete: false }, access: 'update' },
       );
     });
 

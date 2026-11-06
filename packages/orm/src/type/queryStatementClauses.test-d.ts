@@ -2,7 +2,7 @@
  * The clauses each statement accepts and the values a column accepts: a clause wrongly accepted
  * produces a wrong statement, one wrongly rejected blocks a right one. Type-checked by `bun run ts` only.
  */
-import type { HttpQuerier } from '../browser/querier/httpQuerier.js';
+import type { ClientQuerier } from '../browser/type/index.js';
 import type { Querier } from '../index.js';
 import type { PgQuerierPool } from '../postgres/index.js';
 import type { Query, QueryPage } from './query.js';
@@ -70,11 +70,10 @@ export async function existsTakesTheFilterAlone(querier: Querier) {
 }
 
 /**
- * The same acceptance, held where callers actually stand: a `new PgQuerierPool(...)` and a `new
- * HttpQuerier(...)` are concrete classes, and each declared its own `count` for a while, so a clause
- * the interface accepted could still be rejected by the object in hand.
+ * The same acceptance, held where callers actually stand: a `new PgQuerierPool(...)` is a concrete class,
+ * whose own `count` could reject a clause the interface accepts, and the client is its own interface.
  */
-export async function countSettlesAPageOffTheConcreteClassesToo(pool: PgQuerierPool, client: HttpQuerier) {
+export async function countSettlesAPageOffTheConcreteClassesToo(pool: PgQuerierPool, client: ClientQuerier) {
   await pool.count(Member, { $where: { name: 'x' } });
   await client.count(Member, { $where: { name: 'x' } });
   await pool.count(Member, { $limit: 10 });
@@ -82,7 +81,7 @@ export async function countSettlesAPageOffTheConcreteClassesToo(pool: PgQuerierP
 
   // @ts-expect-error the narrowing holds off the concrete classes too, not just the interface
   await pool.count(Member, { $sort: { score: -1 } });
-  // @ts-expect-error idem for the HTTP client, which declared its own `count` for a while
+  // @ts-expect-error idem for the client
   await client.count(Member, { $sort: { score: -1 } });
 }
 

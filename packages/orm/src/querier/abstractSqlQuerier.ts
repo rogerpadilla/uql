@@ -16,7 +16,7 @@ import type {
   FieldKey,
   QueryUpsert,
   QueryPage,
-  QueryOptions,
+  StatementOptions,
   QuerySearch,
   QueryUpdateResult,
   RawRow,
@@ -269,12 +269,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return tuning.length > 0 && this.dialect.features.vectorTuningNeedsTransaction;
   }
 
-  protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+  protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: StatementOptions) {
     return this.selectRows(entity, q, opts);
   }
 
   /** Every row `q` matches past its page, deduplicated where it reads `$distinct`. */
-  private countUnpaged<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<number> {
+  private countUnpaged<E extends object>(entity: Type<E>, q: Query<E>, opts?: StatementOptions): Promise<number> {
     return q.$distinct
       ? this.runCount((ctx) => this.dialect.countDistinct(ctx, entity, q, opts))
       : this.internalCount(entity, { $where: q.$where }, opts);
@@ -288,7 +288,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalFindManyAndCount<E extends object>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<[E[], number]> {
     const { rowLocks } = this.dialect.features;
     if (q.$distinct || (q.$lock && !(rowLocks && rowLocks.withWindow))) {
@@ -309,7 +309,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   private selectRows<E extends object, T = E>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
     totalAlias?: string,
   ): Promise<T[]> {
     const tuning = this.vectorTuning(entity, q);
@@ -349,7 +349,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async *internalFindManyStream<E extends object>(
     entity: Type<E>,
     q: Query<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ) {
     const tuning = this.vectorTuning(entity, q);
     if (this.tunedInTransaction(tuning) && !this.scopeHere()) {
@@ -397,7 +397,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return row ? Number(row[AGGREGATE_VALUE_ALIAS]) : 0;
   }
 
-  protected override async internalCount<E extends object>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {
+  protected override async internalCount<E extends object>(entity: Type<E>, q: QueryPage<E>, opts?: StatementOptions) {
     return this.runCount((ctx) => this.dialect.count(ctx, entity, q, opts));
   }
 
@@ -408,7 +408,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalAggregate<E extends object>(
     entity: Type<E>,
     q: QueryAggregate<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ): Promise<RawRow[]> {
     return this.readRows<RawRow>((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
   }
@@ -558,7 +558,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ) {
     const { changes } = await this.changesOf((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
     return changes;
@@ -574,11 +574,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       entity: Type<E>,
       q: QuerySearch<E>,
       payload: UpdatePayload<E>,
-      opts: QueryOptions,
+      opts: StatementOptions,
       keys: readonly FieldKey<E>[],
     ) => this.readRows<E>((ctx) => this.dialect.update(ctx, entity, q, payload, opts, keys)),
-    delete: <E extends object>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions, keys: readonly FieldKey<E>[]) =>
-      this.readRows<E>((ctx) => this.dialect.delete(ctx, entity, q, opts, keys)),
+    delete: <E extends object>(
+      entity: Type<E>,
+      q: QuerySearch<E>,
+      opts: StatementOptions,
+      keys: readonly FieldKey<E>[],
+    ) => this.readRows<E>((ctx) => this.dialect.delete(ctx, entity, q, opts, keys)),
     upsert: (entity, q, payload, keys) => {
       const nullKey = getKeys(q.$conflict).find((key) => payload.some((row) => row[key] === null));
       if (nullKey !== undefined) {
@@ -700,7 +704,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalDeleteMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
-    opts?: QueryOptions,
+    opts?: StatementOptions,
   ) {
     const { changes } = await this.changesOf((ctx) => this.dialect.delete(ctx, entity, q, opts));
     return changes;

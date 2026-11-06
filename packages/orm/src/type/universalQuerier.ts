@@ -16,7 +16,7 @@ import type {
 } from './query.js';
 import type { QueryAggregate, QueryAggregateResult } from './queryAggregate.js';
 import type { BooleanLike, Type } from './utility.js';
-import type { QuerierCountedResult, QuerierSql, QuerierResult, QuerierTransport } from './wire.js';
+import type { QuerierSql, QuerierTransport } from './wire.js';
 
 /** The query each read takes, keyed by the kind of read. */
 export type ReadQueries<E, Sql> = {
@@ -25,29 +25,29 @@ export type ReadQueries<E, Sql> = {
   readonly page: QueryKeyset<E, Sql>;
 };
 
-/** The result type of each read on transport `W`, keyed by the kind of read. */
-export type ReadResults<W extends QuerierTransport, T> = {
-  readonly one: QuerierResult<W, T | undefined>;
-  readonly many: QuerierResult<W, T[]>;
-  readonly counted: QuerierCountedResult<W, T>;
-  readonly page: QuerierResult<W, CursorPage<T>>;
+/** The result type of each read, keyed by the kind of read: alike on the server and the client. */
+export type ReadResults<T> = {
+  readonly one: Promise<T | undefined>;
+  readonly many: Promise<T[]>;
+  readonly counted: Promise<[T[], number]>;
+  readonly page: Promise<CursorPage<T>>;
   readonly stream: AsyncIterable<T>;
 };
 
 /**
  * A read that takes the entity first, then the query, and returns rows narrowed to what the query projected. `K` picks
- * the query type, `R` the result type on transport `W`, and `O` the options.
+ * the query type, `R` the result type, `W` the transport, whose SQL its queries may carry, and `O` the options.
  */
 export type EntityRead<
   K extends keyof ReadQueries<object, never>,
-  R extends keyof ReadResults<QuerierTransport, unknown>,
+  R extends keyof ReadResults<unknown>,
   W extends QuerierTransport,
   O,
 > = <E extends object, const Q extends ReadQueries<E, QuerierSql<W>>[K]>(
   entity: Type<E>,
   q: Captured<ReadQueries<E, QuerierSql<W>>[K], Q>,
   opts?: O,
-) => ReadResults<W, QueryFindResult<E, Q>>[R];
+) => ReadResults<QueryFindResult<E, Q>>[R];
 
 /**
  * The operations the server and the browser client declare alike, per transport `W`, options `O`,
@@ -60,7 +60,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     id: EntityId<E>,
     q?: Captured<QueryOne<E, QuerierSql<W>>, Q>,
     opts?: O,
-  ): QuerierResult<W, QueryFindResult<E, Q> | undefined>;
+  ): Promise<QueryFindResult<E, Q> | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -89,10 +89,10 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   findManyPage: EntityRead<'page', 'page', W, O>;
 
   /** Count the records matching the filter, or those a page of them takes. */
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E, QuerierSql<W>>, opts?: O): QuerierResult<W, number>;
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E, QuerierSql<W>>, opts?: O): Promise<number>;
 
   /** Whether any record matches: a count capped at one row, so the engine stops at the first match. */
-  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, QuerierSql<W>>, opts?: O): QuerierResult<W, boolean>;
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, QuerierSql<W>>, opts?: O): Promise<boolean>;
 
   /** Update the record with the given primary key; resolves to the number of affected rows. */
   updateOneById<E extends object>(
@@ -100,7 +100,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     id: EntityId<E>,
     payload: UpdateWrite<E, QuerierSql<W>>,
     opts?: O,
-  ): QuerierResult<W, number>;
+  ): Promise<number>;
 
   /** Update the records matching the query; resolves to the number of affected rows. */
   updateMany<E extends object>(
@@ -108,7 +108,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     q: QuerySearch<E, QuerierSql<W>>,
     payload: UpdateWrite<E, QuerierSql<W>>,
     opts?: O,
-  ): QuerierResult<W, number>;
+  ): Promise<number>;
 
   /**
    * delete or SoftDelete a record.
@@ -116,7 +116,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param id the primary key of the record
    * @return the number of affected records
    */
-  deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: DO): QuerierResult<W, number>;
+  deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: DO): Promise<number>;
 
   /**
    * delete or SoftDelete records.
@@ -124,7 +124,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param q the criteria to look for the records
    * @return the number of affected records
    */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, QuerierSql<W>>, opts?: DO): QuerierResult<W, number>;
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, QuerierSql<W>>, opts?: DO): Promise<number>;
 }
 
 /**

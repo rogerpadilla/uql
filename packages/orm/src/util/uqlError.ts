@@ -4,20 +4,53 @@
  * failure, a lock timeout or a busy database: the transaction can simply run again. `usage` is the
  * caller's own mistake, which running it again will not fix. `security` is a `security` filter refusing.
  */
-export type QueryErrorKind =
-  | 'uniqueViolation'
-  | 'foreignKeyViolation'
-  | 'notNullViolation'
-  | 'checkViolation'
-  | 'optimisticLock'
-  | 'retryable'
-  | 'usage'
-  | 'security';
+export const QUERY_ERROR_KINDS = [
+  'uniqueViolation',
+  'foreignKeyViolation',
+  'notNullViolation',
+  'checkViolation',
+  'optimisticLock',
+  'retryable',
+  'usage',
+  'security',
+] as const;
+
+export type QueryErrorKind = (typeof QUERY_ERROR_KINDS)[number];
+
+const KINDS: ReadonlySet<unknown> = new Set(QUERY_ERROR_KINDS);
+
+export function isQueryErrorKind(value: unknown): value is QueryErrorKind {
+  return KINDS.has(value);
+}
+
+/**
+ * Where in a call the refused value sits, as `['query', '$where', 'password']`: a form highlights the field by it. A
+ * querier's refusal names it within the query, `['$limit']`, which the API places within the call.
+ */
+export type UqlErrorPath = readonly (string | number)[];
+
+export type UqlErrorOptions = ErrorOptions & {
+  readonly path?: UqlErrorPath;
+  /** What HTTP answers beside the status, as a 405's `allow`. */
+  readonly headers?: Readonly<Record<string, string>>;
+};
 
 /** Every error UQL raises of its own: the kind `queryErrorKind` answers, and the status HTTP answers with. */
 export abstract class UqlError extends Error {
   abstract readonly kind: QueryErrorKind;
   abstract readonly status: number;
+  declare readonly path?: UqlErrorPath;
+  declare readonly headers?: Readonly<Record<string, string>>;
+
+  constructor(message?: string, opts?: UqlErrorOptions) {
+    super(message, opts);
+    if (opts?.path) {
+      this.path = opts.path;
+    }
+    if (opts?.headers) {
+      this.headers = opts.headers;
+    }
+  }
 }
 
 /**
@@ -29,6 +62,24 @@ export class UqlUsageError extends UqlError {
   override name = 'UqlUsageError';
   readonly kind = 'usage';
   readonly status = 400;
+}
+
+/**
+ * A request refused with a 4xx `status`: what the API answers a route nothing serves (404), a method its op does
+ * not take (405, naming the ones it does in `allow`) or a body that is not JSON (415) with, and what a middleware or
+ * a hook throws to refuse a client, `new UqlRequestError('unauthorized', 401)`: only a `UqlError` reaches one.
+ */
+export class UqlRequestError extends UqlError {
+  override name = 'UqlRequestError';
+  readonly kind = 'usage';
+
+  constructor(
+    message: string,
+    readonly status: number,
+    opts?: UqlErrorOptions,
+  ) {
+    super(message, opts);
+  }
 }
 
 /**

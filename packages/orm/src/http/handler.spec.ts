@@ -1,19 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getContext } from '../context/context.js';
-import { defineEntity, Entity, f, Field, getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { createMockQuerier, createMockQuerierPool, Item, type MockedQuerier, Tax, User } from '../test/index.js';
+import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
-import { createRequestHandler, type HandlerRequest } from './handler.js';
+import { UqlRequestError } from '../util/uqlError.js';
+import { type ApiOptions, createApi } from './api.js';
+import type { ApiMiddleware } from './apiCall.js';
+import { toFetchHandler, toRequestHandler } from './handler.js';
 
-describe('createRequestHandler', () => {
+const BASE = 'http://localhost/api/v1';
+const JSON_TYPE = { 'content-type': 'application/json' };
+
+const fetchHandler = (opts: ApiOptions<Request>) => toFetchHandler(createApi(opts));
+
+function get(path: string, call?: object, headers?: Record<string, string>): Request {
+  return new Request(`${BASE}${path}${call ? `?q=${encodeURIComponent(JSON.stringify(call))}` : ''}`, { headers });
+}
+
+function post(path: string, body: string, headers: Record<string, string> = JSON_TYPE, method = 'POST'): Request {
+  return new Request(`${BASE}${path}`, { method, headers, body });
+}
+
+describe('toFetchHandler', () => {
   let mockQuerier: MockedQuerier;
   let pool: QuerierPool;
-
-  const req = (partial: Partial<HandlerRequest> & Pick<HandlerRequest, 'method' | 'entityPath'>): HandlerRequest => ({
-    context: undefined,
-    ...partial,
-  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -21,534 +30,226 @@ describe('createRequestHandler', () => {
     pool = createMockQuerierPool(new PostgresDialect(), async () => mockQuerier);
   });
 
-  /** The route is one path segment, which a composite key has no spelling for on either side yet. */
-  it('should refuse a by-id route on a composite key, naming the handler', async () => {
-    const Enrolment = defineEntity({
-      name: 'Enrolment',
-      fields: { studentId: f.number().id(), courseId: f.string().id() },
-    });
-    const handle = createRequestHandler({ include: [Enrolment], pool });
-
-    await expect(handle(req({ method: 'GET', entityPath: 'enrolment', subPath: '1' }))).rejects.toThrow(
-      /composite primary key \(studentId, courseId\), which the HTTP handler does not support/,
-    );
-  });
-
-  it('should run on the pool it is given', async () => {
-    const ownQuerier = createMockQuerier();
-    const handle = createRequestHandler({
-      include: [User],
-      pool: createMockQuerierPool(new PostgresDialect(), async () => ownQuerier),
-    });
-
-    await handle(req({ method: 'GET', entityPath: 'user' }));
-
-    expect(ownQuerier.findMany).toHaveBeenCalled();
-    expect(mockQuerier.findMany).not.toHaveBeenCalled();
-  });
-
-  it('should pick the pool per request, after the context it resolved', async () => {
-    const tenantQuerier = createMockQuerier();
-    const seen: unknown[] = [];
-    const handle = createRequestHandler<{ tenantId: number }>({
-      include: [User],
-      getContext: (context) => ({ tenantId: context.tenantId }),
-      pool: (context, appContext) => {
-        seen.push([context.tenantId, appContext['tenantId']]);
-        return createMockQuerierPool(new PostgresDialect(), async () => tenantQuerier);
-      },
-    });
-
-    await handle({ method: 'GET', entityPath: 'user', context: { tenantId: 7 } });
-
-    expect(seen).toEqual([[7, 7]]);
-    expect(tenantQuerier.findMany).toHaveBeenCalled();
-  });
-
-  it('should refuse a handler naming no entity to serve', () => {
-    const refusal = "name the entities the handler serves in 'include'";
-    expect(() => createRequestHandler({ pool, include: [] })).toThrow(refusal);
-    // @ts-expect-error: an untyped caller can still leave it out
-    expect(() => createRequestHandler({ pool })).toThrow(refusal);
-  });
-
-  // The path comes from the class name, so two entities on the same table in different schemas would
-  // land on one path, the second unreachable.
-  it('should throw when two entities claim the same path', () => {
-    const Company = defineEntity({ name: 'Company', schema: 'crm', fields: { id: f.number().autoIncrement() } });
-    const Shadow = defineEntity({ name: 'Company', schema: 'billing', fields: { id: f.number().autoIncrement() } });
-
-    expect(() => createRequestHandler({ pool, include: [Company, Shadow] })).toThrow(
-      '/company <- Company (crm.Company), Company (billing.Company)',
-    );
-
-    // Which is what `entityPath` is for: the two are one table in two schemas, so the schema is what
-    // tells their routes apart.
-    const handle = createRequestHandler({
-      pool,
-      include: [Company, Shadow],
-      entityPath: (entity) => `${getMeta(entity).schema}-company`,
-    });
-    expect(handle(req({ method: 'GET', entityPath: 'crm-company', subPath: 'one' }))).toBeDefined();
-    expect(handle(req({ method: 'GET', entityPath: 'billing-company', subPath: 'one' }))).toBeDefined();
-  });
-
-  it('should name a colliding table by itself when it has no schema', () => {
-    @Entity()
-    class Order {
-      @Field(f.number().autoIncrement()) id?: number;
-    }
-    const Archived =
-      @Entity({ name: 'order_archive' })
-      class Order {
-        @Field(f.number().autoIncrement()) id?: number;
-      };
-
-    expect(() => createRequestHandler({ pool, include: [Order, Archived] })).toThrow(
-      '/order <- Order (Order), Order (order_archive)',
-    );
-  });
-
-  it('should return undefined for unknown entity or route', () => {
-    const handle = createRequestHandler({ pool, include: [User] });
-    expect(handle(req({ method: 'GET', entityPath: 'unknown-entity' }))).toBeUndefined();
-    expect(handle(req({ method: 'OPTIONS', entityPath: 'user' }))).toBeUndefined();
-    expect(handle(req({ method: 'POST', entityPath: 'user', subPath: 'one' }))).toBeUndefined();
-  });
-
-  it('should serve no entity it does not name, however defined', () => {
-    defineEntity({ name: 'OtherEntity', fields: { id: f.number().autoIncrement() } });
-    const handle = createRequestHandler({ pool, include: [User] });
-    expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
-  });
-
-  it('should find one row', async () => {
+  it('should read with the call in q, under any base', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'GET', entityPath: 'user', subPath: 'one', query: { $where: JSON.stringify({ name: 'John' }) } }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: { id: 1, name: 'John' }, count: 1 } });
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(get('/user/findOne', { query: { $where: { name: 'John' } } }));
+
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ data: { id: 1, name: 'John' } });
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
-    expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('should wire getContext into the ambient context for the whole request', async () => {
-    let seen: unknown;
-    mockQuerier.findOne.mockImplementation(async () => {
-      seen = getContext();
-      return { id: 1 };
-    });
-    const handle = createRequestHandler<{ tid: number }>({
-      pool,
-      include: [User],
-      getContext: (ctx) => ({ tenantId: ctx?.tid }),
-    });
-    await handle(
-      req({ method: 'GET', entityPath: 'user', subPath: 'one', context: { tid: 7 } }) as HandlerRequest<{
-        tid: number;
-      }>,
-    );
-    expect(seen).toEqual({ tenantId: 7 });
+  it.each(['QUERY', 'POST'])('should read with the call in the body of a %s', async (method) => {
+    mockQuerier.findOne.mockResolvedValue({ id: 1 });
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(post('/user/findOneById', '{"id":1}', JSON_TYPE, method));
+
+    expect(await resp.json()).toEqual({ data: { id: 1 } });
+    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: 1 } }));
   });
 
-  it('should answer null where findOne finds none', async () => {
-    mockQuerier.findOne.mockResolvedValue(null);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }));
-    expect(resp).toEqual({ status: 200, body: { data: null, count: 0 } });
-  });
-
-  it('should count rows', async () => {
-    mockQuerier.count.mockResolvedValue(5);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count' }));
-    expect(resp).toEqual({ status: 200, body: { data: 5, count: 5 } });
-  });
-
-  /** What the client's `exists` sends: the cap has to reach the querier, or it counts every match. */
-  it('should honor a $limit from the wire on count', async () => {
-    mockQuerier.count.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count', query: { $limit: '1' } }));
-    expect(mockQuerier.count).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 1 }));
-    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-  });
-
-  it('should find one row by id', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
-    expect(resp).toEqual({ status: 200, body: { data: { id: 123 }, count: 1 } });
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
-  });
-
-  it('should answer a count of zero where no row has the id', async () => {
-    mockQuerier.findOne.mockResolvedValue(undefined);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
-    expect(resp).toEqual({ status: 200, body: { data: undefined, count: 0 } });
-  });
-
-  it('should merge an object $where into a read by id', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ pool, include: [User] });
-    await handle(req({ method: 'GET', entityPath: 'user', subPath: '123', query: { $where: '{"name":"John"}' } }));
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({ $where: { id: '123', name: 'John' } }),
-    );
-  });
-
-  it('should find rows', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user' }));
-    expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: undefined } });
-    expect(mockQuerier.count).not.toHaveBeenCalled();
-  });
-
-  /** The querier's own read-and-count, whose count is every matching row: `count` counts the page a `$limit` takes. */
-  it('should find rows with the count of every one matching', async () => {
-    mockQuerier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 6]);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', query: { $limit: '1', count: 'true' } }));
-    expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 6 } });
-    expect(mockQuerier.findManyAndCount).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 1 }));
-    expect(mockQuerier.count).not.toHaveBeenCalled();
-  });
-
-  it('should not count rows on ?count=false', async () => {
-    const handle = createRequestHandler({ pool, include: [User] });
-    await handle(req({ method: 'GET', entityPath: 'user', query: { count: 'false' } }));
-    expect(mockQuerier.count).not.toHaveBeenCalled();
-  });
-
-  it('should read a page past the cursor the query string carries', async () => {
-    const page = { items: [{ id: 1 }], endCursor: 'b', hasNextPage: true, hasPrevPage: true };
-    mockQuerier.findManyPage.mockResolvedValue(page);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'GET', entityPath: 'user', subPath: 'page', query: { $limit: '1', $after: 'a' } }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: page } });
-    expect(mockQuerier.findManyPage).toHaveBeenCalledWith(User, { $where: {}, $limit: 1, $after: 'a' });
-  });
-
-  it('should refuse a page that names no size', async () => {
-    const handle = createRequestHandler({ pool, include: [User] });
-    await expect(handle(req({ method: 'GET', entityPath: 'user', subPath: 'page' }))).rejects.toThrow(
-      'a page names how many rows it holds in $limit',
-    );
-  });
-
-  it("should take a QUERY read's query from the body, through preFilter", async () => {
-    mockQuerier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 1]);
-    const preFilter = vi.fn();
-    const preSave = vi.fn();
-    const handle = createRequestHandler({ pool, include: [User], preFilter, preSave });
-    const resp = await handle(
-      req({ method: 'QUERY', entityPath: 'user', body: { $where: { name: 'John' }, $limit: 5, count: true } }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
-    expect(mockQuerier.findManyAndCount).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({ $where: { name: 'John' }, $limit: 5 }),
-    );
-    expect(preFilter).toHaveBeenCalledTimes(1);
-    expect(preFilter.mock.calls[0][0].method).toBe('QUERY');
-    expect(preFilter.mock.calls[0][0].op).toBe('findMany');
-    expect(preSave).not.toHaveBeenCalled();
-  });
-
-  it('should insert one row in a transaction', async () => {
+  it('should write the payload a POST carries, in a transaction', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'John' } }));
-    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-    expect(mockQuerier.transaction).toHaveBeenCalled();
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(post('/user/insertOne', '{"payload":{"name":"John"}}'));
+
+    expect(await resp.json()).toEqual({ data: 1 });
     expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'John' });
-    expect(mockQuerier.release).toHaveBeenCalled();
+    expect(mockQuerier.transaction).toHaveBeenCalled();
   });
 
-  it('should insert rows', async () => {
-    mockQuerier.insertMany.mockResolvedValue([1, 2]);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'POST', entityPath: 'user', subPath: 'many', body: [{ name: 'a' }, { name: 'b' }] }),
+  it('should take a POST with no body as a call carrying nothing', async () => {
+    mockQuerier.count.mockResolvedValue(3);
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(post('/user/count', ''));
+
+    expect(await resp.json()).toEqual({ data: 3 });
+  });
+
+  it('should take an entity path the client percent-encoded', async () => {
+    mockQuerier.count.mockResolvedValue(0);
+    const handler = fetchHandler({ pool, include: [User], entityPath: () => 'the user' });
+
+    expect((await handler(get(`/${encodeURIComponent('the user')}/count`))).status).toBe(200);
+  });
+
+  it('should refuse a write sent as GET, naming the method it takes, and read no body', async () => {
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(get('/user/deleteMany', { query: { $where: { name: 'a' } } }));
+
+    expect(resp.status).toBe(405);
+    expect(resp.headers.get('allow')).toBe('POST');
+    expect(await resp.json()).toEqual({
+      error: { message: "'deleteMany' takes POST, not GET", status: 405, kind: 'usage' },
+    });
+    expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
+  });
+
+  /** The content type is refused before the body is read, so a form's body never reaches a JSON parser. */
+  it('should refuse a form body as 415, not as malformed JSON', async () => {
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(
+      post('/user/insertOne', 'payload=1', { 'content-type': 'application/x-www-form-urlencoded' }),
     );
-    expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
-    expect(mockQuerier.insertMany).toHaveBeenCalledWith(User, [{ name: 'a' }, { name: 'b' }]);
+
+    expect(resp.status).toBe(415);
   });
 
-  /** A body of the wrong shape is the client's mistake, refused before any write as a malformed query is. */
-  it.each([
-    { what: 'rows, with no body', subPath: 'many', body: undefined, message: 'a JSON array of rows' },
-    { what: 'rows, with one row', subPath: 'many', body: { name: 'a' }, message: 'a JSON array of rows' },
-    { what: 'one row, with rows', subPath: undefined, body: [{ name: 'a' }], message: 'a JSON object' },
-  ])('should refuse a write of $what', async ({ subPath, body, message }) => {
-    const handle = createRequestHandler({ pool, include: [User] });
-    await expect(handle(req({ method: 'POST', entityPath: 'user', subPath, body }))).rejects.toThrow(message);
-    expect(mockQuerier.insertMany).not.toHaveBeenCalled();
+  it('should refuse a body that is not JSON, which a cross-site form sends', async () => {
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(post('/user/insertOne', '{"payload":{}}', { 'content-type': 'text/plain' }));
+
+    expect(resp.status).toBe(415);
     expect(mockQuerier.insertOne).not.toHaveBeenCalled();
   });
 
-  it('should save one row', async () => {
-    mockQuerier.saveOne.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'PUT', entityPath: 'user', body: { id: 1, name: 'John' } }));
-    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-    expect(mockQuerier.saveOne).toHaveBeenCalledWith(User, { id: 1, name: 'John' });
+  it('should answer 400 to a body that is not valid JSON, pointing nowhere in the call', async () => {
+    const handler = fetchHandler({ pool, include: [User] });
+
+    const resp = await handler(post('/user/insertOne', '{bad'));
+
+    expect(resp.status).toBe(400);
+    expect(await resp.json()).toEqual({ error: { message: 'invalid JSON body', status: 400, kind: 'usage' } });
   });
 
-  it('should save rows', async () => {
-    mockQuerier.saveMany.mockResolvedValue([1, 2]);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'PUT', entityPath: 'user', subPath: 'many', body: [{ id: 1 }, { name: 'new' }] }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
-  });
+  it('should answer 400 with where the call went wrong', async () => {
+    const handler = fetchHandler({ pool, include: [User] });
 
-  it('should update one row by id', async () => {
-    mockQuerier.updateMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'PATCH', entityPath: 'user', subPath: '1', body: { name: 'John' } }));
-    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-    expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
-      name: 'John',
+    const resp = await handler(get('/user/findMany', { query: { $limit: '10' } }));
+
+    expect(resp.status).toBe(400);
+    expect(await resp.json()).toEqual({
+      error: { message: "'$limit' must be a number", status: 400, kind: 'usage', path: ['query', '$limit'] },
     });
   });
 
-  it('should update the rows a query matches', async () => {
-    mockQuerier.updateMany.mockResolvedValue(3);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'PATCH', entityPath: 'user', query: { $where: '{"status":1}' }, body: { status: 2 } }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: 3, count: 3 } });
-    expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { status: 1 } }), {
-      status: 2,
+  it.each(['/other/findMany', '/user/aggregate', '/user', '/'])('should answer 404 to %s', async (path) => {
+    const resp = await fetchHandler({ pool, include: [User] })(get(path));
+
+    expect(resp.status).toBe(404);
+    expect(await resp.json()).toEqual({ error: { message: 'Not Found', status: 404, kind: 'usage' } });
+  });
+
+  it("should keep a driver's message off the wire", async () => {
+    mockQuerier.findOne.mockRejectedValue(new Error('relation "secret" does not exist'));
+
+    const resp = await fetchHandler({ pool, include: [User] })(get('/user/findOne'));
+
+    expect(resp.status).toBe(500);
+    expect(await resp.json()).toEqual({ error: { message: 'Internal Server Error', status: 500 } });
+  });
+
+  /** An HTTP driver (libSQL's) raises its own errors with a `status`, and their message names tables. */
+  it("should keep a driver's message off the wire when the error carries a status", async () => {
+    mockQuerier.findOne.mockRejectedValue(Object.assign(new Error('no such table: secret'), { status: 400 }));
+
+    const resp = await fetchHandler({ pool, include: [User] })(get('/user/findOne'));
+
+    expect(resp.status).toBe(500);
+    expect(await resp.json()).toEqual({ error: { message: 'Internal Server Error', status: 500 } });
+  });
+
+  it('should answer a querier throwing no error at all as a 500', async () => {
+    mockQuerier.findOne.mockRejectedValue('connection lost');
+
+    const resp = await fetchHandler({ pool, include: [User] })(get('/user/findOne'));
+
+    expect(resp.status).toBe(500);
+    expect(await resp.json()).toEqual({ error: { message: 'Internal Server Error', status: 500 } });
+  });
+
+  it("should answer a driver's constraint violation by its kind", async () => {
+    mockQuerier.insertOne.mockRejectedValue(Object.assign(new Error('duplicate key "users_email"'), { code: '23505' }));
+
+    const resp = await fetchHandler({ pool, include: [User] })(post('/user/insertOne', '{"payload":{}}'));
+
+    expect(resp.status).toBe(409);
+    expect(await resp.json()).toEqual({ error: { message: 'Conflict', status: 409, kind: 'uniqueViolation' } });
+  });
+
+  it('should answer a body that fails while it is read with the envelope', async () => {
+    const failing = new ReadableStream({
+      start: (controller) => controller.error(new Error('connection reset')),
     });
-  });
-
-  it('should delete one row by id, hard with ?hardDelete', async () => {
-    mockQuerier.deleteMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(
-      req({ method: 'DELETE', entityPath: 'user', subPath: '1', query: { hardDelete: 'true' } }),
-    );
-    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
-      hardDelete: true,
+    const request = new Request(`${BASE}/user/insertOne`, {
+      method: 'POST',
+      headers: JSON_TYPE,
+      body: failing,
+      duplex: 'half',
     });
+
+    const resp = await fetchHandler({ pool, include: [User] })(request);
+
+    expect(resp.status).toBe(500);
+    expect(await resp.json()).toEqual({ error: { message: 'Internal Server Error', status: 500 } });
   });
 
-  /** The querier's own delete, so it refuses what the querier refuses, a delete naming no rows included. */
-  it('should delete the rows a query matches, softly by default', async () => {
-    mockQuerier.deleteMany.mockResolvedValue(2);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'DELETE', entityPath: 'user', query: { $where: '{"status":1}' } }));
-    expect(resp).toEqual({ status: 200, body: { data: 2, count: 2 } });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { status: 1 } }), {
-      hardDelete: false,
-    });
-    expect(mockQuerier.findMany).not.toHaveBeenCalled();
+  it('should answer a path segment that does not decode as a route nothing serves', async () => {
+    const resp = await fetchHandler({ pool, include: [User] })(get('/%E0%A4/findMany'));
+
+    expect(resp.status).toBe(404);
+    expect(await resp.json()).toEqual({ error: { message: 'Not Found', status: 404, kind: 'usage' } });
   });
 
-  it('should release the querier and propagate a read error', async () => {
-    mockQuerier.findOne.mockRejectedValue(new Error('One error'));
-    const handle = createRequestHandler({ pool, include: [User] });
-    await expect(handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }))).rejects.toThrow('One error');
-    expect(mockQuerier.release).toHaveBeenCalled();
+  it("should answer a middleware's refusal with its status", async () => {
+    const refuse: ApiMiddleware<Request> = () => {
+      throw new UqlRequestError('forbidden', 403);
+    };
+
+    const resp = await fetchHandler({ pool, include: [User], use: [refuse] })(get('/user/findMany'));
+
+    expect(resp.status).toBe(403);
+    expect(await resp.json()).toEqual({ error: { message: 'forbidden', status: 403, kind: 'usage' } });
   });
 
-  it('should release and propagate the error of a write in its transaction', async () => {
-    mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
-    const handle = createRequestHandler({ pool, include: [User] });
-    await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
-    expect(mockQuerier.transaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
+  it('should hand middleware the web Request as context', async () => {
+    mockQuerier.findMany.mockResolvedValue([]);
+    const scope: ApiMiddleware<Request> = (call, request, next) =>
+      next({
+        ...call,
+        query: {
+          ...call.query,
+          $where: Object.assign({}, call.query.$where, { companyId: request.headers.get('x-company-id') }),
+        },
+      });
+    const handler = fetchHandler({ pool, include: [User], use: [scope] });
+
+    await handler(get('/user/findMany', undefined, { 'x-company-id': '40' }));
+
+    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { companyId: '40' } }));
+  });
+});
+
+describe('toRequestHandler', () => {
+  const pool = createMockQuerierPool(new PostgresDialect(), async () => createMockQuerier());
+  const handle = toRequestHandler(createApi({ pool, include: [User] }));
+
+  it('should answer undefined for an entity or an op it does not serve, for the adapter to fall through', async () => {
+    expect(await handle({ method: 'GET', entityPath: 'other', op: 'findMany', context: undefined })).toBeUndefined();
+    expect(await handle({ method: 'GET', entityPath: 'user', op: 'aggregate', context: undefined })).toBeUndefined();
   });
 
-  describe('relations reaching an entity the handler does not serve', () => {
-    const served = () => createRequestHandler({ include: [Item, Tax], pool });
-
-    it.each([
-      { clause: '$populate', value: { tags: true }, path: 'tags', target: 'Tag' },
-      {
-        clause: '$populate',
-        value: { tax: { $populate: { category: true } } },
-        path: 'tax.category',
-        target: 'TaxCategory',
+  it('should answer a failure as its status and envelope rather than rejecting', async () => {
+    await expect(
+      handle({ method: 'GET', entityPath: 'user', op: 'findManyPage', context: undefined }),
+    ).resolves.toEqual({
+      status: 400,
+      body: {
+        error: {
+          message: "a page of 'User' holds a positive whole number of rows, and $limit is undefined",
+          status: 400,
+          kind: 'usage',
+          path: ['query', '$limit'],
+        },
       },
-      { clause: '$where', value: { tags: { name: 'a' } }, path: 'tags', target: 'Tag' },
-      {
-        clause: '$where',
-        value: { $or: [{ measureUnit: { name: 'kg' } }] },
-        path: 'measureUnit',
-        target: 'MeasureUnit',
-      },
-      { clause: '$sort', value: { tax: { category: { name: 1 } } }, path: 'tax.category', target: 'TaxCategory' },
-      { clause: '$count', value: { tags: { $where: { name: 'a' } } }, path: 'tags', target: 'Tag' },
-    ])('should refuse $clause reaching $target', async ({ clause, value, path, target }) => {
-      const read = served()(req({ method: 'GET', entityPath: 'item', query: { [clause]: JSON.stringify(value) } }));
-
-      await expect(read).rejects.toThrow(`'${path}' reaches '${target}', which this handler does not serve`);
-      expect(mockQuerier.findMany).not.toHaveBeenCalled();
-    });
-
-    it('should refuse a written row reaching one', async () => {
-      const write = served()(req({ method: 'POST', entityPath: 'item', body: { name: 'a', tags: [{ name: 't' }] } }));
-
-      await expect(write).rejects.toThrow("'tags' reaches 'Tag', which this handler does not serve");
-      expect(mockQuerier.insertOne).not.toHaveBeenCalled();
-    });
-
-    it('should read a relation to an entity it serves', async () => {
-      const query = { $populate: JSON.stringify({ tax: true }), $where: JSON.stringify({ tax: { name: 'VAT' } }) };
-
-      await served()(req({ method: 'GET', entityPath: 'item', query }));
-
-      expect(mockQuerier.findMany).toHaveBeenCalledWith(Item, expect.objectContaining({ $populate: { tax: true } }));
-    });
-
-    it("should leave a hook's own relations alone: the server writes those", async () => {
-      const handle = createRequestHandler({
-        include: [Item],
-        pool,
-        preFilter: ({ query }) => {
-          Object.assign(query, { $populate: { tags: true } });
-        },
-      });
-
-      await handle(req({ method: 'GET', entityPath: 'item' }));
-
-      expect(mockQuerier.findMany).toHaveBeenCalledWith(Item, expect.objectContaining({ $populate: { tags: true } }));
-    });
-  });
-
-  describe('hooks', () => {
-    it('should run pre on every request and preFilter on reads', async () => {
-      mockQuerier.findMany.mockResolvedValue([]);
-      const pre = vi.fn();
-      const preFilter = vi.fn();
-      const preSave = vi.fn();
-      const handle = createRequestHandler({ pool, include: [User], pre, preFilter, preSave });
-      await handle(req({ method: 'GET', entityPath: 'user' }));
-      expect(pre).toHaveBeenCalledTimes(1);
-      expect(preFilter).toHaveBeenCalledTimes(1);
-      expect(preSave).not.toHaveBeenCalled();
-      const ctx = preFilter.mock.calls[0][0];
-      expect(ctx.op).toBe('findMany');
-      expect(ctx.method).toBe('GET');
-      expect(ctx.meta.entity).toBe(User);
-    });
-
-    it('should run preSave on writes', async () => {
-      mockQuerier.insertOne.mockResolvedValue(1);
-      const preFilter = vi.fn();
-      const preSave = vi.fn();
-      const handle = createRequestHandler({ pool, include: [User], preFilter, preSave });
-      await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'a' } }));
-      expect(preSave).toHaveBeenCalledTimes(1);
-      expect(preFilter).not.toHaveBeenCalled();
-    });
-
-    /**
-     * A hook can rewrite the outgoing query, but it scopes no tenant: unlike a `security: true` filter it
-     * is not AND-merged, does not fail closed, and misses a relation populated without a `$where`.
-     */
-    it("should let a hook's query mutation reach the querier", async () => {
-      mockQuerier.findMany.mockResolvedValue([]);
-      const handle = createRequestHandler<{ companyId: number }>({
-        pool,
-        include: [User],
-        preFilter: async ({ query, context }) => {
-          query.$where ??= {};
-          Object.assign(query.$where as object, { companyId: context.companyId });
-        },
-      });
-      await handle({ method: 'GET', entityPath: 'user', context: { companyId: 40 } });
-      expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { companyId: 40 } }));
-    });
-
-    it("should let a hook's reassigned body reach the querier", async () => {
-      mockQuerier.insertOne.mockResolvedValue(1);
-      const handle = createRequestHandler({
-        pool,
-        include: [User],
-        preSave: (ctx) => {
-          ctx.body = { ...(ctx.body as object), creatorId: 7 };
-        },
-      });
-      await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'a' } }));
-      expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'a', creatorId: 7 });
-    });
-
-    it('should let post strip and derive response fields', async () => {
-      mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'slack', accessToken: 'secret' }]);
-      const handle = createRequestHandler({
-        pool,
-        include: [User],
-        post: (_ctx, envelope) => {
-          envelope.data = (envelope.data as Array<{ accessToken?: string }>).map(({ accessToken, ...rest }) => ({
-            ...rest,
-            hasAccessToken: !!accessToken,
-          }));
-        },
-      });
-      const resp = await handle(req({ method: 'GET', entityPath: 'user' }));
-      expect(resp).toEqual({
-        status: 200,
-        body: { data: [{ id: 1, name: 'slack', hasAccessToken: true }], count: undefined },
-      });
-    });
-
-    it('should let post coerce null data, after the commit on a write', async () => {
-      mockQuerier.findOne.mockResolvedValue(null);
-      const events: string[] = [];
-      const handle = createRequestHandler({
-        pool,
-        include: [User],
-        post: async ({ op }, envelope) => {
-          events.push(op);
-          envelope.data ??= {};
-        },
-      });
-      const read = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }));
-      expect(read?.body).toEqual({ data: {}, count: 0 });
-
-      mockQuerier.insertOne.mockResolvedValue(1);
-      await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'a' } }));
-      expect(events).toEqual(['findOne', 'insertOne']);
-      expect(mockQuerier.transaction).toHaveBeenCalled();
-    });
-
-    it('should let hooks enforce hardDelete, the flags being resolved after them', async () => {
-      mockQuerier.deleteMany.mockResolvedValue(1);
-      const handle = createRequestHandler({
-        pool,
-        include: [User],
-        preFilter: ({ query }) => {
-          Object.assign(query, { hardDelete: true });
-        },
-      });
-      await handle(req({ method: 'DELETE', entityPath: 'user', subPath: '1' }));
-      expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.anything(), { hardDelete: true });
-    });
-
-    it('should abort before touching the pool when an async hook throws', async () => {
-      const err = Object.assign(new Error('forbidden'), { status: 403 });
-      const handle = createRequestHandler({
-        pool,
-        include: [User],
-        pre: async () => {
-          throw err;
-        },
-      });
-      await expect(handle(req({ method: 'GET', entityPath: 'user' }))).rejects.toBe(err);
-      expect(mockQuerier.findMany).not.toHaveBeenCalled();
     });
   });
 });
