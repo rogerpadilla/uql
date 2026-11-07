@@ -276,7 +276,7 @@ import { createApi, toFetchHandler } from 'uql-orm/http';
 const api = createApi<Request>({
   pool,
   include: [Post, User],
-  contextOf: (req) => ({ tenantId: tenantOf(req) }), // from a verified session or JWT
+  contextOf: async (req) => ({ tenantId: (await getSession(req))?.tenantId }), // a verified session or JWT
 });
 
 export const handler = toFetchHandler(api); // on a catch-all under /api/v1
