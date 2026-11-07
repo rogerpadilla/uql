@@ -165,8 +165,6 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 
 ---
 
-## ⭐ Wanna see UQL grow? Give it a star please!
+### Enjoy UQL? ⭐
 
-Your star helps other developers find UQL.
-
-[![Star UQL on GitHub](https://img.shields.io/badge/Star_on_GitHub-3282b5?style=flat&logo=github)](https://github.com/rogerpadilla/uql)
+[![Star it on GitHub](https://img.shields.io/badge/Star_on_GitHub-3282b5?style=flat&logo=github)](https://github.com/rogerpadilla/uql)
