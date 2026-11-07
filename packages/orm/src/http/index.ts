@@ -10,7 +10,7 @@ export {
   type WireCall,
 } from './wireCall.js';
 export { type HandlerResponse, type RequestErrorResponse, type RequestFailure, toErrorResponse } from './errors.js';
-export { type Exposure, type Served, serve } from './exposure.js';
+export { type Served, type ServeOptions, serve } from './exposure.js';
 export type { WireCursors } from './wireQuery.js';
 export { decodeRequest, encodeCall, type HttpCall, type HttpRequest, type ReadMethod } from './route.js';
 export { type HandlerRequest, type RequestHandler, toFetchHandler, toRequestHandler } from './handler.js';

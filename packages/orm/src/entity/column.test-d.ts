@@ -73,6 +73,19 @@ export function familiesOfferTheirOwn() {
   f.number().version();
 }
 
+export function wireTakesWhatAFieldTakes() {
+  f.string().wire(false);
+  f.string().wire(['read', 'insert']);
+  const shout = f.string().as(sql`upper(name)`);
+  shout.wire(['read']);
+  // @ts-expect-error a delete removes a row, never a field
+  f.string().wire(['delete']);
+  // @ts-expect-error a computed column is only read
+  shout.wire(['insert']);
+  // @ts-expect-error `true` is spelled by leaving it unset
+  f.string().wire(true);
+}
+
 export function refusesWhatAnotherLeavesUnread() {
   // @ts-expect-error a key holds no null
   f.number().id().nullable();

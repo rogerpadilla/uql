@@ -143,6 +143,13 @@ export type FieldAccess = 'read' | 'insert' | 'update';
 export type EntityAccess = FieldAccess | 'delete';
 
 /**
+ * What a client may do to an entity, or one of its members, over an API: what it lists, nothing for `false`, and
+ * everything where unset. Nothing is served by default: an entity reaches the wire only when an API's `include`
+ * names it, and `wire` narrows it from there.
+ */
+export type Wire<A extends EntityAccess = FieldAccess> = false | readonly A[];
+
+/**
  * Authoring shape for `@Entity({ filters })` and `defineEntity`'s `.filters()`.
  */
 export type FilterOptions<E = unknown> = {

@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.114.0] - 2026-11-07
+
+- **Breaking (http):** what a client may do is the definition's `wire`, replacing `serve`'s `ops` and `members`: `@Entity({ wire: ['read'] })` or `defineEntity({ wire })` for the entity, `f.string().wire(false)` or a relation's `wire` option for a member, on every route and relation reaching it. `serve(Entity, { use })` only adds middleware.
+- **Breaking (http):** an API write the querier would drop, to a computed field or an update of an `updatable(false)` one, is refused with a 403.
+
 ## [0.113.0] - 2026-11-06
 
 - **Breaking (http):** `createApi({ pool, include, contextOf, use })` replaces `createRequestHandler`: serve it with `toFetchHandler`, `toExpress` or `toRequestHandler`, or call `api.call(call, context)` from tRPC or oRPC. Middleware, `use: [(call, context, next) => next(call)]`, replaces the `pre`, `preSave`, `preFilter` and `post` hooks.

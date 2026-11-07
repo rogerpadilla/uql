@@ -1,7 +1,7 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { SqlDialectName } from './dialect.js';
 import type { Querier } from './querier.js';
-import type { FilterOptions, RelationQuery } from './query.js';
+import type { EntityAccess, FilterOptions, RelationQuery, Wire } from './query.js';
 import type { ColumnRef, JsonPathRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
@@ -456,6 +456,8 @@ export type FieldOptions<V = unknown> = {
   readonly stored?: boolean | readonly StampEvent[];
   readonly updatable?: boolean;
   readonly eager?: boolean;
+  /** What a client may do over an API: see {@link Wire}. */
+  readonly wire?: Wire;
   readonly onInsert?: OnFieldCallback<V>;
   readonly onUpdate?: OnFieldCallback<V>;
   /**
@@ -582,8 +584,11 @@ export type RelationOptions<E, O = unknown> = RelationCascade &
     references?: (local: KeyMap<O>, foreign: KeyMap<E>) => ForeignKey<O, E> | readonly RelationReference<O, E>[];
   };
 
-/** Whether writes reach the related rows in the same transaction; its own type, so an option set takes it without instantiating `RelationOptions`. */
-type RelationCascade = { readonly cascade?: boolean | CascadeType };
+/** What every relation takes: whether writes reach the related rows in the same transaction, and its `wire`; its own type, so an option set takes it without instantiating `RelationOptions`. */
+type RelationCascade = RelationWire & { readonly cascade?: boolean | CascadeType };
+
+/** What a client may do over an API: see {@link Wire}. */
+type RelationWire = { readonly wire?: Wire };
 
 /** The foreign key's actions, read on the owning side; unset, the column's own `onDelete` applies. */
 type RelationActions = { readonly onDelete?: ForeignKeyAction; readonly onUpdate?: ForeignKeyAction };
@@ -662,11 +667,12 @@ type DecoratedJoins<E, O> = {
  * The side holding the foreign key, which the actions attach to. It cascades `'persist'` only: its target may
  * be other rows' too, so a delete cascades from the side owning the rows.
  */
-type RelationOwnerSide = RelationActions & {
-  readonly cascade?: 'persist';
-  readonly mappedBy?: never;
-  readonly through?: never;
-};
+type RelationOwnerSide = RelationActions &
+  RelationWire & {
+    readonly cascade?: 'persist';
+    readonly mappedBy?: never;
+    readonly through?: never;
+  };
 
 /** The join columns: a to-one's foreign key, `(post) => post.authorId`, or pairs where no key fits. */
 type RelationColumns<E, O, J extends RelationJoins> = (local: KeyMap<O>, foreign: KeyMap<E>) => J['key'] | J['pairs'];
@@ -1011,6 +1017,8 @@ export type EntityMeta<E> = {
   version?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
   filters?: Record<string, FilterOptions<E>>;
+  /** What a client may do over an API, see {@link Wire}; a subclass declaring none takes its base's. */
+  wire?: Wire<EntityAccess>;
   fields: {
     [K in FieldKey<E>]?: FieldMeta;
   } & { [key: string]: FieldMeta | undefined };
@@ -1212,6 +1220,8 @@ export type EntityOptions<E = unknown> = {
   readonly abstract?: true;
   /** The schema (a MySQL database) the table lives in; unset follows the pool's. */
   readonly schema?: string;
+  /** What a client may do over an API: see {@link Wire}. */
+  readonly wire?: Wire<EntityAccess>;
   readonly filters?: FilterSection<E>;
   readonly indexes?: IndexSection<E>;
   /** Table-level `CHECK` constraints. See {@link CheckOptions}. */

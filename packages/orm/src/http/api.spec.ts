@@ -74,6 +74,14 @@ describe('createApi', () => {
     expect(tenantQuerier.findMany).toHaveBeenCalled();
   });
 
+  it("should refuse to serve an entity whose definition says 'wire: false'", () => {
+    const Session = defineEntity({ name: 'Session', wire: false, fields: { id: f.number().autoIncrement() } });
+
+    expect(() => createApi({ include: [Item, Session], pool })).toThrow(
+      "'wire: false' keeps 'Session' off every API: remove from 'include'",
+    );
+  });
+
   it('should refuse an API naming no entity to serve', () => {
     const refusal = "name the entities the API serves in 'include'";
     expect(() => createApi({ pool, include: [] })).toThrow(refusal);
@@ -94,7 +102,7 @@ describe('createApi', () => {
     // Which is what `entityPath` is for: the two are one table in two schemas, so the schema tells them apart.
     const api = createApi({
       pool,
-      include: [Company, serve(Shadow, {})],
+      include: [Company, Shadow],
       entityPath: (entity) => `${getMeta(entity).schema}-company`,
     });
     expect(api.serves('crm-company', 'findMany')).toBe(true);
@@ -336,16 +344,20 @@ describe('createApi', () => {
     });
 
     it('should leave out what is not readable, and refuse what is not writable', async () => {
-      const api = createApi({ include: [serve(User, { members: { password: ['insert'] } })], pool });
+      const Account = defineEntity({
+        name: 'Account',
+        fields: { id: f.number().autoIncrement(), password: f.string().wire(['insert']) },
+      });
+      const api = createApi({ include: [Account], pool });
 
-      await api.call({ entity: 'user', op: 'findMany' }, undefined);
+      await api.call({ entity: 'account', op: 'findMany' }, undefined);
       expect(mockQuerier.findMany).toHaveBeenCalledWith(
-        User,
+        Account,
         expect.objectContaining({ $select: { password: false } }),
       );
       await expect(
         api.call(
-          { entity: 'user', op: 'updateMany', query: { $where: { id: '1' } }, payload: { password: 'x' } },
+          { entity: 'account', op: 'updateMany', query: { $where: { id: 1 } }, payload: { password: 'x' } },
           undefined,
         ),
       ).rejects.toThrow("'password' cannot be updated through this API");

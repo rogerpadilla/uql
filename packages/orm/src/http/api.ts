@@ -4,8 +4,8 @@ import { assertPageable } from '../querier/keyset.js';
 import type { Querier, QuerierPool, Type, UqlContext } from '../type/index.js';
 import { whereWith } from '../util/query.util.js';
 import { UqlError, UqlRequestError, UqlUsageError } from '../util/uqlError.js';
-import { type ApiCall, type ApiMiddleware, callOf, chain, type EntityMiddleware, isCallOf } from './apiCall.js';
-import { entityOf, exposedQuery, type Exposures, exposuresOf, type Served } from './exposure.js';
+import { type ApiCall, type ApiMiddleware, callOf, chain, isCallOf } from './apiCall.js';
+import { exposedQuery, type Served, type ServedEntities, servedEntry } from './exposure.js';
 import {
   API_OPS,
   type ApiOp,
@@ -21,8 +21,8 @@ import { readWirePayload, readWireQuery, writeWireData } from './wireRow.js';
 export type ApiOptions<Ctx = unknown> = EntityPathOptions & {
   /**
    * The entities served, and the only ones a call reaches, through a relation too: nothing is served by being
-   * defined, so an entity holding secrets (a session's token) stays off the wire unless named. `serve(User, {...})`
-   * narrows what a client may do to one, and runs middleware of its own.
+   * defined, so an entity holding secrets (a session's token) stays off the wire unless named. Each entity's `wire`
+   * says what a client may do to it; `serve(User, { use })` runs middleware of its own.
    */
   include: readonly (Type<object> | Served<object, Ctx>)[];
   /** Run around every call, first to last, before an entity's own. */
@@ -65,13 +65,15 @@ export function createApi<Ctx = unknown>(opts: ApiOptions<Ctx>): Api<Ctx> {
   if (!include?.length) {
     throw new UqlUsageError("name the entities the API serves in 'include': it serves those alone");
   }
-  const exposures = exposuresOf(include);
-  const entities = include.map(entityOf);
-  const aroundOf = new Map(
-    include.flatMap((item): [Type<object>, EntityMiddleware<object, Ctx>][] =>
-      typeof item === 'function' || !item.around ? [] : [[item.entity, item.around]],
-    ),
-  );
+  const entries = include.map(servedEntry);
+  const entities = entries.map(([entity]) => entity);
+  const served = new Map(entries);
+  const unwired = entities.filter((entity) => getMeta(entity).wire === false);
+  if (unwired.length) {
+    throw new UqlUsageError(
+      `'wire: false' keeps ${unwired.map((entity) => `'${entity.name}'`).join(', ')} off every API: remove from 'include'`,
+    );
+  }
 
   // All of them at once, so fixing the first collision does not just reveal the next.
   const byPath = Map.groupBy(entities, pathOf);
@@ -89,22 +91,22 @@ export function createApi<Ctx = unknown>(opts: ApiOptions<Ctx>): Api<Ctx> {
   return {
     serves: (path, op): op is ApiOp => entityByPath.has(path) && isApiOp(op),
     call: async (input, context) => {
-      const wire = parseWireCall(input);
-      const entity = entityByPath.get(wire.entity);
+      const sent = parseWireCall(input);
+      const entity = entityByPath.get(sent.entity);
       if (!entity) {
         // A 404, as a route that names no entity is: the call is well formed, its entity is not here.
-        throw new UqlRequestError(`'${wire.entity}' is not an entity this API serves`, 404);
+        throw new UqlRequestError(`'${sent.entity}' is not an entity this API serves`, 404);
       }
-      return run(entity, wire, context);
+      return run(entity, sent, context);
     },
   };
 
-  async function run<E extends object>(entity: Type<E>, wire: WireCall, context: Ctx): Promise<unknown> {
+  async function run<E extends object>(entity: Type<E>, sent: WireCall, context: Ctx): Promise<unknown> {
     const meta = getMeta(entity);
-    const shape = API_OPS[wire.op];
-    const call = decodedCall(entity, wire, exposures);
+    const shape = API_OPS[sent.op];
+    const call = decodedCall(entity, sent, served);
     const appContext = contextOf ? ((await contextOf(context)) ?? {}) : (ambientContext() ?? {});
-    const around = aroundOf.get(entity);
+    const around = served.get(entity);
     const answer = () =>
       chain<object, Ctx>(around ? [...use, around] : use, context, async (reshaped) => {
         if (!isCallOf(entity, reshaped)) {
@@ -125,22 +127,22 @@ export function createApi<Ctx = unknown>(opts: ApiOptions<Ctx>): Api<Ctx> {
 }
 
 /**
- * The call `wire` asks of `entity` as the querier takes it: its query and payload read back as the entity holds them,
+ * The call `sent` asks of `entity` as the querier takes it: its query and payload read back as the entity holds them,
  * checked against what its op takes and what the API exposes. Run on what the client sent, before any middleware, so
  * what a middleware adds is the server's own to add.
  */
-function decodedCall<E extends object>(entity: Type<E>, wire: WireCall, exposures: Exposures): ApiCall<E> {
+function decodedCall<E extends object>(entity: Type<E>, sent: WireCall, served: ServedEntities): ApiCall<E> {
   const meta = getMeta(entity);
-  const { op } = wire;
-  const query = readWireQuery(meta, parseWireQuery<E>(wire.query));
-  const payload = readWirePayload(meta, wire.payload);
+  const { op } = sent;
+  const query = readWireQuery(meta, parseWireQuery<E>(sent.query));
+  const payload = readWirePayload(meta, sent.payload);
   return callOf({
     entity,
     op,
-    id: wire.id,
-    query: exposedQuery(meta, op, query, payload, exposures),
+    id: sent.id,
+    query: exposedQuery(meta, op, query, payload, served),
     payload,
-    hardDelete: wire.hardDelete ?? false,
+    hardDelete: sent.hardDelete ?? false,
   });
 }
 

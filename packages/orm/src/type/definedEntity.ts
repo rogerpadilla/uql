@@ -22,6 +22,7 @@ import type {
   TriggerSection,
   versionKey,
 } from './entity.js';
+import type { EntityAccess, Wire } from './query.js';
 import type { QuerySql, RelationAggregate } from './querySql.js';
 import type { Type, AbstractType } from './utility.js';
 
@@ -182,6 +183,8 @@ export type DefineEntityOptions<F extends DefinedFields, B = object, BK = unknow
   readonly schema?: string;
   /** A base that is never a table: the entities extending it take what it declares. */
   readonly abstract?: true;
+  /** What a client may do over an API: see {@link Wire}. */
+  readonly wire?: Wire<EntityAccess>;
   /** The entity it inherits from, which the declared class extends, so its methods and `super` work. */
   readonly extends?: DefinedClass<B, BK, BC, boolean>;
   readonly fields: F;

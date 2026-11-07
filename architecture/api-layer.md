@@ -59,22 +59,31 @@ Request notifications are a wrapper around the transport, not a process-wide bus
 ### Exposure
 
 ```ts
-include: [
-  Post,
-  serve(User, { ops: ['read', 'update'], members: { passwordHash: false, role: ['read'], password: ['insert'] } }),
-];
+const User = defineEntity({
+  name: 'User',
+  wire: ['read', 'update'],
+  fields: {
+    id: f.number().autoIncrement(),
+    passwordHash: f.string().wire(false),
+    role: f.string().wire(['read']),
+  },
+}).relations((rel) => ({ sessions: () => rel.oneToMany(Session, { mappedBy: (s) => s.user, wire: false }) }));
+
+include: [Post, User];
 ```
 
-- **Operations are the querier's words.** An entity takes `('read' | 'insert' | 'update' | 'delete')[]`; a field `('read' | 'insert' | 'update')[]` or `false`, since a delete removes a row, never a field. `insert`, not `create`: the querier says `insertOne`.
+- **Nothing is served by default**: an entity reaches the wire only when an API's `include` names it, so one holding secrets (a session's token) stays off it unless named. `wire` narrows a served entity's members.
+- **A member's exposure is its definition's `wire`**, on a field's builder or a relation's options, decorated or defined alike. It holds wherever the entity is reached, its own route and every relation into it, so no path can forget it. An entity's own `wire` lists the operations it takes, and `false` keeps it off every API, so `createApi` refuses one in `include`. The API names what it serves; `serve` adds middleware, nothing about exposure.
+- **Operations are the querier's words.** An entity takes `('read' | 'insert' | 'update' | 'delete')[]`; a member `('read' | 'insert' | 'update')[]` or `false`, since a delete removes a row, never a field. `insert`, not `create`: the querier says `insertOne`.
 - **`read` is everything that reads the value**: select, filter, sort, distinct, an aggregate.
 - **A save carries both**: every field it names needs `insert` and `update`. So does a relation a write nests, which the cascade saves whatever the op; an update nesting a to-many also deletes the rows it stops listing, so it needs `delete` on the target.
 - **A JSON path reads its member**: `'meta.plan'` in a filter or a sort is checked as `meta`.
-- **What is not listed keeps every operation**, as an entity in `include` serves every route.
-- **The map is declared over `F extends keyof E`**, so a typo does not compile and a rename follows.
+- **What states none takes every operation**: a member or an entity with no `wire`. A subclass declaring none takes its base's.
+- **A write the querier would drop is refused**: a computed field, an `updatable(false)` one in an update. A save or a cascade may insert, which writes the latter, so it is taken there. A client learns it sent something that does nothing.
 
 One pure function, `exposedQuery`, gives the query a call runs with. Its walk it refuses a relation out of `include`, an operation the entity does not take, and a field at any depth of the query or the body, with a `UqlSecurityError` naming the path. It reads the client's call, before any middleware, so what a middleware adds is the server's own. A read naming no `$select` leaves the hidden fields out at every depth, a populated relation's included.
 
-Roles that see different fields are two APIs on two paths. A policy resolved per request waits for a case two APIs cannot serve.
+Every API serving an entity shows it with the same members. A server that needs more, an admin tool, calls the pool directly or reshapes rows in a middleware. A policy resolved per request waits for a case that cannot.
 
 ### Errors
 
@@ -83,7 +92,7 @@ Roles that see different fields are two APIs on two paths. A policy resolved per
 ## Rejected
 
 - **Answers named after ops** (`findAndCount`). An answer is a shape, `rows`, `page`, `rowsAndCount`, `ids` or `count`: several ops share one, and the conversion switches on the shape.
-- **Exposure on the field** (`wireable`, Remult's `includeInApi`). It is a property of the surface, not the data: an admin API and a public one serve the same `User` with different fields, and a flag on the column couples the model to one transport.
+- **Exposure per API** (`serve(User, { ops, members })`). A secret is one by nature, wherever it is served: a map beside the definition is a second place to keep in step, and a per-path rule (`company.employees` hiding `address`) is one more for each relation reaching it. Two APIs showing the same entity differently lost its only case.
 - **REST routes per op** (`GET /user`, `PATCH /user/:id`, `DELETE /user/:id`). uql's ops do not map onto verbs (`saveOne` is an upsert, two ops would be `PATCH`), an option would need a header, and a filter on a write would have to fit a URL. One rule, `POST /:entity/:op`, holds every write.
 - **Delegating the protocol to tRPC or oRPC.** They integrate through `api.call`; the HTTP contract stays uql's, so it does not change with a framework's version.
 - **A client typed by the server's exposure** (`createClientQuerier<typeof api>`). Measured at about 26% more type instantiations a call, to turn a 403 that names the field into a compile error.

@@ -380,6 +380,7 @@ function settleEntity(entity: AbstractType<unknown>): void {
       name: options.table,
       schema: options.schema,
       abstract: options.abstract,
+      wire: options.wire,
       indexes: sections.indexes,
       checks: sections.checks,
       triggers: sections.triggers,
@@ -519,6 +520,7 @@ export function registerEntity<E>(
   meta.derivedName = opts.name === undefined;
   meta.schema = opts.schema;
   meta.abstract = opts.abstract;
+  meta.wire = opts.wire;
   inheritFrom(meta, parentOf(entity));
 
   if (!hasKeys(meta.fields)) {
@@ -1091,6 +1093,7 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
     }
   }
   target.fields = { ...sourceFields, ...target.fields };
+  target.wire ??= source.wire;
 
   // Inherit user-defined filters from the parent (child overrides by name). The built-in soft-delete
   // filter + `meta.softDelete` are (re)derived from the merged fields at registration.

@@ -108,6 +108,13 @@ export function isDatabaseWritten(field: FieldOptions): boolean {
   return field.computed !== undefined;
 }
 
+export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
+
+/** Whether a write by `callbackKey` persists `field`: never one the database writes, nor an `updatable(false)` one on update. */
+export function isWrittenOn(field: FieldOptions, callbackKey: CallbackKey): boolean {
+  return !isDatabaseWritten(field) && (callbackKey !== 'onUpdate' || field.updatable !== false);
+}
+
 /** The column family of a field, from its `columnType` if set, else from its `type`. */
 export function fieldFamily(field: FieldOptions): ColumnFamily | undefined {
   return columnFamily(field.columnType ?? field.type);

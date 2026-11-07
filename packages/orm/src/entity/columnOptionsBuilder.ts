@@ -9,6 +9,7 @@ import {
   type StandardSchemaV1,
   type Type,
   type VectorDistance,
+  type Wire,
 } from '../type/index.js';
 
 /**
@@ -72,6 +73,10 @@ export class ColumnOptionsBuilder {
 
   eager(eager: false): ColumnOptionsBuilder {
     return this.with({ eager });
+  }
+
+  wire(wire: Wire): ColumnOptionsBuilder {
+    return this.with({ wire });
   }
 
   columnType(columnType: ColumnType): ColumnOptionsBuilder;

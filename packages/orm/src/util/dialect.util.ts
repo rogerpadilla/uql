@@ -40,7 +40,15 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
-import { defaultReadKeys, fieldKeys, isDatabaseWritten, jsonKey, jsonPathKeys } from './field.util.js';
+import {
+  type CallbackKey,
+  defaultReadKeys,
+  fieldKeys,
+  isDatabaseWritten,
+  isWrittenOn,
+  jsonKey,
+  jsonPathKeys,
+} from './field.util.js';
 import { withDeleted } from './filters.util.js';
 import {
   entityName,
@@ -56,8 +64,6 @@ import {
 import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
-export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
-
 /** The keys of `payload` a write persists as columns. */
 export function filterFieldKeys<E>(
   meta: EntityMeta<E>,
@@ -66,7 +72,7 @@ export function filterFieldKeys<E>(
 ): FieldKey<E>[] {
   return getKeys(payload).filter((key) => {
     const fieldOpts = meta.fields[key];
-    return fieldOpts && !isDatabaseWritten(fieldOpts) && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
+    return fieldOpts && isWrittenOn(fieldOpts, callbackKey);
   });
 }
 

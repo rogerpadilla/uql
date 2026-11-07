@@ -12,6 +12,7 @@ import type {
   StampEvent,
   TsTypeOf,
 } from './entity.js';
+import type { Wire } from './query.js';
 import type { QuerySql } from './querySql.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
 import type { Type, Json, JsonDocument, JsonScalar, AbstractType } from './utility.js';
@@ -101,11 +102,13 @@ export interface ColumnBuilder<in out O, in out V, F extends Family> extends Col
   /** The column's name, where it is not the field's. */
   name(column: string): With<O, V, { readonly name: string }, F>;
   comment(text: string): With<O, V, { readonly comment: string }, F>;
-  /**
-   * Leaves the column out of a read naming no fields. A read naming it still gets it, so it keeps no secret from a
-   * client: an API's `serve(Entity, { members: { field: false } })` does.
-   */
+  /** Leaves the column out of a read naming no fields. A read naming it still gets it, so it keeps no secret: `wire(false)` does. */
   eager(eager: false): With<O, V, { readonly eager: false }, F>;
+  /**
+   * What a client may do to it over an API that serves its entity (none does by default): `false` hides it,
+   * `['read']` makes it read-only, and unset it takes everything.
+   */
+  wire(wire: Wire): With<O, V, unknown, F>;
   /** The SQL type where it differs from the one the builder implies; an engine's own, `sql`citext``, verbatim. */
   columnType(type: ColumnType): With<O, V, { readonly columnType: ColumnType }, F>;
   columnType(this: Lacking<TypeBound>, type: QuerySql): With<O, V, { readonly columnType: QuerySql }, F>;
@@ -158,6 +161,8 @@ export interface ComputedColumn<in out O, in out V> extends Column<O, V> {
    * which keeps a `currentTimestamp` current where `onUpdate` sees only uql's writes.
    */
   stored(events?: readonly StampEvent[]): ComputedColumn<O & { readonly stored: unknown }, V>;
+  /** Whether a client may read it over an API: `false` hides it. */
+  wire(wire: false | readonly ['read']): ComputedColumn<O, V>;
 }
 
 /** The version column, an optimistic lock: an update matches the version it read and writes the next. */

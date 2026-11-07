@@ -12,7 +12,6 @@ import { Migrator } from '../migrate/migrator.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { type Api, createApi } from './api.js';
 import type { ApiMiddleware } from './apiCall.js';
-import { serve } from './exposure.js';
 import { toFetchHandler } from './handler.js';
 import { parseWireCall, wireJson } from './wireCall.js';
 
@@ -69,6 +68,28 @@ const Parcel = defineEntity({
 /** A key past 2^53, which JSON carries as its digits. */
 const Ledger = defineEntity({ name: 'WireLedger', fields: { id: f.bigint().autoIncrement(), note: f.string() } });
 
+const Vault = defineEntity({
+  name: 'WireVault',
+  wire: ['read', 'insert'],
+  fields: { id: f.number().autoIncrement(), note: f.string().wire(['insert']) },
+});
+
+const Office = defineEntity({
+  name: 'WireOffice',
+  fields: { id: f.number().autoIncrement(), name: f.string() },
+}).relations((rel) => ({ clerks: () => rel.oneToMany(Clerk, { mappedBy: (clerk) => clerk.office }) }));
+
+/** Its `address` is hidden wherever it is reached: as an office's clerk too. */
+const Clerk = defineEntity({
+  name: 'WireClerk',
+  fields: {
+    id: f.number().autoIncrement(),
+    name: f.string(),
+    address: f.string().wire(false),
+    officeId: f.number(),
+  },
+}).relations((rel) => ({ office: () => rel.manyToOne(Office, { references: (clerk) => clerk.officeId }) }));
+
 const Courier = defineEntity({
   name: 'WireCourier',
   fields: { id: f.number().autoIncrement(), name: f.string() },
@@ -93,7 +114,9 @@ describe('the client against the fetch handler', () => {
   };
 
   beforeAll(async () => {
-    await new Migrator(pool, { entities: [Gadget, Widget, Parcel, Courier, Ledger] }).sync({ logging: false });
+    await new Migrator(pool, { entities: [Gadget, Widget, Parcel, Courier, Ledger, Vault, Office, Clerk] }).sync({
+      logging: false,
+    });
     await pool.insertMany(Gadget, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
     let baseUrl: string;
     [server, baseUrl] = await listen(
@@ -273,24 +296,52 @@ describe('the client against the fetch handler', () => {
     expect(await overJson.findOneById(Parcel, id)).toMatchObject({ weight: 2n ** 60n, createdAt });
   });
 
-  it('should keep off the wire what the API does not expose', async () => {
-    const guarded = createApi({
-      pool,
-      include: [serve(Ledger, { ops: ['read', 'insert'], members: { note: ['insert'] } })],
-    });
-    const [server, baseUrl] = await listen(guarded);
-    const client = createClientQuerier(httpTransport(baseUrl));
+  describe('what the definitions keep off the wire', () => {
+    let guardedServer: Server;
+    let client: ClientQuerier;
 
-    const id = await client.insertOne(Ledger, { note: 'secret' });
-
-    expect(await client.findOneById(Ledger, id)).toEqual({ id });
-    await expect(client.findMany(Ledger, { $where: { note: { $startsWith: 's' } } })).rejects.toMatchObject({
-      status: 403,
-      message: "'note' cannot be read through this API",
+    beforeAll(async () => {
+      let baseUrl: string;
+      [guardedServer, baseUrl] = await listen(createApi({ pool, include: [Vault, Office, Clerk] }));
+      client = createClientQuerier(httpTransport(baseUrl));
     });
-    await expect(client.deleteOneById(Ledger, id)).rejects.toMatchObject({ status: 403 });
-    await new Promise((resolve) => {
-      server.close(resolve);
+
+    afterAll(async () => {
+      await new Promise((resolve) => {
+        guardedServer.close(resolve);
+      });
+    });
+
+    it('should take a write-once field and an entity taking no deletes, refusing the rest', async () => {
+      const id = await client.insertOne(Vault, { note: 'secret' });
+
+      expect(await client.findOneById(Vault, id)).toEqual({ id });
+      await expect(client.findMany(Vault, { $where: { note: { $startsWith: 's' } } })).rejects.toMatchObject({
+        status: 403,
+        message: "'note' cannot be read through this API",
+      });
+      await expect(client.deleteOneById(Vault, id)).rejects.toMatchObject({
+        status: 403,
+        message: "'WireVault' cannot be deleted through this API",
+      });
+    });
+
+    it('should hide a member through every relation reaching it, and refuse a filter on it there', async () => {
+      const officeId = await pool.insertOne(Office, { name: 'Bogotá' });
+      const clerkId = await pool.insertOne(Clerk, { name: 'Ana', address: 'Calle 1', officeId });
+
+      expect(await client.findOneById(Office, officeId, { $populate: { clerks: true } })).toEqual({
+        id: officeId,
+        name: 'Bogotá',
+        clerks: [{ id: clerkId, name: 'Ana', officeId }],
+      });
+      await expect(
+        client.findMany(Office, { $populate: { clerks: { $where: { address: 'Calle 1' } } } }),
+      ).rejects.toMatchObject({
+        status: 403,
+        message: "'clerks.address' cannot be read through this API",
+        path: ['query', '$populate', 'clerks', '$where', 'address'],
+      });
     });
   });
 });

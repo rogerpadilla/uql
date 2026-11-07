@@ -30,6 +30,7 @@ const FIELD_OPTION_FAMILY = {
   stored: '*',
   updatable: '*',
   eager: '*',
+  wire: '*',
   onInsert: '*',
   onUpdate: '*',
   softDelete: '*',
@@ -59,6 +60,7 @@ const INLINE_READS = [
   'stored',
   'enum',
   'eager',
+  'wire',
   'distance',
   'nullable',
 ] as const satisfies readonly (keyof FieldOptions)[];
