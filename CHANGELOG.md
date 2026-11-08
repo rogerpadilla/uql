@@ -4,8 +4,8 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.114.2] - 2026-11-08
 
-- **Fixed (querier):** an array interpolated in `sql` is one array value in a trigger or check as in a query, which the Postgres family writes as an array literal; another engine refuses it in both.
-- `sql.join(values)` writes a list of bound values on every engine: `IN (${sql.join(ids)})`.
+- **Fixed (querier):** an array in a `sql` template means the same in triggers and checks as in queries: one Postgres array, as in `= ANY(${ids})`. Other engines reject it.
+- `sql.join(values)` builds an `IN` list on any engine: `IN (${sql.join(ids)})`.
 
 ## [0.114.1] - 2026-11-07
 
