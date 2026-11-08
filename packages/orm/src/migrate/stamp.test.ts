@@ -47,6 +47,17 @@ class StampClocks {
   @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly savedAt?: Date | null;
 }
 
+/** A base's stamp, installed on each child's own table. */
+abstract class StampAudited {
+  @Computed((row) => f.date().nullable().as(currentTimestamp).stored(['update'])) readonly updatedAt?: Date | null;
+}
+
+@Entity({ name: 'StampHeir' })
+class StampHeir extends StampAudited {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) body?: string | null;
+}
+
 /** A stamp reading a column of its own row: the row as written, on every engine. */
 @Entity({ name: 'StampNext' })
 class StampNext {
@@ -78,7 +89,7 @@ class StampCoded {
 }
 
 describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
-  const pool = syncedPool(connect, [StampNote, StampTouch, StampClocks, StampCoded, StampNext]);
+  const pool = syncedPool(connect, [StampNote, StampTouch, StampClocks, StampCoded, StampNext, StampHeir]);
 
   /** Sets `column` of the row `id` in `table` to the SQL `value`, a write uql does not make. */
   const updateAround = (table: string, column: string, value: string, id: PrimaryKey | undefined) => {
@@ -101,6 +112,15 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
     const id = await pool().insertOne(StampNote, { body: 'first' });
     await updateAround('StampNote', 'body', "'raw'", id);
     expect(await pool().findOneById(StampNote, id, { $select: { touched: true } })).toEqual({ touched: 1 });
+  });
+
+  it('should stamp a child on a write uql did not make, the stamp declared on its base', async () => {
+    const id = await pool().insertOne(StampHeir, { body: 'first' });
+    expect(await pool().findOneById(StampHeir, id, { $select: { updatedAt: true } })).toEqual({ updatedAt: null });
+
+    await updateAround('StampHeir', 'body', "'raw'", id);
+    const row = await pool().findOneById(StampHeir, id, { $select: { updatedAt: true } });
+    expect(Math.abs(Number(row?.updatedAt) - Date.now())).toBeLessThan(60_000);
   });
 
   // The database's clock in the text and digits a bound `Date` takes: the stamp is now, and matches itself read back.
