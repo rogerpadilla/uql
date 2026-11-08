@@ -21,18 +21,23 @@ export interface MigrationStorage {
 }
 
 /**
- * Creates the journal `tableName` where it is missing, rendered by the schema generator rather than written
- * out: SQL Server has no `CREATE TABLE IF NOT EXISTS`, and its `TIMESTAMP` is a row version that takes no
- * default. Run under the migration lock, so two runs never race to create it.
+ * Creates the journal `tableName` where it is missing, rendered by the schema generator rather than written out: SQL
+ * Server has no `CREATE TABLE IF NOT EXISTS`, and its `TIMESTAMP` is a row version that takes no default. It precedes
+ * the lock, so a run creating it beside another can lose that race in the catalogue: it asks once more, finding it.
  */
 export async function createMigrationsTable(querier: SqlQuerier, tableName: string): Promise<void> {
   const table = tableBuilder(tableName);
   table.string('name').id();
   table.timestamptz('executed_at').default(currentTimestamp);
-  const generator = new SqlSchemaGenerator(querier.dialect);
-  for (const statement of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
-    await querier.run(sql.text(statement));
-  }
+  const statements = new SqlSchemaGenerator(querier.dialect).generateCreateTableFromDefinition(table.build(), {
+    ifNotExists: true,
+  });
+  const create = async () => {
+    for (const statement of statements) {
+      await querier.run(sql.text(statement));
+    }
+  };
+  await create().catch(create);
 }
 
 /** Records the migrations run in a table, on the querier each call is handed, which the lock created. */
@@ -45,7 +50,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
 
   /** The names recorded, the lock's left out. */
   async executed(querier: SqlQuerier): Promise<string[]> {
-    const { table, name } = journalIds(querier, this.tableName);
+    const { table, name } = journalIds(this.tableName);
     const rows = await querier.all<{
       name: string;
     }>`SELECT ${name} FROM ${table} WHERE ${name} <> ${LOCK_RECORD} ORDER BY ${name} ASC`;
@@ -54,18 +59,21 @@ export class DatabaseMigrationStorage implements MigrationStorage {
 
   /** Records `migrationName` as run, on the querier that ran it, inside its transaction where there is one. */
   async logWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void> {
-    const { table, name } = journalIds(querier, this.tableName);
+    const { table, name } = journalIds(this.tableName);
     await querier.run`INSERT INTO ${table} (${name}) VALUES (${migrationName})`;
   }
 
   /** Removes the record of `migrationName`, on the querier that reverted it. */
   async unlogWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void> {
-    const { table, name } = journalIds(querier, this.tableName);
+    const { table, name } = journalIds(this.tableName);
     await querier.run`DELETE FROM ${table} WHERE ${name} = ${migrationName}`;
   }
 }
 
-/** The journal `tableName` and its one column, escaped as `querier`'s engine spells them. */
-export function journalIds({ dialect }: SqlQuerier, tableName: string): { table: QuerySql; name: QuerySql } {
-  return { table: sql.text(dialect.escapeId(tableName)), name: sql.text(dialect.escapeId('name')) };
+/** The journal `tableName` and its one column, escaped as the engine rendering them spells them. */
+export function journalIds(tableName: string): { table: QuerySql; name: QuerySql } {
+  return {
+    table: sql(({ dialect }) => dialect.escapeId(tableName)),
+    name: sql(({ dialect }) => dialect.escapeId('name')),
+  };
 }

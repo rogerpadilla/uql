@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { escapeAnsiSqlLiteral, escapeMysqlSqlLiteral, unescapeMysqlString } from './sqlLiteral.js';
+import { escapeAnsiSqlLiteral, escapeMysqlSqlLiteral, escapePgSqlLiteral, unescapeMysqlString } from './sqlLiteral.js';
 
 describe('escapeAnsiSqlLiteral', () => {
   it('should double single quotes (Postgres/SQLite string literal rules)', () => {
@@ -31,14 +31,15 @@ describe('escapeAnsiSqlLiteral', () => {
     expect(escapeAnsiSqlLiteral(new Date('invalid'))).toBe('NULL');
   });
 
-  it('should write arrays as comma-separated literals', () => {
-    expect(escapeAnsiSqlLiteral([1, "o'reilly"])).toBe("1, 'o''reilly'");
-    expect(
-      escapeAnsiSqlLiteral([
-        [1, 2],
-        [3, 4],
-      ]),
-    ).toBe('(1, 2), (3, 4)');
+  it('should refuse an array, which has no literal outside the Postgres family', () => {
+    expect(() => escapeAnsiSqlLiteral([1, 2])).toThrow('escapeSqlLiteral: an array has no literal on this engine');
+  });
+
+  it('should write an array as a Postgres array literal, its dates in UTC', () => {
+    const d = new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123));
+    expect(escapePgSqlLiteral([1, "o'reilly", null, [true], d])).toBe(
+      `'{"1","o''reilly",NULL,{true},"2024-01-15 12:30:45.123+00"}'`,
+    );
   });
 
   it('should write byte buffers as X-quoted hex', () => {
@@ -95,16 +96,10 @@ describe('escapeMysqlSqlLiteral', () => {
     expect(escapeMysqlSqlLiteral('\x1a')).toBe(String.raw`'\Z'`);
   });
 
-  it('should write dates, arrays and byte buffers as the ANSI escaper does', () => {
+  it('should write dates and byte buffers, and refuse arrays, as the ANSI escaper does', () => {
     expect(escapeMysqlSqlLiteral(new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123)))).toBe("'2024-01-15 12:30:45.123'");
     expect(escapeMysqlSqlLiteral(new Date('invalid'))).toBe('NULL');
-    expect(escapeMysqlSqlLiteral([1, "o'reilly"])).toBe(String.raw`1, 'o\'reilly'`);
-    expect(
-      escapeMysqlSqlLiteral([
-        [1, 2],
-        [3, 4],
-      ]),
-    ).toBe('(1, 2), (3, 4)');
+    expect(() => escapeMysqlSqlLiteral([1, 2])).toThrow('escapeSqlLiteral: an array has no literal on this engine');
     expect(escapeMysqlSqlLiteral(Buffer.from([0x48, 0x69]))).toBe("X'4869'");
   });
 
@@ -181,16 +176,15 @@ describe.each([
   ])('rejects %s', (_label, value) => {
     expect(() => escapeLiteral(value)).toThrow(/plain objects/);
   });
-
-  // `sqlstring` escaped array elements with `stringifyObjects: true`, yielding `'[object Object]'`.
-  it('should reject an object nested inside an array', () => {
-    expect(() => escapeLiteral([1, { a: 1 }])).toThrow(/plain objects/);
-  });
 });
 
-it('should escape strings nested inside arrays, per dialect', () => {
-  expect(escapeAnsiSqlLiteral([["a'b"]])).toBe(`('a''b')`);
-  expect(escapeMysqlSqlLiteral([["a'b"]])).toBe(String.raw`('a\'b')`);
+// `sqlstring` escaped array elements with `stringifyObjects: true`, yielding `'[object Object]'`.
+it('should reject an object nested inside a Postgres array', () => {
+  expect(() => escapePgSqlLiteral([1, { a: 1 }])).toThrow(/plain objects/);
+});
+
+it('should escape strings nested inside a Postgres array', () => {
+  expect(escapePgSqlLiteral([["a'b"]])).toBe(`'{{"a''b"}}'`);
 });
 
 describe('escapeAnsiSqlLiteral - SQL injection hardening (string literals)', () => {

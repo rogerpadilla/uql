@@ -80,15 +80,7 @@ export function enumCheck(
   if (!values) {
     return [];
   }
-  const statement = sql(({ ctx, dialect }) => {
-    ctx.append(`${dialect.escapeId(name)} IN (`);
-    sortedEnum(values).forEach((value, i) => {
-      ctx.append(i ? ', ' : '');
-      ctx.addValue(value);
-    });
-    ctx.append(')');
-  });
-  return [ownedCheck(table, name, render(statement))];
+  return [ownedCheck(table, name, render(sql`${sql.id(name)} IN (${sql.join(sortedEnum(values))})`))];
 }
 
 /**

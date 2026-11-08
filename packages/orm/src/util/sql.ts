@@ -51,24 +51,31 @@ export function sql(source: QuerySqlFn | TemplateStringsArray, ...values: readon
     const { ctx } = opts;
     ctx.append(source[0]);
     values.forEach((value, i) => {
-      if (value instanceof QuerySql) {
-        renderSql(value, opts);
-      } else {
-        ctx.addValue(value);
-      }
+      renderArg(value, opts);
       ctx.append(source[i + 1]);
     });
   });
 }
 
-/** `parts` one after another, `separator` between each, every part binding its own values: `sql.join(conditions, ' AND ')`. */
-sql.join = function join(parts: readonly QuerySql[], separator = ', '): QuerySql {
+function renderArg(arg: SqlArg, opts: QuerySqlRenderOptions): void {
+  if (arg instanceof QuerySql) {
+    renderSql(arg, opts);
+  } else {
+    opts.ctx.addValue(arg);
+  }
+}
+
+/**
+ * `parts` one after another, `separator` between each: a `sql` renders binding its own values, any other
+ * part binds as a value, so `IN (${sql.join(ids)})` writes a list on every engine. `sql.join(conditions, ' AND ')`.
+ */
+sql.join = function join(parts: readonly SqlArg[], separator = ', '): QuerySql {
   return new QuerySql((opts) => {
     parts.forEach((part, index) => {
       if (index) {
         opts.ctx.append(separator);
       }
-      renderSql(part, opts);
+      renderArg(part, opts);
     });
   });
 };

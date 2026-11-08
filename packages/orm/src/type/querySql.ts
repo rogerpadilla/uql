@@ -50,8 +50,8 @@ export const JSON_PATH: unique symbol = Symbol('jsonPath');
 export const JSON_VALUE: unique symbol = Symbol('jsonValue');
 
 /**
- * What a `sql` template interpolates: a value it binds, a list of them (`= ANY(${ids})`), or SQL it renders in
- * place. Never `undefined`, which would bind nothing: leave it out, or interpolate `null`.
+ * What a `sql` template interpolates: a value it binds, an array as one array value (`= ANY(${ids})`, the
+ * Postgres family alone), or SQL it renders in place. Never `undefined`: leave it out, or interpolate `null`.
  */
 export type SqlArg = Scalar | null | readonly (Scalar | null)[] | QuerySql;
 

@@ -132,6 +132,24 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return ctx.sql;
   }
 
+  protected readonly arrayStatement = sql`kind = ANY(${['a', "o'b"]})`;
+
+  /** An interpolated array is one array value, so an engine with no array type refuses it in a query and in DDL alike. */
+  shouldInterpolateAnArrayAlikeInAQueryAndInDdl() {
+    const refusal = `${this.dialect.engineName} has no array type`;
+    expect(() => this.exec((ctx) => this.dialect.getRawValue(ctx, { value: this.arrayStatement }))).toThrow(refusal);
+    expect(() => this.dialect.compileDdl(this.arrayStatement)).toThrow(refusal);
+  }
+
+  /** `sql.join` writes values as a list on every engine, each bound in a query and inlined in DDL. */
+  shouldJoinValuesAsAListAlikeInAQueryAndInDdl() {
+    const statement = sql`kind IN (${sql.join(['a', 1])})`;
+    const res = this.exec((ctx) => this.dialect.getRawValue(ctx, { value: statement }));
+    expect(res.sql).toBe(`kind IN (${this.ph(1)}, ${this.ph(2)})`);
+    expect(res.values).toEqual(['a', 1]);
+    expect(this.dialect.compileDdl(statement)).toBe(`kind IN (${this.dialect.escape('a')}, 1)`);
+  }
+
   /**
    * A `$i*` comparison and the pattern it binds, asserted together because they are one decision:
    * Postgres has a native `ILIKE` and SQLite's `LIKE` already ignores (ASCII) case, so both take the

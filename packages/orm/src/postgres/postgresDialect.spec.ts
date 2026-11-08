@@ -18,7 +18,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     super(new PostgresDialect({}));
   }
 
-  /** The family's native array, then the wire clients' array literal (`toPgArray`). */
+  /** The family's native array, then the wire clients' array literal (`pgArrayText`). */
   override shouldFind$nin() {
     super.shouldFind$nin();
     const values = ['1', '2'];
@@ -28,6 +28,17 @@ class PostgresDialectSpec extends PgFamilySpec {
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
     expect(res.values).toEqual(['{"1","2"}']);
+  }
+
+  /** A wire driver binds the array as its literal, which is what DDL writes. */
+  override shouldInterpolateAnArrayAlikeInAQueryAndInDdl() {
+    super.shouldInterpolateAnArrayAlikeInAQueryAndInDdl();
+    const res = this.exec(
+      (ctx) => this.wirePostgresDialect.getRawValue(ctx, { value: this.arrayStatement }),
+      this.wirePostgresDialect,
+    );
+    expect(res.values).toEqual(['{"a","o\'b"}']);
+    expect(this.wirePostgresDialect.compileDdl(this.arrayStatement)).toBe(`kind = ANY('{"a","o''b"}')`);
   }
 
   shouldCastHalfvecSort() {
@@ -80,7 +91,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     expect(values).toEqual(['{1:1,3:2}/3']);
   }
 
-  /** Array text format (`{...}`) is distinct from scalar SQL string literals; see `toPgArray` JSDoc. */
+  /** Array text format (`{...}`) is distinct from scalar SQL string literals; see `pgArrayText`. */
   shouldNormalizeArrayToPostgresArrayTextFormatWhenNativeArraysFalse() {
     const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
     const tricky = 'b"\\'; // b, double-quote, one backslash
@@ -90,6 +101,12 @@ class PostgresDialectSpec extends PgFamilySpec {
   }
 
   /** Booleans go in unquoted: `{"true"}` would bind the *string* "true" to a `boolean[]`. */
+  /** A native driver takes the array as is, each element at any depth bound as a scalar is: a date as UTC text. */
+  shouldNormalizeANestedArrayElementByElementForANativeDriver() {
+    const d = new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123));
+    expect(this.dialect.normalizeValue([[d, 1], 'a'])).toEqual([['2024-01-15 12:30:45.123+00', 1], 'a']);
+  }
+
   shouldNormalizeBooleanArrayToUnquotedPostgresLiterals() {
     const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
     expect(d.normalizeValue([true, false])).toBe('{true,false}');
@@ -145,7 +162,7 @@ class PostgresDialectSpec extends PgFamilySpec {
   }
   /** PGlite runs Postgres, but every querier shares its one session, so a lock held there makes none wait. */
   shouldHaveNoNamedLockOnPglite() {
-    expect(new PgliteDialect().features).toEqual({ ...this.dialect.features, namedLocks: false });
+    expect(new PgliteDialect().features).toEqual({ ...this.dialect.features, namedLocks: 'journal' });
   }
 
   shouldFindWithARawExistsSubquery() {

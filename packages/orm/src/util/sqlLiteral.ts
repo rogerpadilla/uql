@@ -1,6 +1,6 @@
 // SQL literal escaping for `Dialect.escape`: ANSI quote doubling, or MySQL's backslashes. UQL binds
 // values instead, so this is the hand-written-SQL hatch, and inline MySQL literals break under
-// `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters. Postgres arrays are separate.
+// `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters.
 
 import { bytesToHex } from './bytes.js';
 import { utcTimestamp } from './date.js';
@@ -50,18 +50,12 @@ const mysqlStringLiteral: StringLiteralEscaper = (val) =>
  * A factory, not a function taking `escapeString` as an argument: threading it through every call
  * measured 1.1-1.5x slower. Rejects unsupported types rather than stringifying them into SQL.
  */
-function createEscaper(escapeString: StringLiteralEscaper, zone = ''): (value: unknown) => string {
+function createEscaper(
+  escapeString: StringLiteralEscaper,
+  zone = '',
+  arrayText?: (arr: readonly unknown[]) => string,
+): (value: unknown) => string {
   const dateLiteral = (date: Date): string => escapeString(utcTimestamp(date, zone));
-
-  const sqlList = (arr: unknown[]): string => {
-    let sql = '';
-    for (let i = 0; i < arr.length; i++) {
-      const val = arr[i];
-      if (i > 0) sql += ', ';
-      sql += Array.isArray(val) ? `(${sqlList(val)})` : escapeValue(val);
-    }
-    return sql;
-  };
 
   /** Split out so the `typeof` switch below stays a flat one-line-per-type dispatch. */
   const escapeObject = (value: object): string => {
@@ -69,7 +63,12 @@ function createEscaper(escapeString: StringLiteralEscaper, zone = ''): (value: u
       return Number.isNaN(value.getTime()) ? 'NULL' : dateLiteral(value);
     }
     if (Array.isArray(value)) {
-      return sqlList(value);
+      if (!arrayText) {
+        throw new UqlUsageError(
+          'escapeSqlLiteral: an array has no literal on this engine; write a list with sql.join(values)',
+        );
+      }
+      return escapeString(arrayText(value));
     }
     // A Node `Buffer` is a `Uint8Array` too.
     if (value instanceof Uint8Array) {
@@ -111,6 +110,24 @@ function createEscaper(escapeString: StringLiteralEscaper, zone = ''): (value: u
 /** How a Postgres timestamp says it is UTC. */
 export const PG_UTC = '+00';
 
+/** A Postgres array's text, `{"a","b"}`, which is how a driver sends one and how its literal reads. */
+export function pgArrayText(arr: readonly unknown[]): string {
+  const elements = arr.map((val) => {
+    if (val == null) return 'NULL';
+    if (Array.isArray(val)) return pgArrayText(val);
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    // A Node `Buffer` is a `Uint8Array` too.
+    if (val instanceof Uint8Array) return `"\\\\x${bytesToHex(val)}"`;
+    if (val instanceof Date) return `"${utcTimestamp(val, PG_UTC)}"`;
+    if (typeof val === 'object') {
+      throw new UqlUsageError('a Postgres array holds no plain objects: bind JSON as text');
+    }
+    const str = String(val);
+    return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  });
+  return `{${elements.join(',')}}`;
+}
+
 /** Escape `value` for SQLite and SQL Server (single-quote doubling). */
 export const escapeAnsiSqlLiteral = createEscaper(ansiStringLiteral);
 
@@ -118,7 +135,7 @@ export const escapeAnsiSqlLiteral = createEscaper(ansiStringLiteral);
  * Escape `value` for the Postgres family: ANSI, a date marked UTC, which a `TIMESTAMPTZ` otherwise reads
  * in the session's zone.
  */
-export const escapePgSqlLiteral = createEscaper(ansiStringLiteral, PG_UTC);
+export const escapePgSqlLiteral = createEscaper(ansiStringLiteral, PG_UTC, pgArrayText);
 
 /** Escape `value` for MySQL and MariaDB (backslash escaping). */
 export const escapeMysqlSqlLiteral = createEscaper(mysqlStringLiteral);

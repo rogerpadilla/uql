@@ -88,7 +88,7 @@ export interface DriverCapabilities {
   /**
    * Whether the driver natively supports JS arrays for the underlying database type.
    * `PgQuerierPool` keeps this `true` for node-postgres; `BunSqlQuerierPool` sets `false` and binds
-   * `toPgArray` string literals instead.
+   * `pgArrayText` string literals instead.
    */
   readonly nativeArrays: boolean;
 }
@@ -212,11 +212,11 @@ export interface SqlDialectFeatures extends DialectFeatures {
   /** How the engine spells a trigger. One value rather than a flag each, as {@link rowLocks} is. */
   readonly triggers: TriggerFeatures;
   /**
-   * What holds a named lock, the one a migration run takes so a second waits for it: a session (Postgres,
-   * MySQL), or a transaction kept open for the run (SQL Server, whose driver keeps a connection only for
-   * one). `false` where there is none: CockroachDB, SQLite, and PGlite, whose queriers share one session.
+   * What holds the lock a migration run takes so a second waits for it: a session (Postgres, MySQL) or a transaction
+   * kept open for the run (SQL Server), each freeing it as it ends; or a row in the journal (CockroachDB, the SQLite
+   * family, and PGlite, whose queriers share one session), which a run that stops before releasing leaves.
    */
-  readonly namedLocks: 'session' | 'transaction' | false;
+  readonly namedLocks: 'session' | 'transaction' | 'journal';
 }
 
 /**

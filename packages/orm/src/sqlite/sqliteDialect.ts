@@ -80,7 +80,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
     before: true,
     deferrable: false,
   },
-  namedLocks: false,
+  namedLocks: 'journal',
 };
 
 export class SqliteDialect extends AbstractSqlDialect {

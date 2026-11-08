@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.114.2] - 2026-11-08
+
+- **Fixed (querier):** an array interpolated in `sql` is one array value in a trigger or check as in a query, which the Postgres family writes as an array literal; another engine refuses it in both.
+- `sql.join(values)` writes a list of bound values on every engine: `IN (${sql.join(ids)})`.
+
 ## [0.114.1] - 2026-11-07
 
 - The skill's `contextOf` example reads the tenant off a verified session, typed as its `UqlContext` declares it.

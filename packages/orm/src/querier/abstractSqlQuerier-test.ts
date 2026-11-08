@@ -759,11 +759,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /** A read binding `count` values. */
   private readBinding(count: number): QuerySql {
     const { dialect } = this.querier;
-    const ids = sql(({ ctx }) => {
-      for (let index = 0; index < count; index++) {
-        ctx.append(index ? ', ' : '').addValue(index);
-      }
-    });
+    const ids = sql.join(Array.from({ length: count }, (_, index) => index));
     return sql`SELECT COUNT(*) AS n FROM ${sql.text(dialect.escapeId('Coupon'))} WHERE ${sql.text(dialect.escapeId('id'))} IN (${ids})`;
   }
 

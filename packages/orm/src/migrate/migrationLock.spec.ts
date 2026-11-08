@@ -7,9 +7,8 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { assertDefined } from '../test/index.js';
 import type { QuerySql } from '../type/index.js';
-import { namedLockSql } from './migrationLock.js';
+import { lockSql } from './migrationLock.js';
 
 /** A statement as `dialect` sends it: its SQL and the values it binds. */
 function rendered(dialect: AbstractSqlDialect, sql: QuerySql) {
@@ -19,7 +18,7 @@ function rendered(dialect: AbstractSqlDialect, sql: QuerySql) {
 
 const MYSQL_LOCK = "LEFT(CONCAT(DATABASE(), '.', ?), 64)";
 
-describe('namedLockSql', () => {
+describe('lockSql', () => {
   it.each([
     [
       'Postgres',
@@ -53,19 +52,42 @@ describe('namedLockSql', () => {
         values: ['uql_migrations'],
       },
     ],
-  ])('should spell the named lock on %s, its name bound', (_engine, dialect, acquire, release) => {
-    const sql = namedLockSql(dialect, 'uql_migrations');
-    assertDefined(sql);
+    [
+      'CockroachDB',
+      new CockroachDialect(),
+      {
+        sql:
+          'INSERT INTO "uql_migrations" ("name") SELECT $1 WHERE NOT EXISTS ' +
+          '(SELECT 1 FROM "uql_migrations" WHERE "name" = $2) RETURNING 1',
+        values: ['uql/lock', 'uql/lock'],
+      },
+      { sql: 'DELETE FROM "uql_migrations" WHERE "name" = $1', values: ['uql/lock'] },
+    ],
+    [
+      'SQLite',
+      new SqliteDialect({}),
+      {
+        sql:
+          'INSERT INTO `uql_migrations` (`name`) SELECT ? WHERE NOT EXISTS ' +
+          '(SELECT 1 FROM `uql_migrations` WHERE `name` = ?) RETURNING 1',
+        values: ['uql/lock', 'uql/lock'],
+      },
+      { sql: 'DELETE FROM `uql_migrations` WHERE `name` = ?', values: ['uql/lock'] },
+    ],
+    [
+      'PGlite',
+      new PgliteDialect(),
+      {
+        sql:
+          'INSERT INTO "uql_migrations" ("name") SELECT $1 WHERE NOT EXISTS ' +
+          '(SELECT 1 FROM "uql_migrations" WHERE "name" = $2) RETURNING 1',
+        values: ['uql/lock', 'uql/lock'],
+      },
+      { sql: 'DELETE FROM "uql_migrations" WHERE "name" = $1', values: ['uql/lock'] },
+    ],
+  ])('should spell the lock on %s, its name bound', (_engine, dialect, acquire, release) => {
+    const sql = lockSql(dialect, 'uql_migrations');
     expect(rendered(dialect, sql.acquire)).toEqual(acquire);
     expect(rendered(dialect, sql.release)).toEqual(release);
-  });
-
-  /** PGlite runs Postgres, but every querier shares its one session, so a lock held there makes none wait. */
-  it.each([
-    ['CockroachDB', new CockroachDialect()],
-    ['SQLite', new SqliteDialect({})],
-    ['PGlite', new PgliteDialect()],
-  ])('should have no named lock on %s', (_engine, dialect) => {
-    expect(namedLockSql(dialect, 'uql_migrations')).toBeUndefined();
   });
 });

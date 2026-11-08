@@ -560,8 +560,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * Converts a parameter value to what this engine's driver takes: a `Date` per {@link dateZone}, a boolean to
    * 1/0 on an engine with no boolean type, and anything else unchanged. A `bigint` passes as is, since every
    * driver here binds it exactly where a number would round past 2^53; a driver that refuses one (D1) overrides.
+   * An array is refused: only an engine with an array type, which overrides, binds one.
    */
   normalizeValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      throw new UqlUsageError(
+        `${this.engineName} has no array type to bind one into: write a list with sql.join(values), or filter a field with $in`,
+      );
+    }
     if (value instanceof Date && this.dateZone !== undefined) {
       return utcTimestamp(value, this.dateZone);
     }

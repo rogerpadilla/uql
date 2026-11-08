@@ -36,6 +36,14 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     return `${column}::text`;
   }
 
+  /** The array a query binds, DDL writes as the literal of the same array, which takes the type it is compared with. */
+  override shouldInterpolateAnArrayAlikeInAQueryAndInDdl() {
+    const res = this.exec((ctx) => this.dialect.getRawValue(ctx, { value: this.arrayStatement }));
+    expect(res.sql).toBe('kind = ANY($1)');
+    expect(res.values).toEqual([['a', "o'b"]]);
+    expect(this.dialect.compileDdl(this.arrayStatement)).toBe(`kind = ANY('{"a","o''b"}')`);
+  }
+
   /** A ref read as text beside a JSON path, which a typed column would refuse: `text = uuid` has no operator. */
   shouldCompareAJsonPathWithARefAsText() {
     const { sql: statement } = this.exec((ctx) =>

@@ -21,6 +21,24 @@ describe('DatabaseMigrationStorage', () => {
     storage = new DatabaseMigrationStorage();
   });
 
+  /** Two runs starting on a fresh database both create it before the lock, and Postgres refuses the second's in its catalogue. */
+  it('should ask once more after losing the race to create the table, finding it', async () => {
+    querier.run.mockRejectedValueOnce(
+      new Error('duplicate key value violates unique constraint "pg_type_typname_nsp_index"'),
+    );
+
+    await createMigrationsTable(querier, 'uql_migrations');
+
+    expect(querier.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('should fail as the second attempt to create the table fails', async () => {
+    querier.run.mockRejectedValue(new Error('permission denied for schema public'));
+
+    await expect(createMigrationsTable(querier, 'uql_migrations')).rejects.toThrow('permission denied');
+    expect(querier.run).toHaveBeenCalledTimes(2);
+  });
+
   it('should create the table where it is missing, as the lock does before a run', async () => {
     await createMigrationsTable(querier, 'uql_migrations');
 

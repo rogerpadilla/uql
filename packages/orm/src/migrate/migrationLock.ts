@@ -1,5 +1,5 @@
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import type { QuerierPool, QuerySql, SqlDialectName, SqlQuerier } from '../type/index.js';
+import type { QuerierPool, QuerySql, SqlDialectFeatures, SqlDialectName, SqlQuerier } from '../type/index.js';
 import { noop } from '../util/object.util.js';
 import { sql } from '../util/sql.js';
 import { fnv1a } from '../util/string.util.js';
@@ -13,17 +13,30 @@ export const DEFAULT_LOCK_TIMEOUT = 5 * 60_000;
 /** How often a run waiting for the lock asks for it again. */
 const POLL_INTERVAL = 250;
 
-/** The statements taking and releasing a named lock: `acquire` takes it without waiting, answering a row only when it did. */
-type NamedLockSql = { readonly acquire: QuerySql; readonly release: QuerySql };
+/** The statements taking and releasing a lock: `acquire` answers a row only when it took it, never waiting. */
+type LockSql = { readonly acquire: QuerySql; readonly release: QuerySql };
 
 /** MySQL's lock names are server-wide, so the database prefixes each, cut to the 64 characters it takes. */
-const mysqlLock = (name: string): NamedLockSql => {
+const mysqlLock = (name: string): LockSql => {
   const lock = sql`LEFT(CONCAT(DATABASE(), '.', ${name}), 64)`;
   return { acquire: sql`SELECT 1 FROM DUAL WHERE GET_LOCK(${lock}, 0) = 1`, release: sql`DO RELEASE_LOCK(${lock})` };
 };
 
-/** Each engine's named lock, as `features.namedLocks` says what holds it. None on CockroachDB and SQLite. */
-const NAMED_LOCK_SQL: Readonly<Record<SqlDialectName, ((name: string) => NamedLockSql) | undefined>> = {
+/**
+ * The journal's lock row, inserted only where it is absent, which one run alone can: the lock of an engine with no
+ * named one. CockroachDB's write to it cannot stay uncommitted for the run, which a function it creates would wait on.
+ */
+const journalRowLock = (name: string): LockSql => {
+  const { table, name: column } = journalIds(name);
+  return {
+    acquire: sql`INSERT INTO ${table} (${column}) SELECT ${LOCK_RECORD}
+      WHERE NOT EXISTS (SELECT 1 FROM ${table} WHERE ${column} = ${LOCK_RECORD}) RETURNING 1`,
+    release: sql`DELETE FROM ${table} WHERE ${column} = ${LOCK_RECORD}`,
+  };
+};
+
+/** Each engine's lock on the journal `name`, held by what `features.namedLocks` says. */
+const LOCK_SQL: Readonly<Record<SqlDialectName, (name: string) => LockSql>> = {
   postgres: (name) => {
     const key = fnv1a(name);
     return {
@@ -31,7 +44,7 @@ const NAMED_LOCK_SQL: Readonly<Record<SqlDialectName, ((name: string) => NamedLo
       release: sql`SELECT pg_advisory_unlock(${key})`,
     };
   },
-  cockroachdb: undefined,
+  cockroachdb: journalRowLock,
   mysql: mysqlLock,
   mariadb: mysqlLock,
   mssql: (name) => ({
@@ -40,12 +53,12 @@ const NAMED_LOCK_SQL: Readonly<Record<SqlDialectName, ((name: string) => NamedLo
       SELECT 1 WHERE @_uql_lock >= 0`,
     release: sql`EXEC sp_releaseapplock @Resource = ${name}, @LockOwner = 'Transaction'`,
   }),
-  sqlite: undefined,
+  sqlite: journalRowLock,
 };
 
-/** The statements of the lock named `name` on `dialect`'s engine, where it has one its sessions can hold. */
-export function namedLockSql(dialect: AbstractSqlDialect, name: string): NamedLockSql | undefined {
-  return dialect.features.namedLocks ? NAMED_LOCK_SQL[dialect.dialectName]?.(name) : undefined;
+/** The statements of the lock on the journal `name` as `dialect`'s engine holds it, PGlite's in the journal. */
+export function lockSql(dialect: AbstractSqlDialect, name: string): LockSql {
+  return dialect.features.namedLocks === 'journal' ? journalRowLock(name) : LOCK_SQL[dialect.dialectName](name);
 }
 
 /** The lock a run holds, named after its journal, and how long a second run waits for it. */
@@ -86,10 +99,22 @@ export async function holdingLock<T>(
   return result;
 }
 
+/** What to do about a lock record no run released, which only a person can tell is stale. */
+export const staleRecord = (what: string, journal: string) =>
+  `If none is running, one stopped before releasing it: delete the ${what} '${LOCK_RECORD}' from "${journal}".`;
+
+const ENGINE_RELEASES = 'The engine releases it once that run ends or its connection closes.';
+
+/** What to do about a lock held too long, by what holds it. */
+const STUCK: Readonly<Record<SqlDialectFeatures['namedLocks'], (journal: string) => string>> = {
+  session: () => ENGINE_RELEASES,
+  transaction: () => ENGINE_RELEASES,
+  journal: (journal) => staleRecord('row', journal),
+};
+
 /**
- * Runs `work` holding the lock `options` names, the journal created first: on `querier`'s session, in a
- * transaction of its own kept open meanwhile, or, where the engine has no named lock, by a record in the
- * journal, which then has to exist before the lock, created by whichever run gets there.
+ * Runs `work` holding the lock on the journal `options.name`, created first, where `features.namedLocks` says:
+ * on `querier`'s session or in the journal, or in a transaction of its own kept open meanwhile.
  */
 export async function withSqlMigrationLock<T>(
   pool: QuerierPool,
@@ -97,50 +122,24 @@ export async function withSqlMigrationLock<T>(
   options: MigrationLockOptions,
   work: () => Promise<T>,
 ): Promise<T> {
-  const { dialect } = querier;
-  const journaled = async () => {
-    await createMigrationsTable(querier, options.name);
-    return work();
-  };
-  const sql = namedLockSql(dialect, options.name);
-  if (!sql) {
-    await createMigrationsTable(querier, options.name);
-    return holdingLock(sqlRecordLock(querier, options.name), options, work);
-  }
-  if (dialect.features.namedLocks === 'session') {
-    return holdingLock(statementLock(querier, sql), options, journaled);
+  const { name } = options;
+  const holder = querier.dialect.features.namedLocks;
+  const stuck = STUCK[holder](name);
+  await createMigrationsTable(querier, name);
+  const statements = lockSql(querier.dialect, name);
+  if (holder !== 'transaction') {
+    return holdingLock(sqlLock(querier, statements, stuck), options, work);
   }
   return withSqlQuerierForMigrations(pool, 'Migrator', (own) =>
-    own.transaction(() => holdingLock(statementLock(own, sql), options, journaled)),
+    own.transaction(() => holdingLock(sqlLock(own, statements, stuck), options, work)),
   );
 }
 
-/** The engine's named lock, which it releases itself should the connection close. */
-function statementLock(querier: SqlQuerier, { acquire, release }: NamedLockSql): MigrationLock {
+/** The lock `statements` take and release on `querier`. */
+function sqlLock(querier: SqlQuerier, { acquire, release }: LockSql, stuck: string): MigrationLock {
   return {
     take: async () => (await querier.all(acquire)).length > 0,
     release: () => querier.run(release),
-    stuck: 'The engine releases it once that run ends or its connection closes.',
-  };
-}
-
-/** What to do about a lock record no run released, which only a person can tell is stale. */
-export const staleRecord = (what: string, journal: string) =>
-  `If none is running, one stopped before releasing it: delete the ${what} '${LOCK_RECORD}' from "${journal}".`;
-
-/**
- * The journal's {@link LOCK_RECORD} row, inserted only where it is absent, which one run alone can: SQLite
- * writes one statement at a time, and CockroachDB serializes them.
- */
-function sqlRecordLock(querier: SqlQuerier, journal: string): MigrationLock {
-  const { table, name } = journalIds(querier, journal);
-  return {
-    take: async () => {
-      const { changes } =
-        await querier.run`INSERT INTO ${table} (${name}) SELECT ${LOCK_RECORD} WHERE NOT EXISTS (SELECT 1 FROM ${table} WHERE ${name} = ${LOCK_RECORD})`;
-      return changes === 1;
-    },
-    release: () => querier.run`DELETE FROM ${table} WHERE ${name} = ${LOCK_RECORD}`,
-    stuck: staleRecord('row', journal),
+    stuck,
   };
 }

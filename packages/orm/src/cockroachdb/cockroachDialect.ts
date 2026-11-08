@@ -30,7 +30,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
     ...PG_FEATURES,
     nullsSortLowest: true,
     triggers: { ...PG_FEATURES.triggers, fires: 'eachRowIf', deferrable: false },
-    namedLocks: false,
+    namedLocks: 'journal',
   };
 
   /**

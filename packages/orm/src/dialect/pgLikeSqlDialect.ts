@@ -13,10 +13,9 @@ import {
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
-import { bytesToHex } from '../util/bytes.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { isIntegerColumn, jsonPathKeys } from '../util/field.util.js';
-import { escapePgSqlLiteral, PG_UTC } from '../util/sqlLiteral.js';
+import { escapePgSqlLiteral, PG_UTC, pgArrayText } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
 import {
   ANSI_SQL_VALUES,
@@ -189,10 +188,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   override normalizeValue(value: unknown): unknown {
     if (Array.isArray(value)) {
-      const values = value.map((item) => super.normalizeValue(item));
-      return this.driverCapabilities.nativeArrays ? values : toPgArray(values);
+      return this.driverCapabilities.nativeArrays ? this.normalizeElements(value) : pgArrayText(value);
     }
     return super.normalizeValue(value);
+  }
+
+  private normalizeElements(values: readonly unknown[]): unknown[] {
+    return values.map((item) => (Array.isArray(item) ? this.normalizeElements(item) : super.normalizeValue(item)));
   }
 
   override placeholder(index: number): string {
@@ -335,8 +337,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * One array parameter, which a context that inlines values has none of, nor a list holding SQL: those list them
-   * instead. The array takes its type from `operand`, so it needs none of the casts `bind` gives each value.
+   * One array parameter, or a list for one holding SQL. DDL keeps the list too, since its text names what it declares:
+   * an array literal would rename every index and check written with `$in`. The array takes its type from `operand`.
    */
   protected override formatIn(
     ctx: QueryContext,
@@ -426,11 +428,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   /** A replace hands an absent key's NULL back, which `JSONB_SET` would answer for the whole document. */
   private jsonSetKey(expr: string, path: string, value: string, { create = true } = {}): string {
     const set = create ? value : `COALESCE(${value}, 'null'::jsonb), false`;
-    return `JSONB_SET(${expr}, '${toPgArray(jsonPathKeys(path))}', ${set})`;
+    return `JSONB_SET(${expr}, '${pgArrayText(jsonPathKeys(path))}', ${set})`;
   }
 
   protected override jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return unset.reduce((acc, path) => `(${acc}) #- '${toPgArray(jsonPathKeys(path))}'`, expr);
+    return unset.reduce((acc, path) => `(${acc}) #- '${pgArrayText(jsonPathKeys(path))}'`, expr);
   }
 
   /** Postgres binds JSON with a numbered placeholder and an explicit cast, per driver capability. */
@@ -449,24 +451,4 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const ph = this.addValue(ctx, json);
     return this.driverCapabilities.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
   }
-}
-
-/**
- * Converts a JS array to a Postgres array literal string: `{"val1","val2"}`.
- * Safely handles nesting and escaping of special characters.
- */
-function toPgArray(arr: unknown[]): string {
-  const elements = arr.map((val) => {
-    if (val == null) return 'NULL';
-    if (Array.isArray(val)) return toPgArray(val);
-    if (typeof val === 'boolean') return val ? 'true' : 'false';
-    // A Node `Buffer` is a `Uint8Array` too.
-    if (val instanceof Uint8Array) {
-      return `"\\\\x${bytesToHex(val)}"`;
-    }
-    const str = String(val);
-    const escaped = str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `"${escaped}"`;
-  });
-  return `{${elements.join(',')}}`;
 }
