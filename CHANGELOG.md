@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.114.3] - 2026-11-09
+
+- Document better a trigger's `on` is one event, with a body shared across events passed to each entry, and that `exists` answers whether anything matches.
+
 ## [0.114.2] - 2026-11-08
 
 - **Fixed (querier):** an array in a `sql` template means the same in triggers and checks as in queries: one Postgres array, as in `= ANY(${ids})`. Other engines reject it.
