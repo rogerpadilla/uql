@@ -105,6 +105,8 @@ jobs:
           - suite: vitest
             node: lts/*
           - suite: vitest
+            node: lts/-1
+          - suite: vitest
             node: 22
     name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
     steps:
