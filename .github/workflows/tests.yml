@@ -98,15 +98,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The axis is the suite, not a label: `test:bun` drives Bun's own drivers and never touches
-          # node, so pairing it with each node version ran identical work three times. One suite per leg
-          # also keeps two of them off these shared databases at once, as `bun run test` does by chaining.
+          # The axis is the suite: `test:bun` drives Bun's own drivers and never touches node, so it runs
+          # once. One suite per leg keeps two of them off these shared databases, as `bun run test` does.
           - suite: bun
             node: lts/*
           - suite: vitest
             node: lts/*
-          - suite: vitest
-            node: latest
           - suite: vitest
             node: 22
     name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
