@@ -147,7 +147,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
 
   /**
    * Insert records in as few statements as the bind limit allows, resolving to their ids in payload order, or
@@ -162,7 +162,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
 
   /** Update the record with the given primary key; resolves to the number of affected rows, or the row `returning` reads back. */
   updateOneById<
@@ -229,7 +229,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
 
   /** Insert or update records by `q.$conflict`'s keys, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
   upsertMany<
@@ -242,7 +242,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
 
   /** Insert a record, or upsert one naming its key; resolves to its id, or the row `returning` reads back. */
   saveOne<
@@ -254,7 +254,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
 
   /** Insert records, or upsert those naming their key; resolves to their ids in payload order, or the rows. */
   saveMany<
@@ -266,7 +266,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

@@ -20,11 +20,7 @@ export async function writesWithoutReturning() {
   const changed: number = await querier.updateMany(Account, { $where: { id: 1 } }, { email: 'b' });
   const deleted: number = await pool.deleteOneById(Account, 1);
   const unread: number = await pool.updateMany(Account, { $where: { id: 1 } }, { email: 'b' }, { returning: false });
-  const upserted: WrittenId<Account> | undefined = await querier.upsertOne(
-    Account,
-    { $conflict: { email: true } },
-    { email: 'a' },
-  );
+  const upserted: WrittenId<Account> = await querier.upsertOne(Account, { $conflict: { email: true } }, { email: 'a' });
   return [id, ids, changed, deleted, unread, upserted];
 }
 

@@ -1,5 +1,4 @@
 import { getContext } from '../context/context.js';
-import { namesKey } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
@@ -18,7 +17,6 @@ import {
   type JsonUpdateOp,
   type OnFieldCallback,
   type QueryAggMap,
-  type QueryConflictKeys,
   type QueryUpsert,
   type QueryGroupMap,
   type QueryOptions,
@@ -171,14 +169,6 @@ export function foundRowAssigned<E>(
     return omitKeys(row, [...meta.ids, ...getKeys(q.$conflict)]);
   }
   return hasKeys(update) ? { ...update } : undefined;
-}
-
-/**
- * Whether an upsert of `row` lands under the key it names: it names one and matches on it, so a row it finds
- * has that key too. Elsewhere the key is the found row's, which the upsert reads back.
- */
-export function upsertKeepsOwnKey<E>(meta: EntityMeta<E>, conflictKeys: QueryConflictKeys<E>, row: E): boolean {
-  return namesKey(meta, row) && meta.ids.every((key) => Object.hasOwn(conflictKeys, key));
 }
 
 /**

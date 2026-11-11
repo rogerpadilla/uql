@@ -1,6 +1,6 @@
 /**
  * What a write reports: `WrittenId` is the column's value on a single key and the key map on a
- * composite, never both, for all four write methods alike. Type-checked by `bun run ts` only.
+ * composite, never both, for every write method alike, each resolving to a defined key. Type-checked by `bun run ts` only.
  */
 import { idKey, type Querier } from '../index.js';
 
@@ -22,9 +22,9 @@ export async function aSingleKeyReportsItsValue() {
   const inserted: string = await querier.insertOne(User, { name: 'a' });
   const saved: string = await querier.saveOne(User, { name: 'a' });
   const many: string[] = await querier.insertMany(User, [{ name: 'a' }]);
-  // @ts-expect-error an upsert may leave a row no read finds
   const upserted: string = await querier.upsertOne(User, { $conflict: { name: true } }, { name: 'a' });
-  return [inserted, saved, many, upserted];
+  const upsertedMany: string[] = await querier.upsertMany(User, { $conflict: { name: true }, $update: {} }, [{}]);
+  return [inserted, saved, many, upserted, upsertedMany];
 }
 
 export async function aCompositeReportsItsKeyMap() {

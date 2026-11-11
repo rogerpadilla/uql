@@ -135,7 +135,7 @@ export interface Querier extends UniversalQuerier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ) => Promise<WriteResults<E, S, V, W>['upserted']>) &
+  ) => Promise<WriteResults<E, S, V, W>['written']>) &
     UniversalQuerier['upsertOne'];
 
   upsertMany: (<
@@ -147,7 +147,7 @@ export interface Querier extends UniversalQuerier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ) => Promise<WriteResults<E, S, V, W>['upserted'][]>) &
+  ) => Promise<WriteResults<E, S, V, W>['written'][]>) &
     UniversalQuerier['upsertMany'];
 
   /**

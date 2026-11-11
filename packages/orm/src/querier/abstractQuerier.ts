@@ -40,7 +40,6 @@ import type {
   UpdateWrite,
   WriteResults,
   WriteOptions,
-  PrimaryKey,
   WrittenId,
   RawRow,
   ReportedWrite,
@@ -185,8 +184,20 @@ function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySea
  * The id each written row is named by, in payload order. Read off the rows as written, so a key the
  * database generated or the ORM filled is there, and a composite is named by every column of it.
  */
-function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E> | undefined)[] {
-  return rows.map((row) => (namesKey(meta, row) ? idOf(meta, row) : undefined));
+function writtenIds<E>(meta: EntityMeta<E>, rows: readonly KeyedRow<E>[]): NonNullable<WrittenId<E>>[] {
+  return rows.map((row) => {
+    const id = namesKey(meta, row) ? idOf(meta, row) : undefined;
+    if (id == null) {
+      throw new UqlUsageError(`an insert into '${meta.name}' left its key empty: name it`);
+    }
+    return id;
+  });
+}
+
+/** Which way an upsert writes `row`: a row naming no conflict key conflicts with none, so it is an insert. */
+function upsertBranch<E>(q: QueryUpsert<E>): (row: KeyedRow<E>) => 'insert' | 'upsert' {
+  const keys = getKeys(q.$conflict);
+  return (row) => (namesEvery(row, keys) ? 'upsert' : 'insert');
 }
 
 /**
@@ -201,31 +212,17 @@ function upsertsByReading<E extends object>(meta: EntityMeta<E>, q: QueryUpsert<
   );
 }
 
-/** What an upsert reports of a row: the value a driver answers for a lone key, or the key the read back names. */
-export type UpsertedId<E> = PrimaryKey | WrittenId<E>;
-
 /**
- * Writes the key an upsert reported onto each row, over the one it named: a found row keeps its own, and a row
- * reported none keeps what it has. Only the key, since an `onInsert` value was never written to a row the upsert
- * updated.
+ * Writes the key an upsert reported onto `row`, over the one it named: a found row keeps its own. Only the key, since
+ * an `onInsert` value was never written to a row the upsert updated. Answers `id`.
  */
-function adoptReportedIds<E>(
-  meta: EntityMeta<E>,
-  rows: EntityData<E>[],
-  reported: readonly (UpsertedId<E> | undefined)[],
-): void {
-  const [idKey] = meta.ids;
-  rows.forEach((row, index) => {
-    const id = reported[index];
-    if (id === undefined) {
-      return;
-    }
-    if (meta.ids.length > 1) {
-      Object.assign(row, id);
-    } else {
-      row[idKey] = id as E[typeof idKey];
-    }
-  });
+function adoptId<E, I extends WrittenId<E>>(meta: EntityMeta<E>, row: EntityData<E>, id: I): I {
+  if (meta.ids.length > 1) {
+    Object.assign(row, id);
+  } else {
+    row[meta.ids[0]] = id as E[IdKey<E>];
+  }
+  return id;
 }
 
 /** A call's arguments in either form: `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
@@ -665,7 +662,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
   async insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.insertWritten(entity, [payload], opts);
     return written;
@@ -680,7 +677,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
   async insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.insertWritten(entity, payload, opts);
   }
@@ -693,20 +690,28 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts: WriteOptions<E> | undefined,
-  ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
+  ): Promise<NonNullable<WrittenId<E>>[] | Partial<E>[]> {
     const meta = getMeta(entity);
     const keys = returnedKeys(meta, opts?.returning);
     const reportingWrites = keys && this.reportingWrites(meta, 'insert');
     if (!keys || !reportingWrites || !payload.length) {
       return this.writtenOrReadBack(entity, () => this.insertIds(entity, payload), opts);
     }
-    const read = [...new Set([...keys, ...meta.ids])];
-    return this.inserting(entity, payload, async (rows) =>
-      this.returned(
-        entity,
-        await this.insertRows(entity, rows, (inserted) => reportingWrites.insert(entity, inserted, read)),
-        keys,
-      ),
+    return this.inserting(entity, payload, (rows) => this.insertReturning(reportingWrites, entity, rows, keys));
+  }
+
+  /** Inserts `rows` as {@link insertRows} does, reporting each with the fields `keys` names off its own statement. */
+  private async insertReturning<E extends object>(
+    writes: ReportingWrites,
+    entity: Type<E>,
+    rows: E[],
+    keys: readonly FieldKey<E>[],
+  ): Promise<Partial<E>[]> {
+    const read = [...new Set([...keys, ...getMeta(entity).ids])];
+    return this.returned(
+      entity,
+      await this.insertRows(entity, rows, (inserted) => writes.insert(entity, inserted, read)),
+      keys,
     );
   }
 
@@ -721,16 +726,14 @@ export abstract class AbstractQuerier implements Querier {
     if (!payload.length) {
       return [];
     }
+    return this.inserting(entity, payload, (rows) => this.insertedIds(entity, rows));
+  }
+
+  /** Inserts `rows` as {@link insertRows} does, answering the key each got. */
+  private async insertedIds<E extends object>(entity: Type<E>, rows: E[]): Promise<NonNullable<WrittenId<E>>[]> {
     const meta = getMeta(entity);
-    return this.inserting(entity, payload, async (rows) => {
-      await this.insertRows(entity, rows, (inserting) => this.internalInsertMany(entity, inserting));
-      return writtenIds(meta, rows).map((id) => {
-        if (id == null) {
-          throw new UqlUsageError(`an insert into '${meta.name}' left its key empty: name it`);
-        }
-        return id;
-      });
-    });
+    await this.insertRows(entity, rows, (inserting) => this.internalInsertMany(entity, inserting));
+    return writtenIds(meta, rows);
   }
 
   /** `insert` of `payload` between the insert hooks, {@link atomically} where it writes relations too. */
@@ -749,9 +752,9 @@ export abstract class AbstractQuerier implements Querier {
    */
   private writtenOrReadBack<E extends object>(
     entity: Type<E>,
-    write: () => Promise<(WrittenId<E> | undefined)[]>,
+    write: () => Promise<NonNullable<WrittenId<E>>[]>,
     opts: WriteOptions<E> | undefined,
-  ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
+  ): Promise<NonNullable<WrittenId<E>>[] | Partial<E>[]> {
     const keys = returnedKeys(getMeta(entity), opts?.returning);
     return keys ? this.atomically(async () => this.readBack(entity, await write(), keys)) : write();
   }
@@ -762,21 +765,15 @@ export abstract class AbstractQuerier implements Querier {
    */
   private async readBack<E extends object>(
     entity: Type<E>,
-    ids: readonly (EntityId<E> | undefined)[],
+    ids: readonly EntityId<E>[],
     keys: readonly FieldKey<E>[],
     opts?: QueryOptions,
   ): Promise<Partial<E>[]> {
-    const meta = getMeta(entity);
-    const known = ids.filter((id) => id !== undefined);
-    if (known.length < ids.length) {
-      throw new UqlUsageError(
-        `'returning' reads each written '${entity.name}' back by its key, which ${this.dialect.engineName} did not report for every row: give the rows their own keys`,
-      );
-    }
-    if (!known.length) {
+    if (!ids.length) {
       return [];
     }
-    const named = known.map((id) => whereIds(meta, id));
+    const meta = getMeta(entity);
+    const named = ids.map((id) => whereIds(meta, id));
     const read = withDeleted(opts);
     const rows: E[] = [];
     for (const q of this.keyedReads(meta.ids, named, [...keys, ...meta.ids])) {
@@ -1129,7 +1126,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
   upsertOne<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -1140,7 +1137,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
   async upsertOne<E extends object>(
     ...args: PayloadArgs<E, QueryUpsert<E>, EntityWrite<E>, WriteOptions<E>>
   ): Promise<unknown> {
@@ -1158,7 +1155,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E> & { $entity: Type<E> },
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
   upsertMany<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -1169,7 +1166,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryUpsert<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['upserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
   async upsertMany<E extends object>(
     ...args: PayloadArgs<E, QueryUpsert<E>, readonly EntityWrite<E>[], WriteOptions<E>>
   ) {
@@ -1177,41 +1174,97 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const keys = returnedKeys(meta, opts?.returning);
     const reportingWrites = keys && this.reportingWrites(meta, 'upsert');
-    // Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither
-    // the insert's nor the update's pair fits. How to write is decided on the rows the hooks hand over.
+    // Fires `beforeUpsert`/`afterUpsert`: whether a found row is updated is the database's to decide, so neither the
+    // insert's nor the update's pair fits. How to write is decided on the rows the hooks hand over: one naming no
+    // conflict key conflicts with none, so it is written as an insert.
+    const branch = upsertBranch(q);
     if (!keys || !reportingWrites) {
       return this.writtenOrReadBack(
         entity,
-        () => this.hooked(entity, 'Upsert', payload, (rows) => this.upsertIds(entity, q, rows)),
+        () =>
+          this.hooked(entity, 'Upsert', payload, (rows) =>
+            this.writeEach(rows, branch, {
+              insert: (inserts) => this.insertedIds(entity, inserts),
+              upsert: (upserts) => this.upsertIds(entity, q, upserts),
+            }),
+          ),
         opts,
       );
     }
     return this.atomically(() =>
-      this.hooked(entity, 'Upsert', payload, async (rows) =>
-        upsertsByReading(meta, q, rows)
-          ? this.readBack(entity, await this.upsertIds(entity, q, rows), keys)
-          : this.upsertReturning(reportingWrites, entity, q, rows, keys),
+      this.hooked(entity, 'Upsert', payload, (rows) =>
+        this.writeEach(rows, branch, {
+          insert: (inserts) => this.insertReturning(reportingWrites, entity, inserts, keys),
+          upsert: async (upserts) =>
+            upsertsByReading(meta, q, upserts)
+              ? this.readBack(entity, await this.upsertIds(entity, q, upserts), keys)
+              : this.upsertReturning(reportingWrites, entity, q, upserts, keys),
+        }),
       ),
     );
   }
 
-  /** Upserts `rows`, reading first where {@link upsertsByReading} says so, and answers the id each row got. */
+  /** Upserts `rows`, each naming every conflict key, reading first where {@link upsertsByReading} says so: the id each got. */
   private async upsertIds<E extends object>(
+    entity: Type<E>,
+    q: QueryUpsert<E>,
+    rows: E[],
+  ): Promise<NonNullable<WrittenId<E>>[]> {
+    const meta = getMeta(entity);
+    const ids = upsertsByReading(meta, q, rows)
+      ? await this.readThenUpsert(entity, q, rows)
+      : await this.reportedOrKeptIds(entity, q, rows);
+    return rows.map((row, index) => adoptId(meta, row, ids[index] ?? this.unmatched(entity, q, row)));
+  }
+
+  /**
+   * The id of each of `rows` the engine's upsert reports, or {@link withKept} reads back. A row matched on its own key
+   * names it, so needs neither.
+   */
+  private async reportedOrKeptIds<E extends object>(
     entity: Type<E>,
     q: QueryUpsert<E>,
     rows: E[],
   ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    const ids = upsertsByReading(meta, q, rows)
-      ? await this.readThenUpsert(entity, q, rows)
-      : await this.internalUpsertMany(entity, q, rows);
-    adoptReportedIds(meta, rows, ids);
-    return writtenIds(meta, rows);
+    const ids = await this.internalUpsertMany(entity, q, rows);
+    return meta.ids.every((key) => Object.hasOwn(q.$conflict, key))
+      ? rows.map((row) => idOf(meta, row))
+      : this.withKept(entity, q, rows, ids, meta.ids, (row) => idOf(meta, row));
   }
 
   /**
-   * An upsert of one statement reporting each row as it stands after it: off its `RETURNING` where it wrote the row,
-   * else, where its `$where` or an empty `$update` kept it, read by the conflict keys.
+   * `written`, an upsert's report of each of `rows`, with each row it reported none of, kept by its `$where` or an
+   * empty `$update`, read back by its conflict keys selecting `select`: `undefined` where no row matches.
+   */
+  private async withKept<E extends object, T>(
+    entity: Type<E>,
+    q: QueryUpsert<E>,
+    rows: E[],
+    written: (T | undefined)[],
+    select: readonly FieldKey<E>[],
+    of: (row: E) => T,
+  ): Promise<(T | undefined)[]> {
+    const keptAt = rows.flatMap((_, index) => (written[index] === undefined ? [index] : []));
+    if (keptAt.length) {
+      const kept = await this.rowsByConflict(
+        entity,
+        q.$conflict,
+        keptAt.map((index) => rows[index]),
+        select,
+      );
+      keptAt.forEach((index, position) => {
+        const row = kept[position];
+        written[index] = row && of(row);
+      });
+    }
+    return written;
+  }
+
+  /**
+   * An upsert of one statement, of rows each naming every conflict key, reporting each row as it stands after it: off
+   * its `RETURNING` where it wrote the row, else, where its `$where` or an empty `$update` kept it, read by the
+   * conflict keys.
    */
   private async upsertReturning<E extends object>(
     writes: ReportingWrites,
@@ -1222,22 +1275,52 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<Partial<E>[]> {
     const meta = getMeta(entity);
     const read = [...new Set([...keys, ...meta.ids, ...getKeys(q.$conflict)])];
-    const written = await writes.upsert(entity, q, rows, read);
-    const keptAt = rows.flatMap((_, index) => (written[index] === undefined ? [index] : []));
-    const kept = await this.rowsByConflict(
+    const written = await this.withKept(
       entity,
-      q.$conflict,
-      keptAt.map((index) => rows[index]),
-      read,
-    );
-    const keptBy = new Map(keptAt.map((index, position) => [index, kept[position]]));
-    const stands = rows.map((row, index) => written[index] ?? keptBy.get(index) ?? this.unmatched(entity, q, row));
-    adoptReportedIds(
-      meta,
+      q,
       rows,
-      stands.map((row) => idOf(meta, row)),
+      await writes.upsert(entity, q, rows, read),
+      read,
+      (row) => row,
     );
+    const stands = rows.map((row, index) => {
+      const stand = written[index] ?? this.unmatched(entity, q, row);
+      adoptId(meta, row, idOf(meta, stand));
+      return stand;
+    });
     return this.returned(entity, stands, keys);
+  }
+
+  /**
+   * Writes each of `rows` through the writer `branch` names for it, the writers in their order, answering each row's
+   * result in `rows` order; {@link atomically} where more than one branch but those `idle` names, which write nothing.
+   */
+  private async writeEach<R, T, B extends string>(
+    rows: readonly R[],
+    branch: (row: R) => B,
+    writers: { readonly [K in B]: (rows: R[]) => Promise<T[]> },
+    idle: readonly B[] = [],
+  ): Promise<T[]> {
+    const at = Map.groupBy(rows.keys(), (index) => branch(rows[index]));
+    const [only] = at.keys();
+    if (at.size === 1) {
+      return writers[only]([...rows]);
+    }
+    const results: T[] = new Array(rows.length);
+    const write = async () => {
+      for (const key of getKeys(writers)) {
+        const indexes = at.get(key);
+        if (indexes) {
+          const written = await writers[key](indexes.map((index) => rows[index]));
+          indexes.forEach((index, position) => {
+            results[index] = written[position];
+          });
+        }
+      }
+      return results;
+    };
+    const writing = [...at.keys()].filter((key) => !idle.includes(key));
+    return writing.length > 1 ? this.atomically(write) : write();
   }
 
   /**
@@ -1263,14 +1346,12 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     rows: E[],
-  ): Promise<(UpsertedId<E> | undefined)[]> {
+  ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
     guardWrite(meta, rows, 'insert');
-    if (!rows.length) {
-      return [];
-    }
     return this.atomically(async () => {
-      const ids = await this.idsByConflict(entity, q.$conflict, rows);
+      const found = await this.rowsByConflict(entity, q.$conflict, rows, meta.ids);
+      const ids = found.map((row) => row && idOf(meta, row));
       for (const [index, row] of rows.entries()) {
         const id = ids[index];
         if (id === undefined) {
@@ -1294,20 +1375,19 @@ export abstract class AbstractQuerier implements Querier {
       if (inserts.length) {
         await this.insertRows(entity, inserts, (inserting) => this.internalInsertMany(entity, inserting));
       }
-      // A found row's key is adopted by the caller; an inserted one carries the key its insert wrote.
-      return ids;
+      return rows.map((row, index) => ids[index] ?? idOf(meta, row));
     });
   }
 
   /**
-   * Upserts `payload` as `q` names its rows, answering each row's key in payload order, `undefined` for one the
-   * engine did not report.
+   * Upserts `payload`, at least one row, each naming every conflict key, as `q` names its rows, answering each row's
+   * key in payload order, `undefined` for one the engine did not report, which a found row it kept may be.
    */
   protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-  ): Promise<(UpsertedId<E> | undefined)[]>;
+  ): Promise<(WrittenId<E> | undefined)[]>;
 
   deleteOneById<
     E extends object,
@@ -1454,7 +1534,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted']>;
+  ): Promise<WriteResults<E, S, V, W>['written']>;
   async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: WriteOptions<E>) {
     const [written] = await this.writtenOrReadBack(entity, () => this.saveIds(entity, [payload]), opts);
     return written;
@@ -1469,7 +1549,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: WriteOptions<E, S, V, W>,
-  ): Promise<WriteResults<E, S, V, W>['inserted'][]>;
+  ): Promise<WriteResults<E, S, V, W>['written'][]>;
   async saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: WriteOptions<E>) {
     return this.writtenOrReadBack(entity, () => this.saveIds(entity, payload), opts);
   }
@@ -1479,60 +1559,30 @@ export abstract class AbstractQuerier implements Querier {
    * upserts on that key, so a stale id is written rather than silently missed, and an unnamed one
    * inserts. A composite is always named. The hooks follow the statement: a named row fires the upsert pair.
    */
-  private async saveIds<E extends object>(
+  private saveIds<E extends object>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]> {
+  ): Promise<NonNullable<WrittenId<E>>[]> {
     const meta = getMeta(entity);
-    // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
-    // passed, which concatenating the branches did not do.
-    const toInsert: number[] = [];
-    const toUpsert: number[] = [];
-    const ids: (WrittenId<E> | undefined)[] = new Array(payload.length);
-
-    /** Whether the row carries anything its primary key does not - something to write. */
-    const writesMoreThanItsKey = (row: EntityWrite<E>) =>
-      someKey(row, (key) => !meta.ids.some((idKey) => idKey === key));
-
-    for (let index = 0; index < payload.length; index++) {
-      const it = payload[index];
-      if (!namesKey(meta, it)) {
-        toInsert.push(index);
-      } else if (writesMoreThanItsKey(it)) {
-        toUpsert.push(index);
-      } else {
-        // A row that names its key and carries nothing else is a *reference*, not a write - the
-        // shape a to-many uses to link rows it did not author. Upserting it would stamp `onUpdate`
-        // fields on a row the caller never asked to change, and create one that was meant to exist.
-        ids[index] = idOf(meta, it);
+    // A row that names its key and carries nothing else is a *reference*, not a write - the shape a to-many
+    // uses to link rows it did not author. Upserting it would stamp `onUpdate` fields on a row the caller
+    // never asked to change, and create one that was meant to exist.
+    const branch = (row: EntityWrite<E>) => {
+      if (!namesKey(meta, row)) {
+        return 'insert';
       }
-    }
-
-    const write = async () => {
-      if (toInsert.length) {
-        const inserted = await this.insertIds(
-          entity,
-          toInsert.map((index) => payload[index]),
-        );
-        for (let position = 0; position < toInsert.length; position++) {
-          ids[toInsert[position]] = inserted[position];
-        }
-      }
-      if (toUpsert.length) {
-        const upserted = await this.upsertMany(
-          entity,
-          { $conflict: keySet<E>(meta.ids) },
-          toUpsert.map((index) => payload[index]),
-        );
-        for (let position = 0; position < toUpsert.length; position++) {
-          ids[toUpsert[position]] = upserted[position];
-        }
-      }
+      return someKey(row, (key) => !meta.ids.some((idKey) => idKey === key)) ? 'upsert' : 'reference';
     };
-
-    await (toInsert.length && toUpsert.length ? this.atomically(write) : write());
-
-    return ids;
+    return this.writeEach(
+      payload,
+      branch,
+      {
+        insert: (rows) => this.insertIds(entity, rows),
+        upsert: (rows) => this.upsertMany(entity, { $conflict: keySet<E>(meta.ids) }, rows),
+        reference: async (rows) => writtenIds(meta, rows),
+      },
+      ['reference'],
+    );
   }
 
   /**
@@ -1911,21 +1961,10 @@ export abstract class AbstractQuerier implements Querier {
     await this.emitHook(entity, 'afterLoad', rows);
   }
 
-  /** The ids of `rows`, read by the columns an upsert matches them on, as {@link rowsByConflict} reads them. */
-  private async idsByConflict<E extends object>(
-    entity: Type<E>,
-    conflictKeys: QueryConflictKeys<E>,
-    rows: EntityData<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]> {
-    const meta = getMeta(entity);
-    const found = await this.rowsByConflict(entity, conflictKeys, rows, meta.ids);
-    return found.map((row) => row && idOf(meta, row));
-  }
-
   /**
-   * The row each of `rows` matches on the columns an upsert matches on, with `select`, soft-deleted rows included
-   * since a unique key holds across both, held as {@link readForWrite} holds its rows. One no row matches, or two do,
-   * reads none, since a missing row is honest where a guessed one is not; a null key never conflicts, so is not read.
+   * The row each of `rows` matches on the columns an upsert matches on, each naming every one, with `select`,
+   * soft-deleted rows included since a unique key holds across both, held as {@link readForWrite} holds its rows. One
+   * no row matches, or two do, reads none, since a missing row is honest where a guessed one is not.
    */
   private async rowsByConflict<E extends object>(
     entity: Type<E>,
@@ -1934,8 +1973,7 @@ export abstract class AbstractQuerier implements Querier {
     select: readonly FieldKey<E>[],
   ): Promise<(E | undefined)[]> {
     const keys = getKeys(conflictKeys);
-    const named = rows.filter((row) => namesEvery<E>(row, keys));
-    const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
+    const distinct = [...new Map(rows.map((row) => [rowKey(row, keys), row])).values()];
     const byConflict = new Map<string, E | undefined>();
     for (const q of this.keyedReads(keys, distinct, [...new Set([...select, ...keys])])) {
       for (const row of await this.readForWrite(entity, q, UPDATING_DELETED)) {
@@ -1944,31 +1982,6 @@ export abstract class AbstractQuerier implements Querier {
       }
     }
     return rows.map((row) => byConflict.get(rowKey(row, keys)));
-  }
-
-  /**
-   * `ids` completed where an upsert reported no id for a row whose key it does not keep (`kept`, asked before the
-   * write fills one in): read back by the conflict columns.
-   */
-  protected async withUnreportedIds<E extends object>(
-    entity: Type<E>,
-    conflictKeys: QueryConflictKeys<E>,
-    payload: EntityData<E>[],
-    ids: (UpsertedId<E> | undefined)[],
-    kept: readonly boolean[],
-  ): Promise<(UpsertedId<E> | undefined)[]> {
-    const unplaced = payload.flatMap((_, index) => (ids[index] === undefined && !kept[index] ? [index] : []));
-    if (unplaced.length) {
-      const found = await this.idsByConflict(
-        entity,
-        conflictKeys,
-        unplaced.map((index) => payload[index]),
-      );
-      unplaced.forEach((index, position) => {
-        ids[index] = found[position];
-      });
-    }
-    return ids;
   }
 
   /** Reads of the rows matching one of `rows` on `keys`, as many per statement as a key list takes, selecting `select`. */

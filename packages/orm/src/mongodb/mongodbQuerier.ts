@@ -6,22 +6,20 @@ import type {
   Filter,
   FindCursor,
   MongoClient,
-  OptionalId,
   OptionalUnlessRequiredId,
   Sort,
   UpdateFilter,
 } from 'mongodb';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { getMeta, namesEvery, soleIdOf } from '../entity/index.js';
-import type { UpsertedId } from '../querier/abstractQuerier.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type {
   EntityData,
   EntityMeta,
   ExtraOptions,
   IdValue,
-  PrimaryKey,
+  WrittenId,
   Query,
   QueryAggregate,
   QueryUpsert,
@@ -41,10 +39,8 @@ import {
   deletionOf,
   foundRowWhere,
   foundRowAssigned,
-  getKeys,
   hasKeys,
   hasTriggers,
-  upsertKeepsOwnKey,
   withDeleted,
 } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -308,38 +304,28 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-  ): Promise<(UpsertedId<E> | undefined)[]> {
+  ): Promise<(WrittenId<E> | undefined)[]> {
     refuseTriggers(entity);
-    if (!payload.length) {
-      return [];
-    }
     // A found document is updated apart from the insert when the upsert has an update of its own, as `$setOnInsert`
     // and `$inc` on one field conflict in one operation, or a `$where`. The two batches are not atomic on their own:
     // a transaction the caller opens makes them so.
     const apart = q.$update !== undefined || q.$where !== undefined;
     const meta = getMeta(entity);
     const { $conflict } = q;
-    const kept = payload.map((row) => upsertKeepsOwnKey(meta, $conflict, row));
-    // A row naming no conflict key conflicts with none, so it inserts, as `ON CONFLICT` inserts it; a soft-deleted
-    // document conflicts as any other does, its unique key holding across both.
-    const keys = getKeys($conflict);
-    const upserts = payload.map((row): AnyBulkWriteOperation<E> =>
-      !namesEvery(row, keys)
-        ? { insertOne: { document: this.dialect.getPersistable(meta, clone(row), 'onInsert') as OptionalId<E> } }
-        : {
-            updateOne: {
-              filter: this.dialect.where(entity, foundRowWhere({ $conflict }, row), withDeleted()),
-              update: this.upsertUpdate(meta, row, apart),
-              upsert: true,
-            },
-          },
-    );
+    // A soft-deleted document conflicts as any other does, its unique key holding across both.
+    const upserts = payload.map((row): AnyBulkWriteOperation<E> => ({
+      updateOne: {
+        filter: this.dialect.where(entity, foundRowWhere({ $conflict }, row), withDeleted()),
+        update: this.upsertUpdate(meta, row, apart),
+        upsert: true,
+      },
+    }));
     const res = await this.execute('upsertMany', (session) => this.collection(entity).bulkWrite(upserts, { session }));
-    // `upsertedIds` and `insertedIds` name only the documents inserted, keyed by operation index, so each lands on
-    // its own row; an updated document's `_id` is read back by the conflict fields instead.
+    // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on its own row; an
+    // updated document's `_id` is read back by the conflict fields instead.
     const reported = payload.map((_, index) => {
-      const id = res.upsertedIds[index] ?? res.insertedIds[index];
-      return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
+      const id = res.upsertedIds[index];
+      return id === undefined ? undefined : (this.dialect.fromWireId(id) as WrittenId<E>);
     });
     const updates: AnyBulkWriteOperation<E>[] = apart
       ? payload.flatMap((row, index) => {
@@ -352,7 +338,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     if (updates.length) {
       await this.execute('upsertMany', (session) => this.collection(entity).bulkWrite(updates, { session }));
     }
-    return this.withUnreportedIds(entity, $conflict, payload, reported, kept);
+    return reported;
   }
 
   protected override async internalDeleteMany<E extends Document>(

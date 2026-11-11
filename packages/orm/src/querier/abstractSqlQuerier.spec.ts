@@ -182,14 +182,10 @@ describe('AbstractSqlQuerier upsert report match', () => {
     ).rejects.toThrow("no 'HydratedParent' row reads back with 'id' 1");
   });
 
-  it('should refuse a null conflict key it cannot tell apart from another', async () => {
-    const querier = new StubSqlQuerier();
-    querier.rows = [{ id: 1, name: null }];
+  it('should refuse a row whose key it cannot read back, rather than report none', async () => {
     await expect(
-      querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { name: null }], {
-        returning: { id: true },
-      }),
-    ).rejects.toThrow("a row's 'name' is null");
+      new StubSqlQuerier().upsertOne(HydratedParent, { $conflict: { name: true } }, { name: 'a' }),
+    ).rejects.toThrow("no 'HydratedParent' row reads back with 'name' a");
   });
 });
 
@@ -285,12 +281,31 @@ describe('AbstractSqlQuerier rows reported out of order', () => {
     ]);
   });
 
-  it('should report no id for an upserted row with a null conflict key, which nothing matches it by', async () => {
-    const querier = reversing([{ id: 1, name: null }]);
-
-    expect(await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }])).toEqual([
-      undefined,
+  it('should insert the rows naming no conflict key, which conflict with none, and report each key', async () => {
+    const querier = reversing([
+      { id: 2, name: null },
+      { id: 1, name: null },
     ]);
+
+    expect(
+      await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { settings: {} }]),
+    ).toEqual([1, 2]);
+    expect(querier.statements).toEqual([
+      'INSERT INTO `HydratedParent` (`name`, `settings`) VALUES (?, NULL), (NULL, ?) RETURNING `id` `id`',
+    ]);
+  });
+
+  it('should return the rows naming no conflict key as their insert reports them', async () => {
+    const querier = reversing([
+      { id: 2, name: null },
+      { id: 1, name: null },
+    ]);
+
+    expect(
+      await querier.upsertMany(HydratedParent, { $conflict: { name: true } }, [{ name: null }, { name: null }], {
+        returning: { id: true },
+      }),
+    ).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
   it("should place an upsert's ids by the conflict key of each row", async () => {

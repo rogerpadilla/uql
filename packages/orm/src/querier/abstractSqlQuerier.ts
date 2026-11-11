@@ -2,14 +2,14 @@ import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, KEY_DEFAULT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { generatesKey, idOf, namesEvery, namesKey, soleId } from '../entity/metadata/definition.js';
+import { generatesKey, idOf, namesKey, soleId } from '../entity/metadata/definition.js';
 import type {
   QueryContext,
   EntityData,
   EntityMeta,
   ExtraOptions,
   IdKey,
-  PrimaryKey,
+  WrittenId,
   Query,
   QueryAggregate,
   QueryBuildFn,
@@ -29,20 +29,11 @@ import type {
   ReportedWrite,
 } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
-import {
-  buildUpdateResult,
-  chunk,
-  clone,
-  getInsertFieldKeys,
-  insertShapeOf,
-  upsertKeepsOwnKey,
-  getKeys,
-  rowKey,
-} from '../util/index.js';
+import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, getKeys, rowKey } from '../util/index.js';
 import { sql, statementOf } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { AbstractQuerier, type UpsertedId, type ReportingWrites } from './abstractQuerier.js';
+import { AbstractQuerier, type ReportingWrites } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError, failedIndexOf } from './queryError.js';
 import { rowReader } from './rowReader.js';
@@ -583,40 +574,26 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       opts: StatementOptions,
       keys: readonly FieldKey<E>[],
     ) => this.readRows<E>((ctx) => this.dialect.delete(ctx, entity, q, opts, keys)),
-    upsert: (entity, q, payload, keys) => {
-      const nullKey = getKeys(q.$conflict).find((key) => payload.some((row) => row[key] === null));
-      if (nullKey !== undefined) {
-        throw new UqlUsageError(
-          `a row's '${nullKey}' is null: no row reads back by it, so its upsert cannot report it`,
-        );
-      }
-      return this.upsertedRows(entity, q, clone(payload), keys);
-    },
+    upsert: (entity, q, payload, keys) => this.upsertedRows(entity, q, clone(payload), keys),
     insert: (entity, rows, keys) => this.insertedRows(entity, rows, keys),
   };
 
   /**
-   * The id each row got: off the upsert's `RETURNING` where it has one, else off the header. A row reported none of,
-   * skipped by `DO NOTHING` or its `$where`, is read back by its conflict keys, unless it keeps its own key (`kept`,
-   * asked before the statement fills `onInsert` keys in).
+   * The id each row got: off the upsert's `RETURNING` where it has one, else off the header, none for a row skipped by
+   * `DO NOTHING` or its `$where`.
    */
   protected override async internalUpsertMany<E extends object>(
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-  ): Promise<(UpsertedId<E> | undefined)[]> {
-    if (!payload.length) {
-      return [];
-    }
+  ): Promise<(WrittenId<E> | undefined)[]> {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const kept = payload.map((row) => upsertKeepsOwnKey(meta, q.$conflict, row));
-    const ids = this.dialect.features.reportsWrites.includes('upsert')
+    return this.dialect.features.reportsWrites.includes('upsert')
       ? (await this.upsertedRows(entity, q, payload, [...meta.ids, ...getKeys(q.$conflict)])).map(
           (row) => row && idOf(meta, row),
         )
-      : await this.headerIds(entity, q, payload);
-    return this.withUnreportedIds(entity, q.$conflict, payload, ids, kept);
+      : this.headerIds(entity, q, payload);
   }
 
   /** The ids an upsert's header reports, by index: a statement of one row assigning a found row names its key. */
@@ -624,7 +601,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: QueryUpsert<E>,
     payload: E[],
-  ): Promise<(PrimaryKey | undefined)[]> {
+  ): Promise<(WrittenId<E> | undefined)[]> {
     const groups = this.upsertGroups(entity, q, payload);
     const results = await this.runStatements(
       groups.map(({ indexes }) =>
@@ -639,10 +616,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       ),
       groups.length > 1,
     );
-    const ids: (PrimaryKey | undefined)[] = new Array(payload.length);
+    const ids: (WrittenId<E> | undefined)[] = new Array(payload.length);
     groups.forEach(({ indexes, reports }, group) => {
       if (reports && results[group].id) {
-        ids[indexes[0]] = results[group].id;
+        ids[indexes[0]] = results[group].id as WrittenId<E>;
       }
     });
     return ids;
@@ -650,8 +627,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   /**
    * The rows of `payload` an upsert writes, in its order, with the fields `keys` names, off its `RETURNING`: matched by
-   * the conflict keys `keys` includes, as no engine promises that order. `undefined` for a row it kept, or with no
-   * conflict key. The statement fills `payload`'s `onInsert` fields.
+   * the conflict keys `keys` includes, as no engine promises that order. `undefined` for a row it kept. The statement
+   * fills `payload`'s `onInsert` fields.
    */
   private async upsertedRows<E extends object>(
     entity: Type<E>,
@@ -674,9 +651,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       ),
     );
     const written = new Map(read.flat().map((row) => [rowKey(row, conflictKeys), row]));
-    return payload.map((row) =>
-      namesEvery<E>(row, conflictKeys) ? written.get(rowKey(row, conflictKeys)) : undefined,
-    );
+    return payload.map((row) => written.get(rowKey(row, conflictKeys)));
   }
 
   /**

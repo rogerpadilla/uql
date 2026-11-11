@@ -597,15 +597,13 @@ export type WriteResults<E, S, V, W = false> = [W] extends [true]
       : ReturnedRows<ReturnedRow<E, S, V>>;
 
 type WrittenIds<E> = {
-  readonly inserted: NonNullable<WrittenId<E>>;
-  readonly upserted: WrittenId<E> | undefined;
+  readonly written: NonNullable<WrittenId<E>>;
   readonly affected: number;
   readonly affectedMany: number;
 };
 
 type ReturnedRows<R> = {
-  readonly inserted: R;
-  readonly upserted: R;
+  readonly written: R;
   readonly affected: R | undefined;
   readonly affectedMany: R[];
 };

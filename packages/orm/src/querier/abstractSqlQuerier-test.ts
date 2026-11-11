@@ -673,6 +673,20 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(result).toEqual([inserted?.id, existingId]);
   }
 
+  /** A row naming no conflict key conflicts with none, so it inserts, and reports the key the database generated. */
+  async shouldUpsertManyReportTheKeyOfARowNamingNoConflictKey() {
+    const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
+
+    const ids = await this.querier.upsertMany(Coupon, { $conflict: { code: true } }, [
+      { label: 'no code' },
+      { code: 'EXISTING', label: 'Updated' },
+    ]);
+
+    const found = await this.querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });
+    expect(found.map(({ label }) => label)).toEqual(['Updated', 'no code']);
+    expect(ids).toEqual([found[1].id, existingId]);
+  }
+
   /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
   async shouldUpsertManyReportIdsInPayloadOrder() {
     const ids = await this.querier.upsertMany(Coupon, { $conflict: { code: true } }, [
