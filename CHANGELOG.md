@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.115.5] - 2026-11-13
+
+- **Fixed (postgres):** a foreign key declared `onDelete: 'RESTRICT'` reports a refused delete as `foreignKeyViolation` on Postgres 18, which raises it as `23001`.
+
 ## [0.115.4] - 2026-11-13
 
 - **Fixed (postgres):** with `role: $context.role`, a native policy's `when` on that key compares the role exactly, as app mode does. `TO` also held each role inheriting one it names, the login role among them, so a context naming no role passed. A context naming a role the database lacks gets the database's own error.

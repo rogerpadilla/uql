@@ -12,6 +12,7 @@ describe('queryErrorKind', () => {
   it.each<[string, unknown, QueryErrorKind]>([
     ['a Postgres unique violation', { code: '23505' }, 'uniqueViolation'],
     ['a Postgres foreign key violation', { code: '23503' }, 'foreignKeyViolation'],
+    ['a Postgres 18 RESTRICT foreign key violation', { code: '23001' }, 'foreignKeyViolation'],
     ['a Postgres not-null violation', { code: '23502' }, 'notNullViolation'],
     ['a Postgres check violation', { code: '23514' }, 'checkViolation'],
     ['a Postgres deadlock', { code: '40P01' }, 'retryable'],

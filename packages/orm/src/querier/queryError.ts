@@ -25,6 +25,7 @@ type DriverErrorFields = {
 const SQLSTATE_KINDS: ReadonlyMap<unknown, QueryErrorKind> = new Map([
   ['23505', 'uniqueViolation'],
   ['23503', 'foreignKeyViolation'],
+  ['23001', 'foreignKeyViolation'],
   ['23502', 'notNullViolation'],
   ['23514', 'checkViolation'],
   ['42501', 'security'],
