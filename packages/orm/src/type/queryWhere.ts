@@ -39,11 +39,26 @@ export type QueryTextSearchOptions<E> = {
 export type QueryWhere<E, Sql = QuerySql, K extends keyof E = FieldKey<E> | RelationKey<E>> = QueryWhereRootOperator<
   E,
   Sql
-> & {
+> &
+  QueryWhereFields<E, Sql, K>;
+
+/** The rows a write's predicate reads, as a trigger names them: `$old`, the row as found, and `$new`, as written. */
+export type RowSide = '$old' | '$new';
+
+/**
+ * A predicate over a write's rows, grouped as any condition is: its `Fields` hold every row, `$old` the row as found
+ * and `$new` the row as written alone, each a `Row`. A trigger's on an update, and a policy's.
+ */
+export type RowsWhere<Fields, Row, Sql = never> = Fields & {
+  readonly [Op in QueryGroupOp]?: readonly (RowsWhere<Fields, Row, Sql> | Sql)[];
+} & { readonly [S in RowSide]?: Row };
+
+/** {@link QueryWhere}'s conditions on fields, JSON paths and relations, without its root operators. */
+export type QueryWhereFields<E, Sql = QuerySql, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
   [P in K]?: P extends FieldKey<E> ? QueryWhereFieldValue<E[P], Sql> : QueryWhereRelation<RelationTarget<E[P]>, Sql>;
 } & ([JsonFieldPaths<E>] extends [never]
-    ? unknown
-    : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>, Sql> });
+  ? unknown
+  : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>, Sql> });
 
 /**
  * Filter a to-many relation by its row count, and by nothing beside it: the target's keys and the root

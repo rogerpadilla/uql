@@ -1,10 +1,12 @@
 import { getMeta, idOf, namesEvery, namesKey, relationOf } from '../entity/index.js';
 import type { KeyedRow } from '../entity/metadata/definition.js';
 
+import { getContext } from '../context/context.js';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { SAVEPOINT_PREFIX } from '../dialect/aliases.js';
 import { namesRows } from '../dialect/operators.js';
 import type {
+  EntityAccess,
   BooleanLike,
   CursorPage,
   Captured,
@@ -55,11 +57,11 @@ import {
   fillOnFields,
   filterFieldKeys,
   getKeys,
+  accessOf,
   deletionOf,
   hasKeys,
   getRelationRequestSummary,
   guardWrite,
-  pinWrite,
   idOnlyQuery,
   keyJoins,
   keySet,
@@ -87,6 +89,14 @@ import {
   holdsForeignKey,
   noop,
 } from '../util/index.js';
+import {
+  type BoundWhere,
+  movesRefused,
+  oldReads,
+  onWritten,
+  pairsRows,
+  policyTransitions,
+} from '../util/policy.util.js';
 import { UqlOptimisticLockError, UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
 import { enrichError } from './queryError.js';
@@ -345,11 +355,17 @@ const UPDATING_DELETED: StatementOptions = { ...withDeleted(), access: 'update' 
 /** The ids of the rows a write wrote, `undefined` for one it cannot name. */
 type WrittenIds<E> = readonly (EntityId<E> | undefined)[];
 
-/** A write run as its policy check asks, see `guarded`: `reads` where it reads the rows `written` names back. */
+/**
+ * A write run as its policies ask, see `guarded`: over the rows `found` names where an update found them first, and
+ * `reads` where it reads rows around the write.
+ */
 type HeldWrite<E> = {
-  <T>(run: () => Promise<T>, written: (result: T) => WrittenIds<E>): Promise<T>;
+  <T>(run: () => Promise<T>, written: (result: T) => WrittenIds<E>, found?: readonly EntityId<E>[]): Promise<T>;
   readonly reads: boolean;
 };
+
+/** What a row an update found owes its transitions once written: its signature, and the conditions left for it. */
+type Owed<E> = { signature: string; readonly left: QueryWhere<E>[] };
 
 /** A read of rows as they are stored, past filters and policies: what checks a write the policies settled. */
 const UNPOLICED: StatementOptions = { filters: false, [PAST_POLICIES]: true };
@@ -823,19 +839,23 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * {@link guardWrite} under a pool holding writes to the policies, answering how the write of `rows` runs: alone, or
-   * with the rows it wrote read back against the check they could not settle, in a transaction undoing it where one
-   * does not hold. Where the database holds the policies the rows still get their pinned fields and an early refusal,
-   * and nothing is read back. A checked write is refused where this querier holds no transaction to undo it in.
+   * How a statement doing `write` to `rows` runs where this pool reads rows to hold it to the check {@link guardWrite}
+   * answers and, for an update, to the transitions: alone where neither applies; else in a transaction reading each
+   * found row before the write, refusing one no transition lets go unwritten, then each written row after it against
+   * the check and what its transitions leave. A write read around is refused where no transaction undoes it.
    */
   private guarded<E extends object, R extends EntityData<E> | UpdatePayload<E>>(
     entity: Type<E>,
     rows: readonly R[],
-    write: 'insert' | 'update',
+    write: EntityAccess,
   ): HeldWrite<E> {
-    const check = this.guardRows(getMeta(entity), rows, write);
-    const held = <T>(run: () => Promise<T>, written: (result: T) => WrittenIds<E>): Promise<T> => {
-      if (!check) {
+    const meta = getMeta(entity);
+    const check = this.guardRows(meta, rows, write);
+    const checked = this.dialect.policies.checks ? check : undefined;
+    const transitions = pairsRows(write) ? this.heldTransitions(meta) : [];
+    const reads = !!checked || transitions.length > 0;
+    const held = <T>(run: () => Promise<T>, written: (result: T) => WrittenIds<E>, found?: readonly EntityId<E>[]) => {
+      if (!reads) {
         return run();
       }
       if (!this.undoesSteps()) {
@@ -844,38 +864,86 @@ export abstract class AbstractQuerier implements Querier {
         );
       }
       return this.atomically(async () => {
+        const owed = await this.transitionsOwed(entity, found ?? [], transitions);
         const result = await run();
-        await this.holdToCheck(entity, written(result), check);
+        await this.holdWritten(entity, written(result), checked, owed);
         return result;
       });
     };
-    return Object.assign(held, { reads: !!check });
+    return Object.assign(held, { reads });
+  }
+
+  /** The transitions this pool holds an update of `meta` to under the context: none where the database holds them. */
+  private heldTransitions<E>(meta: EntityMeta<E>): (QueryWhere<E> | false)[] {
+    return this.dialect.policies.checks && meta.policies?.length ? policyTransitions(meta, getContext()) : [];
   }
 
   /**
-   * {@link guardWrite} where this pool reads written rows back, answering the check to read them against; else
-   * {@link pinUpserted}'s pinning alone, where it guards writes at all.
+   * What each row `found` names owes `transitions` once written, by its {@link rowKey}: each reads the row as found
+   * first, and one that lets it go nowhere refuses the write before it runs. Rows holding alike owe alike.
+   */
+  private async transitionsOwed<E extends object>(
+    entity: Type<E>,
+    found: readonly EntityId<E>[],
+    transitions: readonly (QueryWhere<E> | false)[],
+  ): Promise<Map<string, Owed<E>>> {
+    const meta = getMeta(entity);
+    const refused = () => new UqlSecurityError(movesRefused(entity.name));
+    const live = transitions.filter((transition): transition is QueryWhere<E> => transition !== false);
+    if (live.length < transitions.length) {
+      throw refused();
+    }
+    const owed = new Map<string, Owed<E>>(
+      found.map((id) => [rowKey(whereIds(meta, id), meta.ids), { signature: '', left: [] }]),
+    );
+    for (const transition of live) {
+      const holding = await Promise.all(oldReads(transition).map((read) => this.idsHolding(entity, found, read)));
+      const folded = new Map<string, BoundWhere<E>>();
+      for (const [key, row] of owed) {
+        const signature = holding.map((ids) => (ids.has(key) ? '1' : '0')).join('');
+        let left = folded.get(signature);
+        if (left === undefined) {
+          left = onWritten(transition, (at) => signature[at] === '1');
+          folded.set(signature, left);
+        }
+        if (left === false) {
+          throw refused();
+        }
+        row.signature += `${signature}.`;
+        if (left !== true) {
+          row.left.push(left);
+        }
+      }
+    }
+    return owed;
+  }
+
+  /** The {@link rowKey}s of the rows among `ids` holding `where` as they are stored. */
+  private async idsHolding<E extends object>(
+    entity: Type<E>,
+    ids: readonly EntityId<E>[],
+    where: QueryWhere<E>,
+  ): Promise<Set<string>> {
+    const meta = getMeta(entity);
+    const holding = new Set<string>();
+    const named = ids.map((id) => whereIds(meta, id));
+    for (const q of this.keyedReads<E>(meta.ids, named, meta.ids)) {
+      const rows = await this.internalFindMany(entity, { ...q, $where: whereAnd(q.$where, [where]) }, UNPOLICED);
+      rows.forEach((row) => holding.add(rowKey(row, meta.ids)));
+    }
+    return holding;
+  }
+
+  /**
+   * {@link guardWrite} where this pool guards writes: it pins and refuses `rows`, answering the check left to read
+   * them back against.
    */
   private guardRows<E, R extends EntityData<E> | UpdatePayload<E>>(
     meta: EntityMeta<E>,
     rows: readonly R[],
-    write: 'insert' | 'update',
+    write: EntityAccess,
   ): QueryWhere<E> | undefined {
-    const { guards, checks } = this.dialect.policies;
-    if (checks) {
-      return guardWrite(meta, rows, write);
-    }
-    if (guards) {
-      pinWrite(meta, rows, write);
-    }
-    return undefined;
-  }
-
-  /** {@link pinWrite} where this pool guards writes: an upsert's branches check what they write, or its database does. */
-  private pinUpserted<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[]): void {
-    if (this.dialect.policies.guards) {
-      pinWrite(meta, rows, 'insert');
-    }
+    return this.dialect.policies.guards ? guardWrite(meta, rows, write) : undefined;
   }
 
   /** Whether {@link atomically} undoes every step of a write that fails partway: a transaction holds them. */
@@ -883,11 +951,15 @@ export abstract class AbstractQuerier implements Querier {
     return this.dialect.features.transactions || this.scopeHere() !== undefined;
   }
 
-  /** Refuses, undoing the write, where any row `ids` names does not hold `check` once written. */
-  private async holdToCheck<E extends object>(
+  /**
+   * Refuses, undoing the write, where any row `ids` names does not hold `check` and what `owed` holds it to once
+   * written: one count per distinct predicate.
+   */
+  private async holdWritten<E extends object>(
     entity: Type<E>,
     ids: WrittenIds<E>,
-    check: QueryWhere<E>,
+    check: QueryWhere<E> | undefined,
+    owed: ReadonlyMap<string, Owed<E>>,
   ): Promise<void> {
     const meta = getMeta(entity);
     const known = ids.filter((id): id is EntityId<E> => id !== undefined);
@@ -896,11 +968,27 @@ export abstract class AbstractQuerier implements Querier {
         `'${entity.name}' wrote a row whose key it cannot read back to check against its policies`,
       );
     }
-    const holding = await this.writeBatches(known, meta.ids.length, (batch) =>
-      this.internalCount(entity, { $where: whereAnd(whereIds(meta, batch), [check]) }, UNPOLICED),
-    );
-    if (holding < known.length) {
-      throw new UqlSecurityError(`a row written to '${entity.name}' does not hold its policies under this context`);
+    const groups = new Map<string, { readonly where: QueryWhere<E>[]; readonly ids: EntityId<E>[] }>();
+    for (const id of known) {
+      const row = owed.get(rowKey(whereIds(meta, id), meta.ids));
+      const signature = row?.signature ?? '';
+      let group = groups.get(signature);
+      if (!group) {
+        group = { where: [...(check ? [check] : []), ...(row?.left ?? [])], ids: [] };
+        groups.set(signature, group);
+      }
+      group.ids.push(id);
+    }
+    for (const group of groups.values()) {
+      if (!group.where.length) {
+        continue;
+      }
+      const holding = await this.writeBatches(group.ids, meta.ids.length, (batch) =>
+        this.internalCount(entity, { $where: whereAnd(whereIds(meta, batch), group.where) }, UNPOLICED),
+      );
+      if (holding < group.ids.length) {
+        throw new UqlSecurityError(`a row written to '${entity.name}' does not hold its policies under this context`);
+      }
     }
   }
 
@@ -1057,19 +1145,17 @@ export abstract class AbstractQuerier implements Querier {
       assertLockableUpdate(meta, q, settles);
       const lock = lockVersion(meta, lockKey, q, row);
       row[lockKey] = lock.next as E[FieldKey<E>];
-      const changes = await held(
-        () => this.updateColumns(entity, lock.q, row, opts, 0),
-        (changed) => (changed ? [idOf(meta, { ...q.$where })] : []),
-      );
+      const id = idOf(meta, { ...q.$where });
+      const changed = (count: number) => (count ? [id] : []);
+      const changes = await held(() => this.updateColumns(entity, lock.q, row, opts, 0), changed, [id]);
       return changes || this.throwStaleVersion(entity, lockKey, q, lock.expected, opts);
     }
     if (!settles && !settled && !held.reads) {
       return this.updateColumns(entity, q, row, opts, 0);
     }
-    const write = async () => {
-      const ids = settled ?? (await this.settleIds(entity, q, opts));
+    const write = async (ids: EntityId<E>[]) => {
       if (!ids.length) {
-        return { ids, changes: 0 };
+        return 0;
       }
       const changes = await this.writeBatches(ids, meta.ids.length, (batch) =>
         this.updateColumns(entity, { $where: whereIds(meta, batch) }, row, opts, batch.length),
@@ -1077,13 +1163,16 @@ export abstract class AbstractQuerier implements Querier {
       for (const relKey of relKeys) {
         await this.replaceChildren(entity, relKey, ids, row[relKey]);
       }
-      return { ids, changes };
+      return changes;
     };
-    const { changes } = await held(
-      () => this.atomically(write),
-      ({ ids }) => ids,
-    );
-    return changes;
+    return this.atomically(async () => {
+      const ids = settled ?? (await this.settleIds(entity, q, opts));
+      return held(
+        () => write(ids),
+        () => ids,
+        ids,
+      );
+    });
   }
 
   /**
@@ -1334,7 +1423,7 @@ export abstract class AbstractQuerier implements Querier {
     reads: boolean,
   ): Promise<NonNullable<WrittenId<E>>[]> {
     const meta = getMeta(entity);
-    this.pinUpserted(meta, rows);
+    this.guardRows(meta, rows, 'insert');
     const ids = reads ? await this.readThenUpsert(entity, q, rows) : await this.reportedOrKeptIds(entity, q, rows);
     return rows.map((row, index) => adoptId(meta, row, ids[index] ?? this.unmatched(entity, q, row)));
   }
@@ -1397,7 +1486,7 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<Partial<E>[]> {
     const meta = getMeta(entity);
     const read = [...new Set([...keys, ...meta.ids, ...getKeys(q.$conflict)])];
-    this.pinUpserted(meta, rows);
+    this.guardRows(meta, rows, 'insert');
     const written = await this.withKept(
       entity,
       q,
@@ -1588,7 +1677,10 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  /** Whether an update is its one statement over `q`: no version to lock, relation to write or page to settle first. */
+  /**
+   * Whether an update is its one statement over `q`: no version to lock, relation to write, page to settle first, or
+   * transition to read its rows as found for.
+   */
   private updatesByFilter<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
@@ -1596,7 +1688,12 @@ export abstract class AbstractQuerier implements Querier {
     opts: StatementOptions,
   ): boolean {
     const meta = getMeta(entity);
-    return !meta.version && !writesRelations(meta, [payload]) && !this.settlesWrite(entity, q, opts);
+    return (
+      !meta.version &&
+      !writesRelations(meta, [payload]) &&
+      !this.settlesWrite(entity, q, opts) &&
+      !this.heldTransitions(meta).length
+    );
   }
 
   /** Whether a delete is its one statement over `q`: no hook, cascade or page needs its rows read first. */
@@ -1624,12 +1721,15 @@ export abstract class AbstractQuerier implements Querier {
     read?: E[],
   ): Promise<number> {
     const meta = getMeta(entity);
-    if (!read && this.deletesByFilter(entity, q, opts)) {
+    const deleting = opts ?? {};
+    // A soft delete is an update, held as one: its written row checked, and its transitions. Its stamp is filled as it
+    // writes, so the row the guard sees sets no field.
+    const held = this.guarded(entity, [{}], accessOf(meta, deleting));
+    if (!read && !held.reads && this.deletesByFilter(entity, q, opts)) {
       return this.internalDeleteMany(entity, q, opts);
     }
     const cascades = cascadingRelations(meta, 'delete').length > 0;
     const watched = this.watchesDelete(entity);
-    const deleting = opts ?? {};
     return this.atomically(async () => {
       // A hook receives the rows themselves; the ids read off them name the same rows a second read might not.
       const doomed =
@@ -1639,13 +1739,15 @@ export abstract class AbstractQuerier implements Querier {
       }
       const ids = doomed.map((row) => idOf(meta, row));
       await this.emitHook(entity, 'beforeDelete', doomed);
-      const changes = await this.writeBatches(ids, meta.ids.length, async (batch) => {
-        // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
-        if (cascades) {
-          await this.deleteChildren(entity, batch, deleting);
-        }
-        return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
-      });
+      const write = () =>
+        this.writeBatches(ids, meta.ids.length, async (batch) => {
+          // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
+          if (cascades) {
+            await this.deleteChildren(entity, batch, deleting);
+          }
+          return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
+        });
+      const changes = await held(write, () => ids, ids);
       await this.emitHook(entity, 'afterDelete', doomed);
       return changes;
     });

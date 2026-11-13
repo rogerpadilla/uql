@@ -2,17 +2,32 @@ import { readsRelations } from '../dialect/abstractDialect.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { PolicySchema } from '../schema/types.js';
 import {
+  type ContextWhere,
   type EntityAccess,
   type EntityMeta,
+  type EntityTriggerMeta,
   type FieldMeta,
+  type PolicyMeta,
   type PolicyWhen,
-  type PolicyWhere,
   QuerySql,
 } from '../type/index.js';
 import { entityName } from '../util/object.util.js';
-import { asWhere, bindContext, type ContextRead, POLICY_OPS, policiesOf } from '../util/policy.util.js';
+import {
+  asWhere,
+  bindContext,
+  boundTransitions,
+  type ContextRead,
+  POLICY_OPS,
+  movesRefused,
+  POLICY_SIDES,
+  policiesOf,
+  project,
+} from '../util/policy.util.js';
+import { sql } from '../util/sql.js';
 import { ownedName } from '../util/sql.util.js';
+import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
+import { rowNames, sidedSql } from './triggerSql.js';
 
 /** The command each statement a policy holds is, as `CREATE POLICY ... FOR` names it. */
 const COMMANDS: Readonly<Record<EntityAccess, string>> = {
@@ -37,16 +52,10 @@ export function renderPolicies(
   }
   const table = dialect.resolveTableAlias(meta);
   const target = dialect.escapedTableName(meta);
-  const read: ContextRead = (ref, field) => {
-    if (!field) {
-      throw new UqlUsageError(`a policy of '${entityName(meta)}' compares context key '${ref.$context}' with no field`);
-    }
-    const sql = dialect.contextRead(ref.$context, columnType(field));
-    return new QuerySql(() => sql);
-  };
+  const read = contextReader(dialect, meta, columnType);
   return policiesOf(meta.policies).flatMap((policy, position) => {
-    const label = policy.name ?? `${policy.effect}_${position}`;
-    const predicate = (where: PolicyWhere<object>) => {
+    const label = policyLabel(policy, position);
+    const predicate = (where: ContextWhere<object>) => {
       const bound = asWhere(meta, bindContext(meta, where, read));
       const { rowSecurity } = dialect.features;
       if (!(rowSecurity && rowSecurity.subqueries) && readsRelations(meta, bound)) {
@@ -63,8 +72,10 @@ export function renderPolicies(
       ? [['ALL', undefined]]
       : policy.ops.map((op) => [COMMANDS[op], op]);
     return commands.map(([command, op]) => {
-      const using = command === 'INSERT' ? undefined : predicate(policy.where);
-      const check = writes(command) ? predicate(policy.check ?? policy.where) : undefined;
+      // `ALL` reads both rows, as an update does.
+      const sides = POLICY_SIDES[op ?? 'update'];
+      const using = sides.$old && predicate(project(policy.where, '$old'));
+      const check = sides.$new && predicate(project(policy.where, '$new'));
       const create = (name: string) =>
         [
           `CREATE POLICY ${dialect.escapeId(name)} ON ${target} AS ${policy.effect === 'allow' ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${command} TO PUBLIC`,
@@ -77,9 +88,56 @@ export function renderPolicies(
   });
 }
 
-/** Whether `command` writes rows, which `WITH CHECK` holds. */
-function writes(command: string): boolean {
-  return command === 'ALL' || command === 'INSERT' || command === 'UPDATE';
+/**
+ * The triggers holding a native pool's database to `meta`'s transitions, which no policy can, as no `WITH CHECK` sees
+ * the row as found: before each update, a row moving where none lets it is refused as `42501`, wherever row-level
+ * security holds the role writing it. In the body, since Postgres takes no subquery in a trigger's `WHEN`.
+ */
+export function policyTriggers(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<object>,
+  columnType: (field: FieldMeta) => string,
+): EntityTriggerMeta<object>[] {
+  if (!dialect.policies.database || !meta.policies?.length) {
+    return [];
+  }
+  const read = contextReader(dialect, meta, columnType);
+  const names = rowNames(dialect);
+  const refusal = written({
+    kind: 'refuse',
+    message: movesRefused(entityName(meta)),
+    sqlState: '42501',
+  });
+  return policiesOf(meta.policies).flatMap((policy, position) => {
+    const moves = boundTransitions(meta, policy, read);
+    if (!moves.length) {
+      return [];
+    }
+    const held = moves.map((bound) => sidedSql(dialect, meta, asWhere(meta, bound), names)).join(' AND ');
+    const condition = [dialect.rowSecurityApplies(meta), ...whenSql(dialect, policy.when), `(${held}) IS NOT TRUE`];
+    const body = sql`IF ${sql.text(condition.join(' AND '))} THEN\n${refusal}\nEND IF;`;
+    return [{ on: 'beforeUpdate', name: `${policyLabel(policy, position)}_update`, run: () => body }];
+  });
+}
+
+/** A policy's label within its entity: its name, else its effect and position. */
+function policyLabel(policy: PolicyMeta<object>, position: number): string {
+  return policy.name ?? `${policy.effect}_${position}`;
+}
+
+/** Each context key a policy reads, as the database reads it off the transaction, typed as the field it meets. */
+function contextReader(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<object>,
+  columnType: (field: FieldMeta) => string,
+): ContextRead {
+  return (ref, field) => {
+    if (!field) {
+      throw new UqlUsageError(`a policy of '${entityName(meta)}' compares context key '${ref.$context}' with no field`);
+    }
+    const read = dialect.contextRead(ref.$context, columnType(field));
+    return new QuerySql(() => read);
+  };
 }
 
 /** What removes a policy from `table`, a name qualified where its schema is. */

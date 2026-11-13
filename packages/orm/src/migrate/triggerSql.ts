@@ -1,21 +1,27 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
+import { groupClauses, isGroupOp } from '../dialect/operators.js';
 import type { TriggerSchema } from '../schema/types.js';
-import type {
-  EntityMeta,
-  EntityTriggerMeta,
-  FieldKey,
-  FieldMeta,
+import {
+  type EntityMeta,
+  type EntityTriggerMeta,
+  type FieldKey,
+  type FieldMeta,
+  type RowSide,
+  type PolicyWhere,
+  type TriggerMetaWhere,
   QuerySql,
-  RefMap,
-  StampEvent,
-  TriggerEvent,
-  TriggerMetaBody,
-  TriggerRowName,
-  TriggerRows,
+  type QueryWhere,
+  type RefMap,
+  type StampEvent,
+  type TriggerEvent,
+  type TriggerMetaBody,
+  type TriggerRowName,
+  type TriggerRows,
+  TriggerWriteSql,
 } from '../type/index.js';
-import { TriggerWriteSql } from '../type/index.js';
 import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
+import { isRowSide } from '../util/policy.util.js';
 import { sql, refs, rowRefs } from '../util/sql.js';
 import { ownedName, splitQualifiedName } from '../util/sql.util.js';
 import { escapeRegExp } from '../util/string.util.js';
@@ -189,10 +195,10 @@ function triggerFilter<E>(
   names: RowNames,
 ): string {
   const moved = movedColumns(dialect, meta, trigger.of ?? [], names);
-  return [
-    ...(moved ? [moved] : []),
-    ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(moved)) : []),
-  ].join(' AND ');
+  // A set-based engine ANDs the filter into each write the body runs, so it is an operand there.
+  const operand = Boolean(moved) || dialect.features.triggers.fires === 'eachStatement';
+  const where = trigger.where && condition(dialect, meta, trigger.where, rows, names, operand);
+  return [moved, where].filter(Boolean).join(' AND ');
 }
 
 /** The PL/pgSQL function holding a body. `OR REPLACE`, since a dropped table leaves its function behind. */
@@ -202,19 +208,18 @@ function plpgsqlFunction(id: string, block: string): string {
 }
 
 /** What the engine calls the rows it hands a trigger: records on a row-based engine, tables on a set-based one. */
-function rowNames(dialect: AbstractSqlDialect): RowNames {
+export function rowNames(dialect: AbstractSqlDialect): RowNames {
   return dialect.features.triggers.fires === 'eachStatement'
     ? { $new: 'inserted', $old: 'deleted' }
     : { $new: 'NEW', $old: 'OLD' };
 }
 
 /** Keyed as `where` names the rows, so a predicate reads its own row's name directly. */
-type RowNames = { readonly $new: TriggerRowName; readonly $old: TriggerRowName };
+type RowNames = Readonly<Record<RowSide, TriggerRowName>>;
 
 /**
- * The `where` filter as the terms an `AND` joins. A callback writes its own off the rows; a predicate
- * renders a term per row it names, spelled verbatim because `NEW` is a record the engine declares. Each
- * is an `operand` wherever another term sits beside it, bracketing itself if compound, as `$where` does.
+ * The `where` filter as SQL: a callback's own off the rows, or a predicate's, see {@link sidedSql}. An `operand`
+ * wherever another term sits beside it.
  */
 function condition<E>(
   dialect: AbstractSqlDialect,
@@ -223,18 +228,57 @@ function condition<E>(
   rows: Readonly<Parameters<TriggerMetaBody<E>>>,
   names: RowNames,
   operand: boolean,
-): string[] {
+): string {
   if (typeof where === 'function') {
     const sql = dialect.compileDdl(where(...rows), meta.entity);
-    return [operand ? `(${sql})` : sql];
+    return operand ? `(${sql})` : sql;
   }
-  const predicates = definedEntries(where);
-  return predicates.map(([row, predicate]) =>
-    dialect.compileDdl(predicate, meta.entity, {
-      escapedPrefix: `${names[row]}.`,
-      operand: operand || predicates.length > 1,
-    }),
-  );
+  return sidedSql(dialect, meta, where, names, operand);
+}
+
+/**
+ * A predicate over a trigger's rows as SQL: `$old` reads the row as found, `$new` the row as written, and a condition
+ * beside neither holds both. Each row's SQL is an `operand` wherever another term sits beside it, bracketing itself
+ * if compound, as `$where` does.
+ */
+export function sidedSql<E>(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<E>,
+  where: PolicyWhere<E> | TriggerMetaWhere<E>,
+  names: RowNames,
+  operand = false,
+): string {
+  const parts = sidedParts(dialect, meta, where, names, operand);
+  // Alone, its one term brackets itself as an operand; beside others, each term already did.
+  return dialect.compileDdl({ $and: parts } as QueryWhere<E>, meta.entity, { operand: operand && parts.length === 1 });
+}
+
+/** The terms of `where`, each row it reads replaced by SQL off that row, see {@link sidedSql}. */
+function sidedParts<E>(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<E>,
+  where: PolicyWhere<E> | TriggerMetaWhere<E>,
+  names: RowNames,
+  operand: boolean,
+): (QueryWhere<E> | QuerySql)[] {
+  const entries = Object.entries(where).filter(([, value]) => value !== undefined);
+  const onRow = (row: QueryWhere<E>, side: RowSide, beside: boolean) =>
+    new QuerySql(() =>
+      dialect.compileDdl(row, meta.entity, { escapedPrefix: `${names[side]}.`, operand: operand || beside }),
+    );
+  return entries.map(([key, value]): QueryWhere<E> | QuerySql => {
+    if (isGroupOp(key)) {
+      const clauses = groupClauses(key, value as readonly PolicyWhere<E>[]).map((clause) => ({
+        $and: sidedParts(dialect, meta, clause, names, true),
+      }));
+      return { [key]: clauses } as QueryWhere<E>;
+    }
+    if (isRowSide(key)) {
+      return onRow(value as QueryWhere<E>, key, entries.length > 1);
+    }
+    const leaf = { [key]: value } as QueryWhere<E>;
+    return { $and: [onRow(leaf, '$old', true), onRow(leaf, '$new', true)] } as QueryWhere<E>;
+  });
 }
 
 /**

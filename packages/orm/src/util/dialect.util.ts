@@ -3,6 +3,7 @@ import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
   type CascadeType,
+  type EntityAccess,
   type EntityData,
   type EntityIndexMeta,
   type EntityMeta,
@@ -59,7 +60,7 @@ import {
   isRecord,
   someKey,
 } from './object.util.js';
-import { asWhere, conjuncts, policyCheck, policyScope, withContextValues } from './policy.util.js';
+import { asWhere, conjuncts, policyWhere, withContextValues } from './policy.util.js';
 import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
@@ -154,6 +155,12 @@ export function deletionOf<E, O extends QueryOptions>(meta: EntityMeta<E>, opts:
     return { opts: withDeleted(opts) };
   }
   return { stamp: { key, field, value: () => softDeleteValue(field) }, opts };
+}
+
+/** What a statement under `opts` does to `meta`'s rows: a delete stamping them is an update, as the database runs it. */
+export function accessOf<E>(meta: EntityMeta<E>, opts: StatementOptions | undefined): EntityAccess {
+  const access = opts?.access ?? 'read';
+  return access === 'delete' && deletionOf(meta, opts ?? {}).stamp ? 'update' : access;
 }
 
 /**
@@ -588,7 +595,7 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
     }
   }
   const merged = result as QueryWhere<E>;
-  const scope = opts?.[PAST_POLICIES] ? undefined : policyScope(meta, opts?.access ?? 'read', getContext());
+  const scope = opts?.[PAST_POLICIES] ? undefined : policyWhere(meta, accessOf(meta, opts), '$old', getContext());
   return scope === undefined || scope === true ? merged : whereAnd(merged, conjuncts(asWhere(meta, scope)));
 }
 
@@ -599,50 +606,18 @@ function filterCondition<E>(filter: FilterOptions<E>): QueryWhere<E> | undefined
 }
 
 /**
- * Holds rows an insert or an update writes to the entity's policies under the ambient context, before the write: a
+ * Holds rows a statement doing `write` writes to the entity's policies under the ambient context, before the write: a
  * field the check pins to one value is filled into an inserted row leaving it out, and refused where a row sets
- * another. See architecture/row-level-security.md.
- */
-export function pinWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
-  meta: EntityMeta<E>,
-  rows: readonly R[],
-  write: 'insert' | 'update',
-): void {
-  pinRows(meta, rows, write, getContext());
-}
-
-/**
- * {@link pinWrite}, answering what the rows themselves cannot settle as the check the written rows must hold once
- * written, which the querier reads back inside the write's transaction.
+ * another. Answers what the rows themselves cannot settle, which the querier reads back inside the write's
+ * transaction. See architecture/row-level-security.md.
  */
 export function guardWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
   meta: EntityMeta<E>,
   rows: readonly R[],
-  write: 'insert' | 'update',
+  write: EntityAccess,
 ): QueryWhere<E> | undefined {
   const context = getContext();
-  const pins = pinRows(meta, rows, write, context);
-  if (!pins) {
-    return undefined;
-  }
-  const { check, pinned, rest } = pins;
-  const scope = write === 'update' ? policyScope(meta, 'update', context) : undefined;
-  const held = typeof scope === 'object' ? pinnedFields(meta, scope).pinned : [];
-  const settles = ([key, value]: [FieldKey<E>, unknown]) =>
-    write === 'insert' ||
-    rows.every((row) => row[key] !== undefined) ||
-    held.some(([at, holds]) => at === key && holds === value);
-  return !rest && pinned.every(settles) ? undefined : check;
-}
-
-/** The check `rows` are written under, the fields it pins filled and refused: none where it lets every row be. */
-function pinRows<E, R extends EntityData<E> | UpdatePayload<E>>(
-  meta: EntityMeta<E>,
-  rows: readonly R[],
-  write: 'insert' | 'update',
-  context: UqlContext | undefined,
-): { check: QueryWhere<E>; pinned: [FieldKey<E>, unknown][]; rest: boolean } | undefined {
-  const check = policyCheck(meta, write, context);
+  const check = policyWhere(meta, write, '$new', context);
   if (check === undefined || check === true) {
     return undefined;
   }
@@ -661,7 +636,13 @@ function pinRows<E, R extends EntityData<E> | UpdatePayload<E>>(
       }
     }
   }
-  return { check, pinned, rest };
+  const scope = policyWhere(meta, write, '$old', context);
+  const held = typeof scope === 'object' ? pinnedFields(meta, scope).pinned : [];
+  const settles = ([key, value]: [FieldKey<E>, unknown]) =>
+    write === 'insert' ||
+    rows.every((row) => row[key] !== undefined) ||
+    held.some(([at, holds]) => at === key && holds === value);
+  return !rest && pinned.every(settles) ? undefined : check;
 }
 
 /**

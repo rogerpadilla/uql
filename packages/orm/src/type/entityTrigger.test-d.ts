@@ -75,6 +75,26 @@ const logOld = (_newRow: unknown, oldRow: RefMap<Post>) => sql`PERFORM log(${old
     run: () => sql`x`,
   }) satisfies TriggerOptions<Post>;
 
+// An update's predicate pairs its rows as a policy's does, and a condition beside neither holds both.
+() =>
+  ({
+    on: 'beforeUpdate',
+    where: {
+      body: { $ne: null },
+      $or: [{ $old: { status: 'draft' } }, { $not: [{ $new: { status: 'draft' } }] }],
+    },
+    run: () => sql`x`,
+  }) satisfies TriggerOptions<Post>;
+
+// @ts-expect-error a relation is no column of the rows a trigger reads
+() => ({ on: 'afterUpdate', where: { post: { status: 'x' } }, run: () => sql`x` }) satisfies TriggerOptions<PostAudit>;
+
+// @ts-expect-error nor a text search, which reads an index no trigger has
+() => ({ on: 'afterUpdate', where: { $text: { $value: 'x' } }, run: () => sql`x` }) satisfies TriggerOptions<Post>;
+
+// @ts-expect-error a group pairs the rows of an update alone, which has both
+() => ({ on: 'afterInsert', where: { $or: [] }, run: () => sql`x` }) satisfies TriggerOptions<Post>;
+
 // @ts-expect-error an insert has no outgoing row for a predicate to read
 () => ({ on: 'afterInsert', where: { $old: { status: 'x' } }, run: () => sql`x` }) satisfies TriggerOptions<Post>;
 

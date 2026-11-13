@@ -662,7 +662,7 @@ describe('AbstractSqlQuerier stream', () => {
 });
 
 describe('AbstractSqlQuerier policy checks read back', () => {
-  @Entity({ policies: [{ allow: { ownerId: $context.userId }, check: { title: { $ne: 'void' } } }] })
+  @Entity({ policies: [{ allow: { $old: { ownerId: $context.userId }, $new: { title: { $ne: 'void' } } } }] })
   class HeldNote {
     @Field(f.number().autoIncrement())
     id?: number;
@@ -698,6 +698,32 @@ describe('AbstractSqlQuerier policy checks read back', () => {
 
     await expect(asOwner(() => querier.updateOneById(HeldNote, 1, { title: 'void', version: 1 }))).rejects.toThrow(
       "a row written to 'HeldNote' does not hold its policies under this context",
+    );
+  });
+
+  it('should refuse an update before writing where a transition reads a context key the context lacks', async () => {
+    @Entity({
+      policies: [
+        {
+          must: { $or: [{ $old: { ownerId: $context.userId } }, { $new: { ownerId: $context.userId } }] },
+          ops: ['update'],
+        },
+      ],
+    })
+    class Claimed {
+      @Field(f.number().autoIncrement())
+      id?: number;
+      @Field(f.string().nullable())
+      ownerId?: string | null;
+      @Field(f.version())
+      version?: number;
+      [versionKey]?: 'version';
+    }
+    const querier = new UnheldSqlQuerier([]);
+    const claim = () => querier.updateOneById(Claimed, 1, { ownerId: 'v', version: 1 });
+
+    await expect(querier.transaction(claim)).rejects.toThrow(
+      "a row of 'Claimed' moves where its policies do not let it",
     );
   });
 

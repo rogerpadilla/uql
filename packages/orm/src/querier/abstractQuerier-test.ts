@@ -7,6 +7,9 @@ import {
   Company,
   AuthoredNote,
   CheckedNote,
+  ClosingNote,
+  LockedNote,
+  StagedNote,
   MemberProject,
   ProjectMember,
   Carrier,
@@ -3307,6 +3310,97 @@ export abstract class AbstractQuerierIt<
     expect(queryErrorKind(refused)).toBe('security');
     const row = await asSystem(() => this.querier.findOneById(CheckedNote, id, { $select: { title: true } }));
     expect(row).toEqual({ title: 'draft' });
+  }
+
+  async shouldUpdateAlongTheTransitionsItsPolicyAllows() {
+    const id = await this.querier.insertOne(StagedNote, { status: 'draft' });
+
+    await this.querier.transaction(() => this.querier.updateOneById(StagedNote, id, { status: 'published' }));
+    await this.querier.transaction(() => this.querier.updateOneById(StagedNote, id, { status: 'archived' }));
+
+    expect(await this.querier.findOneById(StagedNote, id, { $select: { status: true } })).toEqual({
+      status: 'archived',
+    });
+  }
+
+  async shouldRefuseAnUpdateNoTransitionOfItsPolicyAllows() {
+    const id = await this.querier.insertOne(StagedNote, { status: 'draft' });
+
+    const refused = await this.querier
+      .transaction(() => this.querier.updateOneById(StagedNote, id, { status: 'archived' }))
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findOneById(StagedNote, id, { $select: { status: true } })).toEqual({ status: 'draft' });
+  }
+
+  async shouldRefuseBeforeWritingARowNoTransitionStartsFrom() {
+    const id = await this.querier.insertOne(StagedNote, { status: 'lost' });
+
+    const refused = await this.querier
+      .transaction(() => this.querier.updateOneById(StagedNote, id, { status: 'draft' }))
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findOneById(StagedNote, id, { $select: { status: true } })).toEqual({ status: 'lost' });
+  }
+
+  async shouldHoldEachRowAnUpdateWritesToItsOwnTransition() {
+    const ids = await this.querier.insertMany(StagedNote, [{ status: 'draft' }, { status: 'published' }]);
+    const $where = { id: { $in: ids } };
+
+    await this.querier.transaction(() => this.querier.updateMany(StagedNote, { $where }, { status: 'published' }));
+    const refused = await this.querier
+      .transaction(() => this.querier.updateMany(StagedNote, { $where }, { status: 'draft' }))
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findMany(StagedNote, { $select: { status: true }, $where })).toEqual([
+      { status: 'published' },
+      { status: 'published' },
+    ]);
+  }
+
+  async shouldRefuseAReportedUpdateNoTransitionAllows() {
+    const id = await this.querier.insertOne(StagedNote, { status: 'draft' });
+
+    const refused = await this.querier
+      .transaction(() =>
+        this.querier.updateMany(
+          StagedNote,
+          { $where: { id } },
+          { status: 'archived' },
+          { returning: { status: true } },
+        ),
+      )
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findOneById(StagedNote, id, { $select: { status: true } })).toEqual({ status: 'draft' });
+  }
+
+  async shouldHoldASoftDeleteToTheTransitionsAnUpdateIs() {
+    const [open, closed] = await this.querier.insertMany(ClosingNote, [{ status: 'open' }, { status: 'closed' }]);
+
+    await this.querier.transaction(() => this.querier.deleteOneById(ClosingNote, open));
+    const refused = await this.querier
+      .transaction(() => this.querier.deleteOneById(ClosingNote, closed))
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findMany(ClosingNote, { $select: { status: true } })).toEqual([{ status: 'closed' }]);
+  }
+
+  async shouldCheckTheRowASoftDeleteWritesAsAnUpdate() {
+    const [open, locked] = await this.querier.insertMany(LockedNote, [{ status: 'open' }, { status: 'locked' }]);
+
+    await this.querier.transaction(() => this.querier.deleteOneById(LockedNote, open));
+    const refused = await this.querier
+      .transaction(() => this.querier.deleteOneById(LockedNote, locked))
+      .catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await this.querier.findMany(LockedNote, { $select: { status: true } })).toEqual([{ status: 'locked' }]);
   }
 
   async shouldReadAProjectThroughItsMembers() {

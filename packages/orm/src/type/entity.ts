@@ -4,7 +4,7 @@ import type { PolicyMeta, PolicySection } from './policy.js';
 import type { Querier } from './querier.js';
 import type { EntityAccess, FilterOptions, RelationQuery, Wire } from './query.js';
 import type { ColumnRef, JsonPathRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
-import type { QueryWhere } from './queryWhere.js';
+import type { QueryWhere, QueryWhereFields, RowSide, RowsWhere } from './queryWhere.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
 import type {
   AtLeastOne,
@@ -1074,11 +1074,10 @@ type TriggerUpdateEvent = TriggerEventOn<'Update'>;
  * delete, both on an update.
  */
 type TriggerRow<Ev extends TriggerEvent> =
-  Ev extends TriggerEventOn<'Insert'> ? '$new' : Ev extends TriggerEventOn<'Delete'> ? '$old' : '$new' | '$old';
+  Ev extends TriggerEventOn<'Insert'> ? '$new' : Ev extends TriggerEventOn<'Delete'> ? '$old' : RowSide;
 
 /** One row's refs, rendering `NEW."col"` or `OLD."col"`, or `never` where the event has no such row. */
-type TriggerRowRefs<E, Ev extends TriggerEvent, R extends '$new' | '$old'> =
-  R extends TriggerRow<Ev> ? RefMap<E> : never;
+type TriggerRowRefs<E, Ev extends TriggerEvent, R extends RowSide> = R extends TriggerRow<Ev> ? RefMap<E> : never;
 
 /**
  * What a trigger runs, over its rows: the incoming row first and the outgoing one second, on every event.
@@ -1091,12 +1090,19 @@ type TriggerBody<E, Ev extends TriggerEvent> = (
 ) => QuerySql;
 
 /**
- * A condition as data: a predicate on each row it names, of the rows the event has, all of which hold.
- * The row is `$`-marked, as the operators inside it are, so it never reads as a field of the entity.
+ * A condition as data: a predicate on each row it names, of the rows the event has, all of which hold. The row is
+ * `$`-marked, as the operators inside it are, so it never reads as a field of the entity. An update's pairs its rows
+ * in groups, and holds a condition beside neither on both, as a policy's does.
  */
-type TriggerPredicate<E, Ev extends TriggerEvent> = {
-  readonly [R in TriggerRow<Ev>]?: EntityPredicate<E>;
-};
+type TriggerPredicate<E, Ev extends TriggerEvent> = Ev extends TriggerUpdateEvent
+  ? TriggerWhere<E>
+  : { readonly [R in TriggerRow<Ev>]?: EntityPredicate<E> };
+
+/** An update trigger's predicate over its two rows, on the table's own fields. */
+type TriggerWhere<E> = RowsWhere<QueryWhereFields<E, QuerySql, FieldKey<E>>, EntityPredicate<E>>;
+
+/** A trigger's predicate, whatever its event. */
+export type TriggerMetaWhere<E> = TriggerPredicate<E, TriggerEvent>;
 
 /**
  * The body, the engine's own SQL: one for every engine it reads alike, or a map naming one per engine
@@ -1161,7 +1167,7 @@ export type EntityTriggerMeta<E = object> = Merge<
   TriggerOptions<E>,
   {
     readonly of?: readonly string[];
-    readonly where?: TriggerPredicate<E, TriggerUpdateEvent> | TriggerMetaBody<E>;
+    readonly where?: TriggerMetaWhere<E> | TriggerMetaBody<E>;
     readonly run: TriggerMetaBody<E> | Readonly<Partial<Record<SqlDialectName, TriggerMetaBody<E>>>>;
   }
 >;

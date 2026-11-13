@@ -2256,7 +2256,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void {
     if (write.kind === 'refuse') {
-      ctx.append(this.refusal(this.escape(write.message), rows));
+      ctx.append(this.refusal(this.escape(write.message), rows, write.sqlState));
       return;
     }
     const meta = getMeta(write.entity);
@@ -2373,11 +2373,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * The statement failing a trigger's write with `message`, a quoted literal: SQL/PSM's `SIGNAL`, which the
-   * MySQL family speaks. `rows` are what a set-based engine's body reads, where it fails only if there are any.
+   * The statement failing a trigger's write with `message`, a quoted literal, under `sqlState` where one is named:
+   * SQL/PSM's `SIGNAL`, which the MySQL family speaks. `rows` are what a set-based engine's body reads, where it fails
+   * only if there are any.
    */
-  protected refusal(message: string, _rows?: TriggerRows): string {
-    return `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = ${message};`;
+  protected refusal(message: string, _rows?: TriggerRows, sqlState = '45000'): string {
+    return `SIGNAL SQLSTATE '${sqlState}' SET MESSAGE_TEXT = ${message};`;
+  }
+
+  /** What answers, in a trigger on `meta`'s table, whether row-level security holds the role writing it. */
+  rowSecurityApplies(_meta: EntityMeta<object>): string {
+    throw new UqlUsageError(`${this.engineName} holds no row to a policy itself`);
   }
 
   /** What a trigger's update assigns: the values it names, and the `onUpdate` fills a trigger can write, a value or SQL. */

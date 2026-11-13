@@ -9,8 +9,10 @@ import {
   fromContext,
   nextBinding,
   NOTHING_BOUND,
-  policyCheck,
-  policyScope,
+  oldReads,
+  onWritten,
+  policyTransitions,
+  policyWhere,
   unsettled,
 } from './policy.util.js';
 import { sql } from './sql.js';
@@ -159,16 +161,16 @@ describe('nextBinding', () => {
   });
 });
 
-describe('policyScope', () => {
+describe('policyWhere', () => {
   it('should OR the allows and AND the musts holding a statement', () => {
-    expect(policyScope(meta, 'read', user)).toEqual({
+    expect(policyWhere(meta, 'read', '$old', user)).toEqual({
       $and: [{ tenantId: 1 }, { $or: [{ ownerId: 'u' }, { members: { userId: 'u' } }, { status: 'public' }] }],
     });
   });
 
   // A policy holding both statements is ANDed in once, not once per statement.
   it('should hold an update to the read policies and its own, each once', () => {
-    expect(policyScope(meta, 'update', user)).toEqual({
+    expect(policyWhere(meta, 'update', '$old', user)).toEqual({
       $and: [
         { tenantId: 1 },
         { $or: [{ ownerId: 'u' }, { members: { userId: 'u' } }, { status: 'public' }] },
@@ -178,11 +180,11 @@ describe('policyScope', () => {
   });
 
   it('should fold a policy holding under the context to every row its musts leave', () => {
-    expect(policyScope(meta, 'delete', { ...user, role: 'admin' })).toEqual({ tenantId: 1 });
+    expect(policyWhere(meta, 'delete', '$old', { ...user, role: 'admin' })).toEqual({ tenantId: 1 });
   });
 
   it('should reach no row where a must reads a missing key, whatever the allows', () => {
-    expect(policyScope(meta, 'read', { userId: 'u', role: 'admin' })).toBe(false);
+    expect(policyWhere(meta, 'read', '$old', { userId: 'u', role: 'admin' })).toBe(false);
   });
 
   it('should reach no row where no allow holds the statement', () => {
@@ -190,12 +192,12 @@ describe('policyScope', () => {
     class ReadOnly {
       @Field(f.number().autoIncrement()) id?: number;
     }
-    expect(policyScope(getMeta(ReadOnly), 'read', undefined)).toBe(true);
-    expect(policyScope(getMeta(ReadOnly), 'delete', undefined)).toBe(false);
+    expect(policyWhere(getMeta(ReadOnly), 'read', '$old', undefined)).toBe(true);
+    expect(policyWhere(getMeta(ReadOnly), 'delete', '$old', undefined)).toBe(false);
   });
 
   it('should answer nothing for an entity with no policies', () => {
-    expect(policyScope(getMeta(Member), 'read', user)).toBeUndefined();
+    expect(policyWhere(getMeta(Member), 'read', '$old', user)).toBeUndefined();
   });
 });
 
@@ -207,12 +209,12 @@ describe('an entity declaring no allow', () => {
   }
 
   it('should reach every row its musts leave', () => {
-    expect(policyScope(getMeta(Ledger), 'delete', user)).toEqual({ tenantId: 1 });
-    expect(policyCheck(getMeta(Ledger), 'insert', user)).toEqual({ tenantId: 1 });
+    expect(policyWhere(getMeta(Ledger), 'delete', '$old', user)).toEqual({ tenantId: 1 });
+    expect(policyWhere(getMeta(Ledger), 'insert', '$new', user)).toEqual({ tenantId: 1 });
   });
 
   it('should reach none where a must reads a missing key', () => {
-    expect(policyScope(getMeta(Ledger), 'read', {})).toBe(false);
+    expect(policyWhere(getMeta(Ledger), 'read', '$old', {})).toBe(false);
   });
 });
 
@@ -223,23 +225,23 @@ describe('when', () => {
   }
 
   it('should hold a policy where the context key is one of the values it lists', () => {
-    expect(policyScope(getMeta(Ranked), 'read', { role: 'owner' })).toBe(true);
-    expect(policyScope(getMeta(Ranked), 'read', { role: 'guest' })).toEqual({ id: 0 });
+    expect(policyWhere(getMeta(Ranked), 'read', '$old', { role: 'owner' })).toBe(true);
+    expect(policyWhere(getMeta(Ranked), 'read', '$old', { role: 'guest' })).toEqual({ id: 0 });
   });
 });
 
 describe('explainPolicies', () => {
   it('should answer the rows a statement reaches and what a row it writes must hold', () => {
     expect(explainPolicies(Project, 'update', { ...user, role: 'admin' })).toEqual({
-      where: { tenantId: 1 },
-      check: { tenantId: 1 },
+      $old: { tenantId: 1 },
+      $new: { tenantId: 1 },
     });
-    expect(explainPolicies(Project, 'insert', {})).toEqual({ check: { id: { $in: [] } } });
+    expect(explainPolicies(Project, 'insert', {})).toEqual({ $new: { id: { $in: [] } } });
   });
 
   it('should read the ambient context where given none', () => {
     expect(withContext(user, () => explainPolicies(Project, 'read'))).toEqual({
-      where: {
+      $old: {
         $and: [{ tenantId: 1 }, { $or: [{ ownerId: 'u' }, { members: { userId: 'u' } }, { status: 'public' }] }],
       },
     });
@@ -248,6 +250,7 @@ describe('explainPolicies', () => {
   it('should answer nothing for an entity with no policies', () => {
     expect(explainPolicies(Member, 'read', user)).toEqual({});
     expect(explainPolicies(Member, 'insert', user)).toEqual({});
+    expect(explainPolicies(Member, 'update', user)).toEqual({});
   });
 
   it('should keep a predicate of several fields reading no context whole', () => {
@@ -256,19 +259,111 @@ describe('explainPolicies', () => {
       @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) tenantId?: number | null;
     }
-    expect(explainPolicies(Fixed, 'delete', user)).toEqual({ where: { id: 1, tenantId: 2 } });
+    expect(explainPolicies(Fixed, 'delete', user)).toEqual({ $old: { id: 1, tenantId: 2 } });
   });
 });
 
-describe('policyCheck', () => {
-  it('should hold a written row to the checks of the policies holding its statement', () => {
-    @Entity({ policies: [{ allow: { ownerId: $context.userId }, check: { status: { $ne: 'void' } } }] })
-    class Checked {
+describe('policy sides', () => {
+  @Entity({
+    policies: [
+      { allow: { ownerId: $context.userId, $new: { status: { $ne: 'void' } } } },
+      { must: { $old: { status: { $ne: 'locked' } } }, ops: ['update', 'delete'] },
+    ],
+  })
+  class Sided {
+    @Field(f.number().autoIncrement()) id?: number;
+    @Field(f.string().nullable()) ownerId?: string | null;
+    @Field(f.string().nullable()) status?: string | null;
+  }
+  const sided = getMeta(Sided);
+
+  it('should hold the row as found to the conditions on every row and those on $old', () => {
+    expect(policyWhere(sided, 'update', '$old', user)).toEqual({
+      $and: [{ status: { $ne: 'locked' } }, { ownerId: 'u' }],
+    });
+  });
+
+  // An unqualified condition holds the written row too, so a write cannot hand the row to another owner.
+  it('should hold the row as written to the conditions on every row and those on $new', () => {
+    expect(policyWhere(sided, 'update', '$new', user)).toEqual({
+      $and: [{ ownerId: 'u' }, { status: { $ne: 'void' } }],
+    });
+  });
+
+  it('should keep SQL ANDed in, and AND conditions of one field the sides both name', () => {
+    const raw = sql`1 = 1`;
+    @Entity({ policies: [{ allow: { $and: [raw, { status: 'a' }], $old: { status: { $ne: 'b' } } } }] })
+    class Twice {
       @Field(f.number().autoIncrement()) id?: number;
-      @Field(f.string().nullable()) ownerId?: string | null;
       @Field(f.string().nullable()) status?: string | null;
     }
-    expect(policyCheck(getMeta(Checked), 'insert', user)).toEqual({ status: { $ne: 'void' } });
-    expect(policyScope(getMeta(Checked), 'update', user)).toEqual({ ownerId: 'u' });
+    expect(policyWhere(getMeta(Twice), 'read', '$old', user)).toEqual({
+      $and: [{ $and: [raw] }, { status: 'a' }, { status: { $ne: 'b' } }],
+    });
+  });
+
+  it('should hold a statement to no side it lacks', () => {
+    expect(policyWhere(sided, 'insert', '$old', user)).toBeUndefined();
+    expect(policyWhere(sided, 'read', '$new', user)).toBeUndefined();
+  });
+
+  it('should read the context inside a side, a missing key there matching nothing however negated', () => {
+    expect(bindContext(meta, { $old: { ownerId: $context.userId } }, fromContext(user))).toEqual({
+      $old: { ownerId: 'u' },
+    });
+    expect(bindContext(meta, { $old: { ownerId: $context.userId } }, fromContext({}))).toBe(false);
+    expect(bindContext(meta, { $not: [{ $new: { ownerId: $context.userId } }] }, fromContext({}))).toBe(false);
+  });
+});
+
+describe('policyTransitions', () => {
+  const steps = {
+    $or: [
+      { $old: { status: 'draft' }, $new: { status: { $in: ['draft', 'published'] } } },
+      { $old: { status: 'published' }, $new: { status: 'archived' } },
+    ],
+  };
+
+  @Entity({ policies: [{ must: { ownerId: $context.userId, ...steps }, ops: ['update'] }] })
+  class Article {
+    @Field(f.number().autoIncrement()) id?: number;
+    @Field(f.string().nullable()) ownerId?: string | null;
+    @Field(f.string().nullable()) status?: string | null;
+  }
+  const article = getMeta(Article);
+
+  it('should hold neither side to a group pairing both rows, and answer it as a transition', () => {
+    expect(policyWhere(article, 'update', '$old', user)).toEqual({ ownerId: 'u' });
+    expect(policyWhere(article, 'update', '$new', user)).toEqual({ ownerId: 'u' });
+    expect(policyTransitions(article, user)).toEqual([steps]);
+  });
+
+  it('should read each condition on the row as found, negated under a negation', () => {
+    expect(oldReads<Article>({ $or: [{ $old: { status: 'a' } }, { $not: [{ $old: { status: 'b' } }] }] })).toEqual([
+      { status: 'a' },
+      { $not: [{ status: 'b' }] },
+    ]);
+  });
+
+  it('should hold an unqualified condition of a transition on the row as found and as written', () => {
+    expect(oldReads<Article>({ $or: [{ ownerId: 'u' }] })).toEqual([{ ownerId: 'u' }]);
+    expect(onWritten<Article>({ $or: [{ ownerId: 'u' }] }, () => true)).toEqual({ ownerId: 'u' });
+  });
+
+  it('should fold a transition on the row as written once each condition on the row as found is answered', () => {
+    expect(onWritten<Article>(steps, (at) => at === 0)).toEqual({ status: { $in: ['draft', 'published'] } });
+    expect(onWritten<Article>(steps, () => false)).toBe(false);
+  });
+
+  it('should answer none for an entity declaring no transition', () => {
+    expect(policyTransitions(meta, user)).toEqual([]);
+  });
+
+  it('should explain each side a statement reads, and the transitions an update is held to', () => {
+    expect(explainPolicies(Article, 'update', user)).toEqual({
+      $old: { ownerId: 'u' },
+      $new: { ownerId: 'u' },
+      $and: [steps],
+    });
   });
 });

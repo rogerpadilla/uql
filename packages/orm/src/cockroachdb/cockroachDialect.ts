@@ -13,6 +13,11 @@ export class CockroachDialect extends PgLikeSqlDialect {
     return this.settingRead(key, type);
   }
 
+  /** No `row_security_active` here: whether the role writing reads past row-level security, as the check asks. */
+  override rowSecurityApplies(): string {
+    return `NOT ${this.bypassesRowSecurity('current_user')}`;
+  }
+
   /**
    * pgvector's but `l1`: `<+>` and `vector_l1_ops` answer "unimplemented: operator class ... is not
    * supported" (verified live on v26.2), tracked at https://github.com/cockroachdb/cockroach/issues/147839.

@@ -1377,6 +1377,61 @@ it('should refuse a policy stating no effect, both, or a statement no policy hol
   expect(declare({ allow: {}, when: { 'a.b': 1 } })).toThrow("reading context key 'a.b'");
 });
 
+it('should refuse a policy reading a row it never sees, or pairing both rows where a transition cannot hold', () => {
+  const declare = (policy: object) => () => {
+    @Entity({ policies: [policy as never] })
+    class Sided {
+      @Field(f.number().autoIncrement())
+      id?: number;
+      @Field(f.string().nullable())
+      status?: string | null;
+      @OneToMany(() => SidedNote, { mappedBy: (note) => note.sided })
+      notes?: SidedNote[];
+      @Computed((sided) => sided.notes.count())
+      readonly noteCount?: number;
+    }
+    @Entity()
+    class SidedNote {
+      @Field(f.number().autoIncrement())
+      id?: number;
+      @Field(f.references(() => Sided).nullable())
+      sidedId?: number | null;
+      @ManyToOne(() => Sided, { references: (note) => note.sidedId })
+      sided?: Sided;
+    }
+    return Sided;
+  };
+  const steps = { $or: [{ $old: { status: 'draft' }, $new: { status: 'live' } }] };
+  expect(declare({ allow: {}, check: { status: 'live' } })).toThrow(
+    "has a policy stating 'check': a policy states allow or must, with ops, when and name",
+  );
+  expect(declare({ allow: {}, op: ['read'] })).toThrow("has a policy stating 'op'");
+  expect(declare({ allow: { $new: { status: 'live' } }, ops: ['read', 'delete'] })).toThrow(
+    "a policy holding read, delete that reads '$new', a row none of them writes",
+  );
+  expect(declare({ allow: { $old: { status: 'draft' } }, ops: ['insert'] })).toThrow(
+    "a policy holding insert that reads '$old', a row none of them finds",
+  );
+  expect(declare({ allow: { notes: { $old: { id: 1 } } } })).toThrow(
+    "a policy reading '$old' inside a relation or another row: state it at the predicate's root",
+  );
+  expect(declare({ allow: { $old: { $new: { status: 'x' } } } })).toThrow('inside a relation or another row');
+  expect(declare({ allow: steps, ops: ['update'] })).toThrow(
+    'a policy pairing the row as found with the row as written: only a must holding updates alone may',
+  );
+  expect(declare({ must: steps })).toThrow('only a must holding updates alone may');
+  expect(
+    declare({ must: { $or: [{ $old: { notes: { id: 1 } } }, { $new: { status: 'x' } }] }, ops: ['update'] }),
+  ).toThrow("a transition reads the entity's own fields");
+  expect(declare({ must: { $or: [{ $old: { noteCount: 0 } }, { $new: { status: 'x' } }] }, ops: ['update'] })).toThrow(
+    "a transition reads the entity's own fields",
+  );
+  expect(declare({ must: { $or: [{ $old: { status: 'x' } }, sql`true`] }, ops: ['update'] })).toThrow(
+    "a transition reads the entity's own fields",
+  );
+  expect(declare({ must: steps, ops: ['update'] })).not.toThrow();
+});
+
 it("should inherit a base entity's policies, a child naming one replacing it", () => {
   @Entity({
     abstract: true,

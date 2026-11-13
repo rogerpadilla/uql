@@ -318,7 +318,7 @@ export type TriggerWrite =
       readonly where: EntityPredicate<object>;
     }
   | { readonly kind: 'delete'; readonly entity: AbstractType<object>; readonly where: EntityPredicate<object> }
-  | { readonly kind: 'refuse'; readonly message: string };
+  | { readonly kind: 'refuse'; readonly message: string; readonly sqlState?: string };
 
 /**
  * What a SQL statement is rendered through, as a `sql` callback and a query context see it:

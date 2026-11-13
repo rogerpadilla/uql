@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.116.0] - 2026-11-13
+
+- **Breaking (entity):** `check` is removed. State the written row under `$new` and the found row under `$old`: `{ allow: W, check: C }` becomes `{ allow: { $old: W, $new: C } }`, which `uql-codemod` rewrites. `explainPolicies` returns `{ $old, $new, $and }` instead of `{ where, check }`. A policy key uql does not take is refused.
+- **Breaking (querier):** a soft delete is an update to the policies, so `update` policies check it and `delete` policies cover hard deletes only.
+- A `must` with `ops: ['update']` can compare each row's old and new values, such as `{ $old: { status: 'draft' } }` or `{ $new: { status: 'published' } }` in an `$or`, and every update must satisfy it. Native Postgres and CockroachDB refuse a violating update with SQLSTATE `42501`.
+
 ## [0.115.5] - 2026-11-13
 
 - **Fixed (postgres):** a foreign key declared `onDelete: 'RESTRICT'` reports a refused delete as `foreignKeyViolation` on Postgres 18, which raises it as `23001`.

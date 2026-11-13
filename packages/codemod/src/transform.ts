@@ -56,6 +56,7 @@ import {
   referencesEdits,
 } from './keyMaps.js';
 import { toMigrationBuilders } from './migrationBuilders.js';
+import { toSidedPolicies } from './policyChecks.js';
 import { relationTargetFor } from './relationTarget.js';
 import { toRelationTargets } from './relationTargets.js';
 import { toPolicies } from './securityFilters.js';
@@ -946,14 +947,22 @@ export function transformFile(
   const legacy = rewriteLegacy(source, checker, options, taken);
   const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
   const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
-  const migrated = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
-  const policies = toPolicies(source.fileName, migrated.text, located(followed(legacy, builders)));
-  const text = toRelationTargets(source.fileName, toGeneratedKeys(source.fileName, policies.text));
+  const locate = located(followed(legacy, builders));
+  const migrated = toMigrationBuilders(source.fileName, builders.text, locate);
+  const policies = toPolicies(source.fileName, migrated.text, locate);
+  const sided = toSidedPolicies(source.fileName, policies.text, locate);
+  const text = toRelationTargets(source.fileName, toGeneratedKeys(source.fileName, sided.text));
   return {
     fileName: source.fileName,
     text,
     changed: text !== source.getFullText(),
-    unresolved: [...legacy.unresolved, ...builders.unresolved, ...migrated.unresolved, ...policies.unresolved],
+    unresolved: [
+      ...legacy.unresolved,
+      ...builders.unresolved,
+      ...migrated.unresolved,
+      ...policies.unresolved,
+      ...sided.unresolved,
+    ],
     notes: legacy.notes,
   };
 }

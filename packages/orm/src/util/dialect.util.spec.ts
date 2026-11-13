@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
 import { Entity, f, Field, getMeta } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
-import type { Json, JsonArrayUpdateOp, QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
+import type {
+  Json,
+  JsonArrayUpdateOp,
+  QueryAggMap,
+  QueryGroupMap,
+  QuerySelect,
+  QueryWhere,
+  StatementOptions,
+} from '../type/index.js';
 import { PAST_POLICIES } from '../type/index.js';
 import { $context } from './contextRefs.js';
 import {
@@ -108,6 +116,34 @@ describe('a filter reading the context as data', () => {
 
   it('should be skipped where the context lacks a key it reads', () => {
     expect(withContext({ authorNo: 7 }, () => applyFilters(meta, {}))).toEqual({});
+  });
+});
+
+describe('a soft delete, which is an update', () => {
+  @Entity({
+    policies: [
+      { allow: { ownerId: $context.authorNo }, ops: ['delete'] },
+      { allow: { editorId: $context.authorNo }, ops: ['read', 'update'] },
+    ],
+  })
+  class Archived {
+    @Field(f.number().autoIncrement()) id?: number;
+    @Field(f.number().nullable()) ownerId?: number | null;
+    @Field(f.number().nullable()) editorId?: number | null;
+    @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
+  }
+  const meta = getMeta(Archived);
+  const scoped = (opts: StatementOptions) => withContext({ authorNo: 7 }, () => applyFilters(meta, {}, opts));
+
+  it('should reach the rows the update policies do, as the database holding its UPDATE does', () => {
+    expect(scoped({ access: 'delete' })).toEqual({ deletedAt: null, $and: [{ editorId: 7 }] });
+  });
+
+  it('should leave a hard delete to the delete policies', () => {
+    expect(scoped({ access: 'delete', hardDelete: true })).toEqual({
+      deletedAt: null,
+      $and: [{ editorId: 7 }, { ownerId: 7 }],
+    });
   });
 });
 

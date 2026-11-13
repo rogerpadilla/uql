@@ -15,7 +15,16 @@ declare module '../index.js' {
 @Entity({
   policies: [
     { must: { tenantId: $context.policyTenantId } },
-    { allow: { ownerId: $context.policyUserId }, check: { status: { $ne: 'void' } } },
+    { allow: { ownerId: $context.policyUserId, $new: { status: { $ne: 'void' } } } },
+    {
+      must: {
+        $or: [
+          { $old: { status: 'open' }, $new: { status: { $in: ['open', 'paid'] } } },
+          { $old: { status: 'paid' }, $not: [{ $new: { status: 'open' } }] },
+        ],
+      },
+      ops: ['update'],
+    },
     { allow: { status: { $in: ['open', 'paid'] } }, ops: ['read'] },
     { allow: {}, when: { policyUserId: 'root' } },
   ],
@@ -65,6 +74,36 @@ class Miswhen {
   @Field(f.number().autoIncrement()) id?: number;
 }
 void Miswhen;
+
+@Entity({
+  // @ts-expect-error the written row is `$new` in the predicate: a policy takes no `check`
+  policies: [{ allow: {}, check: { status: 'open' } }],
+})
+class Checked {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string()) status?: string;
+}
+void Checked;
+
+@Entity({
+  // @ts-expect-error a row holds no row: `$old` reads the entity's own fields
+  policies: [{ allow: { $old: { $new: { status: 'open' } } } }],
+})
+class Nested {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string()) status?: string;
+}
+void Nested;
+
+@Entity({
+  // @ts-expect-error 'state' is not a field of the row as written
+  policies: [{ allow: { $new: { state: 'open' } } }],
+})
+class Misnamed {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string()) status?: string;
+}
+void Misnamed;
 
 // A policy is data, so one stated once holds every entity whose fields it names.
 const ownTenant = { must: { tenantId: $context.policyTenantId } };

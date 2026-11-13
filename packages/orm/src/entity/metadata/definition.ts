@@ -14,6 +14,9 @@ import {
   type FieldOptions,
   type FilterOptions,
   type Policy,
+  type PolicyOptions,
+  type RowSide,
+  type PolicyMeta,
   type HookDeclaration,
   type HookEvent,
   type HookRegistration,
@@ -45,6 +48,7 @@ import {
   type AggregateFields,
   type DefinedEntity,
   SOFT_DELETE_FILTER,
+  QuerySql,
 } from '../../type/index.js';
 import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
@@ -61,16 +65,23 @@ import {
   normalizeIndexColumn,
   definedEntries,
   isRecord,
+  isPlainObject,
   whereWith,
+  aggregateOf,
 } from '../../util/index.js';
 import {
   contextKeys,
   EVERY_ROW_POLICY,
   POLICY_CONTEXT_KEY,
   POLICY_OPS,
+  pairsRows,
+  POLICY_SIDES,
   policyMeta,
   TENANT_POLICY,
   tenantPolicy,
+  isRowSide,
+  sidesOf,
+  transitionsOf,
 } from '../../util/policy.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
@@ -227,9 +238,98 @@ function addFilter<E>(meta: EntityMeta<E>, name: string, opts: FilterOptions<E>)
   (meta.filters ??= {})[name] = opts;
 }
 
+/** What a policy states: anything else is refused, never ignored, since an ignored condition reaches more rows. */
+const POLICY_KEYS = { allow: true, must: true, ops: true, when: true, name: true } as const satisfies Record<
+  keyof PolicyOptions<object> | 'allow' | 'must',
+  true
+>;
+
+/**
+ * Refuses a policy's rows read where none can be: a side none of its statements has; one inside a relation or another
+ * side; and a pair of both rows anywhere but a `must` holding updates alone.
+ */
+function assertSides<E>(meta: EntityMeta<E>, policy: PolicyMeta<E>): void {
+  const { entity } = meta;
+  for (const side of sidesOf(policy.where)) {
+    if (!policy.ops.some((op) => POLICY_SIDES[op][side])) {
+      const verb = side === '$old' ? 'finds' : 'writes';
+      throw new UqlUsageError(
+        `'${entity.name}' has a policy holding ${policy.ops.join(', ')} that reads '${side}', a row none of them ${verb}`,
+      );
+    }
+  }
+  const buried = buriedSide(meta, policy.where);
+  if (buried) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy reading '${buried}' inside a relation or another row: state it at the predicate's root`,
+    );
+  }
+  const transitions = transitionsOf(policy.where);
+  if (!transitions.length) {
+    return;
+  }
+  if (policy.effect !== 'must' || !policy.ops.every(pairsRows)) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy pairing the row as found with the row as written: only a must holding updates alone may`,
+    );
+  }
+  if (readsBeyondRow(meta, transitions)) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy pairing both rows through a relation or SQL: a transition reads the entity's own fields`,
+    );
+  }
+}
+
+/** A side `where` reads inside a relation's predicate or another side's, where none is read. */
+function buriedSide<E>(meta: EntityMeta<E>, where: unknown, buried = false): RowSide | undefined {
+  if (Array.isArray(where)) {
+    return where.map((item) => buriedSide(meta, item, buried)).find(Boolean);
+  }
+  if (!isPlainObject(where)) {
+    return undefined;
+  }
+  for (const [key, value] of Object.entries(where)) {
+    if (isRowSide(key) && buried) {
+      return key;
+    }
+    const deeper = buried || isRowSide(key) || key in meta.relations;
+    const found = buriedSide(meta, value, deeper);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether `where` reads past the row at any depth: a relation of `meta` by its key or an aggregate, or SQL, which names
+ * no row.
+ */
+function readsBeyondRow<E>(meta: EntityMeta<E>, where: unknown): boolean {
+  if (where instanceof QuerySql) {
+    return true;
+  }
+  if (Array.isArray(where)) {
+    return where.some((item) => readsBeyondRow(meta, item));
+  }
+  return (
+    isPlainObject(where) &&
+    Object.entries(where).some(
+      ([key, value]) =>
+        key in meta.relations || aggregateOf(meta.fields[key]) !== undefined || readsBeyondRow(meta, value),
+    )
+  );
+}
+
 /** Registers a policy, refusing one stating no single effect, a name taken and a statement no policy holds. */
 function addPolicy<E>(meta: EntityMeta<E>, declared: Policy<E>): void {
   const { entity } = meta;
+  const stray = Object.keys(declared).find((key) => !Object.hasOwn(POLICY_KEYS, key));
+  if (stray !== undefined) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy stating '${stray}': a policy states allow or must, with ops, when and name`,
+    );
+  }
   const policy = policyMeta(declared);
   if (!policy || (declared.allow !== undefined && declared.must !== undefined)) {
     throw new UqlUsageError(`'${entity.name}' has a policy stating none or both of allow and must: state one`);
@@ -240,11 +340,12 @@ function addPolicy<E>(meta: EntityMeta<E>, declared: Policy<E>): void {
       `'${entity.name}' has a policy holding '${String(unknown ?? 'no statement')}': name read, insert, update or delete`,
     );
   }
+  assertSides(meta, policy);
   if (policy.name === TENANT_POLICY || policy.name === EVERY_ROW_POLICY) {
     throw new UqlUsageError(`'${entity.name}' policy name '${policy.name}' is reserved for the policies uql derives`);
   }
   assertUnnamed(meta, 'policy', meta.policies, policy.name);
-  const misnamed = [...contextKeys([policy.where, policy.check]), ...Object.keys(policy.when ?? {})].find(
+  const misnamed = [...contextKeys(policy.where), ...Object.keys(policy.when ?? {})].find(
     (key) => !POLICY_CONTEXT_KEY.test(key),
   );
   if (misnamed !== undefined) {

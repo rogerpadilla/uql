@@ -2696,6 +2696,69 @@ t.index([raw\`lower("email")\`], { where: 'active' });
     expect(unresolved).toEqual([expect.stringContaining("'Post' is decorated as well")]);
   });
 
+  describe("a policy's check, which its predicate's $new states", () => {
+    const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`, {}, true, transformFile);
+
+    it('should state the found row as $old and the written one as $new, in place of check', () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { $context, Entity } from 'uql-orm';
+        @Entity({ policies: [{ allow: { ownerId: $context.userId }, check: { status: { $ne: 'void' } } }] })
+        class Post { id?: number; ownerId?: string; status?: string; }
+      `);
+      expect(unresolved).toEqual([]);
+      expect(text).toContain(
+        "@Entity({ policies: [{ allow: { $old: { ownerId: $context.userId }, $new: { status: { $ne: 'void' } } } }] })",
+      );
+    });
+
+    it('should keep the rest of a policy as written, its lines and comments included', () => {
+      const { text } = codemod(/*ts*/ `
+        import { $context, Entity } from 'uql-orm';
+        @Entity({
+          policies: [
+            {
+              // owners only
+              allow: { ownerId: $context.userId },
+              check: { status: 'open' },
+              ops: ['update'],
+            },
+          ],
+        })
+        class Post { id?: number; ownerId?: string; status?: string; }
+      `);
+      expect(text).toContain(`            {
+              // owners only
+              allow: { $old: { ownerId: $context.userId }, $new: { status: 'open' } },
+              ops: ['update'],
+            },`);
+    });
+
+    it('should state $new alone where the predicate is every row, keeping the other options', () => {
+      const { text } = codemod(/*ts*/ `
+        import { defineEntity, f } from 'uql-orm';
+        const base = { ops: ['insert'] };
+        const shared = { ...base, must: {}, check: { status: 'open' } };
+        defineEntity('Ticket', { id: f.number().autoIncrement(), status: f.string() }).policies([shared]);
+      `);
+      expect(text).toContain("const shared = { ...base, must: { $new: { status: 'open' } } };");
+    });
+
+    it("should read explainPolicies' sides by their new names, and report a destructuring it cannot follow", () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { explainPolicies } from 'uql-orm';
+        declare const Post: new () => object;
+        const found = explainPolicies(Post, 'read').where;
+        const written = explainPolicies(Post, 'insert').check;
+        const { where } = explainPolicies(Post, 'update');
+      `);
+      expect(text).toContain("const found = explainPolicies(Post, 'read').$old;");
+      expect(text).toContain("const written = explainPolicies(Post, 'insert').$new;");
+      expect(unresolved).toEqual([
+        expect.stringContaining("explainPolicies answers '$old' and '$new' now, where it answered 'where' and 'check'"),
+      ]);
+    });
+  });
+
   describe('security filters, which policies replace', () => {
     const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`, {}, true, transformFile);
 

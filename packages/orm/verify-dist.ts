@@ -201,11 +201,11 @@ function checkPeerReach(): void {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
-  '.': 13_900,
-  './postgres': 52_200,
-  './migrate': 72_400,
+  '.': 15_100,
+  './postgres': 54_400,
+  './migrate': 74_300,
   // The client reads rows back by the entity's metadata (`http/wireRow.ts`), which any entity it is handed has loaded.
-  './browser': 11_900,
+  './browser': 13_200,
 };
 
 async function checkSizeBudgets(): Promise<void> {

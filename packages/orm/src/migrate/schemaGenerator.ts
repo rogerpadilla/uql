@@ -30,6 +30,7 @@ import type {
   CreateSchemaOptions,
   DialectFeatures,
   DropSchemaOptions,
+  FieldMeta,
   ForeignKeySchema,
   IndexSchema,
   PrimaryKeySchema,
@@ -58,7 +59,7 @@ import {
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
-import { dropPolicy, renderPolicies } from './policySql.js';
+import { dropPolicy, policyTriggers, renderPolicies } from './policySql.js';
 import { added, alterations, dropped, needsRebuild, newlyRequired, nonEmpty, sides } from './schemaChange.js';
 import { dropTrigger, dropTriggerBody, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
@@ -106,6 +107,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    */
   buildAST(entities: readonly AbstractType<object>[]): SchemaAST {
     const { dialect } = this;
+    const columnType = (field: FieldMeta) => canonicalToSql(resolveColumnCanonicalType(field), dialect);
     return buildSchemaAST(entities, {
       // The alias, not `resolveTableName`: a node holds its schema apart, so a name derived from it is one identifier.
       resolveTableName: (meta) => dialect.resolveTableAlias(meta),
@@ -118,12 +120,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       },
       defaultForeignKeyAction: this.defaultForeignKeyAction,
       renderTriggers: (meta) =>
-        [...(meta.triggers ?? []), ...stampTriggers(this.dialect, meta)].map((trigger, i) =>
-          renderTrigger(this.dialect, meta, trigger, i),
+        [...(meta.triggers ?? []), ...stampTriggers(dialect, meta), ...policyTriggers(dialect, meta, columnType)].map(
+          (trigger, i) => renderTrigger(dialect, meta, trigger, i),
         ),
-      renderPolicies: (meta) =>
-        renderPolicies(this.dialect, meta, (field) => canonicalToSql(resolveColumnCanonicalType(field), this.dialect)),
-      textScoreIndexes: this.dialect.features.textScoreIndexes,
+      renderPolicies: (meta) => renderPolicies(dialect, meta, columnType),
+      textScoreIndexes: dialect.features.textScoreIndexes,
       vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
   }

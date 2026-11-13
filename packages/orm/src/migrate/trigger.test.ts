@@ -342,7 +342,12 @@ describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_en
 @Entity({
   name: 'TgLedger',
   triggers: (tgLedger, trigger) => [
-    trigger({ on: 'afterUpdate', name: 'frozen', where: { $old: { frozen: true } }, run: () => refuse('frozen') }),
+    trigger({
+      on: 'afterUpdate',
+      name: 'frozen',
+      where: { $or: [{ $old: { frozen: true } }, { $new: { amount: { $lt: 0 } } }] },
+      run: () => refuse('frozen, or below zero'),
+    }),
     trigger({ on: 'afterDelete', name: 'kept', run: () => refuse("ledger rows are kept: it's final") }),
   ],
 })
@@ -369,6 +374,12 @@ describe.each(TRIGGER_POOLS)('a refusal on %s', (_engine, connect) => {
     await pool().updateOneById(TgLedger, open, { amount: 2 });
     await expect(pool().updateOneById(TgLedger, frozen, { amount: 2 })).rejects.toThrow('frozen');
     expect(await pool().findOneById(TgLedger, frozen, { $select: { amount: true } })).toEqual({ amount: 1 });
+  });
+
+  it('should refuse a row by either row a group pairs', async () => {
+    const id = await pool().insertOne(TgLedger, { frozen: false, amount: 1 });
+    await expect(pool().updateOneById(TgLedger, id, { amount: -1 })).rejects.toThrow('below zero');
+    expect(await pool().findOneById(TgLedger, id, { $select: { amount: true } })).toEqual({ amount: 1 });
   });
 });
 

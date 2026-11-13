@@ -233,6 +233,30 @@ describe('the guard, however the engine states one', () => {
     );
   });
 
+  it('should pair both rows in a group on SQL Server, reading the two tables joined', () => {
+    const statement = render(new MsSqlDialect(), {
+      ...audited,
+      of: undefined,
+      where: { $or: [{ $old: { body: 'draft' } }, { $new: { body: 'draft' } }] },
+    }).join('\n');
+    expect(statement).toContain(
+      'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
+        `WHERE (deleted."body" = N'draft' OR inserted."body" = N'draft');`,
+    );
+  });
+
+  it("should keep a where's $or from escaping the rows a write names on SQL Server", () => {
+    const statement = render(new MsSqlDialect(), {
+      ...audited,
+      of: undefined,
+      where: { $new: { $or: [{ body: 'a' }, { body: 'b' }] } },
+      run: (newRow) => updateTable(Post, { $where: { id: newRow.id } }, { searchVector: newRow.body }),
+    }).join('\n');
+    expect(statement).toContain(
+      `WHERE "Post"."id" = inserted."id" AND (inserted."body" = N'a' OR inserted."body" = N'b');`,
+    );
+  });
+
   it('should narrow an insert by a where on SQL Server, reading the one table it has', () => {
     const statement = render(new MsSqlDialect(), {
       on: 'afterInsert',
@@ -396,6 +420,17 @@ describe('the where guard', () => {
       run: { postgres: () => sql`SELECT 1;` },
     }).join('\n');
     expect(statement).toContain('WHEN (OLD."body" IS NOT NULL)');
+  });
+
+  it('should pair both rows in a group, and hold a condition beside neither on both', () => {
+    const statement = render(new PostgresDialect(), {
+      ...stamp,
+      of: undefined,
+      where: { body: { $ne: null }, $or: [{ $old: { body: 'draft' } }, { $new: { body: 'draft' } }] },
+    }).join('\n');
+    expect(statement).toContain(
+      `WHEN ((OLD."body" IS NOT NULL AND NEW."body" IS NOT NULL) AND (OLD."body" = 'draft' OR NEW."body" = 'draft'))`,
+    );
   });
 
   // Each piece bracketed, so an `$or` inside one never swallows the `AND` joining it to the next.

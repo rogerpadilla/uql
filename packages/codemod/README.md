@@ -43,6 +43,7 @@ Only `--flag=value` is read, and anything unrecognised is an error. It exits `0`
 - A sole numeric key to the generated one it was: `f.number().id()` to `f.number().autoIncrement()`, `f.bigint().id()` to `f.bigint().autoIncrement()`, and `.autoIncrement()` on `f.column('int').id()`. `.autoIncrement(false)` is dropped, a key no longer needing it, and a key a relation shares stays as it is. A class's `id!` stays too, which an insert then has to name until it is `id?` or listed in `[filledKey]`. On MongoDB, take `.autoIncrement()` off a numeric key: nothing generates one there. A subclass's `.autoIncrement()` on a column that is no key, its key inherited, stays and has to go by hand.
 - The `[idKey]?: '...'` brand, and its import, on a key not called `id`, `_id` or `uuid` and on every composite.
 - A `security: true` filter to the policy replacing it, where it reads the context as data: `tenant: { where: (ctx) => (ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined), security: true }` in `@Entity`'s or `defineEntity`'s `filters` to `policies: [{ must: { companyId: $context.tenantId } }]`, keeping its `ops`, a `.filters({ ... })` section to `.policies([...])`, and one a `@Filter` declares once it is folded into `@Entity`.
+- A policy's `check` to the `$new` side of its predicate: `{ allow: W, check: C }` to `{ allow: { $old: W, $new: C } }` (`{ $new: C }` where `W` is `{}`), wherever the policy literal is written, and `explainPolicies(...).where` and `.check` to `.$old` and `.$new`.
 
 ## What it leaves to you
 
@@ -69,6 +70,7 @@ Reported with what to do, never guessed:
 - A `@Field`/`@Id` with no `type`, and a relation with no target: declare the column as a builder (`f.string()`) and pass the target first (`@ManyToOne(() => Target)`). A branded string id's column, `f.uuid()` or `f.string()`, is yours to pick.
 - `Relation<T>` imported from `uql-orm`, which no longer exports it: write the property's type without it, and drop the import.
 - A security filter it cannot read as data (a guard on another key, any other logic): declare it as a policy. A filter's `onMissing`, which no filter takes now: remove it.
+- A destructuring of `explainPolicies`' answer, which names `$old` and `$new` now: rename what it reads.
 
 ## After it runs
 

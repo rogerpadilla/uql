@@ -220,7 +220,7 @@ export class AuthoredNote {
 /** A policy whose check only the database answers: an author's note, never written void. */
 @Entity({
   policies: [
-    { allow: { authorId: $context.userId }, check: { authorId: $context.userId, title: { $ne: 'void' } } },
+    { allow: { authorId: $context.userId, $new: { title: { $ne: 'void' } } } },
     { allow: {}, when: { system: true } },
   ],
 })
@@ -233,6 +233,67 @@ export class CheckedNote {
 
   @Field(f.string().nullable())
   title?: string | null;
+}
+
+/** A note whose status only moves forward, draft to published to archived, whoever updates it. */
+@Entity({
+  policies: [
+    {
+      must: {
+        $or: [
+          { $old: { status: 'draft' }, $new: { status: { $in: ['draft', 'published'] } } },
+          { $old: { status: 'published' }, $new: { status: { $in: ['published', 'archived'] } } },
+          { $old: { status: 'archived' }, $new: { status: 'archived' } },
+        ],
+      },
+      ops: ['update'],
+    },
+  ],
+})
+export class StagedNote {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  status?: string | null;
+}
+
+/** A note only an open one of which may change, else only to void: a soft delete is an update it holds too. */
+@Entity({
+  policies: [{ must: { $or: [{ $old: { status: 'open' } }, { $new: { status: 'void' } }] }, ops: ['update'] }],
+})
+export class ClosingNote {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  status?: string | null;
+
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
+  deletedAt?: number | null;
+}
+
+/** A note no update leaves locked: a soft delete writes its row as an update does, so a locked one stays. */
+@Entity({ policies: [{ must: { $new: { status: { $ne: 'locked' } } }, ops: ['update'] }] })
+export class LockedNote {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  status?: string | null;
+
+  @Field(
+    f
+      .number()
+      .nullable()
+      .softDelete(() => Date.now()),
+  )
+  deletedAt?: number | null;
 }
 
 /** Members of a project, whose policy reads them: a project is read by the users it lists. */

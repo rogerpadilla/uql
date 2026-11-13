@@ -5,7 +5,7 @@ import type { PolicySchema, TableNode } from '../schema/types.js';
 import { assertDefined } from '../test/index.js';
 import type { Type } from '../type/index.js';
 import { $context } from '../util/contextRefs.js';
-import { renderPolicies } from './policySql.js';
+import { policyTriggers, renderPolicies } from './policySql.js';
 import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -53,6 +53,71 @@ describe('renderPolicies', () => {
   it('should refuse a role bound for policies the database does not hold', () => {
     expect(() => new PostgresDialect({ role: $context.role }).policies).toThrow(
       "a pool's role is a database role its transactions run as, which only policies: 'native' binds",
+    );
+  });
+
+  it('should hold no USING or WITH CHECK to a transition, which a trigger holds instead', () => {
+    @Entity({
+      policies: [
+        {
+          must: { $or: [{ $old: { status: 'draft' } }, { $new: { status: { $ne: 'draft' } } }] },
+          ops: ['update'],
+          name: 'forward',
+        },
+      ],
+    })
+    class Staged {
+      @Field(f.number().autoIncrement()) id?: number;
+      @Field(f.string().nullable()) status?: string | null;
+    }
+
+    expect(renderPolicies(dialect, getMeta(Staged), text)[0]!.statements).toEqual([
+      expect.stringMatching(/ AS RESTRICTIVE FOR UPDATE TO PUBLIC USING \(true\) WITH CHECK \(true\)$/),
+    ]);
+    expect(policyTriggers(dialect, getMeta(Staged), text)).toEqual([
+      expect.objectContaining({ on: 'beforeUpdate', name: 'forward_update' }),
+    ]);
+  });
+
+  it('should hold both rows of a transition to a condition beside either side', () => {
+    @Entity({
+      policies: [{ must: { $or: [{ status: 'open' }, { $new: { status: 'void' } }] }, ops: ['update'] }],
+    })
+    class Kept {
+      @Field(f.number().autoIncrement()) id?: number;
+      @Field(f.string().nullable()) status?: string | null;
+    }
+    const [trigger] = new SqlSchemaGenerator(dialect).buildAST([Kept]).getTable('Kept')!.triggers;
+
+    expect(trigger!.statements[0]).toContain(
+      `((OLD."status" = 'open' AND NEW."status" = 'open') OR NEW."status" = 'void') IS NOT TRUE`,
+    );
+  });
+
+  it('should refuse a row moving where no transition lets it, only where row-level security holds the role', () => {
+    @Entity({
+      policies: [
+        {
+          must: { $or: [{ $old: { status: 'draft' } }, { $new: { status: $context.userId } }] },
+          ops: ['update'],
+          when: { role: 'editor' },
+        },
+      ],
+    })
+    class Owned {
+      @Field(f.number().autoIncrement()) id?: number;
+      @Field(f.string().nullable()) status?: string | null;
+    }
+    const [trigger] = new SqlSchemaGenerator(dialect)
+      .buildAST([Owned])
+      .getTable('Owned')!
+      .triggers.filter((it) => it.name.includes('must_0_update'));
+
+    expect(trigger!.statements[0]).toContain(
+      `IF row_security_active('"Owned"') AND (SELECT nullif(current_setting('uql.role', true), '')::text) IN ('editor') AND (OLD."status" = 'draft' OR NEW."status" = (SELECT nullif(current_setting('uql.userId', true), '')::TEXT)) IS NOT TRUE THEN`,
+    );
+    expect(trigger!.statements[0]).toContain(
+      "RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'a row of ''Owned'' moves where its policies do not let it';",
     );
   });
 

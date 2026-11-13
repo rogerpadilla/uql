@@ -4,6 +4,7 @@ import { getMeta } from '../entity/metadata/definition.js';
 import {
   type AbstractType,
   type ContextKeyRef,
+  type ContextWhere,
   type EntityAccess,
   type EntityMeta,
   type FieldKey,
@@ -11,10 +12,11 @@ import {
   type Policy,
   type PolicyMeta,
   type PolicyMode,
+  type RowSide,
   type PolicyWhere,
   type PolicyWhen,
+  type QueryGroupOp,
   type QueryWhere,
-  type ScopedAccess,
   QuerySql,
   type UqlContext,
 } from '../type/index.js';
@@ -86,7 +88,7 @@ export function contextKeys(value: unknown): Set<string> {
  * one: a filter reading what the context lacks is skipped, where a policy reaching no row is not.
  */
 export function withContextValues<E>(
-  where: PolicyWhere<E>,
+  where: ContextWhere<E>,
   context: UqlContext | undefined,
 ): QueryWhere<E> | undefined {
   const bound = bindField(where, fromContext(context));
@@ -130,6 +132,13 @@ function orBound<E>(parts: readonly BoundWhere<E>[]): BoundWhere<E> {
   return kept.length === 0 ? false : kept.length === 1 ? kept[0]! : whereAnyOf(kept);
 }
 
+/** `clauses` joined as the group `key` joins them. */
+function boundGroup<E>(key: QueryGroupOp, clauses: readonly BoundWhere<E>[]): BoundWhere<E> {
+  const { join, negate } = GROUP_OPS[key];
+  const group = join === '$and' ? andBound(clauses) : orBound(clauses);
+  return negate ? notBound(group) : group;
+}
+
 /** Not `bound`. */
 function notBound<E>(bound: BoundWhere<E>): BoundWhere<E> {
   return typeof bound === 'boolean' ? !bound : ({ $not: [bound] } as QueryWhere<E>);
@@ -165,12 +174,15 @@ export function bindContext<E>(
   }
   const parts = Object.entries(where).map(([key, value]): BoundWhere<E> => {
     if (isGroupOp(key)) {
-      const { join, negate } = GROUP_OPS[key];
+      const inner = positive !== GROUP_OPS[key].negate;
       const clauses = groupClauses(key, value as readonly (PolicyWhere<E> | QuerySql)[]).map((item) =>
-        item instanceof QuerySql ? whereAnd<E>(undefined, [item]) : bindContext(meta, item, read, positive !== negate),
+        item instanceof QuerySql ? whereAnd<E>(undefined, [item]) : bindContext(meta, item, read, inner),
       );
-      const group = join === '$and' ? andBound(clauses) : orBound(clauses);
-      return negate ? notBound(group) : group;
+      return boundGroup(key, clauses);
+    }
+    if (isRowSide(key)) {
+      const side = bindContext(meta, value as PolicyWhere<E>, read, positive);
+      return typeof side === 'boolean' ? side : ({ [key]: side } as QueryWhere<E>);
     }
     const relation = meta.relations[key];
     if (relation) {
@@ -288,21 +300,114 @@ export function policiesOf<E>(policies: readonly PolicyMeta<E>[]): readonly Poli
 }
 
 /**
- * The rows every statement in `accesses` may reach: each `must` holding one, and for each, an `allow` holding it,
- * statements the same allows hold ORing them in once.
+ * The policies each side a statement reads is held to: `$old`, the row as found, and `$new`, the row as written. An
+ * update and a delete find their rows as a read does, as Postgres holds them.
+ */
+export const POLICY_SIDES: Readonly<Record<EntityAccess, Partial<Record<RowSide, readonly EntityAccess[]>>>> = {
+  read: { $old: ['read'] },
+  delete: { $old: ['read', 'delete'] },
+  insert: { $new: ['insert'] },
+  update: { $old: ['read', 'update'], $new: ['update'] },
+};
+
+/** Whether a statement doing `access` has both rows, the only one a predicate may pair them for: an update. */
+export function pairsRows(access: EntityAccess): boolean {
+  const sides = POLICY_SIDES[access];
+  return !!(sides.$old && sides.$new);
+}
+
+/** The refusal of a row an update moves where no transition of `entity`'s lets it, in the querier and the database. */
+export function movesRefused(entity: string): string {
+  return `a row of '${entity}' moves where its policies do not let it`;
+}
+
+/** Whether `key` names a row of a policy's predicate. */
+export function isRowSide(key: string): key is RowSide {
+  return key === '$old' || key === '$new';
+}
+
+/** The conditions `where` ANDs, each `$and`'s spliced in, as one-key predicates. */
+function conjunctParts<E>(where: PolicyWhere<E>): PolicyWhere<E>[] {
+  return Object.entries(where).flatMap(([key, value]): PolicyWhere<E>[] =>
+    key === '$and' && Array.isArray(value)
+      ? value.flatMap((clause: PolicyWhere<E> | QuerySql): PolicyWhere<E>[] =>
+          clause instanceof QuerySql ? [{ $and: [clause] } as PolicyWhere<E>] : conjunctParts(clause),
+        )
+      : [{ [key]: value } as PolicyWhere<E>],
+  );
+}
+
+/** Whether `part` pairs both rows: a group reading a side, which no one side answers. */
+function pairs<E>(part: PolicyWhere<E>): boolean {
+  return Object.keys(part).some(isGroupOp) && sidesOf(part).size > 0;
+}
+
+/** The groups of `where` pairing both rows: the transitions an update is held to. */
+export function transitionsOf<E>(where: PolicyWhere<E>): PolicyWhere<E>[] {
+  return conjunctParts(where).filter(pairs);
+}
+
+/** The sides `where` reads at its root or in a group, where a policy may read them. */
+export function sidesOf(where: unknown): Set<RowSide> {
+  const sides = new Set<RowSide>();
+  if (isPlainObject(where)) {
+    for (const [key, value] of Object.entries(where)) {
+      if (isRowSide(key)) {
+        sides.add(key);
+      } else if (isGroupOp(key)) {
+        groupClauses(key, value as readonly unknown[]).forEach((clause) =>
+          sidesOf(clause).forEach((side) => sides.add(side)),
+        );
+      }
+    }
+  }
+  return sides;
+}
+
+/** `parts` as one predicate: merged where their keys differ, else an `$and`. */
+function allOf<E>(parts: readonly ContextWhere<E>[]): ContextWhere<E> {
+  const keys = parts.flatMap((part) => Object.keys(part));
+  if (parts.length === 1 || new Set(keys).size === keys.length) {
+    return Object.assign({}, ...parts) as ContextWhere<E>;
+  }
+  return { $and: parts } as ContextWhere<E>;
+}
+
+/**
+ * `where` as one side reads it: its conditions on every row and those on `side`, those on the other side left out, as
+ * is a group pairing both rows, which {@link policyTransitions} holds.
+ */
+export function project<E>(where: PolicyWhere<E>, side: RowSide): ContextWhere<E> {
+  if (!sidesOf(where).size) {
+    return where as ContextWhere<E>;
+  }
+  return allOf(
+    conjunctParts(where).flatMap((part): ContextWhere<E>[] => {
+      const [key] = Object.keys(part);
+      if (isRowSide(key!)) {
+        return key === side ? [part[key] as ContextWhere<E>] : [];
+      }
+      return pairs(part) ? [] : [part as ContextWhere<E>];
+    }),
+  );
+}
+
+/**
+ * The rows `side` of every statement in `accesses` may be: each `must` holding one, and for each, an `allow` holding
+ * it, statements the same allows hold ORing them in once.
  */
 function joined<E>(
   meta: EntityMeta<E>,
   declared: readonly PolicyMeta<E>[],
   accesses: readonly EntityAccess[],
   context: UqlContext | undefined,
-  pick: (policy: PolicyMeta<E>) => PolicyWhere<E>,
+  side: RowSide,
 ): BoundWhere<E> {
   const policies = policiesOf(declared).filter(
     (policy) => accesses.some((access) => policy.ops.includes(access)) && holdsWhen(policy.when, context),
   );
   const read = fromContext(context);
-  const bound = policies.map((policy) => bindContext(meta, pick(policy), read));
+  const bound = policies.map((policy) => bindContext(meta, project(policy.where, side), read));
   const allowSets = new Map(
     accesses.map((access) => {
       const set = policies.flatMap((policy, at) =>
@@ -318,45 +423,122 @@ function joined<E>(
 }
 
 /**
- * The rows a statement doing `access` may reach under `context`, `undefined` for an entity with no policies. An update
- * and a delete are held to the `read` policies too, as Postgres holds them.
+ * What `side` of a row a statement doing `access` touches must be under `context`: the rows it reaches as found, and
+ * what it writes. `undefined` for an entity with no policies, or a side the statement has none of.
  */
-export function policyScope<E>(
+export function policyWhere<E>(
   meta: EntityMeta<E>,
-  access: ScopedAccess,
+  access: EntityAccess,
+  side: RowSide,
   context: UqlContext | undefined,
 ): BoundWhere<E> | undefined {
+  const accesses = POLICY_SIDES[access][side];
   const { policies } = meta;
-  return policies?.length ? joined(meta, policies, ['read', access], context, (policy) => policy.where) : undefined;
-}
-
-/** What a row an insert or an update writes must hold under `context`, `undefined` for an entity with no policies. */
-export function policyCheck<E>(
-  meta: EntityMeta<E>,
-  access: 'insert' | 'update',
-  context: UqlContext | undefined,
-): BoundWhere<E> | undefined {
-  const { policies } = meta;
-  return policies?.length
-    ? joined(meta, policies, [access], context, (policy) => policy.check ?? policy.where)
-    : undefined;
+  return policies?.length && accesses ? joined(meta, policies, accesses, context, side) : undefined;
 }
 
 /**
- * What `entity`'s policies hold a statement doing `access` to under `context`, the ambient one where unset: `where`,
- * the rows it reaches (`{}` for every one), and `check`, what a row it writes must hold. Neither for an entity with no
- * policies. What the querier ANDs in, so it answers why a read under a context reaches no row.
+ * The transitions an update is held to under `context`: each group pairing both rows of a `must` holding updates, its
+ * context read, `$old` the row as found and `$new` as written. None that holds whatever the rows.
+ */
+export function policyTransitions<E>(meta: EntityMeta<E>, context: UqlContext | undefined): (QueryWhere<E> | false)[] {
+  const read = fromContext(context);
+  return (meta.policies ?? [])
+    .filter((policy) => holdsWhen(policy.when, context))
+    .flatMap((policy) => boundTransitions(meta, policy, read));
+}
+
+/**
+ * `policy`'s transitions, each with its context read by `read`, those holding whatever the rows left out. Only a `must`
+ * holding updates states one, which registering a policy enforces.
+ */
+export function boundTransitions<E>(
+  meta: EntityMeta<E>,
+  policy: PolicyMeta<E>,
+  read: ContextRead,
+): (QueryWhere<E> | false)[] {
+  return transitionsOf(policy.where)
+    .map((part) => bindContext(meta, part, read))
+    .filter((bound): bound is QueryWhere<E> | false => bound !== true);
+}
+
+/**
+ * `transition` with each read of the row as found answered by `held`, whether the row holds it, met in the order
+ * {@link oldReads} lists them: what is left holds the row as written. A condition beside no side holds both rows.
+ */
+export function onWritten<E>(transition: PolicyWhere<E> | QueryWhere<E>, held: (at: number) => boolean): BoundWhere<E> {
+  let at = 0;
+  return walkTransition(transition, true, () => held(at++));
+}
+
+/**
+ * What `transition` reads of the row as found, in the order {@link onWritten} meets them. A condition under a
+ * negation is read negated, so a null the condition cannot decide lets nothing go, as the database's `IS NOT TRUE`.
+ */
+export function oldReads<E>(transition: PolicyWhere<E> | QueryWhere<E>): QueryWhere<E>[] {
+  const reads: QueryWhere<E>[] = [];
+  walkTransition(transition, true, (read) => {
+    reads.push(read);
+    return true;
+  });
+  return reads;
+}
+
+/**
+ * One walk of a transition for both {@link oldReads} and {@link onWritten}, so the two meet its conditions alike:
+ * `held` answers whether the row as found holds each read, which is the condition itself where `positive`.
+ */
+function walkTransition<E>(
+  where: PolicyWhere<E> | QueryWhere<E>,
+  positive: boolean,
+  held: (read: QueryWhere<E>) => boolean,
+): BoundWhere<E> {
+  const found = (condition: QueryWhere<E>) =>
+    positive ? held(condition) : !held({ $not: [condition] } as QueryWhere<E>);
+  const parts = Object.entries(where).map(([key, value]): BoundWhere<E> => {
+    if (isGroupOp(key)) {
+      const inner = positive !== GROUP_OPS[key].negate;
+      const clauses = groupClauses(key, value as readonly PolicyWhere<E>[]).map((clause) =>
+        walkTransition(clause, inner, held),
+      );
+      return boundGroup(key, clauses);
+    }
+    if (key === '$old') {
+      return found(value as QueryWhere<E>);
+    }
+    if (key === '$new') {
+      return value as QueryWhere<E>;
+    }
+    const leaf = { [key]: value } as QueryWhere<E>;
+    return andBound([found(leaf), leaf]);
+  });
+  return andBound(parts);
+}
+
+/** What `explainPolicies` answers: each side a statement reads, and the transitions an update is held to. */
+export type ExplainedPolicies<E> = {
+  readonly $old?: QueryWhere<E>;
+  readonly $new?: QueryWhere<E>;
+  readonly $and?: readonly QueryWhere<E>[];
+};
+
+/**
+ * What `entity`'s policies hold a statement doing `access` to under `context`, the ambient one where unset, as a
+ * policy states it: `$old`, the rows it reaches (`{}` for every one), `$new`, what a row it writes must hold, and an
+ * update's transitions. None for an entity with no policies. It answers why a read under a context reaches no row.
  */
 export function explainPolicies<E>(
   entity: AbstractType<E>,
   access: EntityAccess,
   context: UqlContext | undefined = getContext(),
-): { readonly where?: QueryWhere<E>; readonly check?: QueryWhere<E> } {
+): ExplainedPolicies<E> {
   const meta = getMeta(entity);
-  const scope = access === 'insert' ? undefined : policyScope(meta, access, context);
-  const check = access === 'insert' || access === 'update' ? policyCheck(meta, access, context) : undefined;
+  const found = policyWhere(meta, access, '$old', context);
+  const written = policyWhere(meta, access, '$new', context);
+  const transitions = pairsRows(access) ? policyTransitions(meta, context) : [];
   return {
-    ...(scope === undefined ? {} : { where: asWhere(meta, scope) }),
-    ...(check === undefined ? {} : { check: asWhere(meta, check) }),
+    ...(found === undefined ? {} : { $old: asWhere(meta, found) }),
+    ...(written === undefined ? {} : { $new: asWhere(meta, written) }),
+    ...(transitions.length ? { $and: transitions.map((bound) => asWhere(meta, bound)) } : {}),
   };
 }

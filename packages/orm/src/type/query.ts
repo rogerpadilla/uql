@@ -9,7 +9,7 @@ import type {
   UpdateWrite,
   WrittenId,
 } from './entity.js';
-import type { PolicyWhere } from './policy.js';
+import type { ContextWhere } from './policy.js';
 import type { QueryLock } from './queryLock.js';
 import type { QuerySql } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -135,7 +135,7 @@ export interface UqlContext {
  * the filter skipped where the context lacks a key it reads; or a function of the ambient {@link UqlContext}, skipped
  * where it answers `undefined`.
  */
-export type FilterWhere<E> = PolicyWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
+export type FilterWhere<E> = ContextWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
 
 /** What a field takes: reading it (select, filter, sort, distinct, aggregate) and writing it. */
 export type FieldAccess = 'read' | 'insert' | 'update';

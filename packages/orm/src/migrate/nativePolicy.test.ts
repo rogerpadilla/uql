@@ -45,7 +45,7 @@ class NpMember {
 
 @Entity({
   policies: [
-    { allow: { authorId: $context.userId }, check: { authorId: $context.userId, title: { $ne: 'void' } } },
+    { allow: { authorId: $context.userId, $new: { title: { $ne: 'void' } } } },
     { allow: {}, ops: ['read'], when: { role: ['auditor', 'admin'] } },
   ],
 })
@@ -65,6 +65,21 @@ class NpChecked {
 class NpGranted {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
+}
+
+/** A row whose status only moves forward, which a trigger holds, as no policy sees the row as found. */
+@Entity({
+  policies: [
+    {
+      must: { $or: [{ $old: { status: 'draft' } }, { $new: { status: { $ne: 'draft' } } }] },
+      ops: ['update'],
+    },
+    { allow: {} },
+  ],
+})
+class NpStaged {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) status?: string | null;
 }
 
 /** A table someone else held to row-level security, before uql's policy and after it is gone. */
@@ -91,7 +106,7 @@ class NpNoteEdited {
   @Field(f.string().nullable()) title?: string | null;
 }
 
-const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted', 'NpShared'];
+const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted', 'NpShared', 'NpStaged'];
 
 /** Native, its transactions run as the database role context key `dbRole` names. */
 const native: ExtraOptions = { policies: 'native', role: $context.dbRole };
@@ -112,7 +127,7 @@ const engines: readonly [string, () => SqlQuerierPool, () => SqlQuerierPool, str
     'cockroachdb',
     () => new CrdbQuerierPool(cockroachConnection('test_policy'), native),
     () => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy' }, native),
-    'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
+    'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted", "NpStaged" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq", "NpStaged_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
     false,
   ],
 ];
@@ -128,7 +143,9 @@ const refusal = (promise: Promise<unknown>) =>
 describe.each(engines)('native policies on %s', (_engine, owned, held, grant, subqueries) => {
   let owner: SqlQuerierPool;
   let app: SqlQuerierPool;
-  const entities = subqueries ? [NpNote, NpProject, NpMember, NpChecked, NpGranted] : [NpNote, NpChecked, NpGranted];
+  const entities = subqueries
+    ? [NpNote, NpProject, NpMember, NpChecked, NpGranted, NpStaged]
+    : [NpNote, NpChecked, NpGranted, NpStaged];
 
   const dropAll = async () => {
     for (const table of tables) {
@@ -341,5 +358,21 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
 
     expect(held).toEqual([{ enabled: true, forced: true }]);
     expect(await owner.all(state)).toEqual([{ enabled: true, forced: false }]);
+  });
+
+  it('should refuse a row moving where no transition lets it, in the database, and let a role it does not hold', async () => {
+    const id = await asUser('a', () => app.insertOne(NpStaged, { status: 'draft' }));
+    const back = (pool: SqlQuerierPool) =>
+      asUser('a', () => pool.run(sql.text(`UPDATE "NpStaged" SET "status" = 'draft' WHERE "id" = ${id}`)));
+
+    await asUser('a', () => app.updateOneById(NpStaged, id, { status: 'live' }));
+    const refused = await refusal(back(app));
+    await owner.run(sql.text(`UPDATE "NpStaged" SET "status" = 'draft' WHERE "id" = ${id}`));
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await owner.all(sql.text(`SELECT "status" FROM "NpStaged" WHERE "id" = ${id}`))).toEqual([
+      { status: 'draft' },
+    ]);
+    expect(await new Migrator(owner, { entities }).planSync({ safe: false })).toEqual([]);
   });
 });
