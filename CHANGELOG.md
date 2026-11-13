@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.116.2] - 2026-11-13
+
+- No behaviour change: a doc comment on how cyclic foreign keys are ordered is corrected.
+- Dependencies upgraded.
+- Docs about RLS improved.
+
 ## [0.116.1] - 2026-11-13
 
 - On `pg` and CockroachDB, a statement under a native policy context, or a split write, costs one round trip instead of up to four. The `pg` peer is now `>=8.5.0`.

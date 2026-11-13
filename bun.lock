@@ -89,13 +89,13 @@
         "uql-migrate": "./dist/migrate/bin.js",
       },
       "devDependencies": {
-        "@electric-sql/pglite": "0.5.15",
-        "@electric-sql/pglite-pgvector": "0.0.16",
+        "@electric-sql/pglite": "0.5.16",
+        "@electric-sql/pglite-pgvector": "0.0.17",
         "@libsql/client": "^0.18.0",
-        "@neondatabase/serverless": "^1.2.0",
-        "@nestjs/common": "^12.4.2",
-        "@nestjs/core": "^12.4.2",
-        "@nestjs/testing": "^12.4.2",
+        "@neondatabase/serverless": "^1.2.1",
+        "@nestjs/common": "^12.5.0",
+        "@nestjs/core": "^12.5.0",
+        "@nestjs/testing": "^12.5.0",
         "@tursodatabase/database": "^0.8.3",
         "@tursodatabase/serverless": "^1.4.1",
         "@types/better-sqlite3": "^9.6.0",
@@ -103,17 +103,17 @@
         "@types/mssql": "^12.3.0",
         "@types/pg": "^8.23.1",
         "@types/ws": "^8.18.2",
-        "better-sqlite3": "^13.0.3",
+        "better-sqlite3": "^13.1.1",
         "express": "^5.3.0",
         "mariadb": "^3.5.5",
-        "mongodb": "^7.8.0",
+        "mongodb": "^7.9.0",
         "mssql": "^12.7.14",
         "mysql2": "^3.24.6",
         "pg": "^8.23.1",
         "pg-query-stream": "^4.17.1",
         "rxjs": "^7.8.2",
         "sqlite-vec": "^0.1.9",
-        "ws": "^8.22.2",
+        "ws": "^8.23.0",
       },
       "peerDependencies": {
         "@electric-sql/pglite": ">=0.5.10 <0.6",
@@ -278,9 +278,9 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.15", "", {}, "sha512-ERZWgaRTxueGV4cvL1tfpAOzFCWTXoUtbCBqnf2FhHDVs/so9eAKaanvrwWF9Dntx7BYsmFQujVQ0/B4S8Mmiw=="],
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.16", "", {}, "sha512-Nj8KcIsJL748W408U2N8q4+9IlONdpRIU8MJypIAAINMJ5nqKyqpX7Mgg/5XKkXiAib3AoZGR6hnJFlrlLBrcg=="],
 
-    "@electric-sql/pglite-pgvector": ["@electric-sql/pglite-pgvector@0.0.16", "", { "peerDependencies": { "@electric-sql/pglite": "0.5.15" } }, "sha512-3usbMM/Zkn0h7wpSft1rsa8lcXz77Q+rGdTpm7UORwtISg4CSGprinmu5qnF23GE0FHLH0LxEyKoPPteHuZPIg=="],
+    "@electric-sql/pglite-pgvector": ["@electric-sql/pglite-pgvector@0.0.17", "", { "peerDependencies": { "@electric-sql/pglite": "0.5.16" } }, "sha512-tOFBigmwl+6qqZ5y2wOUeDngKeO22lLslSQjmaZri5WAh7V3bDUQaxxlT9MJLSPmdwPjR0NRHqk2V5yFtgLUYQ=="],
 
     "@emnapi/core": ["@emnapi/core@1.4.5", "", { "dependencies": { "@emnapi/wasi-threads": "1.0.4", "tslib": "^2.4.0" } }, "sha512-XsLw1dEOpkSX/WucdqUhPWP7hDxSvZiY+fsUC14h+FtQ2Ifni4znbBt8punRX+Uj2JG/uDb8nEHVKvrVlvdZ5Q=="],
 
