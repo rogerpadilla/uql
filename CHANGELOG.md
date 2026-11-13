@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.115.4] - 2026-11-13
+
+- **Fixed (postgres):** with `role: $context.role`, a native policy's `when` on that key compares the role exactly, as app mode does. `TO` also held each role inheriting one it names, the login role among them, so a context naming no role passed. A context naming a role the database lacks gets the database's own error.
+- **Fixed (migrate):** removing uql's last policy, or rolling back its first, no longer disables row-level security: it unforces it, or restores the table's earlier state, so a table you or Supabase enabled stays held to your own policies.
+
 ## [0.115.3] - 2026-11-12
 
 - `{ policies: 'native', role: $context.role }` runs each transaction as the database role its context names, such as Supabase's `anon` or `authenticated`: a policy's `when` on that key installs as `CREATE POLICY ... TO` those roles, and a context naming a role that bypasses row-level security is refused.

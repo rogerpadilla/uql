@@ -46,7 +46,6 @@ export function renderPolicies(
   };
   return policiesOf(meta.policies).flatMap((policy, position) => {
     const label = policy.name ?? `${policy.effect}_${position}`;
-    const [roles, when] = rolesOf(policy.when, dialect.policies.role);
     const predicate = (where: PolicyWhere<object>) => {
       const bound = asWhere(meta, bindContext(meta, where, read));
       const { rowSecurity } = dialect.features;
@@ -56,7 +55,8 @@ export function renderPolicies(
         );
       }
       return (
-        [...whenSql(dialect, when), dialect.compileDdl(bound, meta.entity)].filter(Boolean).join(' AND ') || 'true'
+        [...whenSql(dialect, policy.when), dialect.compileDdl(bound, meta.entity)].filter(Boolean).join(' AND ') ||
+        'true'
       );
     };
     const commands: [string, EntityAccess | undefined][] = POLICY_OPS.every((op) => policy.ops.includes(op))
@@ -67,7 +67,7 @@ export function renderPolicies(
       const check = writes(command) ? predicate(policy.check ?? policy.where) : undefined;
       const create = (name: string) =>
         [
-          `CREATE POLICY ${dialect.escapeId(name)} ON ${target} AS ${policy.effect === 'allow' ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${command} TO ${roles.map((role) => dialect.escapeId(role)).join(', ') || 'PUBLIC'}`,
+          `CREATE POLICY ${dialect.escapeId(name)} ON ${target} AS ${policy.effect === 'allow' ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${command} TO PUBLIC`,
           ...(using === undefined ? [] : [`USING (${using})`]),
           ...(check === undefined ? [] : [`WITH CHECK (${check})`]),
         ].join(' ');
@@ -88,19 +88,14 @@ export function dropPolicy(dialect: AbstractSqlDialect, table: string, name: str
 }
 
 /**
- * The database roles a `when` lists at the pool's role key, which `TO` holds, and the rest of it. None where it lists
- * none, the key then left in the rest, which holds under no context.
+ * A `when` as the context comparisons it is, each read as text, as the binding sends every value. The pool's role key
+ * reads the role itself, not `TO`: see architecture/row-level-security.md.
  */
-function rolesOf(when: PolicyWhen | undefined, key: string | undefined): [roles: string[], rest: [string, unknown][]] {
-  const entries: [string, unknown][] = Object.entries(when ?? {});
-  const roles = entries.flatMap(([it, value]) => (it === key ? [value].flat().map(String) : []));
-  return [roles, roles.length ? entries.filter(([it]) => it !== key) : entries];
-}
-
-/** A `when`'s entries as the context comparisons they are, each read as text, as the binding sends every value. */
-function whenSql(dialect: AbstractSqlDialect, when: readonly [string, unknown][]): string[] {
-  return when.map(([key, value]) => {
+function whenSql(dialect: AbstractSqlDialect, when: PolicyWhen | undefined): string[] {
+  const { role } = dialect.policies;
+  return Object.entries(when ?? {}).map(([key, value]) => {
     const values = [value].flat().map((it) => dialect.escape(String(it)));
-    return values.length ? `${dialect.contextRead(key, 'text')} IN (${values.join(', ')})` : 'false';
+    const read = key === role ? dialect.currentRole : dialect.contextRead(key, 'text');
+    return values.length ? `${read} IN (${values.join(', ')})` : 'false';
   });
 }

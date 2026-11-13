@@ -12,7 +12,7 @@ import type {
   SchemaDiffResult,
   TableChange,
 } from '../../schema/types.js';
-import type { PrimaryKeySchema } from '../../type/migration.js';
+import type { PrimaryKeySchema, RowSecurity } from '../../type/migration.js';
 
 /**
  * How drift compares: as a migration does, given its generator's `diffOptions()`, with the tables to leave out
@@ -79,7 +79,7 @@ export function detectDrift(
     ...detectOwnedDrifts('Check', diff.checks),
     ...detectOwnedDrifts('Trigger', diff.triggers),
     ...detectOwnedDrifts('Policy', diff.policies),
-    ...diff.rowSecurity.map(rowSecurityDrift),
+    ...diff.rowSecurity.filter(({ to }) => to === 'forced').map(rowSecurityDrift),
     ...diff.relationships.map(relationshipDrift),
   ];
   const count = (severity: DriftSeverity) => drifts.filter((drift) => drift.severity === severity).length;
@@ -127,18 +127,9 @@ function detectOwnedDrifts(
   );
 }
 
-/**
- * Row-level security off under uql's policies, critical since the database then holds no row to them; or left on
- * with none, where a table forced with no policy shows no row.
- */
-function rowSecurityDrift({ table, to }: TableChange<boolean>): Drift {
-  return ownedDrift(
-    table,
-    to
-      ? `Row-level security is off on "${table}", so the database holds no row to its policies`
-      : `Row-level security is on for "${table}", whose entity declares no policy`,
-    Boolean(to),
-  );
+/** Row-level security not forced under uql's policies, critical. Unforced with none left, the policies left report it. */
+function rowSecurityDrift({ table, from }: TableChange<RowSecurity>): Drift {
+  return ownedDrift(table, `Row-level security on "${table}" is ${from}, where its policies need it forced`, true);
 }
 
 /** What uql owns on `table` differing from the entity: critical where the database lacks what it `expected`. */

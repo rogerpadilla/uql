@@ -804,8 +804,8 @@ describe('AbstractSqlQuerier native policy binding', () => {
     await withContext({ orgId: 1 }, () => querier.run(ping));
 
     expect(querier.roleChecks).toEqual([
-      "SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = 'reader'",
-      'SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = session_user',
+      "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = 'reader' AND (rolsuper OR rolbypassrls)) AS bypasses",
+      'SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = session_user AND (rolsuper OR rolbypassrls)) AS bypasses',
     ]);
   });
 

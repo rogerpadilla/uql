@@ -1,4 +1,4 @@
-import type { ColumnRenames, Rename } from '../type/migration.js';
+import type { ColumnRenames, Rename, RowSecurity } from '../type/migration.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
 import { type IndexChange, pairedIndexChanges } from './indexDifferences.js';
@@ -87,18 +87,14 @@ export function diffTable(source: TableNode, target: TableNode, options: DiffOpt
 }
 
 /**
- * Row-level security where the database switches it otherwise than uql's policies need: on under them, off once its
- * last is gone. Left alone on a table holding none of uql's, whose switch is a second writer's.
+ * Row-level security forced under uql's policies, and unforced once its last is gone, never disabled: a table someone
+ * else enabled stays so. Left alone on a table holding none of uql's.
  */
-function diffRowSecurity(source: TableNode, target: TableNode): TableChange<boolean> | undefined {
-  const { rowSecurity: to } = source;
+function diffRowSecurity(source: TableNode, target: TableNode): TableChange<RowSecurity> | undefined {
   const { rowSecurity: from } = target;
-  if (to === undefined || from === undefined || from === to) {
-    return undefined;
-  }
-  return to || target.policies.some((policy) => isOwnedName(policy.name))
-    ? { table: source.name, from, to }
-    : undefined;
+  const left = from === 'forced' && target.policies.some((policy) => isOwnedName(policy.name));
+  const to = source.rowSecurity ?? (left ? 'enabled' : undefined);
+  return from && to && from !== to ? { table: source.name, from, to } : undefined;
 }
 
 /**

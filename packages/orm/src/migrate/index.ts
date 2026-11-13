@@ -10,6 +10,7 @@ export type {
   MigrationResult,
   MigratorOptions,
   PrimaryKeySchema,
+  RowSecurity,
   SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,

@@ -1,5 +1,5 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
-import type { ColumnSchema, PrimaryKeySchema } from '../../type/index.js';
+import type { ColumnSchema, PrimaryKeySchema, RowSecurity } from '../../type/index.js';
 import { derivedPrimaryKeyName, splitQualifiedName } from '../../util/sql.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { formatDefaultValue } from './defaultSql.js';
@@ -14,6 +14,13 @@ export type Commented = { readonly name: string; readonly comment?: string };
  * Table DDL that engines spell differently. Like {@link IndexDdl}, it belongs to the migrator, so no runtime
  * entry carries it. This class holds the portable form, which SQLite takes; other families override what differs.
  */
+/** The clauses putting a table's row-level security in each state. */
+const ROW_SECURITY: Readonly<Record<RowSecurity, readonly string[]>> = {
+  forced: ['ENABLE ROW LEVEL SECURITY', 'FORCE ROW LEVEL SECURITY'],
+  enabled: ['ENABLE ROW LEVEL SECURITY', 'NO FORCE ROW LEVEL SECURITY'],
+  off: ['NO FORCE ROW LEVEL SECURITY', 'DISABLE ROW LEVEL SECURITY'],
+};
+
 export class TableDdl {
   constructor(protected readonly dialect: AbstractSqlDialect) {}
 
@@ -80,17 +87,9 @@ export class TableDdl {
     throw rebuildRefusal(this.dialect, `Altering the column "${column.name}"`);
   }
 
-  /**
-   * What switches `table`'s row-level security on, forced so its owner is held too, or off: on with its first policy,
-   * off with its last, since forced with none it shows no row to anyone.
-   */
-  rowSecurity(table: string, on: boolean): string[] {
-    return this.alterTable(
-      table,
-      on
-        ? ['ENABLE ROW LEVEL SECURITY', 'FORCE ROW LEVEL SECURITY']
-        : ['NO FORCE ROW LEVEL SECURITY', 'DISABLE ROW LEVEL SECURITY'],
-    );
+  /** What puts `table`'s row-level security in `state`, whatever it was. */
+  rowSecurity(table: string, state: RowSecurity): string[] {
+    return this.alterTable(table, ROW_SECURITY[state]);
   }
 
   /** One `ALTER TABLE` making every clause, and none for no clause. */

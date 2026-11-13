@@ -15,6 +15,7 @@ import type {
   QuerierPool,
   QuerySql,
   RawRow,
+  RowSecurity,
   SchemaIntrospector,
   SqlQuerier,
   StoredDefinition,
@@ -206,7 +207,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 
   /** Whether row-level security holds the table: unknown, but where the engine holds rows to policies. */
-  protected async getRowSecurity(_read: TableRowReader, _tableName: string): Promise<boolean | undefined> {
+  protected async getRowSecurity(_read: TableRowReader, _tableName: string): Promise<RowSecurity | undefined> {
     return undefined;
   }
 

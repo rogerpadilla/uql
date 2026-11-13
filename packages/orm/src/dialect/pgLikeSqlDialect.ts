@@ -131,8 +131,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   /** Where the pool binds roles, an unnamed one is the connection's own, which unbinding one goes back to. */
   override rowSecurityBypassQuery(role?: string): string {
-    const name = role === undefined ? (this.policies.role ? 'session_user' : 'current_user') : this.escape(role);
-    return `SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = ${name}`;
+    const name = role === undefined ? (this.policies.role ? 'session_user' : this.currentRole) : this.escape(role);
+    return `SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = ${name} AND (rolsuper OR rolbypassrls)) AS bypasses`;
   }
 
   /** `USING MESSAGE`, so the text is taken as it is rather than as a format reading each `%`. */

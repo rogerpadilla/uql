@@ -120,6 +120,9 @@ export interface ColumnSchema extends Except<ColumnNode, 'type' | 'table'> {
   readonly scale?: number;
 }
 
+/** A table's row-level security: enabled and forced, enabled alone (its owner reads past it), or off. */
+export type RowSecurity = 'forced' | 'enabled' | 'off';
+
 /**
  * Represents a database table schema
  */
@@ -135,7 +138,7 @@ export interface TableSchema {
   /** The row-level policies uql installed, each with the statement the engine would recreate it from. */
   readonly policies?: PolicySchema[];
   /** See {@link TableNode.rowSecurity}. */
-  readonly rowSecurity?: boolean;
+  readonly rowSecurity?: RowSecurity;
   /** The statements the engine keeps for the table, where it keeps them: SQLite's `sqlite_master`. */
   readonly definition?: readonly StoredDefinition[];
 }
@@ -249,7 +252,7 @@ export interface SchemaDiff {
   /** The row-level policies installed or declared, none kept: a changed one is a new name. */
   readonly policies?: readonly Change<PolicySchema>[];
   /** See {@link TableDiff.rowSecurity}. */
-  readonly rowSecurity?: Change<boolean>;
+  readonly rowSecurity?: Change<RowSecurity>;
   /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
   readonly renamedColumns?: readonly Rename[];
   /**

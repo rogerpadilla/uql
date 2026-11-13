@@ -124,7 +124,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       renderPolicies: (meta) =>
         renderPolicies(this.dialect, meta, (field) => canonicalToSql(resolveColumnCanonicalType(field), this.dialect)),
       textScoreIndexes: this.dialect.features.textScoreIndexes,
-      rowSecurity: this.dialect.features.rowSecurity !== false,
       vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
   }
@@ -154,7 +153,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...terminated(tables.flatMap((table) => table.triggers.flatMap((trigger) => trigger.statements))),
       // Policies after them, a membership read through a table the same schema just made included.
       ...tables.flatMap((table) => [
-        ...(table.rowSecurity ? this.tableDdl.rowSecurity(qualifyName(table.name, table.schema), true) : []),
+        ...(table.rowSecurity
+          ? this.tableDdl.rowSecurity(qualifyName(table.name, table.schema), table.rowSecurity)
+          : []),
         ...terminated(table.policies.flatMap((policy) => policy.statements)),
       ]),
     ];
@@ -250,14 +251,15 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     );
     const triggerCreates = terminated(sides(triggers, 'to').flatMap((trigger) => trigger.statements));
     const policies = cycled(diff.policies);
-    // Row-level security goes off after the last policy, and on before the first.
-    const switched = diff.rowSecurity ? this.tableDdl.rowSecurity(tableName, diff.rowSecurity.to === true) : [];
-    const [off, on] = diff.rowSecurity?.to ? [[], switched] : [switched, []];
+    // Row-level security is forced before the first policy, and eased after the last.
+    const to = diff.rowSecurity?.to;
+    const switched = to ? this.tableDdl.rowSecurity(tableName, to) : [];
+    const [after, before] = to === 'forced' ? [[], switched] : [switched, []];
     const policyDrops = [
       ...terminated(sides(policies, 'from').map((policy) => dropPolicy(this.dialect, tableName, policy.name))),
-      ...off,
+      ...after,
     ];
-    const policyCreates = [...on, ...terminated(sides(policies, 'to').flatMap((policy) => policy.statements))];
+    const policyCreates = [...before, ...terminated(sides(policies, 'to').flatMap((policy) => policy.statements))];
     if (rebuild) {
       return [
         ...triggerDrops,

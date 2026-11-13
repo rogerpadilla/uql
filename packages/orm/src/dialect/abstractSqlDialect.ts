@@ -3385,6 +3385,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return undefined;
   }
 
+  /** The role a statement runs as, ANSI's spelling. */
+  readonly currentRole: string = 'current_user';
+
   /** A policy's read of context key `key` as a value of SQL type `type`, NULL where the transaction bound none. */
   contextRead(key: string, _type: string): string {
     throw new UqlUsageError(`${this.engineName} reads no context key in SQL, so '${key}' has no rendering`);

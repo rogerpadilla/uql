@@ -6,7 +6,14 @@ import {
   INDEX_TYPES,
   type PolicySchema,
 } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
+import type {
+  ForeignKeySchema,
+  IndexEntry,
+  IndexSchema,
+  PrimaryKeySchema,
+  QuerySql,
+  RowSecurity,
+} from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { sql } from '../../util/sql.js';
 import { isOwnedName } from '../../util/sql.util.js';
@@ -58,15 +65,15 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return rows.flatMap(({ name, definition }) => (isOwnedName(name) ? [{ name, statements: [definition] }] : []));
   }
 
-  /** Enabled and forced, as uql switches it: enabled alone still lets the owner past. */
-  protected override async getRowSecurity(read: TableRowReader, tableName: string): Promise<boolean | undefined> {
-    const [row] = await read<{ held: boolean }>(sql`
-      SELECT c.relrowsecurity AND c.relforcerowsecurity AS held
+  /** Forcing counts only where it is enabled, as Postgres reads it. */
+  protected override async getRowSecurity(read: TableRowReader, tableName: string): Promise<RowSecurity | undefined> {
+    const [row] = await read<{ state: RowSecurity }>(sql`
+      SELECT CASE WHEN NOT c.relrowsecurity THEN 'off' WHEN c.relforcerowsecurity THEN 'forced' ELSE 'enabled' END AS state
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = ${this.schemaExpr} AND c.relname = ${tableName}
     `);
-    return row?.held;
+    return row?.state;
   }
 
   /** `pg_get_expr` answers NULL for a table dropped mid-read, where `pg_get_constraintdef` raises. */

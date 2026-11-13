@@ -281,7 +281,7 @@ export type ExtraOptions = {
   readonly policies?: PolicyMode;
   /**
    * The context key naming the database role a native pool's transactions run as, `role: $context.role`: a policy's
-   * `when` on it is `CREATE POLICY ... TO` those roles. Unset, they run as the role the pool connects as.
+   * `when` on it compares that role exactly. Unset, they run as the role the pool connects as.
    */
   readonly role?: ContextRef<string>;
 };

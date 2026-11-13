@@ -7,6 +7,7 @@ import type {
   IndexSchema,
   PrimaryKeySchema,
   StoredDefinition,
+  RowSecurity,
 } from '../type/migration.js';
 import type { JsonScalar } from '../type/utility.js';
 import type { IndexFacet } from './indexDifferences.js';
@@ -191,10 +192,10 @@ export interface TableNode {
   /** The row-level policies uql installs on this table. */
   readonly policies: PolicySchema[];
   /**
-   * Whether row-level security holds the table, enabled and forced: from entities, whether uql installs a policy on
-   * it; from a database, as its catalogue says. Unset where the engine has none.
+   * The table's row-level security: `forced` where uql installs a policy on it, so its owner is held too; from a
+   * database, as its catalogue says. Unset where uql states nothing, or the engine has none.
    */
-  rowSecurity?: boolean;
+  rowSecurity?: RowSecurity;
   /** Optional table comment */
   readonly comment?: string;
   /** The statements the engine keeps for the table, where it keeps them; none on a table built from entities. */
@@ -294,7 +295,7 @@ export interface TableDiff {
   readonly triggers: TableChange<TriggerSchema>[];
   readonly policies: TableChange<PolicySchema>[];
   /** Set only where {@link TableNode.rowSecurity} differs as uql's policies need it. */
-  readonly rowSecurity?: TableChange<boolean>;
+  readonly rowSecurity?: TableChange<RowSecurity>;
   /** Set only when the two primary keys have different columns. */
   readonly primaryKey?: PrimaryKeyDiff;
 }
@@ -308,7 +309,7 @@ export interface SchemaDiffResult {
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
   readonly policies: TableChange<PolicySchema>[];
-  readonly rowSecurity: TableChange<boolean>[];
+  readonly rowSecurity: TableChange<RowSecurity>[];
   readonly primaryKeys: PrimaryKeyDiff[];
   readonly relationships: RelationshipDiff[];
 }

@@ -55,14 +55,27 @@ class NpChecked {
   @Field(f.string().nullable()) title?: string | null;
 }
 
-/** Read by the login role, not by the role a context binds, which is no member of it. */
+/** Read by `uql_policy_reader` alone, not by the login role, which inherits it. */
 @Entity({
   policies: [
-    { allow: {}, ops: ['read'], when: { dbRole: 'uql_policy' } },
+    { allow: {}, ops: ['read'], when: { dbRole: 'uql_policy_reader' } },
     { allow: {}, ops: ['insert'] },
   ],
 })
 class NpGranted {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+}
+
+/** A table someone else held to row-level security, before uql's policy and after it is gone. */
+@Entity({ name: 'NpShared', policies: [{ allow: { title: { $ne: 'hidden' } } }] })
+class NpShared {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+}
+
+@Entity({ name: 'NpShared' })
+class NpSharedOpen {
   @Field(f.number().autoIncrement()) id?: number;
   @Field(f.string().nullable()) title?: string | null;
 }
@@ -78,7 +91,7 @@ class NpNoteEdited {
   @Field(f.string().nullable()) title?: string | null;
 }
 
-const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted'];
+const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted', 'NpShared'];
 
 /** Native, its transactions run as the database role context key `dbRole` names. */
 const native: ExtraOptions = { policies: 'native', role: $context.dbRole };
@@ -266,27 +279,36 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
     );
   });
 
-  it('should install a policy whose when names the role key for the database roles it lists', () => {
-    const statements = new SqlSchemaGenerator(owner.dialect).generateCreateSchema([NpGranted]);
-
-    expect(statements.find((statement) => statement.includes('FOR SELECT'))).toMatch(
-      /^CREATE POLICY "_uql_NpGranted__allow_0_read_[0-9a-f]{6}" ON "NpGranted" AS PERMISSIVE FOR SELECT TO "uql_policy" USING \(true\);$/,
-    );
-  });
-
   it('should run a context as the database role it names, for its transaction alone', async () => {
     await owner.insertOne(NpGranted, { title: 'granted' });
     const granted = sql.text('SELECT current_user AS "role", "title" FROM "NpGranted"');
 
-    expect(await withContext({ userId: 'a', dbRole: 'uql_policy_reader' }, () => app.all(granted))).toEqual([]);
-    expect(await asUser('a', () => app.all(granted))).toEqual([{ role: 'uql_policy', title: 'granted' }]);
+    expect(await withContext({ dbRole: 'uql_policy_reader' }, () => app.all(granted))).toEqual([
+      { role: 'uql_policy_reader', title: 'granted' },
+    ]);
+    expect(await asUser('a', () => app.all(granted))).toEqual([]);
+  });
+
+  // Postgres holds a role to each policy `TO` a role it inherits, so the role is compared, as app mode does.
+  it('should hold a policy naming a database role to that role alone, not to one inheriting it', async () => {
+    await owner.insertOne(NpGranted, { title: 'inherited' });
+
+    expect(await app.all(sql.text('SELECT "title" FROM "NpGranted"'))).toEqual([]);
+  });
+
+  it('should refuse a context naming a role the database lacks, as the database does', async () => {
+    await expect(withContext({ dbRole: 'uql_policy_missing' }, () => app.count(NpGranted))).rejects.toThrow(
+      'uql_policy_missing',
+    );
   });
 
   it('should refuse statements under a context naming a role that reads past the policies', async () => {
     const bypassing = withContext({ dbRole: 'uql_policy_bypass' }, () => app.count(NpNote));
 
     await expect(bypassing).rejects.toThrow("a pool with policies: 'native' runs a context's statements as a role");
-    expect(await withContext({ dbRole: 'uql_policy_reader' }, () => app.count(NpGranted))).toBe(0);
+    await expect(withContext({ dbRole: 'uql_policy_reader' }, () => app.count(NpGranted))).resolves.toBeTypeOf(
+      'number',
+    );
   });
 
   it('should report row-level security turned off under its policies as critical, and turn it back on', async () => {
@@ -304,5 +326,20 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
     expect(drifts).toEqual([expect.objectContaining({ table: 'NpNote', severity: 'critical' })]);
     expect(plan.join(' ')).toMatch(/^ALTER TABLE "NpNote" ENABLE ROW LEVEL SECURITY.* FORCE ROW LEVEL SECURITY;$/);
     expect(await migrator.planSync({ safe: false })).toEqual([]);
+  });
+
+  it('should leave row-level security enabled on a table someone else enabled, once its policy is gone', async () => {
+    const state = sql.text(
+      `SELECT relrowsecurity AS "enabled", relforcerowsecurity AS "forced" FROM pg_class WHERE relname = 'NpShared'`,
+    );
+    await new Migrator(owner, { entities: [NpSharedOpen] }).sync();
+    await owner.run(sql.text('ALTER TABLE "NpShared" ENABLE ROW LEVEL SECURITY'));
+
+    await new Migrator(owner, { entities: [NpShared] }).sync();
+    const held = await owner.all(state);
+    await new Migrator(owner, { entities: [NpSharedOpen] }).sync();
+
+    expect(held).toEqual([{ enabled: true, forced: true }]);
+    expect(await owner.all(state)).toEqual([{ enabled: true, forced: false }]);
   });
 });
