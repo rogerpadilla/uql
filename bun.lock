@@ -84,7 +84,7 @@
     },
     "packages/orm": {
       "name": "uql-orm",
-      "version": "0.115.0",
+      "version": "0.115.1",
       "bin": {
         "uql-migrate": "./dist/migrate/bin.js",
       },
