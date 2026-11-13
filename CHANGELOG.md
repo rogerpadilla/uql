@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.115.1] - 2026-11-13
+
+- **Fixed (querier):** an update or a delete adds each policy's condition once, where one holding reads too was added twice to the SQL and to `explainPolicies`.
+
 ## [0.115.0] - 2026-11-12
 
 - **Breaking (entity):** `security: true` filters are removed: what must hold whatever a call asks is a policy, `policies: [{ must: { tenantId: $context.tenantId } }, { allow: { ownerId: $context.userId } }]` in `@Entity` or `defineEntity(...).policies()`. A filter naming `security` is refused, and `onMissing` is gone: a filter is skipped where the context lacks a key it reads.

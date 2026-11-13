@@ -280,21 +280,34 @@ export function policiesOf<E>(policies: readonly PolicyMeta<E>[]): readonly Poli
     : [...policies, { effect: 'allow', ops: POLICY_OPS, where: {}, name: EVERY_ROW_POLICY }];
 }
 
-/** The rows the `allow`s holding `access` reach and every `must` holds, each policy read by `pick`. */
+/**
+ * The rows every statement in `accesses` may reach: each `must` holding one, and for each, an `allow` holding it,
+ * statements the same allows hold ORing them in once.
+ */
 function joined<E>(
   meta: EntityMeta<E>,
   declared: readonly PolicyMeta<E>[],
-  access: EntityAccess,
+  accesses: readonly EntityAccess[],
   context: UqlContext | undefined,
   pick: (policy: PolicyMeta<E>) => PolicyWhere<E>,
 ): BoundWhere<E> {
   const policies = policiesOf(declared).filter(
-    (policy) => policy.ops.includes(access) && holdsWhen(policy.when, context),
+    (policy) => accesses.some((access) => policy.ops.includes(access)) && holdsWhen(policy.when, context),
   );
   const read = fromContext(context);
-  const bound = (policy: PolicyMeta<E>) => bindContext(meta, pick(policy), read);
-  const allows = orBound(policies.filter((policy) => policy.effect === 'allow').map(bound));
-  return andBound([...policies.filter((policy) => policy.effect === 'must').map(bound), allows]);
+  const bound = policies.map((policy) => bindContext(meta, pick(policy), read));
+  const allowSets = new Map(
+    accesses.map((access) => {
+      const set = policies.flatMap((policy, at) =>
+        policy.effect === 'allow' && policy.ops.includes(access) ? [at] : [],
+      );
+      return [set.join(), set];
+    }),
+  );
+  return andBound([
+    ...bound.filter((_, at) => policies[at].effect === 'must'),
+    ...[...allowSets.values()].map((set) => orBound(set.map((at) => bound[at]))),
+  ]);
 }
 
 /**
@@ -307,11 +320,7 @@ export function policyScope<E>(
   context: UqlContext | undefined,
 ): BoundWhere<E> | undefined {
   const { policies } = meta;
-  if (!policies?.length) {
-    return undefined;
-  }
-  const read = joined(meta, policies, 'read', context, (policy) => policy.where);
-  return access === 'read' ? read : andBound([read, joined(meta, policies, access, context, (policy) => policy.where)]);
+  return policies?.length ? joined(meta, policies, ['read', access], context, (policy) => policy.where) : undefined;
 }
 
 /** What a row an insert or an update writes must hold under `context`, `undefined` for an entity with no policies. */
@@ -322,7 +331,7 @@ export function policyCheck<E>(
 ): BoundWhere<E> | undefined {
   const { policies } = meta;
   return policies?.length
-    ? joined(meta, policies, access, context, (policy) => policy.check ?? policy.where)
+    ? joined(meta, policies, [access], context, (policy) => policy.check ?? policy.where)
     : undefined;
 }
 

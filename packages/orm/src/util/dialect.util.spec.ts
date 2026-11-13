@@ -225,7 +225,7 @@ it('should scope a read by the policies holding reads', () => {
 
 it('should scope an update and a delete by their own policies and the read ones', () => {
   const meta = getMeta(Authored);
-  const scoped = { $and: [{ companyId: 5 }, { companyId: 5 }, { authorId: 7 }] };
+  const scoped = { $and: [{ companyId: 5 }, { authorId: 7 }] };
   expect(asAuthor(() => applyFilters(meta, {}, { access: 'update' }))).toEqual(scoped);
   expect(asAuthor(() => applyFilters(meta, {}, { access: 'delete' }))).toEqual(scoped);
 });

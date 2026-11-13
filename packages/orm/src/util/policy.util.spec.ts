@@ -159,21 +159,19 @@ describe('policyScope', () => {
     });
   });
 
-  it('should hold an update to the read policies and its own', () => {
+  // A policy holding both statements is ANDed in once, not once per statement.
+  it('should hold an update to the read policies and its own, each once', () => {
     expect(policyScope(meta, 'update', user)).toEqual({
       $and: [
         { tenantId: 1 },
         { $or: [{ ownerId: 'u' }, { members: { userId: 'u' } }, { status: 'public' }] },
-        { tenantId: 1 },
         { ownerId: 'u' },
       ],
     });
   });
 
   it('should fold a policy holding under the context to every row its musts leave', () => {
-    expect(policyScope(meta, 'delete', { ...user, role: 'admin' })).toEqual({
-      $and: [{ tenantId: 1 }, { tenantId: 1 }],
-    });
+    expect(policyScope(meta, 'delete', { ...user, role: 'admin' })).toEqual({ tenantId: 1 });
   });
 
   it('should reach no row where a must reads a missing key, whatever the allows', () => {
@@ -202,7 +200,7 @@ describe('an entity declaring no allow', () => {
   }
 
   it('should reach every row its musts leave', () => {
-    expect(policyScope(getMeta(Ledger), 'delete', user)).toEqual({ $and: [{ tenantId: 1 }, { tenantId: 1 }] });
+    expect(policyScope(getMeta(Ledger), 'delete', user)).toEqual({ tenantId: 1 });
     expect(policyCheck(getMeta(Ledger), 'insert', user)).toEqual({ tenantId: 1 });
   });
 
@@ -226,7 +224,7 @@ describe('when', () => {
 describe('explainPolicies', () => {
   it('should answer the rows a statement reaches and what a row it writes must hold', () => {
     expect(explainPolicies(Project, 'update', { ...user, role: 'admin' })).toEqual({
-      where: { $and: [{ tenantId: 1 }, { tenantId: 1 }] },
+      where: { tenantId: 1 },
       check: { tenantId: 1 },
     });
     expect(explainPolicies(Project, 'insert', {})).toEqual({ check: { id: { $in: [] } } });
@@ -251,14 +249,7 @@ describe('explainPolicies', () => {
       @Field(f.number().autoIncrement()) id?: number;
       @Field(f.number().nullable()) tenantId?: number | null;
     }
-    expect(explainPolicies(Fixed, 'delete', user)).toEqual({
-      where: {
-        $and: [
-          { id: 1, tenantId: 2 },
-          { id: 1, tenantId: 2 },
-        ],
-      },
-    });
+    expect(explainPolicies(Fixed, 'delete', user)).toEqual({ where: { id: 1, tenantId: 2 } });
   });
 });
 
@@ -271,6 +262,6 @@ describe('policyCheck', () => {
       @Field(f.string().nullable()) status?: string | null;
     }
     expect(policyCheck(getMeta(Checked), 'insert', user)).toEqual({ status: { $ne: 'void' } });
-    expect(policyScope(getMeta(Checked), 'update', user)).toEqual({ $and: [{ ownerId: 'u' }, { ownerId: 'u' }] });
+    expect(policyScope(getMeta(Checked), 'update', user)).toEqual({ ownerId: 'u' });
   });
 });
