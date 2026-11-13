@@ -103,6 +103,13 @@ describe('bindContext', () => {
   });
 });
 
+describe('$context', () => {
+  it('should answer a ref for each key, and nothing for a symbol a printer probes', () => {
+    expect($context.userId).toEqual({ $context: 'userId' });
+    expect(Reflect.get($context, Symbol.toPrimitive)).toBeUndefined();
+  });
+});
+
 describe('contextEntries', () => {
   it('should send each scalar and date as text, leaving out what no setting can name or hold', () => {
     const at = new Date('2026-01-02T03:04:05.000Z');

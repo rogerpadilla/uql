@@ -2770,6 +2770,105 @@ t.index([raw\`lower("email")\`], { where: 'active' });
       expect(unresolved).toEqual([expect.stringContaining("security filter 'owner' is a policy now")]);
     });
 
+    it('should read a block body, a truthy guard and guards joined by &&', () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { Entity } from 'uql-orm';
+        @Entity({
+          filters: {
+            block: { where: function (ctx) { return { ownerId: ctx!.userId }; }, security: true },
+            truthy: { where: (ctx) => (ctx?.tenantId ? { tenantId: ctx.tenantId } : undefined), security: true },
+            both: {
+              where: (ctx) => (ctx?.tenantId != null && ctx?.userId !== undefined ? { tenantId: ctx.tenantId, ownerId: ctx.userId } : void 0),
+              security: true,
+            },
+          },
+        })
+        class Doc { id?: number; tenantId?: number; ownerId?: string; }
+      `);
+      expect(unresolved).toEqual([]);
+      expect(text).toContain(
+        'policies: [{ must: { ownerId: $context.userId } }, { must: { tenantId: $context.tenantId } }, { must: { tenantId: $context.tenantId, ownerId: $context.userId } }]',
+      );
+    });
+
+    it('should keep the filters a section does not move, beside the policies', () => {
+      const { text } = codemod(/*ts*/ `
+        import { defineEntity } from 'uql-orm';
+        export const Note = defineEntity({ name: 'Note', fields: {} }).filters({
+          live: { where: { status: 'live' } },
+          mine: { where: (ctx) => ({ ownerId: ctx?.userId }), security: true },
+          recent: { where: { recent: true } },
+        });
+      `);
+      expect(text).toContain(
+        ".filters({ live: { where: { status: 'live' } }, recent: { where: { recent: true } } }).policies([{ must: { ownerId: $context.userId } }])",
+      );
+    });
+
+    it.each([
+      ['a where it cannot read', 'where: shared, security: true'],
+      ['a callback of two parameters', 'where: (ctx, more) => ({ ownerId: ctx?.userId }), security: true'],
+      ['a callback of a destructured context', 'where: ({ userId }) => ({ ownerId: userId }), security: true'],
+      [
+        'a block doing more than return',
+        'where: (ctx) => { const id = ctx?.userId; return { ownerId: id }; }, security: true',
+      ],
+      ['a field reading no context key', "where: (ctx) => ({ ownerId: 'x' }), security: true"],
+      ['a shorthand field', 'where: (ctx) => ({ ownerId }), security: true'],
+      ['an empty scope', 'where: (ctx) => ({}), security: true'],
+      [
+        'a guard calling a function',
+        'where: (ctx) => (isOwner(ctx) ? { ownerId: ctx?.userId } : undefined), security: true',
+      ],
+      [
+        'a guard on a key it does not read',
+        'where: (ctx) => (ctx?.role ? { ownerId: ctx.userId } : undefined), security: true',
+      ],
+      [
+        'a guard comparing a value',
+        "where: (ctx) => (ctx?.userId === 'x' ? { ownerId: ctx.userId } : undefined), security: true",
+      ],
+      ['an option no policy takes', 'where: { ownerId: 1 }, name: "mine", security: true'],
+      ['security other than true', 'where: { ownerId: 1 }, security: false'],
+    ])('should report a security filter with %s', (_, options) => {
+      const { unresolved } = codemod(/*ts*/ `
+        const shared = { ownerId: 1 };
+        const ownerId = 'x';
+        declare function isOwner(ctx: unknown): boolean;
+        @Entity({ filters: { mine: { ${options} }, ...{} } })
+        class Doc { id?: number; ownerId?: string; }
+      `);
+      expect(unresolved).toEqual([expect.stringContaining("security filter 'mine' is a policy now")]);
+    });
+
+    it.each([
+      [
+        '@Entity',
+        '@Entity({ policies: [], filters: { mine: { where: { ownerId: 1 }, security: true } } })\nclass Doc { id?: number; ownerId?: number; }',
+      ],
+      [
+        'a section',
+        "import { defineEntity } from 'uql-orm';\nexport const Doc = defineEntity({ name: 'Doc', fields: {} }).policies([]).filters({ mine: { where: { ownerId: 1 }, security: true } });",
+      ],
+    ])('should report security filters beside the policies %s states already', (_, snippet) => {
+      const { unresolved } = codemod(snippet);
+      expect(unresolved).toEqual([
+        expect.stringContaining('move its security filters into the policies it states by hand'),
+      ]);
+    });
+
+    // A `filters` method of anything else, such as a query builder's, is no entity's section.
+    it.each([
+      'search.filters({ mine: { where: { ownerId: 1 }, security: true } });',
+      'build().filters({ mine: { where: { ownerId: 1 }, security: true } });',
+      "defineEntity({ name: 'Doc', fields: {} }).filters(securityFilters);",
+    ])('should leave a filters call on no defined entity as it is: %s', (call) => {
+      const snippet = `declare const search: any, securityFilters: any; declare function build(): any;\n${call}`;
+      const { text, unresolved } = codemod(snippet);
+      expect(text).toContain(call);
+      expect(unresolved).toEqual([]);
+    });
+
     it("should report a filter's onMissing, which no filter takes now", () => {
       const { unresolved } = codemod(/*ts*/ `
         @Entity({ filters: { mine: { where: (ctx) => ({ ownerId: ctx?.userId }), onMissing: 'skip' } } })

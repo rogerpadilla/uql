@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { type Finding, formatFindings, locationAt } from './context.js';
+import { type Finding, formatFindings } from './context.js';
 import { type Edit, editedText, original, type Part, reparsedAgain } from './edits.js';
 import { importEdits } from './imports.js';
 import { isCallback, memberAccess } from './keyMaps.js';
@@ -15,7 +15,7 @@ import {
 } from './syntax.js';
 
 /** What a security filter states that its policy keeps (`where`, `ops`) or drops: any other leaves it to a human. */
-const SECURITY_OPTIONS = new Set(['where', 'security', 'ops', 'onMissing', 'default']);
+const SECURITY_OPTIONS = new Set<string | undefined>(['where', 'security', 'ops', 'onMissing', 'default']);
 
 /** A filters literal, whether its entity states policies already, and the edit writing its kept filters and policies. */
 type Filters = {
@@ -33,7 +33,7 @@ type Filters = {
 export function toPolicies(
   fileName: string,
   text: string,
-  locate?: (at: number) => string,
+  locate: (at: number) => string,
 ): { readonly text: string; readonly unresolved: readonly string[] } {
   if (!text.includes('security') && !text.includes('onMissing')) {
     return { text, unresolved: [] };
@@ -60,7 +60,7 @@ export function toPolicies(
         importEdits(edited, new Set(['$context']), new Set()),
       ).text
     : text;
-  return { text: written, unresolved: formatFindings(findings, locate ?? ((at) => locationAt(source, at))) };
+  return { text: written, unresolved: formatFindings(findings, locate) };
 }
 
 /** The filters `node` declares: an entity's `filters` option, or a `defineEntity(...).filters({ ... })` section. */
@@ -88,8 +88,11 @@ function filtersOf(node: ts.Node): Filters | undefined {
   }
   const { name } = node.expression;
   const literal = name.text === 'filters' ? objectLiteral(node.arguments[0]) : undefined;
-  const { root, methods } = literal ? chainOf(node) : { root: undefined, methods: [] };
-  if (!literal || !root || !ts.isCallExpression(root) || identifierText(root.expression) !== 'defineEntity') {
+  if (!literal) {
+    return undefined;
+  }
+  const { root, methods } = chainOf(node);
+  if (!ts.isCallExpression(root) || identifierText(root.expression) !== 'defineEntity') {
     return undefined;
   }
   return {
@@ -142,7 +145,7 @@ function splitFilters(
 function policyOf(filter: ts.ObjectLiteralExpression): string | undefined {
   const where = propertyValue(filter, 'where');
   const known = filter.properties.every(
-    (prop) => ts.isPropertyAssignment(prop) && SECURITY_OPTIONS.has(propertyKey(prop.name) ?? ''),
+    (prop) => ts.isPropertyAssignment(prop) && SECURITY_OPTIONS.has(propertyKey(prop.name)),
   );
   const must =
     propertyValue(filter, 'security')?.kind === ts.SyntaxKind.TrueKeyword && known && where ? mustOf(where) : undefined;
