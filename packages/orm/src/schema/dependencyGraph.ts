@@ -7,7 +7,7 @@ type DependenciesOf<N> = (node: N) => Iterable<N>;
 
 /**
  * Nodes in creation order, dependencies first. Cycle-tolerant: a cyclic foreign key is legal SQL,
- * handled by deferring the constraint, so a cycle orders arbitrarily rather than throwing.
+ * whose rows a nullable column lets be written in turn, so a cycle orders arbitrarily rather than throwing.
  */
 export function createOrder<N>(nodes: Iterable<N>, dependenciesOf: DependenciesOf<N>): N[] {
   const ordered: N[] = [];
