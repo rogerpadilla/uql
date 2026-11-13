@@ -256,3 +256,14 @@ export function indentOf(node: ts.Node): string {
   const line = text.slice(lineStartOf(text, node.getStart()), node.getStart());
   return line.slice(0, line.length - line.trimStart().length);
 }
+
+/** `node` without the parentheses and `!` around it. */
+export function unwrapped(node: ts.Expression): ts.Expression {
+  return ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node) ? unwrapped(node.expression) : node;
+}
+
+/** Whether `node` is `undefined`, as written or as `void 0`. */
+export function isUndefined(node: ts.Expression): boolean {
+  const value = unwrapped(node);
+  return identifierText(value) === 'undefined' || ts.isVoidExpression(value);
+}

@@ -58,6 +58,7 @@ import {
 import { toMigrationBuilders } from './migrationBuilders.js';
 import { relationTargetFor } from './relationTarget.js';
 import { toRelationTargets } from './relationTargets.js';
+import { toPolicies } from './securityFilters.js';
 import { statementTemplate } from './statementSql.js';
 import {
   arrayElements,
@@ -76,6 +77,7 @@ import {
   propertyKey,
   propertyValue,
   RELATION_DECORATORS,
+  isUndefined,
 } from './syntax.js';
 
 const TO_ONE_DECORATORS = new Set(['OneToOne', 'ManyToOne']);
@@ -648,10 +650,6 @@ function isWriteOptions(node: ts.Expression, ctx: Context): boolean {
   return names.length > 0 && names.every((name) => name === 'returning');
 }
 
-function isUndefined(node: ts.Expression): boolean {
-  return identifierText(node) === 'undefined';
-}
-
 /** The value of options holding `update` alone, `{ update: value }` or `{ update }`. */
 function upsertUpdate(options: ts.Expression): ts.Expression | undefined {
   const literal = objectLiteral(options);
@@ -949,13 +947,13 @@ export function transformFile(
   const located = (pass: Pass) => (at: number) => locationAt(source, pass.sourceOffset(at));
   const builders = toBuilders(source.fileName, legacy.text, { locate: located(legacy), taken });
   const migrated = toMigrationBuilders(source.fileName, builders.text, located(followed(legacy, builders)));
-  const { unresolved } = migrated;
-  const text = toRelationTargets(source.fileName, toGeneratedKeys(source.fileName, migrated.text));
+  const policies = toPolicies(source.fileName, migrated.text, located(followed(legacy, builders)));
+  const text = toRelationTargets(source.fileName, toGeneratedKeys(source.fileName, policies.text));
   return {
     fileName: source.fileName,
     text,
     changed: text !== source.getFullText(),
-    unresolved: [...legacy.unresolved, ...builders.unresolved, ...unresolved],
+    unresolved: [...legacy.unresolved, ...builders.unresolved, ...migrated.unresolved, ...policies.unresolved],
     notes: legacy.notes,
   };
 }

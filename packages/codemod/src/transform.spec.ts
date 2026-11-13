@@ -2696,6 +2696,89 @@ t.index([raw\`lower("email")\`], { where: 'active' });
     expect(unresolved).toEqual([expect.stringContaining("'Post' is decorated as well")]);
   });
 
+  describe('security filters, which policies replace', () => {
+    const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`, {}, true, transformFile);
+
+    it('should rewrite one scoping by context keys as a must policy, keeping the other filters', () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { Entity } from 'uql-orm';
+        @Entity({
+          filters: {
+            tenant: { where: (ctx) => (ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined), security: true },
+            published: { where: { status: 'published' } },
+          },
+        })
+        class Post { id?: number; companyId?: number; status?: string; }
+      `);
+      expect(unresolved).toEqual([]);
+      expect(text).toContain(
+        "filters: { published: { where: { status: 'published' } } }, policies: [{ must: { companyId: $context.tenantId } }],",
+      );
+      expect(text).toContain("import { $context, Entity } from 'uql-orm';");
+    });
+
+    it('should rewrite one a @Filter declares, once folded into @Entity', () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { Entity, Filter } from 'uql-orm';
+        @Filter('tenant', { where: (ctx) => ({ companyId: ctx?.tenantId }), security: true })
+        @Entity()
+        class Invoice { id?: number; companyId?: number; }
+      `);
+      expect(unresolved).toEqual([]);
+      expect(text).toContain('@Entity({ policies: [{ must: { companyId: $context.tenantId } }] })');
+    });
+
+    it('should rewrite a chained section as policies, keeping its ops, and a static one as it is', () => {
+      const { text, unresolved } = codemod(/*ts*/ `
+        import { defineEntity } from 'uql-orm';
+        export const Note = defineEntity({ name: 'Note', fields: {} }).filters({
+          mine: { where: (ctx) => ({ ownerId: ctx?.userId }), security: true, ops: ['update', 'delete'] },
+          pinned: { where: { tenantId: 1 }, security: true, onMissing: 'throw' },
+        });
+      `);
+      expect(unresolved).toEqual([]);
+      expect(text).toContain(
+        "defineEntity({ name: 'Note', fields: {} }).policies([{ must: { ownerId: $context.userId }, ops: ['update', 'delete'] }, { must: { tenantId: 1 } }]);",
+      );
+    });
+
+    it('should report one it cannot read as data, and leave it as written', () => {
+      const snippet = /*ts*/ `
+        import { Entity } from 'uql-orm';
+        @Entity({ filters: { scoped: { where: (ctx) => (ctx?.admin ? {} : { ownerId: ctx?.userId }), security: true } } })
+        class Doc { id?: number; ownerId?: string; }
+        defineFilter(Doc, 'legacy', { where: { ownerId: 'x' }, security: true });
+      `;
+      const { text, unresolved } = codemod(snippet);
+      expect(text).toContain('security: true } } })');
+      expect(unresolved).toEqual([
+        expect.stringContaining('defineFilter was removed'),
+        expect.stringContaining("security filter 'scoped' is a policy now"),
+      ]);
+    });
+
+    // Read as a policy, a guard on another key would hold a context the filter refused.
+    it('should report one guarded by more than the keys it reads', () => {
+      const { unresolved } = codemod(/*ts*/ `
+        @Entity({
+          filters: {
+            owner: { where: (ctx) => (ctx?.role !== 'admin' ? { ownerId: ctx?.userId } : undefined), security: true },
+          },
+        })
+        class Doc { id?: number; ownerId?: string; }
+      `);
+      expect(unresolved).toEqual([expect.stringContaining("security filter 'owner' is a policy now")]);
+    });
+
+    it("should report a filter's onMissing, which no filter takes now", () => {
+      const { unresolved } = codemod(/*ts*/ `
+        @Entity({ filters: { mine: { where: (ctx) => ({ ownerId: ctx?.userId }), onMissing: 'skip' } } })
+        class Task { id?: number; ownerId?: string; }
+      `);
+      expect(unresolved).toEqual([expect.stringContaining("filter 'mine' gives 'onMissing'")]);
+    });
+  });
+
   it('reports a check giving both names rather than choosing one', () => {
     const { unresolved } = codemod(/*ts*/ `
       class Post { id?: number; }

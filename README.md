@@ -143,7 +143,7 @@ const posts = await pool.findMany(Post, {
 
 The result is typed to what the query selected: `posts[0].author?.email` compiles, `posts[0].likes` does not.
 
-The same queries run from the browser too: [serve them over HTTP, tRPC or oRPC](https://uql-orm.dev/http), each field exposed as you declare, scoped to the signed-in user by [filters no `$where` can widen](https://uql-orm.dev/multi-tenancy).
+The same queries run from the browser too: [serve them over HTTP, tRPC or oRPC](https://uql-orm.dev/http), each field exposed as its `wire` declares, held to the signed-in user by [row-level policies](https://uql-orm.dev/multi-tenancy) no call can turn off.
 
 ## Why UQL?
 
@@ -151,7 +151,7 @@ The same queries run from the browser too: [serve them over HTTP, tRPC or oRPC](
 - **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. No `.prisma` file, no generated client.
 - **Decorators or plain data, your call.** An entity is a class with [standard TC39 decorators](https://uql-orm.dev/entities/basic), or plain data via [`defineEntity`](https://uql-orm.dev/entities/define-entity), its row type derived. Both are typed the same, mix in one project, and need no compiler flags or `reflect-metadata`.
 - **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 49 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
-- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
+- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [row-level policies](https://uql-orm.dev/multi-tenancy) holding every read and write on every engine, or enforced by Postgres's own row-level security, [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
 - **SQL when you need it.** [`sql()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, [computed fields](https://uql-orm.dev/entities/computed-fields) are SQL you can filter and sort on, and a migration can be plain SQL.
 - **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), on Bun and Node alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by compiling ordinary mistakes in each ORM's API: UQL is the only one that catches them all.
 
