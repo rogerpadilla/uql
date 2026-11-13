@@ -15,13 +15,14 @@ Every statement a SQL querier sends goes through one protected method of its own
 
 A statement is `{ sql, values }`. A driver answers two methods: `execute(sql, values)`, one statement's `{ rows, changes, id }` (the rows it read, how many it changed, and the first id a header reports), and, where it takes a list as one atomic request, the optional `executeBatch(statements)`. A statement returning rows counts them, whatever the driver's own count says, so every driver answers the same.
 
-| Engine                 | `runStatements` of several                                                                     |
-| :--------------------- | :--------------------------------------------------------------------------------------------- |
-| D1                     | `db.batch()`: one request, one transaction                                                     |
-| Turso Cloud            | `session.batch(statements, 'immediate')`; inside an open transaction, no mode, so it joins it  |
-| libSQL                 | `client.batch(statements, 'write')`; inside an open transaction, the transaction's own `batch` |
-| Neon                   | over HTTP, `sql.transaction([...])`; inside an open transaction, its WebSocket session in turn |
-| every other SQL engine | each in turn, in a transaction that joins an open one where two or more write                  |
+| Engine                 | `runStatements` of several                                                                                                                                                                                                                               |
+| :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1                     | `db.batch()`: one request, one transaction                                                                                                                                                                                                               |
+| Turso Cloud            | `session.batch(statements, 'immediate')`; inside an open transaction, no mode, so it joins it                                                                                                                                                            |
+| libSQL                 | `client.batch(statements, 'write')`; inside an open transaction, the transaction's own `batch`                                                                                                                                                           |
+| Postgres, CockroachDB  | `pg`, pipelined ahead of one `Sync`: one request, in a transaction it opens and commits there, rolled back where one fails; inside an open transaction, joining it. pg-native, whose `Query` cannot pipeline, runs them in turn in that same transaction |
+| Neon                   | over HTTP, `sql.transaction([...])`; inside an open transaction, pipelined on its WebSocket session                                                                                                                                                      |
+| every other SQL engine | each in turn, in a transaction that joins an open one where two or more write                                                                                                                                                                            |
 
 One statement runs alone everywhere. A list asks for a transaction only where it is a split write, `runStatements(statements, atomic)`: an `insertMany` sent as two or more statements, an `upsertMany` of two or more upserts, and a vector search tuned by `SET LOCAL` outside a transaction, which the setting needs. A stream tuned so is refused outside one instead, since its transaction would stay open for the whole loop.
 

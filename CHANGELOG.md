@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.116.1] - 2026-11-13
+
+- On `pg` and CockroachDB, a statement under a native policy context, or a split write, costs one round trip instead of up to four. The `pg` peer is now `>=8.5.0`.
+
 ## [0.116.0] - 2026-11-13
 
 - **Breaking (entity):** `check` is removed. State the written row under `$new` and the found row under `$old`: `{ allow: W, check: C }` becomes `{ allow: { $old: W, $new: C } }`, which `uql-codemod` rewrites. `explainPolicies` returns `{ $old, $new, $and }` instead of `{ where, check }`. A policy key uql does not take is refused.

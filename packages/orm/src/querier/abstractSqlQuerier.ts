@@ -177,43 +177,46 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Runs `statements` as one request, all or none, joining an open transaction: what a driver taking a list as one
-   * declares. Called for two or more.
+   * Runs `statements` as one request, all or none: in a transaction of its own outside one, which scopes a context
+   * bound ahead of them, else joining the open one. What a driver taking a list as one declares. Called for two or more.
    */
   protected executeBatch?(statements: readonly BoundStatement[]): Promise<SqlExecution[]>;
 
   /**
    * The one path every statement takes, alone or as a list answering a result each, all or none: one request where
    * the driver has {@link executeBatch}, a failure tagged with the statement it names; else in turn, in a transaction
-   * where `atomic` (a split write) asks for one, opened before the queue is taken, which its `BEGIN` waits on.
+   * where `atomic` (a split write) asks for one, opened before the queue is taken, which its `BEGIN` waits on. A
+   * context the database's policies read is bound ahead of them, in the same request where the driver sends lists;
+   * else in a transaction opened for it, which scopes the binding.
    */
   protected async runStatements(
     statements: readonly BoundStatement[],
     atomic = false,
   ): Promise<readonly SqlExecution[]> {
-    if (!this.dialect.policies.database) {
-      return this.runBound(statements, atomic);
+    if (!this.executeBatch && !this.scopeHere() && this.bindsContext()) {
+      return this.atomically(() => this.runStatements(statements, atomic));
     }
-    if (!this.scopeHere()) {
-      return this.bindsContext()
-        ? this.atomically(() => this.runStatements(statements, atomic))
-        : this.runBound(statements, atomic);
-    }
-    const binding = await this.pendingBinding((sql) => this.onConnection(() => this.execute(sql)));
+    const binding = this.dialect.policies.database
+      ? await this.pendingBinding((sql) => this.onConnection(() => this.execute(sql)))
+      : undefined;
     const results = await this.runBound(binding ? [binding, ...statements] : statements, atomic);
     return binding ? results.slice(1) : results;
   }
 
   /**
-   * The statement binding the ambient context into the open transaction ahead of its next statement: none where it is
-   * bound already, or there is nothing to bind. `ask` runs the question of the connected role.
+   * The statement binding the ambient context ahead of the next statement: none where the open transaction bound it
+   * already, or there is nothing to bind. Outside one, every request binds it anew. `ask` runs the question of the
+   * connected role.
    */
   private async pendingBinding(ask: (sql: string) => Promise<SqlExecution>): Promise<BoundStatement | undefined> {
-    const { entries, bound } = nextBinding(this.#bound, getContext());
+    const held = this.scopeHere() !== undefined;
+    const { entries, bound } = nextBinding(held ? this.#bound : NOTHING_BOUND, getContext());
     if (entries.length && this.bindsContext()) {
       await this.assertHeldToPolicies(ask, roleOf(entries, this.dialect.policies.role));
     }
-    this.#bound = bound;
+    if (held) {
+      this.#bound = bound;
+    }
     return this.dialect.contextBinding(entries);
   }
 
@@ -229,18 +232,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   private assertHeldToPolicies(ask: (sql: string) => Promise<SqlExecution>, role: string | undefined): Promise<void> {
     const { dialect } = this;
     const held = cachedIn(heldToPolicies, dialect, () => new Map<string | undefined, Promise<void>>());
+    // A failed answer is forgotten, so the next statement asks again.
     return cachedIn(held, role, () =>
-      ask(dialect.rowSecurityBypassQuery(role)).then(({ rows }) => {
-        if (rows[0]?.['bypasses'] !== false) {
-          throw new UqlUsageError(
-            `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as, or name, one that does not, or leave policies unset`,
-          );
-        }
-      }),
-    ).catch((error: unknown) => {
-      held.delete(role);
-      throw error;
-    });
+      ask(dialect.rowSecurityBypassQuery(role))
+        .then(({ rows }) => {
+          if (rows[0]?.['bypasses'] !== false) {
+            throw new UqlUsageError(
+              `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as, or name, one that does not, or leave policies unset`,
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          held.delete(role);
+          throw error;
+        }),
+    );
   }
 
   /** {@link runStatements} once the context is bound. */

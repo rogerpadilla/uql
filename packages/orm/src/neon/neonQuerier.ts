@@ -36,16 +36,9 @@ export class NeonQuerier extends PgQuerier {
     return this.http.query(sql, values);
   }
 
-  /** A list as one HTTP transaction, all or none; inside an open transaction, in turn on its session, which it joins. */
-  protected override async executeBatch(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
-    if (this.hasOpenTransaction) {
-      const results: SqlExecution[] = [];
-      for (const { sql, values } of statements) {
-        results.push(await super.execute(sql, values));
-      }
-      return results;
-    }
-    return this.http.transaction(statements);
+  /** A list as one HTTP transaction, all or none; inside an open transaction, pipelined on its session, which it joins. */
+  protected override executeBatch(statements: readonly BoundStatement[]): Promise<SqlExecution[]> {
+    return this.hasOpenTransaction ? super.executeBatch(statements) : this.http.transaction(statements);
   }
 
   protected override async openTransaction(opts?: TransactionOptions) {

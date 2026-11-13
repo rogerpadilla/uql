@@ -2,10 +2,13 @@
 // a hash of their SQL, read back by name, and held to raw SQL too, which the querier never sees. Run as a role the
 // database holds to them, for a superuser reads past row-level security.
 
+import { Client, type Pool, type PoolConfig } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CrdbQuerierPool } from '../cockroachdb/crdbQuerierPool.js';
 import { withContext } from '../context/context.js';
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
+import type { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { queryErrorKind } from '../querier/queryError.js';
 import { cockroachConnection, postgresConnection, provisioningTimeout } from '../test/index.js';
@@ -115,22 +118,41 @@ const native: ExtraOptions = { policies: 'native', role: $context.dbRole };
  * Each engine holding rows to policies: the owner it migrates as, the role its app connects as, what it grants that
  * role, and whether a policy may read a relation there.
  */
-const engines: readonly [string, () => SqlQuerierPool, () => SqlQuerierPool, string, boolean][] = [
+const engines: readonly [
+  string,
+  () => SqlQuerierPool,
+  (config?: PoolConfig) => AbstractPgQuerierPool<AbstractSqlDialect>,
+  string,
+  boolean,
+][] = [
   [
     'postgres',
     () => new PgQuerierPool(postgresConnection('test_policy'), native),
-    () => new PgQuerierPool({ ...postgresConnection('test_policy'), user: 'uql_policy' }, native),
+    (config) => new PgQuerierPool({ ...postgresConnection('test_policy'), user: 'uql_policy', ...config }, native),
     'GRANT USAGE ON SCHEMA public TO uql_policy, uql_policy_reader; GRANT ALL ON ALL TABLES IN SCHEMA public TO uql_policy; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO uql_policy; GRANT SELECT ON "NpGranted" TO uql_policy_reader',
     true,
   ],
   [
     'cockroachdb',
     () => new CrdbQuerierPool(cockroachConnection('test_policy'), native),
-    () => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy' }, native),
+    (config) => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy', ...config }, native),
     'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted", "NpStaged" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq", "NpStaged_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
     false,
   ],
 ];
+
+/** The requests `pool` sends from here on, each closed by one `Sync`, which the server answers ready once. */
+function requestsOf(pool: Pool): { readonly count: number } {
+  const sent = { count: 0 };
+  const counted = new WeakSet<object>();
+  pool.on('acquire', (client) => {
+    if (client instanceof Client && !counted.has(client)) {
+      counted.add(client);
+      client.connection.on('readyForQuery', () => sent.count++);
+    }
+  });
+  return sent;
+}
 
 const asTenant = <T>(tenantId: number, fn: () => Promise<T>) => withContext({ orgId: tenantId }, fn);
 const asUser = <T>(userId: string, fn: () => Promise<T>) => withContext({ userId }, fn);
@@ -193,13 +215,36 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
     expect(await app.all(sql.text('SELECT "title" FROM "NpNote"'))).toEqual([]);
   });
 
-  it("should refuse raw SQL writing into another tenant, as the database's own check", async () => {
-    const refused = await refusal(
-      asTenant(1, () => app.run(sql.text(`INSERT INTO "NpNote" ("tenantId", "title") VALUES (2, 'forged')`))),
-    );
+  /** `test` on a pool of one connection, so every statement it runs shares that connection. */
+  const onOneConnection = async (test: (pool: AbstractPgQuerierPool<AbstractSqlDialect>) => Promise<void>) => {
+    const single = held({ max: 1 });
+    try {
+      await test(single);
+    } finally {
+      await single.end();
+    }
+  };
 
-    expect(queryErrorKind(refused)).toBe('security');
-  });
+  it('should bind a context in the round trip of its statement, leaving none on the connection after it', () =>
+    onOneConnection(async (single) => {
+      await asTenant(1, () => single.insertOne(NpNote, { title: 'own' }));
+      const requests = requestsOf(single.pool);
+      const own = () => single.findMany(NpNote, { $select: { title: true }, $where: { title: 'own' } });
+
+      expect(await asTenant(1, own)).toEqual([{ title: 'own' }]);
+      expect(requests.count).toBe(1);
+      expect(await asTenant(2, own)).toEqual([]);
+      expect(await own()).toEqual([]);
+      expect(requests.count).toBe(3);
+    }));
+
+  it("should refuse raw SQL writing into another tenant, as the database's own check, undoing it whole", () =>
+    onOneConnection(async (single) => {
+      const forged = sql.text(`INSERT INTO "NpNote" ("tenantId", "title") VALUES (2, 'forged')`);
+
+      expect(queryErrorKind(await refusal(asTenant(1, () => single.run(forged))))).toBe('security');
+      expect(await asTenant(2, () => single.count(NpNote, { $where: { title: 'forged' } }))).toBe(0);
+    }));
 
   it.runIf(subqueries)("should show a project to its members alone, through its members' table", async () => {
     const [mine, theirs] = await owner.insertMany(NpProject, [{ name: 'mine' }, { name: 'theirs' }]);
