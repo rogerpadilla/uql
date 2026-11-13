@@ -9,6 +9,7 @@ import type {
   UpdateWrite,
   WrittenId,
 } from './entity.js';
+import type { PolicyWhere } from './policy.js';
 import type { QueryLock } from './queryLock.js';
 import type { QuerySql } from './querySql.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -19,7 +20,7 @@ export type QueryOptions = {
   /**
    * Toggle named entity filters for this query. `false` disables all filters;
    * `{ softDelete: false }` disables one; `{ myFilter: true }` force-enables a `default: false` filter.
-   * Security filters cannot be disabled here.
+   * Policies are no filters, and nothing here turns one off.
    */
   filters?: false | Record<string, boolean>;
   /**
@@ -35,13 +36,18 @@ export type QueryOptions = {
   unfiltered?: boolean;
 };
 
+/** Marks a statement as reading past the policies. A symbol, so no options a call or a client carries can name it. */
+export const PAST_POLICIES: unique symbol = Symbol('pastPolicies');
+
 /**
  * What a statement runs with, on top of the options its caller passed. Kept apart from {@link QueryOptions}
  * because that one is public, the third argument of every querier method, and none of this is a caller's to set.
  */
 export type StatementOptions = QueryOptions & {
-  /** What the statement does, which picks the `security` filters scoping it: a read by default. A write's reads take its own. */
-  readonly access?: EntityAccess;
+  /** What the statement does, which picks the policies scoping it: a read by default. A write's reads take its own. */
+  readonly access?: ScopedAccess;
+  /** Reads past the policies: the querier's own read-back of what a policy check settled, or a pool not holding them. */
+  readonly [PAST_POLICIES]?: true;
 };
 
 /** What a statement is rendered with: an alias is the dialect's to choose and to spell. */
@@ -117,7 +123,7 @@ export type QueryPopulateRelationOptions<V, Sql = QuerySql> =
     : QueryUnique<RelationTarget<V>, Sql> & { $required?: boolean };
 
 /**
- * The per-request context parameterized filters read, set with `withContext(ctx, cb)`. An interface,
+ * The per-request context policies and parameterized filters read, set with `withContext(ctx, cb)`. An interface,
  * so its keys can be typed once: `declare module 'uql-orm' { interface UqlContext { tenantId: number } }`.
  */
 export interface UqlContext {
@@ -125,22 +131,20 @@ export interface UqlContext {
 }
 
 /**
- * A filter's `$where` fragment: a plain fragment, or a function of the ambient {@link UqlContext}.
- * Return `undefined` when the condition can't resolve (see {@link FilterOptions.onMissing}).
+ * A filter's `$where` fragment, whose values may read the context as a policy's do (`{ authorId: $context.userId }`),
+ * the filter skipped where the context lacks a key it reads; or a function of the ambient {@link UqlContext}, skipped
+ * where it answers `undefined`.
  */
-export type FilterWhere<E> = QueryWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
-
-/**
- * What to do when a filter's condition returns `undefined`. `skip` omits it (convenience filters);
- * `throw` fails closed (the default for `security` filters).
- */
-export type FilterOnMissing = 'skip' | 'throw';
+export type FilterWhere<E> = PolicyWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
 
 /** What a field takes: reading it (select, filter, sort, distinct, aggregate) and writing it. */
 export type FieldAccess = 'read' | 'insert' | 'update';
 
 /** What a statement does to an entity's rows: a field's access, and deleting rows, which no field has a part in. */
 export type EntityAccess = FieldAccess | 'delete';
+
+/** What a statement reading stored rows does, which the policies scope it by: an insert reads none. */
+export type ScopedAccess = Exclude<EntityAccess, 'insert'>;
 
 /**
  * What a client may do to an entity, or one of its members, over an API: what it lists, nothing for `false`, and
@@ -150,33 +154,14 @@ export type EntityAccess = FieldAccess | 'delete';
 export type Wire<A extends EntityAccess = FieldAccess> = false | readonly A[];
 
 /**
- * Authoring shape for `@Entity({ filters })` and `defineEntity`'s `.filters()`.
+ * A convenience scope, `@Entity({ filters })` and `defineEntity`'s `.filters()`: switched off by name, and yielding
+ * to a `$where` on its own field. What must hold whatever a call asks is a policy: see {@link PolicySection}.
  */
 export type FilterOptions<E = unknown> = {
   readonly where: FilterWhere<E>;
   /** Applied to every query unless bypassed via `QueryOptions.filters`. Defaults to `true`. */
   readonly default?: boolean;
-} & (
-  | {
-      readonly security?: false;
-      /** What to do when {@link FilterOptions.where} returns `undefined`. Defaults to `skip`. */
-      readonly onMissing?: FilterOnMissing;
-      readonly ops?: never;
-    }
-  | {
-      /**
-       * Row-level-security filter: always applied (ignores `QueryOptions.filters` bypass) and
-       * AND-merged so a client `$where` on the same field can't override it. It fails closed.
-       */
-      readonly security: true;
-      readonly onMissing?: 'throw';
-      /**
-       * The statements it holds, every one by default: `['insert', 'update', 'delete']` lets anyone read a row
-       * and only its author write it. An update or a delete reads the rows it changes, so read ones hold it too.
-       */
-      readonly ops?: readonly EntityAccess[];
-    }
-);
+};
 
 /**
  * direction for the sort, and where nulls land in it.

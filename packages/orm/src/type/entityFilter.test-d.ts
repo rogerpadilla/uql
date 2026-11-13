@@ -5,7 +5,7 @@
  */
 
 import type { FilterOptions } from '../index.js';
-import { defineEntity, Entity, f, Field } from '../index.js';
+import { $context, defineEntity, Entity, f, Field } from '../index.js';
 
 class Invoice {
   id?: number;
@@ -26,10 +26,8 @@ export const staticFilterTypo: FilterOptions<Invoice> = {
 export const contextFilter: FilterOptions<Invoice> = {
   where: (context) => {
     const tenantId = context?.['tenantId'];
-    return tenantId ? { tenantId: tenantId as number } : undefined;
+    return typeof tenantId === 'number' ? { tenantId } : undefined;
   },
-  security: true,
-  onMissing: 'throw',
 };
 // A typo'd fragment *returned* from a where callback is not rejected: the literal is checked after the
 // callback's return type was inferred. Annotating that return type (`(): QueryWhere<Invoice> | undefined`)
@@ -93,17 +91,33 @@ export const Post = defineEntity({
     deepTypo: { where: { writer: { posts: { titel: 'x' } } } },
   });
 
-// ─── a security filter fails closed, and `softDelete` is the built-in filter's name ───
-// @ts-expect-error a security filter never skips a missing value
-export const skippingSecurityFilter: FilterOptions<Invoice> = { where: {}, security: true, onMissing: 'skip' };
-export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active' }, onMissing: 'skip' };
-
-// A security filter may hold some statements alone; a convenience one is turned off per call instead.
-export const writesOnlyFilter: FilterOptions<Invoice> = { where: { tenantId: 1 }, security: true, ops: ['update'] };
-// @ts-expect-error 'publish' is not a statement a filter holds
-export const unknownOpFilter: FilterOptions<Invoice> = { where: { tenantId: 1 }, security: true, ops: ['publish'] };
-// @ts-expect-error only a security filter names the statements it holds
+// ─── a filter is a convenience scope: what must hold whatever a call asks is a policy ───
+// @ts-expect-error a filter holds no security, a policy does
+export const securityFilter: FilterOptions<Invoice> = { where: { tenantId: 1 }, security: true };
+// @ts-expect-error nor names the statements it holds
 export const convenienceOpsFilter: FilterOptions<Invoice> = { where: { status: 'active' }, ops: ['update'] };
+
+declare module '../index.js' {
+  interface UqlContext {
+    filterUserId?: string;
+  }
+}
+
+@Entity({ filters: { mine: { where: { status: $context.filterUserId } } } })
+class ContextFiltered {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) status?: string | null;
+}
+void ContextFiltered;
+
+@Entity({
+  // @ts-expect-error a key holding a string never meets a number column, in a filter as in a policy
+  filters: { mine: { where: { id: $context.filterUserId } } },
+})
+class ContextMistyped {
+  @Field(f.number().autoIncrement()) id?: number;
+}
+void ContextMistyped;
 
 @Entity({
   filters: {

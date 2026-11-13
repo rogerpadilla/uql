@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
 import type { SqliteBindValue } from '../sqlite/bindValues.js';
-import { Coupon, TenantNote } from '../test/index.js';
+import { CheckedNote, Coupon, TenantNote } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 
 import { D1Querier, type D1PreparedStatement, type D1Queryable, type D1Result } from './d1Querier.js';
@@ -131,7 +131,7 @@ describe('D1Querier', () => {
     const d1 = new D1Querier(mockDb, new D1SqliteDialect());
     mockStmt.all.mockResolvedValue(result([], { changes: 1 }));
 
-    await withContext({ tenantId: 't' }, () =>
+    await withContext({ tenantCode: 't' }, () =>
       d1.upsertMany(TenantNote, { $conflict: { id: true } }, [
         { id: 'a', title: 'a' },
         { id: 'b', title: 'b' },
@@ -190,6 +190,18 @@ describe('D1Querier', () => {
   it('should release without touching the D1 binding', async () => {
     await expect(querier.release()).resolves.toBeUndefined();
     expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
+
+  /** A policy check only the database answers needs a transaction to undo a refused write, which D1 has not got. */
+  it('should refuse a write a policy checks by reading it back, before writing it', async () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE TABLE `CheckedNote` (`id` TEXT PRIMARY KEY, `authorId` TEXT, `title` TEXT)');
+    const d1 = new D1Querier(d1Over(db), new D1SqliteDialect());
+
+    await expect(withContext({ userId: 'a' }, () => d1.insertOne(CheckedNote, { title: 'draft' }))).rejects.toThrow(
+      "'CheckedNote' policies check written rows by reading them back, which needs a transaction Cloudflare D1 holds none of here",
+    );
+    expect(db.prepare('SELECT COUNT(*) AS n FROM `CheckedNote`').get()).toEqual({ n: 0 });
   });
 
   /** D1 answers `BEGIN` with `D1_ERROR: not authorized`, so the transaction is refused before it is sent. */

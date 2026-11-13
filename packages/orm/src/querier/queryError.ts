@@ -27,6 +27,7 @@ const SQLSTATE_KINDS: ReadonlyMap<unknown, QueryErrorKind> = new Map([
   ['23503', 'foreignKeyViolation'],
   ['23502', 'notNullViolation'],
   ['23514', 'checkViolation'],
+  ['42501', 'security'],
   ['40P01', 'retryable'],
   ['40001', 'retryable'],
   ['55P03', 'retryable'],

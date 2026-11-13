@@ -1,5 +1,5 @@
 import type { IndexType } from '../schema/types.js';
-import type { SqlDialectName, SqlValues } from '../type/index.js';
+import type { BoundStatement, SqlDialectName, SqlValues } from '../type/index.js';
 import {
   type DriverCapabilities,
   type EntityMeta,
@@ -15,6 +15,8 @@ import {
 } from '../type/index.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { isIntegerColumn, jsonPathKeys } from '../util/field.util.js';
+import { contextSetting } from '../util/policy.util.js';
+import { sql } from '../util/sql.js';
 import { escapePgSqlLiteral, PG_UTC, pgArrayText } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
 import {
@@ -79,6 +81,8 @@ export const PG_FEATURES: SqlDialectFeatures = {
     deferrable: true,
   },
   namedLocks: 'session',
+  rowSecurity: { subqueries: true },
+  transactions: true,
 };
 
 export const PG_SQL_VALUES: SqlValues = { ...ANSI_SQL_VALUES, uuid: 'gen_random_uuid()' };
@@ -101,6 +105,26 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly features: SqlDialectFeatures = PG_FEATURES;
 
   override readonly sqlValues: SqlValues = PG_SQL_VALUES;
+
+  /** `set_config(..., true)`: bound to the transaction, so a pooled connection carries none past it. */
+  override contextBinding(entries: readonly (readonly [string, string])[]): BoundStatement | undefined {
+    const configs = entries.map(([key, value]) => sql`set_config(${contextSetting(key)}, ${value}, true)`);
+    return configs.length ? this.compile(sql`SELECT ${sql.join(configs)}`) : undefined;
+  }
+
+  /** A subselect, so the setting is read once per statement rather than per row; an empty setting is NULL. */
+  override contextRead(key: string, type: string): string {
+    return `(SELECT ${this.settingRead(key, type)})`;
+  }
+
+  /** Context key `key`'s setting as a value of SQL type `type`, NULL where the transaction bound none. */
+  protected settingRead(key: string, type: string): string {
+    return `nullif(current_setting(${this.escape(contextSetting(key))}, true), '')::${type}`;
+  }
+
+  override rowSecurityBypassQuery(): string {
+    return 'SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = current_user';
+  }
 
   /** `USING MESSAGE`, so the text is taken as it is rather than as a format reading each `%`. */
   protected override refusal(message: string): string {

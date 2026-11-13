@@ -4,6 +4,7 @@ import type {
   DialectName,
   EntityMeta,
   ExtraOptions,
+  PolicyMode,
   FieldOptions,
   InsertIdSource,
   NamingStrategy,
@@ -12,10 +13,11 @@ import type {
   QueryWhere,
   AbstractType,
 } from '../type/index.js';
-import { ENGINE_NAMES, type EngineName, parseQueryLock } from '../type/index.js';
+import { ENGINE_NAMES, type EngineName, parseQueryLock, PAST_POLICIES } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
 import { applyFilters } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
+import { enforcementOf, type PolicyEnforcement } from '../util/policy.util.js';
 import { assertNoUndefined, assertWhere } from '../util/query.util.js';
 import { qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -29,6 +31,8 @@ export interface DialectOptions {
   readonly namingStrategy?: NamingStrategy;
   /** Default schema for entities naming none; unset leaves them unqualified. See {@link AbstractDialect.resolveSchema}. */
   readonly schema?: string;
+  /** See {@link ExtraOptions.policies}. */
+  readonly policies?: PolicyMode;
 }
 
 /**
@@ -37,7 +41,7 @@ export interface DialectOptions {
  * each pool's constructor.
  */
 export function dialectOptionsFrom(extra: ExtraOptions | undefined): DialectOptions {
-  return { namingStrategy: extra?.namingStrategy, schema: extra?.schema };
+  return { namingStrategy: extra?.namingStrategy, schema: extra?.schema, policies: extra?.policies };
 }
 
 /** A name a score can be projected under: what every engine takes as a key, with nothing to escape. */
@@ -155,32 +159,50 @@ export abstract class AbstractDialect {
     }
   }
 
+  /** How its pool's statements are held to the entities' policies, refusing a database that holds no row to one. */
+  get policies(): PolicyEnforcement {
+    const enforcement = enforcementOf(this.options.policies);
+    if (enforcement.database && this.features.rowSecurity === false) {
+      throw new UqlUsageError(
+        `${this.engineName} holds no row to a policy itself: leave policies unset, for uql to hold them`,
+      );
+    }
+    return enforcement;
+  }
+
   /**
-   * A `$where` with the entity's active filters merged in - the only way any dialect should enter a
-   * new query scope, so a scope cannot be rendered with its `security: true` filters skipped.
-   * Recursion within one scope renders the returned map directly instead.
+   * A `$where` with the entity's active filters and policies merged in - the only way any dialect should enter a
+   * new query scope, so a scope cannot be rendered with its policies skipped. Recursion within one scope renders
+   * the returned map directly instead.
    */
   protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: StatementOptions): QueryWhere<E> {
     assertWhere(meta, where);
-    const scoped = applyFilters(meta, where, opts);
+    const scoped = applyFilters(meta, where, this.scopeOptions(opts));
     assertNoUndefined(scoped, `$where on '${entityName(meta)}'`);
     return scoped;
   }
 
   /**
-   * Whether a `$where` reads a relation at any depth: filters by one, or by a relation aggregate. What
-   * cannot host that read - a MongoDB filter, a write without {@link DialectFeatures.correlatedWrites} -
-   * has the rows it names read first.
+   * Whether a statement's `$where`, its filters and policies merged in as {@link scopedWhere} merges them, reads a
+   * relation at any depth: filters by one, or by a relation aggregate. What cannot host that read - a MongoDB filter,
+   * a write without {@link DialectFeatures.correlatedWrites} - has the rows it names read first.
    */
-  constrainsRelations<E>(entity: AbstractType<E>, where: QueryWhere<E> | undefined): boolean {
-    if (!where) {
-      return false;
-    }
+  constrainsRelations<E>(entity: AbstractType<E>, where: QueryWhere<E> | undefined, opts?: StatementOptions): boolean {
     const meta = getMeta(entity);
-    return someKey(where, (key) =>
-      isGroupOp(key)
-        ? groupClauses(key, where[key]).some((it) => !(it instanceof QuerySql) && this.constrainsRelations(entity, it))
-        : !!meta.relations[key] || aggregateOf(meta.fields[key]) !== undefined,
-    );
+    return readsRelations(meta, applyFilters(meta, where ?? {}, this.scopeOptions(opts)));
   }
+
+  /** `opts` as a scope is merged with: past the policies where the querier is not who holds them. */
+  private scopeOptions(opts: StatementOptions | undefined): StatementOptions | undefined {
+    return this.policies.scopes ? opts : { ...opts, [PAST_POLICIES]: true };
+  }
+}
+
+/** Whether `where` reads a relation of `meta` at any depth, by its key or a relation aggregate. */
+export function readsRelations<E>(meta: EntityMeta<E>, where: QueryWhere<E>): boolean {
+  return someKey(where, (key) =>
+    isGroupOp(key)
+      ? groupClauses(key, where[key]).some((it) => !(it instanceof QuerySql) && readsRelations(meta, it))
+      : !!meta.relations[key] || aggregateOf(meta.fields[key]) !== undefined,
+  );
 }

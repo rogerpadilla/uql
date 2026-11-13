@@ -1,5 +1,6 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { SqlDialectName } from './dialect.js';
+import type { PolicyMeta, PolicySection } from './policy.js';
 import type { Querier } from './querier.js';
 import type { EntityAccess, FilterOptions, RelationQuery, Wire } from './query.js';
 import type { ColumnRef, JsonPathRef, QuerySql, SqlFor, RelationAggregate } from './querySql.js';
@@ -465,6 +466,11 @@ export type FieldOptions<V = unknown> = {
    * stamps `new Date()`, anything else is the value or callback stamped, `softDelete: () => Date.now()`.
    */
   readonly softDelete?: true | OnFieldCallback<V>;
+  /**
+   * Makes the column the row's tenant, read off this context key (`tenantId` by default): every statement is held to
+   * the context's tenant, and an insert leaving it out is given it. See architecture/row-level-security.md.
+   */
+  readonly tenant?: string;
   /**
    * Makes the column an optimistic lock: an update matches the version its payload carries and writes
    * the next one, so a write against a row someone else moved on throws instead of overwriting it. The
@@ -1017,6 +1023,8 @@ export type EntityMeta<E> = {
   version?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
   filters?: Record<string, FilterOptions<E>>;
+  /** Row-level policies, in the order declared. See architecture/row-level-security.md. */
+  policies?: PolicyMeta<E>[];
   /** What a client may do over an API, see {@link Wire}; a subclass declaring none takes its base's. */
   wire?: Wire<EntityAccess>;
   fields: {
@@ -1223,6 +1231,8 @@ export type EntityOptions<E = unknown> = {
   /** What a client may do over an API: see {@link Wire}. */
   readonly wire?: Wire<EntityAccess>;
   readonly filters?: FilterSection<E>;
+  /** Row-level policies: see {@link PolicySection}. */
+  readonly policies?: PolicySection<E>;
   readonly indexes?: IndexSection<E>;
   /** Table-level `CHECK` constraints. See {@link CheckOptions}. */
   readonly checks?: CheckSection<E>;

@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.115.0] - 2026-11-12
+
+- **Breaking (entity):** `security: true` filters are removed: what must hold whatever a call asks is a policy, `policies: [{ must: { tenantId: $context.tenantId } }, { allow: { ownerId: $context.userId } }]` in `@Entity` or `defineEntity(...).policies()`. A filter naming `security` is refused, and `onMissing` is gone: a filter is skipped where the context lacks a key it reads.
+- Row-level policies on every engine: rows any `allow` reaches and every `must` holds, by statement (`ops`), with a `check` for written rows and a `when` on the context, reading relations too. An insert gets the fields a policy pins, and a write leaving its policies is refused.
+- `f.number().tenant($context.orgId)` makes a column the row's tenant: every statement is held to the context's tenant, and an insert leaving it out is given it.
+- `{ policies: 'native' }` on a Postgres or CockroachDB pool has the database hold them: migrations install each `CREATE POLICY` and switch row-level security with a table's first and last, each transaction binds the context, and a role that bypasses row-level security is refused under one. `{ policies: false }` holds none, for a trusted job.
+- `$context` reads the context as data, typed by `UqlContext`, in a policy, a filter's `where` and `.tenant()`.
+- `explainPolicies(Entity, access)` answers the `where` and `check` the policies hold a statement to.
+- Drift reports a policy missing or stale.
+
 ## [0.114.4] - 2026-11-11
 
 - `upsertOne` and `upsertMany` resolve to a defined key, as an insert does, so callers need no `undefined` check. A row naming no conflict key is inserted and reports its key on every engine, `returning` included.

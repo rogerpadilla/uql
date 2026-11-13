@@ -105,6 +105,7 @@ export function reverseDiff(diff: SchemaDiff): SchemaDiff {
     ),
     checks: diff.checks?.map(swap),
     triggers: diff.triggers?.map(swap),
+    policies: diff.policies?.map(swap),
     renamedColumns,
     rebuild: diff.rebuild && { from: diff.rebuild.to, to: diff.rebuild.from },
   };

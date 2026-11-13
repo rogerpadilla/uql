@@ -80,6 +80,19 @@ export class TableDdl {
     throw rebuildRefusal(this.dialect, `Altering the column "${column.name}"`);
   }
 
+  /**
+   * What switches `table`'s row-level security on, forced so its owner is held too, or off: on with its first policy,
+   * off with its last, since forced with none it shows no row to anyone.
+   */
+  rowSecurity(table: string, on: boolean): string[] {
+    return this.alterTable(
+      table,
+      on
+        ? ['ENABLE ROW LEVEL SECURITY', 'FORCE ROW LEVEL SECURITY']
+        : ['NO FORCE ROW LEVEL SECURITY', 'DISABLE ROW LEVEL SECURITY'],
+    );
+  }
+
   /** One `ALTER TABLE` making every clause, and none for no clause. */
   protected alterTable(table: string, clauses: readonly string[]): string[] {
     return clauses.length ? [`ALTER TABLE ${this.dialect.escapeId(table)} ${clauses.join(', ')};`] : [];

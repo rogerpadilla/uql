@@ -1,3 +1,4 @@
+import { getContext } from '../context/context.js';
 import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, KEY_DEFAULT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
@@ -26,10 +27,21 @@ import type {
   Type,
   TransactionOptions,
   UpdatePayload,
+  BoundStatement,
   ReportedWrite,
 } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
-import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, getKeys, rowKey } from '../util/index.js';
+import {
+  buildUpdateResult,
+  cachedIn,
+  chunk,
+  clone,
+  getInsertFieldKeys,
+  insertShapeOf,
+  getKeys,
+  rowKey,
+} from '../util/index.js';
+import { contextEntries, nextBinding, NOTHING_BOUND, unsettled } from '../util/policy.util.js';
 import { sql, statementOf } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -37,12 +49,6 @@ import { AbstractQuerier, type ReportingWrites } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError, failedIndexOf } from './queryError.js';
 import { rowReader } from './rowReader.js';
-
-/** A statement as it is sent: its SQL and the values it binds. */
-export type BoundStatement = {
-  readonly sql: string;
-  readonly values: unknown[];
-};
 
 /**
  * Row indexes split by whether the row names its key, the one thing that changes what an insert can
@@ -113,8 +119,13 @@ function inPayloadOrder<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[], 
   return generatesKey(meta) ? reported.toSorted((a, b) => byGeneratedKey(a[idKey], b[idKey])) : reported;
 }
 
+/** Each dialect whose connected role was found held to its policies, answered once per pool. */
+const heldToPolicies = new WeakMap<AbstractSqlDialect, Promise<void>>();
+
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   override hasOpenTransaction = false;
+
+  #bound = NOTHING_BOUND;
   /** Cached `auto_increment_increment` stride; see {@link loadInsertIdIncrement}. */
   #insertIdIncrement?: number;
 
@@ -176,7 +187,63 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * the driver has {@link executeBatch}, a failure tagged with the statement it names; else in turn, in a transaction
    * where `atomic` (a split write) asks for one, opened before the queue is taken, which its `BEGIN` waits on.
    */
-  protected runStatements(statements: readonly BoundStatement[], atomic = false): Promise<readonly SqlExecution[]> {
+  protected async runStatements(
+    statements: readonly BoundStatement[],
+    atomic = false,
+  ): Promise<readonly SqlExecution[]> {
+    if (!this.dialect.policies.database) {
+      return this.runBound(statements, atomic);
+    }
+    if (!this.scopeHere()) {
+      return this.bindsContext()
+        ? this.atomically(() => this.runStatements(statements, atomic))
+        : this.runBound(statements, atomic);
+    }
+    const binding = await this.pendingBinding((sql) => this.onConnection(() => this.execute(sql)));
+    const results = await this.runBound(binding ? [binding, ...statements] : statements, atomic);
+    return binding ? results.slice(1) : results;
+  }
+
+  /**
+   * The statement binding the ambient context into the open transaction ahead of its next statement: none where it is
+   * bound already, or there is nothing to bind. `ask` runs the question of the connected role.
+   */
+  private async pendingBinding(ask: (sql: string) => Promise<SqlExecution>): Promise<BoundStatement | undefined> {
+    const { entries, bound } = nextBinding(this.#bound, getContext());
+    if (entries.length && this.bindsContext()) {
+      await this.assertHeldToPolicies(ask);
+    }
+    this.#bound = bound;
+    return this.dialect.contextBinding(entries);
+  }
+
+  /** Whether a statement here runs under a context the database's policies read, which binds in a transaction. */
+  private bindsContext(): boolean {
+    return this.dialect.policies.database && contextEntries(getContext()).length > 0;
+  }
+
+  /**
+   * Refuses a statement under a context where the connected role reads past the database's policies, which would show
+   * one tenant another's rows. A statement under none, a migration's, runs as the owner it connects as.
+   */
+  private assertHeldToPolicies(ask: (sql: string) => Promise<SqlExecution>): Promise<void> {
+    const { dialect } = this;
+    return cachedIn(heldToPolicies, dialect, () =>
+      ask(dialect.rowSecurityBypassQuery()).then(({ rows }) => {
+        if (rows[0]?.['bypasses'] !== false) {
+          throw new UqlUsageError(
+            `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as one that does not, or leave policies unset`,
+          );
+        }
+      }),
+    ).catch((error: unknown) => {
+      heldToPolicies.delete(dialect);
+      throw error;
+    });
+  }
+
+  /** {@link runStatements} once the context is bound. */
+  private runBound(statements: readonly BoundStatement[], atomic: boolean): Promise<readonly SqlExecution[]> {
     const executeBatch = statements.length > 1 ? this.executeBatch?.bind(this) : undefined;
     if (!executeBatch) {
       const inTurn = () => this.inTurn(statements);
@@ -343,17 +410,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: StatementOptions,
   ) {
     const tuning = this.vectorTuning(entity, q);
-    if (this.tunedInTransaction(tuning) && !this.scopeHere()) {
+    const binds = this.bindsContext();
+    if (!this.scopeHere() && (binds || this.tunedInTransaction(tuning))) {
       throw new UqlUsageError(
-        `a streamed $candidates needs an open transaction on ${this.dialect.engineName}; run the stream inside pool.transaction(...)`,
+        `a stream ${binds ? 'binding its context for the policies' : 'of $candidates'} needs an open transaction on ${this.dialect.engineName}; run it inside pool.transaction(...)`,
       );
     }
     const ctx = this.dialect.createContext();
     const read = rowReader<E>(this.dialect.find(ctx, entity, q, opts));
     this.assertBindBudget(ctx.values);
     await this.lazyConnect();
-    for (const { sql } of tuning) {
-      await this.timed(sql, undefined, () => this.execute(sql));
+    // The stream holds the querier for its loop, so its leading statements run on the connection directly.
+    const binding =
+      this.scopeHere() && this.dialect.policies.database
+        ? await this.pendingBinding((sql) => this.execute(sql))
+        : undefined;
+    for (const { sql, values } of binding ? [binding, ...tuning] : tuning) {
+      await this.timed(sql, values, () => this.execute(sql, values));
     }
     for await (const row of this.timedStream(ctx.sql, ctx.values, this.internalStream(ctx.sql, ctx.values))) {
       yield read(row);
@@ -689,6 +762,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     await this.lazyConnect();
     await this.internalBegin(opts);
     this.hasOpenTransaction = true;
+    this.#bound = NOTHING_BOUND;
   }
 
   /**
@@ -709,10 +783,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
+  /** A rollback to a savepoint undoes the context bound inside it, so the next statement binds it again. */
   protected override async savepoint(command: SavepointCommand, name: string): Promise<void> {
     const sql = this.dialect.savepointStatement(command, name);
     if (sql) {
       await this.runTransactionCommand(sql);
+    }
+    if (command === 'rollback') {
+      this.#bound = unsettled(this.#bound);
     }
   }
 

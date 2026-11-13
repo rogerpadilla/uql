@@ -11,6 +11,16 @@ import type { QueryWhere } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
+describe('context in SQL on an engine holding no row to a policy', () => {
+  const dialect = new MySqlDialect();
+
+  it('should bind no context and refuse to read one', () => {
+    expect(dialect.contextBinding([['tenantId', '1']])).toBeUndefined();
+    expect(() => dialect.contextRead('tenantId', 'text')).toThrow("MySQL reads no context key in SQL, so 'tenantId'");
+    expect(() => dialect.rowSecurityBypassQuery()).toThrow('MySQL holds no row to a policy itself');
+  });
+});
+
 describe('normalizeScalarFieldSelection - field validation', () => {
   const userMeta = getMeta(User);
 
@@ -224,7 +234,7 @@ describe('SQL generation - JSON path keys', () => {
   });
 });
 
-@Entity({ filters: { tenant: { where: (ctx) => ({ tenantId: ctx?.secureTenantId }), security: true } } })
+@Entity({ filters: { tenant: { where: (ctx) => ({ tenantId: ctx?.secureTenantId }) } } })
 class LooseTenantRow {
   @Field(f.number().autoIncrement())
   id?: number;
@@ -254,7 +264,7 @@ describe('SQL generation - undefined in $where', () => {
   });
 
   it('should refuse a filter resolving to undefined, rather than drop it', () => {
-    expect(() => pg.find(pg.createContext(), LooseTenantRow, {})).toThrow("holds undefined at '$and.0.tenantId'");
+    expect(() => pg.find(pg.createContext(), LooseTenantRow, {})).toThrow("holds undefined at 'tenantId'");
   });
 
   it('should take null, which matches NULL', () => {

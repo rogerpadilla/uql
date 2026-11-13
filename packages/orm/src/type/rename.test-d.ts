@@ -5,8 +5,24 @@
  * like any `.test-d.ts`.
  */
 import { BeforeInsert, Computed, Entity, f, Field, keyOf, ManyToOne, OneToMany } from '../entity/index.js';
+import { $context } from '../util/contextRefs.js';
 import { sortOf, sql, refs } from '../util/index.js';
 import type { KeyMap, Querier } from './index.js';
+
+declare module './index.js' {
+  interface UqlContext {
+    venueTenant?: number;
+  }
+}
+
+/** A context key a policy, a `when` and a tenant column read, which a rename of the declared key reaches. */
+@Entity({ policies: [{ must: { seats: $context.venueTenant } }, { allow: {}, when: { venueTenant: [1] } }] })
+class Venue {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.number().tenant($context.venueTenant)) venueOwner?: number;
+  @Field(f.number()) seats?: number;
+}
+void Venue;
 
 @Entity()
 class Studio {

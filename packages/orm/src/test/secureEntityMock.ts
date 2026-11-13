@@ -1,4 +1,5 @@
 import { Entity, f, Field, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { $context } from '../util/contextRefs.js';
 
 declare module '../type/index.js' {
   interface UqlContext {
@@ -6,15 +7,8 @@ declare module '../type/index.js' {
   }
 }
 
-/** The joined (m1) side of a `security: true` filter, which a JOIN or a populate applies as a read does. */
-@Entity({
-  filters: {
-    tenant: {
-      where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-      security: true,
-    },
-  },
-})
+/** The joined (m1) side of a policy, which a JOIN or a populate applies as a read does. */
+@Entity({ policies: [{ must: { tenantId: $context.secureTenantId } }, { allow: {} }] })
 export class SecureRelated {
   @Field(f.number().autoIncrement())
   id?: number;
@@ -34,15 +28,8 @@ export class SecureParent {
   related?: SecureRelated;
 }
 
-/** The relation-subquery target: a `security: true` filter and a soft-delete field must both scope it. */
-@Entity({
-  filters: {
-    tenant: {
-      where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-      security: true,
-    },
-  },
-})
+/** The relation-subquery target: a policy and a soft-delete field must both scope it. */
+@Entity({ policies: [{ must: { tenantId: $context.secureTenantId } }, { allow: {} }] })
 export class SecureChild {
   @Field(f.number().autoIncrement())
   id?: number;

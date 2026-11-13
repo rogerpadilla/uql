@@ -2,7 +2,7 @@
  * What a failed query ran into, named the same on every engine - what {@link queryErrorKind} answers
  * with, whether a driver raised the error or UQL did. `retryable` is a deadlock, a serialization
  * failure, a lock timeout or a busy database: the transaction can simply run again. `usage` is the
- * caller's own mistake, which running it again will not fix. `security` is a `security` filter refusing.
+ * caller's own mistake, which running it again will not fix. `security` is access refused: see {@link UqlSecurityError}.
  */
 export const QUERY_ERROR_KINDS = [
   'uniqueViolation',
@@ -82,10 +82,7 @@ export class UqlRequestError extends UqlError {
   }
 }
 
-/**
- * Thrown where a `security` filter refuses: its context is missing, or a write would leave a row outside it.
- * Fails the statement closed.
- */
+/** Thrown where access is refused: the policies refuse a write, or an API exposes nothing a call names. */
 export class UqlSecurityError extends UqlError {
   override name = 'UqlSecurityError';
   readonly kind = 'security';

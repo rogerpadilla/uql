@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withContext } from '../context/context.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
+import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Coupon } from '../test/entityMock.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { ExtraOptions, Json, QueryWhere, RawRow } from '../type/index.js';
+import { type ExtraOptions, type Json, type QueryWhere, type RawRow, versionKey } from '../type/index.js';
+import { $context } from '../util/contextRefs.js';
 import { sql, uuid } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
-import { UqlUsageError } from '../util/uqlError.js';
+import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
 import { TunedItem } from './vectorTuning-test.js';
@@ -583,7 +586,7 @@ describe('AbstractSqlQuerier vector tuning', () => {
     });
 
     await expect(Array.fromAsync(stream)).rejects.toThrow(
-      'a streamed $candidates needs an open transaction on PostgreSQL; run the stream inside pool.transaction(...)',
+      'a stream of $candidates needs an open transaction on PostgreSQL; run it inside pool.transaction(...)',
     );
     expect(querier.statements).toEqual([]);
   });
@@ -655,5 +658,155 @@ describe('AbstractSqlQuerier stream', () => {
       'closing an open stream failed; discarding the connection',
       expect.any(Error),
     );
+  });
+});
+
+describe('AbstractSqlQuerier policy checks read back', () => {
+  @Entity({ policies: [{ allow: { ownerId: $context.userId }, check: { title: { $ne: 'void' } } }] })
+  class HeldNote {
+    @Field(f.number().autoIncrement())
+    id?: number;
+    @Field(f.string().nullable())
+    ownerId?: string | null;
+    @Field(f.string().nullable())
+    title?: string | null;
+    @Field(f.version())
+    version?: number;
+    [versionKey]?: 'version';
+  }
+
+  /** A querier whose writes report `written`, changing `changes` rows, and whose read-back counts no row holding the check. */
+  class UnheldSqlQuerier extends AbstractSqlQuerier {
+    constructor(
+      private readonly written: RawRow[],
+      private readonly changes = 1,
+    ) {
+      super(new PostgresDialect());
+    }
+
+    protected override async execute(query: string): Promise<SqlExecution> {
+      return query.startsWith('SELECT')
+        ? { rows: [{ [AGGREGATE_VALUE_ALIAS]: 0 }] }
+        : { rows: this.written, changes: this.changes };
+    }
+  }
+
+  const asOwner = <T>(run: () => Promise<T>) => withContext({ userId: 'u' }, run);
+
+  it('should refuse a versioned update whose row does not hold the check once written', async () => {
+    const querier = new UnheldSqlQuerier([]);
+
+    await expect(asOwner(() => querier.updateOneById(HeldNote, 1, { title: 'void', version: 1 }))).rejects.toThrow(
+      "a row written to 'HeldNote' does not hold its policies under this context",
+    );
+  });
+
+  it('should read nothing back where a versioned update under a check found its row moved on', async () => {
+    const querier = new UnheldSqlQuerier([], 0);
+
+    await expect(asOwner(() => querier.updateOneById(HeldNote, 1, { title: 'void', version: 1 }))).rejects.toThrow(
+      UqlOptimisticLockError,
+    );
+  });
+
+  it('should refuse a checked insert whose key the database did not report', async () => {
+    const querier = new UnheldSqlQuerier([]);
+
+    await expect(asOwner(() => querier.insertOne(HeldNote, { title: 'draft' }))).rejects.toThrow(
+      "'HeldNote' wrote a row whose key it cannot read back to check against its policies",
+    );
+  });
+});
+
+describe('AbstractSqlQuerier native policy binding', () => {
+  /** A Postgres querier whose database holds the policies: records each binding, its role held to them. */
+  class NativeSqlQuerier extends AbstractSqlQuerier {
+    readonly bindings: [sql: string, values: unknown[] | undefined][] = [];
+    roleCheck: () => Promise<SqlExecution> = async () => ({ rows: [{ bypasses: false }] });
+
+    constructor() {
+      super(new PostgresDialect({ policies: 'native' }));
+    }
+
+    protected override async execute(query: string, values?: unknown[]): Promise<SqlExecution> {
+      if (query.includes('rolbypassrls')) {
+        return this.roleCheck();
+      }
+      if (query.includes('set_config')) {
+        this.bindings.push([query, values]);
+      }
+      return { rows: [], changes: 0 };
+    }
+  }
+
+  const ping = sql.text('SELECT 1');
+
+  it('should unbind a key an earlier context bound, past a savepoint rolled back', async () => {
+    const querier = new NativeSqlQuerier();
+
+    await querier.transaction(async () => {
+      await withContext({ orgId: 1, userId: 'a' }, () => querier.run(ping));
+      await querier
+        .transaction(async () => {
+          throw new Error('undo');
+        })
+        .catch(() => undefined);
+      await withContext({ orgId: 2 }, () => querier.run(ping));
+    });
+
+    expect(querier.bindings.at(-1)).toEqual([
+      'SELECT set_config($1, $2, true), set_config($3, $4, true)',
+      ['uql.orgId', '2', 'uql.userId', ''],
+    ]);
+  });
+
+  it("should ask again whether the role is held to the policies after the question's own failure", async () => {
+    const querier = new NativeSqlQuerier();
+    const held = querier.roleCheck;
+    querier.roleCheck = async () => {
+      throw new Error('connection lost');
+    };
+
+    await expect(withContext({ orgId: 1 }, () => querier.run(ping))).rejects.toThrow('connection lost');
+    querier.roleCheck = held;
+    await withContext({ orgId: 1 }, () => querier.run(ping));
+
+    expect(querier.bindings).toHaveLength(1);
+  });
+
+  it('should bind nothing again for a statement under the context its transaction holds', async () => {
+    const querier = new NativeSqlQuerier();
+
+    await querier.transaction(async () => {
+      await withContext({ orgId: 1 }, () => querier.run(ping));
+      await querier.run(ping);
+      await querier.run(ping);
+    });
+
+    expect(querier.bindings).toEqual([
+      ['SELECT set_config($1, $2, true)', ['uql.orgId', '1']],
+      ['SELECT set_config($1, $2, true)', ['uql.orgId', '']],
+    ]);
+  });
+
+  it('should bind the context of a stream in its transaction, and refuse one outside any', async () => {
+    const querier = new NativeSqlQuerier();
+    const stream = (from: NativeSqlQuerier) =>
+      withContext({ orgId: 1 }, () => Array.fromAsync(from.findManyStream(HydratedParent, {})));
+
+    await expect(stream(new NativeSqlQuerier())).rejects.toThrow(
+      'a stream binding its context for the policies needs an open transaction on PostgreSQL',
+    );
+    await querier.transaction(() => stream(querier));
+
+    expect(querier.bindings).toHaveLength(1);
+  });
+
+  it('should stream under no context outside a transaction, there being nothing to bind', async () => {
+    const querier = new NativeSqlQuerier();
+
+    const rows = await Array.fromAsync(querier.findManyStream(HydratedParent, {}));
+
+    expect(rows).toEqual([]);
   });
 });

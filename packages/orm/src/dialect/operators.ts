@@ -11,7 +11,6 @@ import {
   type QueryVectorQuery,
   QuerySql,
   type QueryWhere,
-  type QueryWhereArray,
   type QueryWhereFieldOp,
   REF_ENTITY,
   REF_KEY,
@@ -43,7 +42,7 @@ export function isGroupOp(key: string): key is QueryGroupOp {
  * straight to `Query`, so a scalar can arrive where an array belongs. Shared so both backends
  * refuse the same payload rather than one throwing and the other failing further in.
  */
-export function groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | undefined): QueryWhereArray<E> {
+export function groupClauses<T>(key: QueryGroupOp, val: readonly T[] | undefined): readonly T[] {
   if (val !== undefined && !Array.isArray(val)) {
     throw new UqlUsageError(`${key} expects an array, got ${kindOf(val)}`);
   }

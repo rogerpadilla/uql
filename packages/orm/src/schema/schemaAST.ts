@@ -18,6 +18,7 @@ export function createTableNode(
     indexes: [],
     checks: [],
     triggers: [],
+    policies: [],
     externalForeignKeys: [],
     incomingRelations: [],
     outgoingRelations: [],

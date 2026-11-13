@@ -83,13 +83,19 @@ export interface CheckSchema {
 }
 
 /**
- * A trigger, compared by name alone as a check is: its name ends in a hash of its SQL. The statements create
- * it; read back, they are the engine's own, which is what a rollback restores.
+ * An object uql installs on a table, compared by name alone as a check is: its name ends in a hash of its SQL. The
+ * statements create it; read back, they are the engine's own, which is what a rollback restores.
  */
-export interface TriggerSchema {
+export interface OwnedSchema {
   readonly name: string;
   readonly statements: readonly string[];
 }
+
+/** A trigger uql installs. */
+export type TriggerSchema = OwnedSchema;
+
+/** A row-level policy the database holds a table to. */
+export type PolicySchema = OwnedSchema;
 
 /**
  * Default action for foreign key ON DELETE and ON UPDATE clauses.
@@ -182,6 +188,8 @@ export interface TableNode {
   readonly checks: CheckSchema[];
   /** The triggers uql installs on this table. */
   readonly triggers: TriggerSchema[];
+  /** The row-level policies uql installs on this table. */
+  readonly policies: PolicySchema[];
   /** Optional table comment */
   readonly comment?: string;
   /** The statements the engine keeps for the table, where it keeps them; none on a table built from entities. */
@@ -276,9 +284,10 @@ export type TableChange<T> = Change<T> & { readonly table: string };
 /** The differences within a table that exists on both sides. */
 export interface TableDiff {
   readonly columns: ColumnDiff[];
-  /** A check or trigger only one side has. Never both: a changed one is a new name, one dropped and one added. */
+  /** A check, trigger or policy only one side has. Never both: a changed one is a new name, one dropped and one added. */
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
+  readonly policies: TableChange<PolicySchema>[];
   /** Set only when the two primary keys have different columns. */
   readonly primaryKey?: PrimaryKeyDiff;
 }
@@ -291,6 +300,7 @@ export interface SchemaDiffResult {
   readonly indexes: IndexDiff[];
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
+  readonly policies: TableChange<PolicySchema>[];
   readonly primaryKeys: PrimaryKeyDiff[];
   readonly relationships: RelationshipDiff[];
 }

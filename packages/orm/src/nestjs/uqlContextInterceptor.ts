@@ -4,7 +4,7 @@ import { withContext } from '../context/context.js';
 import type { UqlContext } from '../type/index.js';
 
 /**
- * Runs each request inside `withContext`, so parameterized/`security` filters (multi-tenancy, RLS)
+ * Runs each request inside `withContext`, so policies and parameterized filters
  * are scoped automatically for every query in the request - including relations, cascades, and the
  * queries a transaction runs. Wired for you by {@link UqlModule.forRoot} when you pass `contextOf`.
  */

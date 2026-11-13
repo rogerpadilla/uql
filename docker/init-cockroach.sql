@@ -25,3 +25,6 @@ CREATE DATABASE IF NOT EXISTS test_introspector;
 CREATE DATABASE IF NOT EXISTS test_builder;
 CREATE DATABASE IF NOT EXISTS test_sync;
 CREATE DATABASE IF NOT EXISTS test_vector;
+CREATE DATABASE IF NOT EXISTS test_policy;
+-- The user a native-policy suite connects as: not an admin, so the database holds it to them.
+CREATE USER IF NOT EXISTS uql_policy;

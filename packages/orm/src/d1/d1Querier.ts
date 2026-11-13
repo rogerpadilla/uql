@@ -1,6 +1,6 @@
-import { AbstractSqlQuerier, type BoundStatement } from '../querier/index.js';
+import { AbstractSqlQuerier } from '../querier/index.js';
 import { type SqliteBindValue, toBindValues } from '../sqlite/bindValues.js';
-import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { BoundStatement, ExtraOptions, RawRow } from '../type/index.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import type { D1SqliteDialect } from './d1SqliteDialect.js';
@@ -49,11 +49,6 @@ export class D1Querier extends AbstractSqlQuerier {
   /** D1 answers `BEGIN` with `D1_ERROR: not authorized`: a `batch()` is its only transaction. */
   protected override async internalBegin(): Promise<void> {
     throw new UqlUsageError('Cloudflare D1 has no transactions: write the changes as one statement, or idempotently');
-  }
-
-  /** A write split in steps a list cannot carry lands step by step, there being no transaction to hold it. */
-  protected override atomically<T>(write: () => Promise<T>): Promise<T> {
-    return write();
   }
 
   private prepared(sql: string, values?: readonly unknown[]): D1PreparedStatement {

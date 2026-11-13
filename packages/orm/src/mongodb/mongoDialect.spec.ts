@@ -38,7 +38,7 @@ import {
   type AbstractType,
 } from '../type/index.js';
 import { refs, sql } from '../util/index.js';
-import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
 
@@ -1141,8 +1141,8 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * A `security: true` filter on a joined to-one applies to a bare `$populate`, with no `$where` of its
-   * own, as it does on the SQL dialects.
+   * A policy on a joined to-one applies to a bare `$populate`, with no `$where` of its own, as it does on
+   * the SQL dialects.
    */
   shouldApplySecurityFilterToLookupPopulateWithoutExplicitWhere() {
     const pipeline = withContext({ secureTenantId: 5 }, () =>
@@ -1172,13 +1172,13 @@ class MongoDialectSpec implements Spec {
   }
 
   /** Same shape as above, but with no ambient context: the security filter must fail closed. */
-  shouldFailClosedForLookupPopulateWhenSecurityContextIsMissing() {
-    expect(() =>
-      this.dialect.aggregationPipeline(SecureParent, {
-        $select: { id: true },
-        $populate: { related: { $select: { id: true, name: true } } },
-      }),
-    ).toThrow(UqlSecurityError);
+  /** A looked-up to-one whose policy reads a key the context lacks matches no row, as SQL's join does. */
+  shouldLookUpNoRowForAPopulateWhoseContextIsMissing() {
+    const pipeline = this.dialect.aggregationPipeline(SecureParent, {
+      $select: { id: true },
+      $populate: { related: { $select: { id: true, name: true } } },
+    });
+    expect(JSON.stringify(pipeline)).toContain('{"_id":{"$in":[]}}');
   }
   shouldTransformBetweenOperator() {
     const result = this.dialect.where(Item, { createdAt: { $between: [100, 200] } });

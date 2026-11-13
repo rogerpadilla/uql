@@ -1,8 +1,15 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { type CheckSchema, type ColumnDefault, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
+import {
+  type CheckSchema,
+  type ColumnDefault,
+  type ForeignKeyAction,
+  INDEX_TYPES,
+  type PolicySchema,
+} from '../../schema/types.js';
 import type { ForeignKeySchema, IndexEntry, IndexSchema, PrimaryKeySchema, QuerySql } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { sql } from '../../util/sql.js';
+import { isOwnedName } from '../../util/sql.util.js';
 import {
   AbstractSqlSchemaIntrospector,
   type ReadColumn,
@@ -36,6 +43,19 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr} AND c.relname = ${tableName}
     `;
+  }
+
+  /** Each policy uql installed, as the statement recreating it from what `pg_policies` reprints. */
+  protected override async getPolicies(read: TableRowReader, tableName: string): Promise<PolicySchema[]> {
+    const rows = await read<{ name: string; definition: string }>(sql`
+      SELECT policyname AS name,
+        'CREATE POLICY ' || quote_ident(policyname) || ' ON ' || quote_ident(schemaname) || '.' || quote_ident(tablename)
+          || ' AS ' || permissive || ' FOR ' || cmd || ' TO ' || array_to_string(roles, ', ')
+          || coalesce(' USING (' || qual || ')', '') || coalesce(' WITH CHECK (' || with_check || ')', '') AS definition
+      FROM pg_policies
+      WHERE schemaname = ${this.schemaExpr} AND tablename = ${tableName}
+    `);
+    return rows.flatMap(({ name, definition }) => (isOwnedName(name) ? [{ name, statements: [definition] }] : []));
   }
 
   /** `pg_get_expr` answers NULL for a table dropped mid-read, where `pg_get_constraintdef` raises. */

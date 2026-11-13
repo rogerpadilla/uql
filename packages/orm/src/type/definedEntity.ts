@@ -22,6 +22,7 @@ import type {
   TriggerSection,
   versionKey,
 } from './entity.js';
+import type { PolicySection } from './policy.js';
 import type { EntityAccess, Wire } from './query.js';
 import type { QuerySql, RelationAggregate } from './querySql.js';
 import type { Type, AbstractType } from './utility.js';
@@ -206,6 +207,7 @@ type DefinedSections<Row, Key, Columns, B, Abstract> = {
   checks(checks: CheckSection<Columns>): DefinedEntity<Row, Key, Columns, B, Abstract>;
   triggers(triggers: TriggerSection<Columns>): DefinedEntity<Row, Key, Columns, B, Abstract>;
   filters(filters: FilterSection<Row>): DefinedEntity<Row, Key, Columns, B, Abstract>;
+  policies(policies: PolicySection<Row>): DefinedEntity<Row, Key, Columns, B, Abstract>;
   /** Functions each lifecycle event runs on the row, in order, given the querier writing it. */
   hooks(hooks: { readonly [E in HookEvent]?: readonly DefinedHook<Row>[] }): DefinedEntity<
     Row,
@@ -226,10 +228,23 @@ type DefinedSections<Row, Key, Columns, B, Abstract> = {
   ): RelatedEntity<Row & RelationRow<R> & AggregateRow<A>, Key, Columns, Abstract>;
 };
 
-/** A defined entity's class once its relations are in: its filters may follow, and read through them. */
-export type RelatedEntity<Row, Key, Columns, Abstract = false> = DefinedClass<Row, Key, Columns, Abstract> & {
-  filters(filters: FilterSection<Row>): DefinedClass<Row, Key, Columns, Abstract>;
-};
+/** The sections that read the row relations complete, so they may follow `relations`. */
+type RowSection = 'filters' | 'policies';
+
+/** A defined entity's class once its relations are in: its filters and policies may follow, and read through them. */
+export type RelatedEntity<Row, Key, Columns, Abstract = false, Left extends RowSection = RowSection> = DefinedClass<
+  Row,
+  Key,
+  Columns,
+  Abstract
+> &
+  Pick<
+    {
+      filters(filters: FilterSection<Row>): RelatedEntity<Row, Key, Columns, Abstract, Exclude<Left, 'filters'>>;
+      policies(policies: PolicySection<Row>): RelatedEntity<Row, Key, Columns, Abstract, Exclude<Left, 'policies'>>;
+    },
+    Left
+  >;
 
 /** A defined entity's class while its sections may still be declared. */
 export type DefinedEntity<Row, Key, Columns, B, Abstract = false> = DefinedClass<Row, Key, Columns, Abstract> &

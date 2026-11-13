@@ -87,7 +87,7 @@ describe('insertMany id semantics', () => {
   it('should read a guarded upsert back once per key, however the batches fall', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
     await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
-    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
+    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantCode: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: 'old' }));
 
     const ids = await asTenant(() =>
@@ -114,7 +114,7 @@ describe('insertMany id semantics', () => {
   it('should insert a guarded row whose conflict key holds a null, not update one that holds it too', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
     await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
-    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
+    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantCode: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: null }));
 
     await asTenant(() =>
@@ -125,6 +125,52 @@ describe('insertMany id semantics', () => {
     );
 
     expect(await asTenant(() => querier.count(TenantNote, {}))).toBe(3);
+    await querier.release();
+  });
+
+  it('should refuse native policies on an engine holding no row to one itself', () => {
+    expect(() => new SqliteQuerierPool(':memory:', {}, { policies: 'native' })).toThrow(
+      'SQLite holds no row to a policy itself: leave policies unset, for uql to hold them',
+    );
+  });
+
+  // A dialect a migration builds alone, no pool around it, renders no policy SQLite cannot run.
+  it('should refuse native policies on a dialect of an engine holding no row to one itself', () => {
+    expect(() => new SqliteDialect({ policies: 'native' }).policies).toThrow(
+      'SQLite holds no row to a policy itself: leave policies unset, for uql to hold them',
+    );
+  });
+
+  /** A trusted pool reads and writes past every policy, as a job working across tenants does. */
+  it('should hold no statement of a trusted pool to the policies', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect({ policies: false }));
+    await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
+
+    await querier.insertMany(TenantNote, [
+      { id: 'a', tenantId: 'x', title: 'a' },
+      { id: 'b', title: 'b' },
+    ]);
+    await withContext({ tenantCode: 'x' }, () => querier.updateOneById(TenantNote, 'b', { tenantId: 'y' }));
+    await querier.upsertMany(TenantNote, { $conflict: { id: true } }, [{ id: 'c', tenantId: 'z', title: 'c' }]);
+
+    expect(await querier.findMany(TenantNote, { $select: { tenantId: true }, $sort: { id: 1 } })).toEqual([
+      { tenantId: 'x' },
+      { tenantId: 'y' },
+      { tenantId: 'z' },
+    ]);
+    await querier.release();
+  });
+
+  /** A call's options are data its caller may forward from anywhere, so none of them reads past a policy. */
+  it('should hold a statement to the policies whatever options its call carries', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect({}));
+    await querier.run(sql.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
+    await querier.run(sql.text("INSERT INTO `TenantNote` VALUES ('a', 'other', 'x')"));
+    const forwarded: object = { policies: false, filters: false };
+
+    const rows = await withContext({ tenantCode: 't' }, () => querier.findMany(TenantNote, {}, forwarded));
+
+    expect(rows).toEqual([]);
     await querier.release();
   });
 

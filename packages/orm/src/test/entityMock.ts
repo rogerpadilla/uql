@@ -12,7 +12,21 @@ import {
   OneToOne,
 } from '../entity/index.js';
 import { idKey, type Json, versionKey } from '../type/index.js';
+import { $context } from '../util/contextRefs.js';
 import { sql } from '../util/index.js';
+
+declare module '../type/index.js' {
+  /** The context the test fixtures read: a number tenant as `tenantId` or `orgId`, the shared suite's text one `tenantCode`. */
+  interface UqlContext {
+    tenantId?: number;
+    tenantCode?: string;
+    orgId?: number;
+    userId?: string | null;
+    authorNo?: number;
+    role?: string;
+    system?: boolean;
+  }
+}
 
 /** The fields most fixtures share. */
 export abstract class BaseEntity {
@@ -169,15 +183,7 @@ export class WideVersionedNote {
 
 /** The row-level-security fixture: scoped to the context's `tenantId`, open to a `system` one. */
 @Entity({
-  filters: {
-    tenant: {
-      where: (ctx) => {
-        const tenantId = ctx?.['tenantId'];
-        return ctx?.['system'] ? {} : typeof tenantId === 'string' ? { tenantId } : undefined;
-      },
-      security: true,
-    },
-  },
+  policies: [{ allow: { tenantId: $context.tenantCode } }, { allow: {}, when: { system: true } }],
 })
 export class TenantNote {
   @Field(f.string().id().onInsert(uuidv7))
@@ -190,18 +196,13 @@ export class TenantNote {
   title?: string | null;
 }
 
-/** A security filter holding writes alone: anyone reads a note, only its author writes it. */
+/** A policy holding writes alone: anyone reads a note, only its author writes it. */
 @Entity({
-  filters: {
-    author: {
-      where: (ctx) => {
-        const userId = ctx?.['userId'];
-        return ctx?.['system'] ? {} : typeof userId === 'string' ? { authorId: userId } : undefined;
-      },
-      security: true,
-      ops: ['insert', 'update', 'delete'],
-    },
-  },
+  policies: [
+    { allow: {}, ops: ['read'] },
+    { allow: { authorId: $context.userId }, ops: ['insert', 'update', 'delete'] },
+    { allow: {}, when: { system: true } },
+  ],
 })
 export class AuthoredNote {
   @Field(f.string().id().onInsert(uuidv7))
@@ -212,6 +213,52 @@ export class AuthoredNote {
 
   @Field(f.string().nullable())
   title?: string | null;
+}
+
+/** A policy whose check only the database answers: an author's note, never written void. */
+@Entity({
+  policies: [
+    { allow: { authorId: $context.userId }, check: { authorId: $context.userId, title: { $ne: 'void' } } },
+    { allow: {}, when: { system: true } },
+  ],
+})
+export class CheckedNote {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  authorId?: string | null;
+
+  @Field(f.string().nullable())
+  title?: string | null;
+}
+
+/** Members of a project, whose policy reads them: a project is read by the users it lists. */
+@Entity({ policies: [{ allow: { members: { userId: $context.userId } } }, { allow: {}, when: { system: true } }] })
+export class MemberProject {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.string().nullable())
+  name?: string | null;
+
+  @OneToMany(() => ProjectMember, { mappedBy: (member) => member.project })
+  members?: ProjectMember[];
+}
+
+@Entity()
+export class ProjectMember {
+  @Field(f.string().id().onInsert(uuidv7))
+  id?: string;
+
+  @Field(f.references(() => MemberProject).nullable())
+  projectId?: string | null;
+
+  @Field(f.string().nullable())
+  userId?: string | null;
+
+  @ManyToOne(() => MemberProject, { references: (member) => member.projectId })
+  project?: MemberProject;
 }
 
 @Entity()

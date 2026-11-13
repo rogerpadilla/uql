@@ -1,5 +1,5 @@
 /**
- * Renames each member the fixtures declare through the TypeScript language server, the way an editor does,
+ * Renames each member and context key the fixtures declare through the TypeScript language server, as an editor does,
  * and fails on every mention a rename leaves behind: decorated entities in `rename.test-d.ts`, defined ones in
  * `renameDefined.test-d.ts`. `tsc` cannot see this: a key whose type lost its link to the entity's member still
  * type-checks, it just stops following renames and find-references.
@@ -32,7 +32,7 @@ type DocumentSymbol = {
   readonly children?: readonly DocumentSymbol[];
 };
 /** The LSP `SymbolKind` values this reads. */
-const SymbolKind = { Class: 5, Method: 6, Property: 7 } as const;
+const SymbolKind = { Namespace: 3, Class: 5, Method: 6, Property: 7, Interface: 11 } as const;
 const MEMBER = new Set<number>([SymbolKind.Method, SymbolKind.Property]);
 
 /**
@@ -48,9 +48,20 @@ function declaredMembers(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
         (child) => MEMBER.has(child.kind) && child.selectionRange.start.line > symbol.selectionRange.start.line,
       ),
     );
-  return [...classMembers, ...definedOptions(symbols).flatMap((option) => option.children ?? [])].filter(
-    (member) => member.name !== 'id',
-  );
+  return [
+    ...classMembers,
+    ...definedOptions(symbols).flatMap((option) => option.children ?? []),
+    ...contextKeys(symbols),
+  ].filter((member) => member.name !== 'id');
+}
+
+/** The keys a fixture declares on `UqlContext`, which `$context`, a policy's `when` and a tenant column read. */
+function contextKeys(symbols: readonly DocumentSymbol[]): DocumentSymbol[] {
+  return symbols
+    .filter((symbol) => symbol.kind === SymbolKind.Namespace)
+    .flatMap((module) => module.children ?? [])
+    .filter((symbol) => symbol.kind === SymbolKind.Interface && symbol.name === 'UqlContext')
+    .flatMap((context) => (context.children ?? []).filter((key) => key.kind === SymbolKind.Property));
 }
 
 /** The `defineEntity` options a document outlines, the `MEMBER_OPTIONS` parts of each, classes left out. */

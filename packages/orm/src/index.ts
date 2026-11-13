@@ -1,4 +1,6 @@
 export { captureContext, getContext, withContext } from './context/context.js';
+export { explainPolicies } from './util/policy.util.js';
+export { $context } from './util/contextRefs.js';
 export * from './entity/decorator/entity.js';
 export * from './entity/decorator/members.js';
 export { f } from './entity/column.js';

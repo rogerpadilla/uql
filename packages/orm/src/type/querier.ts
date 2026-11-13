@@ -245,6 +245,20 @@ export type QuerierListener = {
   readonly [K in HookEvent]?: (ctx: ListenerContext) => Promise<void> | void;
 };
 
+/** A statement as it is sent: its SQL and the values it binds. */
+export type BoundStatement = {
+  readonly sql: string;
+  readonly values: unknown[];
+};
+
+/**
+ * Who holds statements to the entities' policies. `'app'`, the querier, on every engine. `'native'`, the database (the
+ * Postgres family): migrations install the policies, each transaction binds the context, and a role the database lets
+ * past them is refused under a context. `false`, nothing: a trusted pool, a job working across tenants, pointed at a
+ * role that bypasses row-level security. See architecture/row-level-security.md.
+ */
+export type PolicyMode = 'app' | 'native' | false;
+
 export type ExtraOptions = {
   readonly logger?: LoggingOptions;
   /**
@@ -262,4 +276,6 @@ export type ExtraOptions = {
    */
   readonly schema?: string;
   readonly listeners?: readonly QuerierListener[];
+  /** Who holds this pool's statements to the entities' policies: see {@link PolicyMode}. `'app'` where unset. */
+  readonly policies?: PolicyMode;
 };

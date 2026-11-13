@@ -1,6 +1,12 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { canonicalToSql, engineType, isVectorCategory, suppliedKeySql } from '../schema/canonicalType.js';
+import {
+  canonicalToSql,
+  engineType,
+  isVectorCategory,
+  resolveColumnCanonicalType,
+  suppliedKeySql,
+} from '../schema/canonicalType.js';
 import { indexChanges } from '../schema/indexDifferences.js';
 import { matchByKey } from '../schema/matchByKey.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
@@ -13,6 +19,7 @@ import {
   DEFAULT_FOREIGN_KEY_ACTION,
   type ForeignKeyAction,
   type IndexNode,
+  type OwnedSchema,
   type RelationshipNode,
   type TableNode,
 } from '../schema/types.js';
@@ -51,6 +58,7 @@ import {
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
+import { dropPolicy, renderPolicies } from './policySql.js';
 import { added, alterations, dropped, needsRebuild, newlyRequired, nonEmpty, sides } from './schemaChange.js';
 import { dropTrigger, dropTriggerBody, namesAny, renderTrigger, stampTriggers } from './triggerSql.js';
 
@@ -113,6 +121,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
         [...(meta.triggers ?? []), ...stampTriggers(this.dialect, meta)].map((trigger, i) =>
           renderTrigger(this.dialect, meta, trigger, i),
         ),
+      renderPolicies: (meta) =>
+        renderPolicies(this.dialect, meta, (field) => canonicalToSql(resolveColumnCanonicalType(field), this.dialect)),
       textScoreIndexes: this.dialect.features.textScoreIndexes,
       vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
@@ -141,6 +151,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
           )),
       // Triggers last: each needs its own table, and a body may read any other the same schema just made.
       ...terminated(tables.flatMap((table) => table.triggers.flatMap((trigger) => trigger.statements))),
+      // Policies after them, a membership read through a table the same schema just made included.
+      ...tables.flatMap((table) => {
+        const policies = table.policies.map((to) => ({ to }));
+        const [, on] = this.rowSecurityChange(qualifyName(table.name, table.schema), policies);
+        return [...on, ...terminated(sides(policies, 'to').flatMap((policy) => policy.statements))];
+      }),
     ];
   }
 
@@ -222,14 +238,24 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...sides(columns, 'from').map(({ name }) => name),
       ...(diff.renamedColumns ?? []).flatMap(({ from, to }) => [from, to]),
     ];
-    // A rebuild drops every trigger with its table; an alter, only a kept one naming a column it moves.
-    const triggers = (diff.triggers ?? []).filter(
-      ({ from, to }) => rebuild || !from || !to || to.statements.some((statement) => namesAny(statement, moved)),
-    );
+    // Postgres refuses to retype or drop a column a trigger or a policy reads: a rebuild drops every one with its
+    // table, an alter takes off only a kept one naming a column it moves, and puts it back last.
+    const cycled = <T extends OwnedSchema>(changes: readonly Change<T>[] = []) =>
+      changes.filter(
+        ({ from, to }) => rebuild || !from || !to || to.statements.some((statement) => namesAny(statement, moved)),
+      );
+    const triggers = cycled(diff.triggers);
     const triggerDrops = terminated(
       sides(triggers, 'from').flatMap((trigger) => dropTrigger(this.dialect, tableName, trigger.name)),
     );
     const triggerCreates = terminated(sides(triggers, 'to').flatMap((trigger) => trigger.statements));
+    const policies = cycled(diff.policies);
+    const [off, on] = this.rowSecurityChange(tableName, diff.policies);
+    const policyDrops = [
+      ...terminated(sides(policies, 'from').map((policy) => dropPolicy(this.dialect, tableName, policy.name))),
+      ...off,
+    ];
+    const policyCreates = [...on, ...terminated(sides(policies, 'to').flatMap((policy) => policy.statements))];
     if (rebuild) {
       return [
         ...triggerDrops,
@@ -240,6 +266,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const target = this.escapeId(tableName);
     const [dropKey, addKey] = this.tableDdl.replacePrimaryKey(tableName, primaryKey?.from, primaryKey?.to);
     return [
+      ...policyDrops,
       ...triggerDrops,
       ...sides(diff.foreignKeys, 'from').map((foreignKey) =>
         this.tableDdl.dropForeignKey(tableName, constraintNameOf(tableName, foreignKey)),
@@ -260,7 +287,17 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...sides(diff.foreignKeys, 'to').map((foreignKey) => this.addForeignKeySql(tableName, foreignKey)),
       ...sides(diff.checks, 'to').map((check) => this.addCheckSql(tableName, check)),
       ...triggerCreates,
+      ...policyCreates,
     ];
+  }
+
+  /** What switches `tableName`'s row-level security as `policies` change it, as `[off, on]`: on with its first, off with its last. */
+  private rowSecurityChange(tableName: string, policies: readonly Change<OwnedSchema>[] = []): [string[], string[]] {
+    const had = sides(policies, 'from').length > 0;
+    const has = sides(policies, 'to').length > 0;
+    return had === has
+      ? [[], []]
+      : [had ? this.tableDdl.rowSecurity(tableName, false) : [], has ? this.tableDdl.rowSecurity(tableName, true) : []];
   }
 
   /** `CONSTRAINT <name> CHECK (...)`, in a `CREATE TABLE`, after `ADD`, or inline where a column brings it. */
@@ -365,14 +402,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ),
       foreignKeys: nonEmpty(foreignKeys),
       checks: nonEmpty(tableDiff?.checks ?? []),
-      // A kept trigger as both sides, which the alter cycles only where a column it names moves under it.
-      triggers: nonEmpty([
-        ...(tableDiff?.triggers ?? []),
-        ...matchByKey(desired.triggers, currentTable.triggers, (it) => it.name).matched.map(([to, from]) => ({
-          from,
-          to,
-        })),
-      ]),
+      // A kept trigger or policy as both sides, which the alter cycles only where a column it names moves under it.
+      triggers: nonEmpty([...(tableDiff?.triggers ?? []), ...kept(desired.triggers, currentTable.triggers)]),
+      policies: nonEmpty([...(tableDiff?.policies ?? []), ...kept(desired.policies, currentTable.policies)]),
       renamedColumns: nonEmpty(renamedColumns ?? []),
     };
     if (!(tableDiff || alter.indexes || alter.foreignKeys || alter.renamedColumns)) {
@@ -604,6 +636,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 /** Whether a drop leaves foreign keys to drop first: a `CASCADE` takes them along, and SQLite drops with its constraints off. */
 export function dropsForeignKeysFirst(features: DialectFeatures, options: Pick<DropSchemaOptions, 'cascade'>): boolean {
   return !(options.cascade && features.dropTableCascade) && !features.rebuildsTables;
+}
+
+/** Each of `desired` the database has too, matched by name, as both sides of a change. */
+function kept<T extends OwnedSchema>(desired: readonly T[], current: readonly T[]): Change<T>[] {
+  return matchByKey(desired, current, (it) => it.name).matched.map(([to, from]) => ({ from, to }));
 }
 
 /** Statements as a migration runs them, each ended. */

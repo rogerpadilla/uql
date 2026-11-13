@@ -17,6 +17,7 @@ import {
   type TransactionOptions,
   type JsonColumnType,
   type JsonArrayUpdateOp,
+  type BoundStatement,
   type JsonUpdateOp,
   parseQueryLock,
   type Query,
@@ -989,8 +990,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ctx.append(`${joinAlias}.${foreign} = ${parentAlias}.${local}`);
       });
 
-      // Unconditional, not gated by `join.query.$where`: a joined relation's own filters (in
-      // particular `security: true` ones) must apply even to a bare `$populate: { rel: true }`
+      // Unconditional, not gated by `join.query.$where`: a joined relation's own filters and
+      // policies must apply even to a bare `$populate: { rel: true }`
       // with no explicit `$where` - and equally to a join `$sort` brought in on its own.
       // `where()` -> `renderWhere()` no-ops cleanly (appends nothing) when there is nothing to add.
       this.where(ctx, join.entity, join.query.$where ?? {}, { prefix: join.alias, clause: 'AND' });
@@ -2847,9 +2848,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * predicate with no entity filter applied; a migration's is `sql` reading none.
    */
   compileDdl(sql: QuerySql): string;
-  compileDdl<E>(sql: EntityWhereMeta<E>, entity: AbstractType<E>, opts?: DdlRenderOptions): string;
+  compileDdl<E>(sql: EntityWhereMeta<E> | QueryWhere<E>, entity: AbstractType<E>, opts?: DdlRenderOptions): string;
   compileDdl<E>(
-    sql: EntityWhereMeta<E>,
+    sql: EntityWhereMeta<E> | QueryWhere<E>,
     entity?: AbstractType<E>,
     { rows, escapedPrefix, operand }: DdlRenderOptions = {},
   ): string {
@@ -3374,6 +3375,24 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return [op, val];
     });
     return this.boundConditions(ctx, distance, comparisons);
+  }
+
+  /**
+   * The statement binding `entries`, each a context key and its text, into the open transaction, where the policies
+   * the engine holds read them: none on an engine holding none.
+   */
+  contextBinding(_entries: readonly (readonly [string, string])[]): BoundStatement | undefined {
+    return undefined;
+  }
+
+  /** A policy's read of context key `key` as a value of SQL type `type`, NULL where the transaction bound none. */
+  contextRead(key: string, _type: string): string {
+    throw new UqlUsageError(`${this.engineName} reads no context key in SQL, so '${key}' has no rendering`);
+  }
+
+  /** What answers whether the connected role reads past row-level security, as one row's `bypasses`. */
+  rowSecurityBypassQuery(): string {
+    throw new UqlUsageError(`${this.engineName} holds no row to a policy itself`);
   }
 
   /** ANSI-style single-quote escaping. */

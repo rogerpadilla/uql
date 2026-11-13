@@ -79,6 +79,8 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
     deferrable: false,
   },
   namedLocks: 'session',
+  rowSecurity: false,
+  transactions: true,
 };
 
 /** The one `JSON_TABLE` column an exploded array reads each element through, as a JSON document. */

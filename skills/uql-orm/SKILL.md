@@ -140,44 +140,53 @@ export const Book = defineEntity({
 ```
 
 - Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it. Name its rows with an interface, `export interface Author extends InstanceType<typeof Author> {}`: hovers and errors then print `Author`, which a type alias expands.
-- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `hooks`, then `relations` last; only a `filters` reading through relations follows it.
+- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `policies`, `hooks`, then `relations` last; only `filters` and `policies` follow it, and of two reading through relations the one chained last may read them.
 - A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.
 - A hook is a function of the row and the same second argument. Behaviour is a plain function of the row (`label(author: Author)`): a row reads back as a plain object, so a method would never be there.
 
-### Filters, soft delete and tenants
+### Filters, soft delete, tenants and policies
 
-A filter is a named `$where` fragment applied to every read, update and delete of its entity, so never repeat it in a query.
+A filter is a named `$where` fragment applied to every read, update and delete of its entity, so never repeat it in a query. A policy is what must hold whatever a call asks: tenants and row-level security.
 
 ```ts
-import { Entity, f, Field, withContext } from 'uql-orm';
+import { $context, Entity, explainPolicies, f, Field, withContext } from 'uql-orm';
 
 declare module 'uql-orm' {
   interface UqlContext {
     tenantId?: number;
+    userId?: string;
+    role?: string;
   }
 }
 
 @Entity({
-  filters: {
-    active: { where: { status: 'active' }, default: false },
-    tenant: { where: (ctx) => (ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined), security: true },
-  },
+  filters: { active: { where: { status: 'active' }, default: false } },
+  policies: [
+    { allow: { ownerId: $context.userId }, check: { status: { $ne: 'void' } } },
+    { allow: {}, ops: ['read'], when: { role: ['auditor', 'admin'] } },
+  ],
 })
 export class Invoice {
   @Field(f.number().autoIncrement()) id?: number;
-  @Field(f.number()) companyId!: number;
+  @Field(f.number().tenant()) companyId?: number;
+  @Field(f.string()) ownerId!: string;
   @Field(f.string().nullable()) status?: string | null;
   @Field(f.date().nullable().softDelete()) deletedAt?: Date | null;
 }
 
-await withContext({ tenantId: 42 }, () => pool.findMany(Invoice, {}));
+await withContext({ tenantId: 42, userId: 'u1' }, () => pool.findMany(Invoice, {}));
 ```
 
 - A filter is on unless `default: false`. A `$where` naming its field wins over it. Per call, the options argument takes `{ filters: false }`, `{ filters: { softDelete: false } }` or `{ filters: { active: true } }`.
 - `.softDelete()` on one field turns a delete into a stamp (`new Date()`, or the value or callback given), and registers a `softDelete` filter hiding stamped rows. `withDeleted()` as the options reads both; `restoreOneById` and `restoreMany` undo it; `{ hardDelete: true }` removes rows for good. A restore does not cascade.
-- A `where` may be a function of the context `withContext(ctx, fn)` sets, which follows `await`, `Promise.all` and transactions but not emitters, timers or queues: wrap those callbacks with `captureContext()`.
-- `security: true` makes a filter always apply, ignore bypasses, AND-merge with any `$where`, and throw `UqlSecurityError` when `where` returns `undefined`. It scopes writes too, so new rows need no tenant set by hand. `ops: ['insert', 'update', 'delete']` makes one hold those statements alone (anyone reads a row, only its author writes it); an update or delete is also held to the read ones. For a trusted cross-tenant job, give `where` a branch returning `{}` (`ctx?.system ? {} : ...`) and run it under `withContext({ system: true }, fn)`: https://uql-orm.dev/multi-tenancy.md
+- A filter's `where` may read the context as data, `{ authorId: $context.userId }`, and is skipped where the context lacks a key it reads; or it may be a function of the context `withContext(ctx, fn)` sets, which follows `await`, `Promise.all` and transactions but not emitters, timers or queues: wrap those callbacks with `captureContext()`.
+- `.tenant()` on one column makes it the row's tenant, read off `$context.tenantId` (`.tenant($context.orgId)` names another, which must hold the column's type): every statement is held to it, and an insert leaving it out is given it.
+- A policy is data: `{ allow: where }` or `{ must: where }`, beside `ops` (`'read'`, `'insert'`, `'update'`, `'delete'`, every one where unset), `check` (what a written row must hold, the `where` where unset), `when` (context keys at a value, or one of a list) and `name`. A row is reached when any `allow` holding the statement reaches it and every `must` holds. An entity declaring no `allow` is allowed every row its `must`s (and tenant) leave; one declaring some reaches no row in a statement none of them holds. An update or delete is held to the `read` ones too. `{}` reaches every row. A policy stated once as a constant serves every entity with the fields it names.
+- `explainPolicies(Invoice, 'read')` answers the `where` the querier ANDs in under the ambient context (and `check` for a write): what to look at when a read reaches no row.
+- `$context.tenantId` reads the context key in a predicate, typed by `UqlContext`: once it declares keys, a misspelled one, or one in `when`, does not compile; a relation is read like any `$where` (`{ allow: { members: { userId: $context.userId } } }`). A key the context lacks or holds null matches nothing, as SQL's NULL compares: no context, no rows.
+- Policies hold every read, populate, relation filter and count, and every write: an insert gets each field a policy pins to one value (`companyId`), a write setting another is refused with `UqlSecurityError`, and a check the row alone cannot settle is read back in the write's transaction (MongoDB needs `transaction()` for one; D1 refuses it). Nothing per call turns a policy off: run trusted, cross-tenant work on a pool built with `{ policies: false }`.
+- `{ policies: 'native' }` on a Postgres or CockroachDB pool has the database hold them: migrations install `CREATE POLICY` (RLS enabled and forced), each transaction binds the context with `set_config`, and raw SQL is held too. Connect it as a role that is no superuser and lacks `BYPASSRLS`; a statement under a context is refused otherwise. CockroachDB takes no relation in a native policy, and a Postgres insert must be readable by the context inserting it. https://uql-orm.dev/multi-tenancy.md
 
 ## Queries
 
@@ -196,6 +205,7 @@ const users = await pool.findMany(User, {
 ```
 
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `estimatedCount`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Whether anything matches is `exists`, which stops at the first row, never `count(...) > 0`. Signatures: https://uql-orm.dev/querying/methods.md
+- `$` marks the query language: clauses, operators, `$old`/`$new` in a trigger's predicate and `$context` reads. Field, relation and context key names never take it, and neither do a definition's or a call's options (`policies: [{ allow, ops, when }]`, `{ filters: false }`).
 - Query keys: `$select`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`, `$lock`. `$select: { password: false }` reads every field but `password`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
 - Results are narrowed to what the query selected and populated, at every depth. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`, or `QueryFindResult<User, typeof query>` for a query declared `as const satisfies Query<User>`. A function forwarding a query keeps the narrowing typed `<E extends object, const Q extends Query<E>>(entity: Type<E>, q: Captured<Query<E>, Q>): Promise<QueryFindResult<E, Q>[]>`.
 - `$populate` loads relations in the same statement. Nothing is lazy: an unpopulated relation is absent. A populated to-many is always a list. A to-one is optional unless `$required: true`, which keeps only the parents that have one.
@@ -287,7 +297,7 @@ export const handler = toFetchHandler(api); // on a catch-all under /api/v1
 - What a client may do is the definition's `wire`, every operation where unset. An entity's (`@Entity({ wire: ['read', 'update'] })`, `defineEntity({ wire })`) lists what it takes of `'read'`, `'insert'`, `'update'`, `'delete'`, a subclass declaring none taking its base's; `wire: false` keeps it off every API, and `createApi` refuses one in `include`. A member's: `f.string().wire(false)` hides a field, `.wire(['read'])` makes it read-only, `.wire(['insert'])` write-once; a relation takes `wire` in its options (`rel.oneToMany(Session, { mappedBy, wire: false })`, `@OneToMany(() => Session, { mappedBy, wire: false })`). It holds wherever the entity is reached, through any relation. A write the querier would drop, to a computed field or an update of an `updatable(false)` one, is refused instead; a save may insert, so it takes the latter.
 - `read` covers every clause naming the member (`$select`, `$where`, `$sort`, `$count`, `$populate`), and a read with no `$select` leaves out what it may not read. `.eager(false)` is no guard, since a client's `$select` still reads it: hide a secret with `.wire(false)`.
 - A middleware is `(call, context, next) => next(call)`, run after the call is checked: reshape the call before `next`, or what `next` resolves to after it. The API's `use` runs on every call, and `serve(Entity, { use })` in `include` on that entity's alone, typed by it (`call.op === 'insertOne'` types `call.payload` as a row). Refuse a client with `throw new UqlRequestError('unauthorized', 401)` from `uql-orm`; any other error answers generically by its kind, or `500`.
-- Scope tenants with a `security` filter and `contextOf`, never with a middleware adding to `$where`. Without `contextOf` a call keeps its caller's context. On NestJS, `UqlModule.forRoot({ pool, contextOf })` does the same for your own routes.
+- Scope tenants with a policy and `contextOf`, never with a middleware adding to `$where`. Without `contextOf` a call keeps its caller's context. On NestJS, `UqlModule.forRoot({ pool, contextOf })` does the same for your own routes.
 - The API serves one entity per call: no `aggregate`, upsert, stream or transaction. Write your own routes for those beside it; `toFetchHandler` answers `404` and `toExpress` falls through to `next()` on paths it does not serve.
 - The client is `createClientQuerier(httpTransport('/api/v1'))` from `uql-orm/browser`, or `createClientQuerier((call) => trpc.uql.mutate(call))` over any transport. It has the pool's find, `count`, `exists`, insert, save, update and delete methods and answers what they answer (rows, not `{ data }`), reading each row back by its entity, which must be registered (importing it does): a `Date` field is a `Date` and a `bigint` exact, so a cache persisting rows needs a serializer. `httpTransport` rejects with a `RequestError` carrying `status`, `kind` and `path`.
 - For TanStack Query, `const uql = createQueryOptions(transport)` and `useQuery(uql((db) => db.findMany(User, q)))`: the key is the call the read makes (`['uql', 'user', 'findMany', { query }]`), so it cannot drift from the fetch, and `uql.key(User)` invalidates every read of `User`.

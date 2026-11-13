@@ -16,7 +16,13 @@ import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
 import { declaredColumn } from './declaredColumn.js';
 import { lookupColumns } from './indexColumns.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
-import { type ColumnNode, type ForeignKeyAction, type TableNode, type TriggerSchema } from './types.js';
+import {
+  type ColumnNode,
+  type ForeignKeyAction,
+  type PolicySchema,
+  type TableNode,
+  type TriggerSchema,
+} from './types.js';
 
 /** What a build needs from its dialect, which `SqlSchemaGenerator.buildAST` supplies. */
 export interface BuildSchemaASTOptions {
@@ -37,6 +43,8 @@ export interface BuildSchemaASTOptions {
   vectorIndexRequiresNotNull: boolean;
   /** The triggers an entity's table carries, as its dialect renders them. */
   renderTriggers: (meta: EntityMeta<object>) => TriggerSchema[];
+  /** The row-level policies the database holds an entity's table to, none where the querier holds them. */
+  renderPolicies: (meta: EntityMeta<object>) => PolicySchema[];
 }
 
 /** What the passes below share. */
@@ -111,6 +119,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
   }
   table.primaryKey = keyOfColumns(columns.values());
   table.triggers.push(...ctx.renderTriggers(meta));
+  table.policies.push(...ctx.renderPolicies(meta));
 
   ctx.ast.addTable(table);
   return table;

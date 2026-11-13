@@ -3,6 +3,8 @@ import { withContext } from '../context/context.js';
 import { Entity, f, Field, getMeta } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import type { Json, JsonArrayUpdateOp, QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
+import { PAST_POLICIES } from '../type/index.js';
+import { $context } from './contextRefs.js';
 import {
   applyFilters,
   isSelectList,
@@ -24,7 +26,6 @@ import {
 } from './dialect.util.js';
 import { withDeleted } from './filters.util.js';
 import { sql } from './sql.js';
-import { UqlSecurityError } from './uqlError.js';
 
 @Entity({
   filters: {
@@ -64,13 +65,50 @@ it('should resolve thunk conditions', () => {
 
 it('should skip a convenience filter whose condition does not resolve', () => {
   @Entity({
-    filters: { mine: { where: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) } },
+    filters: { mine: { where: (ctx) => (ctx?.authorNo ? { ownerId: ctx.authorNo } : undefined) } },
   })
   class Owned {
     @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) ownerId?: number | null;
   }
   expect(applyFilters(getMeta(Owned), {})).toEqual({});
+});
+
+// The common case, every statement on an entity with neither: no copy of the `$where` and no context read.
+it('should answer the very where of an entity with no filter and no policy', () => {
+  @Entity()
+  class Plain {
+    @Field(f.number().autoIncrement()) id?: number;
+  }
+  const where: QueryWhere<Plain> = { id: 1 };
+  expect(applyFilters(getMeta(Plain), where)).toBe(where);
+});
+
+describe('a filter reading the context as data', () => {
+  @Entity({ filters: { mine: { where: { ownerId: $context.authorNo, $or: [{ id: { $gt: $context.orgId } }] } } } })
+  class Owned {
+    @Field(f.number().autoIncrement()) id?: number;
+    @Field(f.number().nullable()) ownerId?: number | null;
+  }
+  const meta = getMeta(Owned);
+
+  it('should read each key the context holds, keeping its shape', () => {
+    expect(withContext({ authorNo: 7, orgId: 2 }, () => applyFilters(meta, {}))).toEqual({
+      ownerId: 7,
+      $or: [{ id: { $gt: 2 } }],
+    });
+  });
+
+  it('should yield to a $where on its field, as a filter does', () => {
+    expect(withContext({ authorNo: 7, orgId: 2 }, () => applyFilters(meta, { ownerId: 1 }))).toEqual({
+      ownerId: 1,
+      $or: [{ id: { $gt: 2 } }],
+    });
+  });
+
+  it('should be skipped where the context lacks a key it reads', () => {
+    expect(withContext({ authorNo: 7 }, () => applyFilters(meta, {}))).toEqual({});
+  });
 });
 
 it('should disable the soft-delete filter alone, keeping the other options and filters: false as they are', () => {
@@ -88,12 +126,7 @@ it('should not overwrite a key already in $where', () => {
 });
 
 @Entity({
-  filters: {
-    tenant: {
-      where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
-      security: true,
-    },
-  },
+  policies: [{ must: { companyId: $context.orgId } }, { allow: {} }],
 })
 class Tenanted {
   @Field(f.number().autoIncrement())
@@ -108,48 +141,55 @@ function tenantApplied(where: QueryWhere<Tenanted>, opts?: Parameters<typeof app
   return applyFilters(getMeta(Tenanted), where, opts);
 }
 
-it("should AND a security filter's condition from the ambient context", () => {
-  const where = withContext({ tenantId: 5 }, () => tenantApplied({}));
+it("should AND a policy's condition from the ambient context", () => {
+  const where = withContext({ orgId: 5 }, () => tenantApplied({}));
   expect(where).toEqual({ deletedAt: null, $and: [{ companyId: 5 }] });
 });
 
-it('should keep a security filter on filters: false', () => {
-  const where = withContext({ tenantId: 5 }, () => tenantApplied({}, { filters: false }));
-  expect(where).toEqual({ $and: [{ companyId: 5 }] }); // softDelete bypassed, tenant still applied
+it('should keep a policy on filters: false', () => {
+  const where = withContext({ orgId: 5 }, () => tenantApplied({}, { filters: false }));
+  expect(where).toEqual({ $and: [{ companyId: 5 }] });
 });
 
-it('should keep a security filter against a client $where on the same field', () => {
-  const where = withContext({ tenantId: 5 }, () => tenantApplied({ companyId: 99 }));
-  // client value stays, but the security predicate is AND-ed, so it is self-contradictory: no leak
+it('should keep a policy against a client $where on the same field', () => {
+  const where = withContext({ orgId: 5 }, () => tenantApplied({ companyId: 99 }));
   expect(where).toEqual({ companyId: 99, deletedAt: null, $and: [{ companyId: 5 }] });
 });
 
-it('should fail closed on a security filter whose context is missing', () => {
-  expect(() => tenantApplied({})).toThrow(UqlSecurityError);
+it('should reach no row where the context a policy reads is missing', () => {
+  expect(tenantApplied({})).toEqual({ deletedAt: null, $and: [{ id: { $in: [] } }] });
 });
 
-it("should fill an inserted row's guarded field from a security filter, and no other filter's", () => {
+it('should read past the policies for a statement the querier checks with', () => {
+  expect(tenantApplied({}, { [PAST_POLICIES]: true })).toEqual({ deletedAt: null });
+});
+
+it("should fill an inserted row's pinned field from a policy", () => {
   const rows: Tenanted[] = [{ id: 1 }];
-  withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'insert'));
+  const check = withContext({ orgId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'insert'));
   expect(rows).toEqual([{ id: 1, companyId: 5 }]);
+  expect(check).toBeUndefined();
 });
 
-it('should leave an update payload without the guarded field as it is', () => {
+it('should leave an update payload without the pinned field as it is, its scope holding it', () => {
   const rows: Tenanted[] = [{ deletedAt: null }];
-  withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'update'));
+  const check = withContext({ orgId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'update'));
   expect(rows).toEqual([{ deletedAt: null }]);
+  expect(check).toBeUndefined();
 });
 
-it('should refuse a write naming another value for a guarded field', () => {
-  const write = () => withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), [{ companyId: 6 }], 'update'));
-  expect(write).toThrow("'Tenanted' row sets 'companyId' outside security filter 'tenant'");
+it('should refuse a write naming another value for a pinned field', () => {
+  const write = () => withContext({ orgId: 5 }, () => guardWrite(getMeta(Tenanted), [{ companyId: 6 }], 'update'));
+  expect(write).toThrow("'Tenanted' row sets 'companyId' where its policies do not let it");
 });
 
-it('should fail closed on a write whose security context is missing', () => {
-  expect(() => guardWrite(getMeta(Tenanted), [{ id: 1 }], 'insert')).toThrow(UqlSecurityError);
+it('should refuse a write whose context lets no policy hold it', () => {
+  expect(() => guardWrite(getMeta(Tenanted), [{ id: 1 }], 'insert')).toThrow(
+    "no policy of 'Tenanted' lets this context insert a row",
+  );
 });
 
-@Entity({ filters: { tenants: { where: { companyId: { $in: [1, 2] } }, security: true } } })
+@Entity({ policies: [{ allow: { companyId: { $in: [1, 2] } } }] })
 class MultiTenanted {
   @Field(f.number().autoIncrement())
   id?: number;
@@ -157,24 +197,16 @@ class MultiTenanted {
   companyId?: number | null;
 }
 
-it('should refuse a write against a security condition that is not field equalities', () => {
-  expect(() => guardWrite(getMeta(MultiTenanted), [{ companyId: 1 }], 'insert')).toThrow(
-    "'MultiTenanted' security filter 'tenants' is not field equalities, so no write can be checked against it",
-  );
+it('should answer a check the rows cannot settle, for the querier to read back', () => {
+  expect(guardWrite(getMeta(MultiTenanted), [{ companyId: 1 }], 'insert')).toEqual({ companyId: { $in: [1, 2] } });
 });
 
 @Entity({
-  filters: {
-    tenant: {
-      where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
-      security: true,
-    },
-    author: {
-      where: (ctx) => (ctx?.['userId'] != null ? { authorId: ctx['userId'] as number } : undefined),
-      security: true,
-      ops: ['insert', 'update', 'delete'],
-    },
-  },
+  policies: [
+    { must: { companyId: $context.orgId } },
+    { allow: {}, ops: ['read'] },
+    { allow: { authorId: $context.authorNo }, ops: ['insert', 'update', 'delete'] },
+  ],
 })
 class Authored {
   @Field(f.number().autoIncrement())
@@ -185,35 +217,32 @@ class Authored {
   authorId?: number | null;
 }
 
-const asAuthor = <T>(fn: () => T) => withContext({ tenantId: 5, userId: 7 }, fn);
+const asAuthor = <T>(fn: () => T) => withContext({ orgId: 5, authorNo: 7 }, fn);
 
-it('should scope a read by the security filters holding reads alone', () => {
+it('should scope a read by the policies holding reads', () => {
   expect(asAuthor(() => applyFilters(getMeta(Authored), {}))).toEqual({ $and: [{ companyId: 5 }] });
 });
 
-it('should scope an update and a delete by their own security filters and the read ones', () => {
+it('should scope an update and a delete by their own policies and the read ones', () => {
   const meta = getMeta(Authored);
-  const scoped = { $and: [{ companyId: 5 }, { authorId: 7 }] };
+  const scoped = { $and: [{ companyId: 5 }, { companyId: 5 }, { authorId: 7 }] };
   expect(asAuthor(() => applyFilters(meta, {}, { access: 'update' }))).toEqual(scoped);
   expect(asAuthor(() => applyFilters(meta, {}, { access: 'delete' }))).toEqual(scoped);
 });
 
-it('should not resolve a security filter the statement is not held to', () => {
-  expect(withContext({ tenantId: 5 }, () => applyFilters(getMeta(Authored), {}))).toEqual({ $and: [{ companyId: 5 }] });
-});
-
-it('should hold a write to the security filters holding its own access alone', () => {
+it('should hold a write to the policies holding its own statement', () => {
   const rows: Authored[] = [{ id: 1 }];
   asAuthor(() => guardWrite(getMeta(Authored), rows, 'insert'));
   expect(rows).toEqual([{ id: 1, companyId: 5, authorId: 7 }]);
   const write = () => asAuthor(() => guardWrite(getMeta(Authored), [{ authorId: 8 }], 'update'));
-  expect(write).toThrow("'Authored' row sets 'authorId' outside security filter 'author'");
+  expect(write).toThrow("'Authored' row sets 'authorId' where its policies do not let it");
 });
 
 @Entity({
-  filters: {
-    published: { where: { status: 'published' }, security: true, ops: ['read'] },
-  },
+  policies: [
+    { allow: { status: 'published' }, ops: ['read'] },
+    { allow: {}, ops: ['insert'] },
+  ],
 })
 class Published {
   @Field(f.number().autoIncrement())
@@ -222,21 +251,15 @@ class Published {
   status?: string | null;
 }
 
-it('should leave a write payload free of a security filter holding reads alone', () => {
+it('should leave a write payload free of a policy holding reads alone', () => {
   const rows: Published[] = [{ status: 'draft' }];
   guardWrite(getMeta(Published), rows, 'insert');
   expect(rows).toEqual([{ status: 'draft' }]);
 });
 
-it('should read a condition resolving to {} as no restriction, merging nothing', () => {
+it('should let a policy holding under the context reach every row, merging nothing', () => {
   @Entity({
-    filters: {
-      workspace: {
-        where: (ctx) =>
-          ctx?.['system'] ? {} : ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined,
-        security: true,
-      },
-    },
+    policies: [{ allow: { companyId: $context.orgId } }, { allow: {}, when: { system: true } }],
   })
   class SystemScoped {
     @Field(f.number().autoIncrement())
@@ -245,12 +268,9 @@ it('should read a condition resolving to {} as no restriction, merging nothing',
     companyId?: number | null;
   }
   const meta = getMeta(SystemScoped);
-  // system context: security filter resolves to {} -> no $and appended, no broken predicate
   expect(withContext({ system: true }, () => applyFilters(meta, {}))).toEqual({});
-  // tenant context still scopes
-  expect(withContext({ tenantId: 3 }, () => applyFilters(meta, {}))).toEqual({ $and: [{ companyId: 3 }] });
-  // missing context still fails closed
-  expect(() => applyFilters(meta, {})).toThrow(UqlSecurityError);
+  expect(withContext({ orgId: 3 }, () => applyFilters(meta, {}))).toEqual({ $and: [{ companyId: 3 }] });
+  expect(applyFilters(meta, {})).toEqual({ $and: [{ id: { $in: [] } }] });
 });
 
 it('should return a new where map, never mutating the input', () => {
@@ -260,10 +280,10 @@ it('should return a new where map, never mutating the input', () => {
   expect(out).not.toBe(input);
 });
 
-it('should not mutate a client $and array when AND-merging a security filter', () => {
+it('should not mutate a client $and array when AND-merging a policy', () => {
   const clientAnd: QueryWhere<Tenanted>[] = [{ companyId: 1 }];
   const input: QueryWhere<Tenanted> = { $and: clientAnd };
-  const out = withContext({ tenantId: 5 }, () => tenantApplied(input));
+  const out = withContext({ orgId: 5 }, () => tenantApplied(input));
   expect(clientAnd).toEqual([{ companyId: 1 }]); // original array untouched
   expect(out.$and).toEqual([{ companyId: 1 }, { companyId: 5 }]);
 });

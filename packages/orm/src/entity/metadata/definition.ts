@@ -8,11 +8,12 @@ import {
   type EntityMeta,
   type EntityOptions,
   type Except,
+  type FieldKey,
   type FieldMeta,
   type Merge,
   type FieldOptions,
-  type FilterOnMissing,
   type FilterOptions,
+  type Policy,
   type HookDeclaration,
   type HookEvent,
   type HookRegistration,
@@ -62,6 +63,15 @@ import {
   isRecord,
   whereWith,
 } from '../../util/index.js';
+import {
+  contextKeys,
+  EVERY_ROW_POLICY,
+  POLICY_CONTEXT_KEY,
+  POLICY_OPS,
+  policyMeta,
+  TENANT_POLICY,
+  tenantPolicy,
+} from '../../util/policy.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
 
@@ -197,9 +207,7 @@ function addTrigger<E>(
   if (typeof trigger.run !== 'function' && !hasKeys(trigger.run)) {
     throw new UqlUsageError(`'${entity.name}' has a trigger whose body names at least one engine to run on`);
   }
-  if (trigger.name && meta.triggers?.some((it) => it.name === trigger.name)) {
-    throw new UqlUsageError(`'${entity.name}' already has a trigger named '${trigger.name}'`);
-  }
+  assertUnnamed(meta, 'trigger', meta.triggers, trigger.name);
   (meta.triggers ??= []).push({ ...trigger, of: trigger.of?.map((ref) => ref[REF_KEY]) });
 }
 
@@ -210,14 +218,66 @@ function addFilter<E>(meta: EntityMeta<E>, name: string, opts: FilterOptions<E>)
       `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; a 'softDelete()' column registers it`,
     );
   }
-  // Widened for a caller the types did not reach, which is the only one this can refuse.
-  const { security, onMissing }: { readonly security?: boolean; readonly onMissing?: FilterOnMissing } = opts;
-  if (security && onMissing === 'skip') {
+  // Widened for a caller the types did not reach: a filter that held security is a policy now.
+  if (Object.hasOwn(opts, 'security')) {
     throw new UqlUsageError(
-      `'${entity.name}' security filter '${name}' cannot use onMissing: 'skip' (it must fail closed)`,
+      `'${entity.name}' filter '${name}' names security: what must hold whatever a call asks is a policy, in .policies()`,
     );
   }
   (meta.filters ??= {})[name] = opts;
+}
+
+/** Registers a policy, refusing one stating no single effect, a name taken and a statement no policy holds. */
+function addPolicy<E>(meta: EntityMeta<E>, declared: Policy<E>): void {
+  const { entity } = meta;
+  const policy = policyMeta(declared);
+  if (!policy || (declared.allow !== undefined && declared.must !== undefined)) {
+    throw new UqlUsageError(`'${entity.name}' has a policy stating none or both of allow and must: state one`);
+  }
+  const unknown = policy.ops.find((op) => !POLICY_OPS.includes(op));
+  if (unknown !== undefined || !policy.ops.length) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy holding '${String(unknown ?? 'no statement')}': name read, insert, update or delete`,
+    );
+  }
+  if (policy.name === TENANT_POLICY || policy.name === EVERY_ROW_POLICY) {
+    throw new UqlUsageError(`'${entity.name}' policy name '${policy.name}' is reserved for the policies uql derives`);
+  }
+  assertUnnamed(meta, 'policy', meta.policies, policy.name);
+  const misnamed = [...contextKeys([policy.where, policy.check]), ...Object.keys(policy.when ?? {})].find(
+    (key) => !POLICY_CONTEXT_KEY.test(key),
+  );
+  if (misnamed !== undefined) {
+    throw new UqlUsageError(
+      `'${entity.name}' has a policy reading context key '${misnamed}': name keys as identifiers`,
+    );
+  }
+  (meta.policies ??= []).push(policy);
+}
+
+/** The one field of `meta` `marks` picks, refusing a second: a row has one of each `option`. */
+function soleMarked<E>(
+  meta: EntityMeta<E>,
+  option: 'softDelete' | 'tenant' | 'version',
+  marks: (field: FieldMeta) => unknown,
+): FieldKey<E> | undefined {
+  const keys = fieldKeys(meta, marks);
+  if (keys.length > 1) {
+    throw new UqlUsageError(`'${meta.entity.name}' must have at most one field with '${option}'`);
+  }
+  return keys[0];
+}
+
+/** Refuses `name` where one of `taken`, the entity's triggers or policies, already has it. */
+function assertUnnamed(
+  { entity }: { readonly entity: AbstractType<unknown> },
+  kind: 'trigger' | 'policy',
+  taken: readonly { readonly name?: string }[] | undefined,
+  name: string | undefined,
+): void {
+  if (name && taken?.some((it) => it.name === name)) {
+    throw new UqlUsageError(`'${entity.name}' already has a ${kind} named '${name}'`);
+  }
 }
 
 /** Registers the fields, relations and hooks decorators or `defineEntity` declared, before anything is finalized. */
@@ -273,6 +333,7 @@ type ErasedSections = {
   checks?: EntityOptions<object>['checks'];
   triggers?: EntityOptions<object>['triggers'];
   filters?: EntityOptions<object>['filters'];
+  policies?: EntityOptions<object>['policies'];
   hooks?: { readonly [E in HookEvent]?: readonly HookFunction[] };
   relations?: (rel: RelationBuilder<object>) => ErasedRelations;
   aggregates?: (refs: object) => AggregateFields;
@@ -336,7 +397,7 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
 }
 
 /** The sections a defined entity declares as methods. `aggregates` is no method: `relations` takes it as its second argument. */
-const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'hooks', 'relations'] as const;
+const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'policies', 'hooks', 'relations'] as const;
 
 /** Records one section of a pending defined entity, refusing a second of it and one declared after the entity was read. */
 function declareSection(entity: AbstractType<object>, section: string, declared: unknown): void {
@@ -385,6 +446,7 @@ function settleEntity(entity: AbstractType<unknown>): void {
       checks: sections.checks,
       triggers: sections.triggers,
       filters: sections.filters,
+      policies: sections.policies,
     },
     {
       fields,
@@ -514,6 +576,9 @@ export function registerEntity<E>(
   for (const [name, filter] of definedEntries(opts.filters ?? {})) {
     addFilter(meta, name, filter);
   }
+  for (const policy of opts.policies ?? []) {
+    addPolicy(meta, policy);
+  }
 
   // `derivedName` records that the class name stood in, which is what a naming strategy derives from.
   meta.name = table;
@@ -535,29 +600,37 @@ export function registerEntity<E>(
     }
   }
 
-  // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
-  // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
-  // filter (a reserved name - see addFilter - so it never clobbers a user filter).
-  const softDeleteKeys = fieldKeys(meta, ({ softDelete }) => softDelete !== undefined && softDelete !== false);
-  if (softDeleteKeys.length > 1) {
-    throw new UqlUsageError(`'${entity.name}' must have at most one field with 'softDelete'`);
-  }
-  if (softDeleteKeys.length) {
-    meta.softDelete = softDeleteKeys[0];
-    (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: whereWith(meta.softDelete, null), default: true };
+  // Each marker is derived from the inheritance-merged fields, own and inherited alike, and marks one field at most.
+  // Soft delete registers the reserved `softDelete` filter (see addFilter), so it never clobbers a user's own.
+  const softDelete = soleMarked(
+    meta,
+    'softDelete',
+    ({ softDelete }) => softDelete !== undefined && softDelete !== false,
+  );
+  if (softDelete) {
+    meta.softDelete = softDelete;
+    (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: whereWith(softDelete, null), default: true };
   }
 
-  // The optimistic lock, derived the same way and just as singular: one row has one version.
-  const versionKeys = fieldKeys(meta, (field) => field.version);
-  if (versionKeys.length > 1) {
-    throw new UqlUsageError(`'${entity.name}' must have at most one field with 'version'`);
+  // The tenant: a `must` holding each row to the context's tenant, replacing an inherited one.
+  const tenant = soleMarked(meta, 'tenant', (field) => field.tenant !== undefined);
+  if (tenant) {
+    const contextKey = meta.fields[tenant]!.tenant!;
+    if (!POLICY_CONTEXT_KEY.test(contextKey)) {
+      throw new UqlUsageError(
+        `'${entity.name}' reads its tenant off context key '${contextKey}': name it as an identifier`,
+      );
+    }
+    const own = (meta.policies ?? []).filter((policy) => policy.name !== TENANT_POLICY);
+    meta.policies = [tenantPolicy(tenant, contextKey), ...own];
   }
-  if (versionKeys.length) {
-    meta.version = versionKeys[0];
-    // Implied rather than stated: the DDL default covers a row written around the ORM, and `onInsert`
-    // covers MongoDB, which has no DDL to default. Both, so every backend starts a row at the same 0.
-    const field = meta.fields[meta.version]!;
-    meta.fields[meta.version] = { ...field, defaultValue: 0, onInsert: 0 };
+
+  // The optimistic lock, a default stated rather than implied: the DDL default covers a row written around the ORM,
+  // and `onInsert` covers MongoDB, which has no DDL to default, so every backend starts a row at the same 0.
+  const version = soleMarked(meta, 'version', (field) => field.version);
+  if (version) {
+    meta.version = version;
+    meta.fields[meta.version] = { ...meta.fields[meta.version]!, defaultValue: 0, onInsert: 0 };
   }
 
   const ids = getIdKeys(meta);
@@ -1108,6 +1181,7 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   }
   target.indexes = inheritedEntries(source.indexes, target.indexes, (index) => index.name);
   target.checks = inheritedEntries(source.checks, target.checks, (check) => check.name);
+  target.policies = inheritedEntries(source.policies, target.policies, (policy) => policy.name);
   target.triggers = inheritedEntries(source.triggers, target.triggers, (trigger) => trigger.name);
 }
 

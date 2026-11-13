@@ -18,7 +18,10 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
   constructor(
     readonly dialect: D,
     readonly extra?: ExtraOptions,
-  ) {}
+  ) {
+    // Reading `policies` refuses a mode the engine cannot hold: read now, the pool is refused when built.
+    void dialect.policies;
+  }
 
   /**
    * get a querier from the pool.

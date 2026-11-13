@@ -12,6 +12,7 @@ import type {
   StampEvent,
   TsTypeOf,
 } from './entity.js';
+import type { TenantKey } from './policy.js';
 import type { Wire } from './query.js';
 import type { QuerySql } from './querySql.js';
 import type { StandardSchemaV1 } from './standardSchema.js';
@@ -43,7 +44,8 @@ export type ColumnValueOf<C> = C extends Column<unknown, infer V> ? V : never;
 export type FilledOptions =
   | { readonly defaultValue: unknown }
   | { readonly onInsert: unknown }
-  | { readonly autoIncrement: true };
+  | { readonly autoIncrement: true }
+  | { readonly tenant: string };
 
 /** The `null` a column's row holds: none unless `nullable()` said so. */
 export type NullOf<O> = O extends { readonly nullable: true } ? null : never;
@@ -96,6 +98,11 @@ export interface ColumnBuilder<in out O, in out V, F extends Family> extends Col
   updatable(this: Lacking<'onUpdate'>, updatable: false): With<O, V, { readonly updatable: false }, F>;
   /** Makes a delete stamp the column instead, and reads skip stamped rows: `new Date()` unless given a value. */
   softDelete(value?: OnFieldCallback<V>): With<O, V, { readonly softDelete: unknown }, F>;
+  /**
+   * Makes it the row's tenant, read off `$context.tenantId` unless given another key: every statement is held to the
+   * context's tenant, and an insert leaving it out is given it.
+   */
+  tenant(...contextKey: TenantKey<V>): With<O, V, { readonly tenant: string }, F>;
   unique(): With<O, V, { readonly unique: true }, F>;
   /** An index over the column, named or not; `false` keeps a foreign key column unindexed. */
   index(name?: string | false): With<O, V, { readonly index: unknown }, F>;

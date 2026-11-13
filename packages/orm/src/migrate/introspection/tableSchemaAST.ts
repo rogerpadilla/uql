@@ -68,6 +68,7 @@ function tableNode(schema: TableSchema, { dialectName, schema: namespace, indexF
   table.primaryKey = schema.primaryKey;
   table.checks.push(...(schema.checks ?? []));
   table.triggers.push(...(schema.triggers ?? []));
+  table.policies.push(...(schema.policies ?? []));
   table.definition = schema.definition;
   return table;
 }

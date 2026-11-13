@@ -61,6 +61,7 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     indexes: matched.flatMap(([sourceTable, targetTable]) => diffTableIndexes(sourceTable, targetTable)),
     checks: altered.flatMap((tableDiff) => tableDiff.checks),
     triggers: altered.flatMap((tableDiff) => tableDiff.triggers),
+    policies: altered.flatMap((tableDiff) => tableDiff.policies),
     primaryKeys: altered.flatMap((tableDiff) => tableDiff.primaryKey ?? []),
     // Relationships span tables, so they are compared over the whole schema rather than per table.
     relationships: diffRelationshipNodes(source.relationships, target.relationships),
@@ -76,9 +77,10 @@ export function diffTable(source: TableNode, target: TableNode, options: DiffOpt
   const columns = diffTableColumns(source, target, opts);
   const checks = diffOwned(source.name, source.checks, target.checks);
   const triggers = diffOwned(source.name, source.triggers, target.triggers);
+  const policies = diffOwned(source.name, source.policies, target.policies);
   const primaryKey = diffPrimaryKey(source, target);
-  return columns.length || checks.length || triggers.length || primaryKey
-    ? { columns, checks, triggers, primaryKey }
+  return columns.length || checks.length || triggers.length || policies.length || primaryKey
+    ? { columns, checks, triggers, policies, primaryKey }
     : undefined;
 }
 

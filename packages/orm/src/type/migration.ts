@@ -7,6 +7,7 @@ import type {
   ForeignKeyAction,
   IndexType,
   TableNode,
+  PolicySchema,
   TriggerSchema,
 } from '../schema/types.js';
 import type {
@@ -131,6 +132,8 @@ export interface TableSchema {
   readonly checks?: CheckSchema[];
   /** The triggers uql installed, each with the statements the engine would recreate it from. */
   readonly triggers?: TriggerSchema[];
+  /** The row-level policies uql installed, each with the statement the engine would recreate it from. */
+  readonly policies?: PolicySchema[];
   /** The statements the engine keeps for the table, where it keeps them: SQLite's `sqlite_master`. */
   readonly definition?: readonly StoredDefinition[];
 }
@@ -241,6 +244,8 @@ export interface SchemaDiff {
    * a column a trigger names, so a table whose columns change takes every trigger off and puts it back.
    */
   readonly triggers?: readonly Change<TriggerSchema>[];
+  /** The row-level policies installed or declared, none kept: a changed one is a new name. */
+  readonly policies?: readonly Change<PolicySchema>[];
   /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
   readonly renamedColumns?: readonly Rename[];
   /**

@@ -10,7 +10,7 @@ import { UqlUsageError } from '../util/uqlError.js';
  */
 export class D1SqliteDialect extends SqliteDialect {
   /** A vector stays text: D1 answers a BLOB as an array of its byte values, which reads like a vector. */
-  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, vectorBytes: false };
+  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, transactions: false, vectorBytes: false };
 
   override get engineName(): EngineName {
     return 'Cloudflare D1';

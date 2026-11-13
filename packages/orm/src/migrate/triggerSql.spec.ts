@@ -342,7 +342,7 @@ describe('the guard, however the engine states one', () => {
 });
 
 describe('the where guard', () => {
-  @Entity({ name: 'Scoped', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
+  @Entity({ name: 'Scoped', policies: [{ must: { tenantId: 7 } }, { allow: {} }] })
   class Scoped {
     @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable()) tenantId?: number | null;
@@ -649,9 +649,9 @@ describe('the rows it reads', () => {
 });
 
 describe('a write in the body, to another table', () => {
-  // Each option here is one a request's write applies and a trigger's must not: a security filter, a soft
+  // Each option here is one a request's write applies and a trigger's must not: a policy, a soft
   // delete, a JavaScript fill standing on a column default.
-  @Entity({ name: 'WriteAudit', filters: { tenant: { where: { tenantId: 7 }, security: true } } })
+  @Entity({ name: 'WriteAudit', policies: [{ must: { tenantId: 7 } }, { allow: {} }] })
   class WriteAudit {
     @Field(f.number().autoIncrement()) id?: number;
     @Field(f.number().nullable().name('post_id')) postId?: number | null;

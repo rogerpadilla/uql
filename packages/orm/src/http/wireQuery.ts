@@ -12,7 +12,7 @@ export type WireCursors = Pick<QueryKeyset<unknown>, '$after' | '$before'>;
 /**
  * The keys a query takes from the wire, with the type of each: every query clause ({@link QUERY_CLAUSES}) the wire
  * carries. Any other key is refused: dropping a clause answers a read other than the one asked for, and `filters` or
- * `context` would bypass a security filter or inject ambient context.
+ * `context` would skip a filter or inject ambient context.
  */
 const WIRE_VALUES: ReadonlyMap<string, QueryClause['value']> = new Map(
   getKeys(QUERY_CLAUSES)

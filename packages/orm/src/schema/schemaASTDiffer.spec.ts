@@ -15,6 +15,7 @@ const NO_DIFFERENCES = {
   indexes: [],
   checks: [],
   triggers: [],
+  policies: [],
   primaryKeys: [],
   relationships: [],
 };

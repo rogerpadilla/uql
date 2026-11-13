@@ -2,6 +2,7 @@ import type { ForeignKeyAction } from '../schema/types.js';
 import {
   COLUMN_OPTIONS,
   type ColumnType,
+  type ContextKeyRef,
   type FieldOptions,
   type OnFieldCallback,
   type QuerySql,
@@ -53,6 +54,10 @@ export class ColumnOptionsBuilder {
 
   softDelete(softDelete?: OnFieldCallback): ColumnOptionsBuilder {
     return this.with({ softDelete: softDelete ?? true });
+  }
+
+  tenant(contextKey?: ContextKeyRef): ColumnOptionsBuilder {
+    return this.with({ tenant: contextKey?.$context ?? 'tenantId' });
   }
 
   unique(): ColumnOptionsBuilder {

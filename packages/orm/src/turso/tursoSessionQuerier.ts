@@ -1,7 +1,7 @@
-import { AbstractSqlQuerier, type BoundStatement } from '../querier/index.js';
+import { AbstractSqlQuerier } from '../querier/index.js';
 import { type SqliteBindValue, sqliteStatements, toBindValues } from '../sqlite/bindValues.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { BoundStatement, ExtraOptions, RawRow } from '../type/index.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { decodeBigInts } from '../util/wideNumber.js';
 

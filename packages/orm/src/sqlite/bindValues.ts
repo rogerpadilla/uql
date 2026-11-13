@@ -1,4 +1,4 @@
-import type { BoundStatement } from '../querier/index.js';
+import type { BoundStatement } from '../type/index.js';
 
 /** What every SQLite driver binds. No `boolean`, which the drivers refuse and the dialect writes as an integer. */
 export type SqliteBindValue = null | string | number | bigint | Uint8Array;

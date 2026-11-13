@@ -6,7 +6,7 @@ import type { UniversalQuerier } from './universalQuerier.js';
 /** Options for a pool-level unit of work ({@link QuerierPool.withQuerier} / {@link QuerierPool.transaction}). */
 export interface PoolRunOptions {
   /**
-   * {@link UqlContext} to run the callback under, so parameterized/`security` filters scope every
+   * {@link UqlContext} to run the callback under, so policies and parameterized filters scope every
    * query inside it. Same mechanism as `withContext`, scoped to this unit of work - ideal where no
    * ambient request context exists (background pipelines, queue consumers, webhooks) and the tenant
    * is known locally: `pool.withQuerier((q) => q.findMany(Invoice, {}), { context: { tenantId } })`.
@@ -62,7 +62,7 @@ export interface QuerierPool<
   end(): Promise<void>;
 }
 
-/** A SQL pool, adding raw `all`/`run`, which no `security` filter scopes. */
+/** A SQL pool, adding raw `all`/`run`, which no policy scopes but the database's own. */
 export interface SqlQuerierPool<Q extends SqlQuerier = SqlQuerier, D extends AbstractSqlDialect = AbstractSqlDialect>
   extends QuerierPool<Q, D>, Pick<SqlQuerier, 'all' | 'run'> {}
 

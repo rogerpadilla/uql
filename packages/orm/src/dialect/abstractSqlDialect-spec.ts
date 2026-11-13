@@ -24,7 +24,6 @@ import {
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, AbstractType, UpdatePayload } from '../type/index.js';
 import { sql, refs } from '../util/index.js';
-import { UqlSecurityError } from '../util/uqlError.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 /** Each field of a tag left out, which a relation reads all the same. */
@@ -1554,7 +1553,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
-  /** A `security: true` filter on a joined to-one applies to a bare `$populate`, with no `$where` of its own. */
+  /** A policy on a joined to-one applies to a bare `$populate`, with no `$where` of its own. */
   shouldApplySecurityFilterToJoinedPopulateWithoutExplicitWhere() {
     const e = this.dialect.escapeIdChar;
     const { sql: statement } = withContext({ secureTenantId: 5 }, () =>
@@ -1571,15 +1570,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /** Same shape as above, but with no ambient context: the security filter must fail closed. */
-  shouldFailClosedForJoinedPopulateWhenSecurityContextIsMissing() {
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, SecureParent, {
-          $select: { id: true },
-          $populate: { related: { $select: { id: true, name: true } } },
-        }),
-      ),
-    ).toThrow(UqlSecurityError);
+  /** A joined to-one whose policy reads a key the context lacks joins no row, as the database would. */
+  shouldJoinNoRowForAPopulateWhoseContextIsMissing() {
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.find(ctx, SecureParent, {
+        $select: { id: true },
+        $populate: { related: { $select: { id: true, name: true } } },
+      }),
+    );
+    expect(statement).toContain('1 = 0');
   }
 
   /** A `$size` count is a client-supplied threshold over rows it never sees: the target's filters must scope it. */
@@ -1696,12 +1695,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /** A `$size` count over a secured target with no ambient context must fail closed. */
-  shouldFailClosedForSizeCountWhenSecurityContextIsMissing() {
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { children: { $size: 1 } } }),
-      ),
-    ).toThrow(UqlSecurityError);
+  /** A `$size` count over children whose policy reads a key the context lacks counts none of them. */
+  shouldCountNoRowForASizeWhoseContextIsMissing() {
+    const { sql: statement } = this.exec((ctx) =>
+      this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { children: { $size: 1 } } }),
+    );
+    expect(statement).toContain('1 = 0');
   }
 
   /**

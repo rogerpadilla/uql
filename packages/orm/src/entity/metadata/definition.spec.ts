@@ -25,6 +25,7 @@ import {
   idKey,
   versionKey,
 } from '../../type/index.js';
+import { $context } from '../../util/contextRefs.js';
 import { getKeys, sql } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { AfterLoad, BeforeInsert, Computed, Entity, f, Field, ManyToMany, ManyToOne, OneToMany } from '../index.js';
@@ -1343,20 +1344,112 @@ it('should refuse softDelete as a filter name', () => {
  * can't resolve (no context, missing tenant id), returning every row instead of none. It has to
  * fail closed, so the combination is rejected at registration rather than at query time.
  */
-it('should refuse a security filter that skips when its condition is unresolved', () => {
+it('should refuse a filter naming security, which a policy states now', () => {
   expect(() => {
     @Entity({
       filters: {
         // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
-        tenant: { where: () => undefined, security: true, onMissing: 'skip' },
+        tenant: { where: () => undefined, security: true },
       },
     })
-    class SkippableSecurityFilter {
+    class SecurityFilter {
       @Field(f.number().autoIncrement())
       id?: number;
     }
-    return SkippableSecurityFilter;
-  }).toThrow("security filter 'tenant' cannot use onMissing: 'skip' (it must fail closed)");
+    return SecurityFilter;
+  }).toThrow("filter 'tenant' names security: what must hold whatever a call asks is a policy, in .policies()");
+});
+
+it('should refuse a policy stating no effect, both, or a statement no policy holds', () => {
+  const declare = (policy: object) => () => {
+    @Entity({ policies: [policy as never] })
+    class Misdeclared {
+      @Field(f.number().autoIncrement())
+      id?: number;
+    }
+    return Misdeclared;
+  };
+  expect(declare({ ops: ['read'] })).toThrow('stating none or both of allow and must');
+  expect(declare({ allow: {}, must: {} })).toThrow('stating none or both of allow and must');
+  expect(declare({ allow: {}, ops: ['publish'] })).toThrow("holding 'publish': name read, insert, update or delete");
+  expect(declare({ allow: {}, ops: [] })).toThrow("holding 'no statement'");
+  expect(declare({ allow: { id: { $context: 'tenant-id' } } })).toThrow("reading context key 'tenant-id'");
+  expect(declare({ allow: {}, when: { 'a.b': 1 } })).toThrow("reading context key 'a.b'");
+});
+
+it("should inherit a base entity's policies, a child naming one replacing it", () => {
+  @Entity({
+    abstract: true,
+    policies: [
+      { must: { id: { $gt: 0 } }, name: 'positive' },
+      { allow: {}, name: 'open' },
+    ],
+  })
+  abstract class Guarded {
+    @Field(f.number().autoIncrement())
+    id?: number;
+  }
+  @Entity({ policies: [{ allow: { id: 1 }, name: 'open' }] })
+  class GuardedChild extends Guarded {}
+  expect(getMeta(GuardedChild).policies).toEqual([
+    { effect: 'must', ops: ['read', 'insert', 'update', 'delete'], where: { id: { $gt: 0 } }, name: 'positive' },
+    { effect: 'allow', ops: ['read', 'insert', 'update', 'delete'], where: { id: 1 }, name: 'open' },
+  ]);
+});
+
+it('should hold each row of an entity with a tenant column to the context tenant it reads', () => {
+  @Entity({ abstract: true })
+  abstract class Tenanted {
+    @Field(f.number().autoIncrement())
+    id?: number;
+    @Field(f.number().tenant($context.orgId))
+    orgId?: number;
+  }
+  @Entity({ policies: [{ allow: { id: 1 }, name: 'one' }] })
+  class TenantedChild extends Tenanted {}
+  expect(getMeta(TenantedChild).policies).toEqual([
+    {
+      effect: 'must',
+      ops: ['read', 'insert', 'update', 'delete'],
+      where: { orgId: { $context: 'orgId' } },
+      name: 'tenant',
+    },
+    { effect: 'allow', ops: ['read', 'insert', 'update', 'delete'], where: { id: 1 }, name: 'one' },
+  ]);
+});
+
+it('should refuse two tenant columns, a tenant read off no identifier, and a policy taking a derived name', () => {
+  expect(() => {
+    @Entity()
+    class TwoTenants {
+      @Field(f.number().autoIncrement())
+      id?: number;
+      @Field(f.number().tenant())
+      a?: number;
+      @Field(f.number().tenant())
+      b?: number;
+    }
+    return TwoTenants;
+  }).toThrow("'TwoTenants' must have at most one field with 'tenant'");
+  expect(() => {
+    @Entity()
+    class OddTenant {
+      @Field(f.number().autoIncrement())
+      id?: number;
+      // A key no declaration names, as a schema built from data may hold one.
+      @Field(f.number().tenant({ $context: 'org-id' }))
+      orgId?: number;
+    }
+    return OddTenant;
+  }).toThrow("'OddTenant' reads its tenant off context key 'org-id'");
+  expect(() => {
+    @Entity({ policies: [{ allow: {}, name: 'everyRow' }] })
+    class Reserved {
+      @Field(f.number().autoIncrement())
+      id?: number;
+    }
+    return Reserved;
+  }).toThrow("'Reserved' policy name 'everyRow' is reserved");
 });
 
 /** The last `@Id` wins, and the one it replaces stops being a field altogether. */

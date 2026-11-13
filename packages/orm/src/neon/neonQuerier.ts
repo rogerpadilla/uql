@@ -1,6 +1,5 @@
 import { type PgAnyClient, PgQuerier } from '../postgres/pgQuerier.js';
-import type { BoundStatement } from '../querier/index.js';
-import type { ExtraOptions, TransactionOptions } from '../type/index.js';
+import type { BoundStatement, ExtraOptions, TransactionOptions } from '../type/index.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import type { NeonDialect } from './neonDialect.js';
 

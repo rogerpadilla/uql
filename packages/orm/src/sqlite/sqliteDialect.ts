@@ -81,6 +81,8 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
     deferrable: false,
   },
   namedLocks: 'journal',
+  rowSecurity: false,
+  transactions: true,
 };
 
 export class SqliteDialect extends AbstractSqlDialect {

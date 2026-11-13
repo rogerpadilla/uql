@@ -3,14 +3,12 @@ import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
   type CascadeType,
-  type EntityAccess,
   type EntityData,
   type EntityIndexMeta,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
   type FieldUpdateOp,
-  type FilterOnMissing,
   type FilterOptions,
   type JsonArrayUpdateOp,
   type JsonScalar,
@@ -32,7 +30,9 @@ import {
   type QueryVectorSearch,
   type QueryWhere,
   type RelationKey,
+  PAST_POLICIES,
   type StatementOptions,
+  type UqlContext,
   resolveAggregateOp,
   type UpdatePayload,
   type VectorDistance,
@@ -59,6 +59,7 @@ import {
   isRecord,
   someKey,
 } from './object.util.js';
+import { asWhere, conjuncts, policyCheck, policyScope, withContextValues } from './policy.util.js';
 import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
@@ -569,20 +570,17 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
 }
 
 /**
- * `$where` with the entity's active filters merged in, against the ambient {@link UqlContext}. A convenience
- * filter yields to a `$where` on its key; a `security` one is always ANDed, from {@link securityConditions}.
+ * `$where` with the entity's active filters merged in, then ANDed with the rows its policies let the statement reach
+ * under the ambient {@link UqlContext}. A filter yields to a `$where` on its key; a policy yields to nothing.
  */
 export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: StatementOptions): QueryWhere<E> {
-  if (!meta.filters) {
+  if (!meta.filters && !meta.policies?.length) {
     return whereMap;
   }
   const result: Record<string, unknown> = { ...whereMap };
-  for (const [name, filter] of Object.entries(meta.filters)) {
+  for (const [name, filter] of Object.entries(meta.filters ?? {})) {
     const active = opts?.filters !== false && (opts?.filters?.[name] ?? filter.default !== false);
-    if (filter.security || !active) {
-      continue;
-    }
-    const condition: Record<string, unknown> = resolveFilter(meta, name, filter) ?? {};
+    const condition: Record<string, unknown> = (active && filterCondition(filter)) || {};
     for (const key of getKeys(condition)) {
       if (result[key] === undefined) {
         result[key] = condition[key];
@@ -590,75 +588,101 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
     }
   }
   const merged = result as QueryWhere<E>;
-  const security = securityConditions(meta, SCOPED_BY[opts?.access ?? 'read']).map(([, condition]) => condition);
-  return security.length ? whereAnd(merged, security) : merged;
+  const scope = opts?.[PAST_POLICIES] ? undefined : policyScope(meta, opts?.access ?? 'read', getContext());
+  return scope === undefined || scope === true ? merged : whereAnd(merged, conjuncts(asWhere(meta, scope)));
 }
 
-/** The accesses whose `security` filters scope a statement: an update or a delete reads the rows it changes too. */
-const SCOPED_BY: Readonly<Record<EntityAccess, readonly EntityAccess[]>> = {
-  read: ['read'],
-  insert: ['insert'],
-  update: ['read', 'update'],
-  delete: ['read', 'delete'],
-};
+/** A filter's condition under the ambient context, `undefined` where it reads what the context lacks, which skips it. */
+function filterCondition<E>(filter: FilterOptions<E>): QueryWhere<E> | undefined {
+  const context = getContext();
+  return typeof filter.where === 'function' ? filter.where(context) : withContextValues(filter.where, context);
+}
 
 /**
- * The condition of each `security` filter holding any of `accesses`, by name, resolved against the ambient context.
- * One resolving to `{}`, a trusted context's "no restriction", is left out. Reads AND these in; writes are held to them.
+ * Holds rows an insert or an update writes to the entity's policies under the ambient context, before the write: a
+ * field the check pins to one value is filled into an inserted row leaving it out, and refused where a row sets
+ * another. See architecture/row-level-security.md.
  */
-export function securityConditions<E>(
+export function pinWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
   meta: EntityMeta<E>,
-  accesses: readonly EntityAccess[],
-): [name: string, condition: QueryWhere<E>][] {
-  return Object.entries(meta.filters ?? {}).flatMap(([name, filter]) => {
-    const holds = filter.security && (!filter.ops || filter.ops.some((op) => accesses.includes(op)));
-    const condition = holds ? resolveFilter(meta, name, filter) : undefined;
-    return condition && hasKeys(condition) ? [[name, condition]] : [];
-  });
-}
-
-/** A filter's condition, `undefined` where it resolves to nothing and may skip; throws where it may not. */
-function resolveFilter<E>(meta: EntityMeta<E>, name: string, filter: FilterOptions<E>): QueryWhere<E> | undefined {
-  const condition = typeof filter.where === 'function' ? filter.where(getContext()) : filter.where;
-  const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
-  if (condition === undefined && onMissing === 'throw') {
-    throw new UqlSecurityError(`filter '${name}' on '${entityName(meta)}' could not resolve (missing context)`);
-  }
-  return condition;
+  rows: readonly R[],
+  write: 'insert' | 'update',
+): void {
+  pinRows(meta, rows, write, getContext());
 }
 
 /**
- * Holds written rows to the `security` filters, as {@link applyFilters} holds reads: an inserted row gets
- * each field a condition names and it leaves out, and a row naming one must carry the condition's value.
- * A condition other than field equalities refuses the write, having nothing a row can be checked against.
- * See architecture/security-filter-writes.md.
+ * {@link pinWrite}, answering what the rows themselves cannot settle as the check the written rows must hold once
+ * written, which the querier reads back inside the write's transaction.
  */
 export function guardWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
   meta: EntityMeta<E>,
   rows: readonly R[],
   write: 'insert' | 'update',
-): void {
-  for (const [name, condition] of securityConditions(meta, [write])) {
-    const values: Record<string, unknown> = condition;
-    const keys = fieldKeys(meta, () => true).filter((key) => Object.hasOwn(values, key));
-    const equalities = keys.length === getKeys(values).length;
-    if (!equalities || keys.some((key) => Array.isArray(values[key]) || isOperatorObject(values[key]))) {
-      throw new UqlSecurityError(
-        `'${entityName(meta)}' security filter '${name}' is not field equalities, so no write can be checked against it`,
-      );
-    }
-    for (const key of keys) {
-      for (const row of rows) {
-        if (row[key] === undefined) {
-          if (write === 'insert') {
-            row[key] = values[key] as R[typeof key];
-          }
-        } else if (row[key] !== values[key]) {
-          throw new UqlSecurityError(`'${entityName(meta)}' row sets '${key}' outside security filter '${name}'`);
+): QueryWhere<E> | undefined {
+  const context = getContext();
+  const pins = pinRows(meta, rows, write, context);
+  if (!pins) {
+    return undefined;
+  }
+  const { check, pinned, rest } = pins;
+  const scope = write === 'update' ? policyScope(meta, 'update', context) : undefined;
+  const held = typeof scope === 'object' ? pinnedFields(meta, scope).pinned : [];
+  const settles = ([key, value]: [FieldKey<E>, unknown]) =>
+    write === 'insert' ||
+    rows.every((row) => row[key] !== undefined) ||
+    held.some(([at, holds]) => at === key && holds === value);
+  return !rest && pinned.every(settles) ? undefined : check;
+}
+
+/** The check `rows` are written under, the fields it pins filled and refused: none where it lets every row be. */
+function pinRows<E, R extends EntityData<E> | UpdatePayload<E>>(
+  meta: EntityMeta<E>,
+  rows: readonly R[],
+  write: 'insert' | 'update',
+  context: UqlContext | undefined,
+): { check: QueryWhere<E>; pinned: [FieldKey<E>, unknown][]; rest: boolean } | undefined {
+  const check = policyCheck(meta, write, context);
+  if (check === undefined || check === true) {
+    return undefined;
+  }
+  if (check === false) {
+    throw new UqlSecurityError(`no policy of '${entityName(meta)}' lets this context ${write} a row`);
+  }
+  const { pinned, rest } = pinnedFields(meta, check);
+  for (const [key, value] of pinned) {
+    for (const row of rows) {
+      if (row[key] === undefined) {
+        if (write === 'insert') {
+          row[key] = value as R[typeof key];
         }
+      } else if (row[key] !== value) {
+        throw new UqlSecurityError(`'${entityName(meta)}' row sets '${key}' where its policies do not let it`);
       }
     }
   }
+  return { check, pinned, rest };
+}
+
+/**
+ * The fields `where` pins to one value, each a top-level equality it ANDs, and whether anything else is left of it:
+ * an operator, a list, a relation, SQL or an `$or`, which only the database answers for a row.
+ */
+function pinnedFields<E>(
+  meta: EntityMeta<E>,
+  where: QueryWhere<E>,
+): { pinned: [FieldKey<E>, unknown][]; rest: boolean } {
+  const entries = conjuncts(where).flatMap((part): [string, unknown][] => Object.entries(part));
+  const pinned = entries.filter((entry): entry is [FieldKey<E>, unknown] => {
+    const [key, value] = entry;
+    return !!meta.fields[key as FieldKey<E>] && isScalarValue(value);
+  });
+  return { pinned, rest: pinned.length < entries.length };
+}
+
+/** A value a field is compared to as it is: no operator map, list or SQL. */
+function isScalarValue(value: unknown): boolean {
+  return !(value instanceof QuerySql) && !Array.isArray(value) && !isOperatorObject(value) && value !== null;
 }
 
 /**

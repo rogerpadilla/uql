@@ -379,11 +379,6 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     return this.conn.db();
   }
 
-  /** Runs `write` as its steps: a multi-step write is atomic only inside a transaction the caller opens. */
-  protected override atomically<T>(write: () => Promise<T>): Promise<T> {
-    return write();
-  }
-
   protected override async openTransaction(_opts?: TransactionOptions) {
     this.logger.logInfo('startTransaction');
     await this.#session?.endSession();

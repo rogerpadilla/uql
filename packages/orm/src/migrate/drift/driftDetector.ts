@@ -78,6 +78,7 @@ export function detectDrift(
     ...detectPrimaryKeyDrifts(diff),
     ...detectOwnedDrifts('Check', diff.checks),
     ...detectOwnedDrifts('Trigger', diff.triggers),
+    ...detectOwnedDrifts('Policy', diff.policies),
     ...diff.relationships.map(relationshipDrift),
   ];
   const count = (severity: DriftSeverity) => drifts.filter((drift) => drift.severity === severity).length;
@@ -107,11 +108,11 @@ function detectPrimaryKeyDrifts(diff: SchemaDiffResult): Drift[] {
 }
 
 /**
- * A check or trigger the database lacks, critical since rows are written otherwise than the entity says, or
+ * A check, trigger or policy the database lacks, critical since rows are written otherwise than the entity says, or
  * one uql installed that nothing declares.
  */
 function detectOwnedDrifts(
-  kind: 'Check' | 'Trigger',
+  kind: 'Check' | 'Trigger' | 'Policy',
   changes: readonly TableChange<{ readonly name: string }>[],
 ): Drift[] {
   return changes.map(({ table, from, to }): Drift => ({

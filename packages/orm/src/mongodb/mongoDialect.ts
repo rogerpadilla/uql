@@ -255,6 +255,8 @@ export const mongoDialectFeatures: DialectFeatures = {
   rowLocks: false, // its concurrency control is atomic document updates, plus a transaction the caller opens
   reportsWrites: [],
   nullsSortLowest: true,
+  rowSecurity: false,
+  transactions: false,
 };
 
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
@@ -1407,7 +1409,7 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
       // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
-      // filters (in particular `security: true` ones) apply even to a bare `$populate: { rel: true }`,
+      // filters and policies apply even to a bare `$populate: { rel: true }`,
       // and the caller's bypass never reaches them, exactly like the SQL dialects' JOIN ON-clause filters.
       assertNoRelationText(join.path, join.query);
       const relationFilter = this.where(join.entity, join.query.$where ?? {});

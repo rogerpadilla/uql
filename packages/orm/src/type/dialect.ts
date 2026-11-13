@@ -168,6 +168,17 @@ export interface DialectFeatures {
    * side of a value the nulls fall on.
    */
   readonly nullsSortLowest: boolean;
+  /**
+   * Whether the engine holds rows to an entity's policies itself, with `CREATE POLICY`, and whether a policy may read
+   * another table (CockroachDB's may not), or `false` where the querier alone holds them. See
+   * architecture/row-level-security.md.
+   */
+  readonly rowSecurity: { readonly subqueries: boolean } | false;
+  /**
+   * Whether the querier opens a transaction of its own around a write split in steps. Where not, its steps land one by
+   * one, atomic only inside a transaction the caller opens (MongoDB), or none at all (D1).
+   */
+  readonly transactions: boolean;
 }
 
 /** How a dialect spells a row lock, once {@link DialectFeatures.rowLocks} says it has one. */

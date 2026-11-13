@@ -8,6 +8,11 @@ import type { QueryContext, SqlDialectFeatures, AbstractType } from '../type/ind
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
+  /** Bare: a policy takes no subquery here. */
+  override contextRead(key: string, type: string): string {
+    return this.settingRead(key, type);
+  }
+
   /**
    * pgvector's but `l1`: `<+>` and `vector_l1_ops` answer "unimplemented: operator class ... is not
    * supported" (verified live on v26.2), tracked at https://github.com/cockroachdb/cockroach/issues/147839.
@@ -31,6 +36,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
     nullsSortLowest: true,
     triggers: { ...PG_FEATURES.triggers, fires: 'eachRowIf', deferrable: false },
     namedLocks: 'journal',
+    rowSecurity: { subqueries: false },
   };
 
   /**

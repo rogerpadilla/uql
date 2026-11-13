@@ -29,7 +29,7 @@ export type ApiOptions<Ctx = unknown> = EntityPathOptions & {
   use?: readonly ApiMiddleware<Ctx>[];
   /**
    * Derive the ambient {@link UqlContext} (e.g. `{ tenantId, userId }`) from the transport's context, which the whole
-   * call then runs inside, so `security` filters scope it. Derive it from a verified source (a session, a JWT).
+   * call then runs inside, so policies scope it. Derive it from a verified source (a session, a JWT).
    * Without it, a call runs in whatever context its caller set (a tRPC middleware's).
    */
   contextOf?: (context: Ctx) => UqlContext | undefined | Promise<UqlContext | undefined>;

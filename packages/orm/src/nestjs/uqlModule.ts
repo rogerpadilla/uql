@@ -18,8 +18,8 @@ type UqlModuleCommon<Req> = {
   readonly global?: boolean;
   /**
    * Derive the ambient {@link UqlContext} (e.g. `{ tenantId, userId }`) from each HTTP request.
-   * When set, a global interceptor runs every request inside `withContext`, so parameterized /
-   * `security` filters (multi-tenancy, RLS) are scoped automatically. Derive tenant/auth from a
+   * When set, a global interceptor runs every request inside `withContext`, so policies (multi-tenancy,
+   * row-level security) and parameterized filters are scoped automatically. Derive tenant/auth from a
    * verified source (session, JWT) - never trust the client.
    */
   readonly contextOf?: (request: Req) => UqlContext | undefined | Promise<UqlContext | undefined>;
@@ -94,7 +94,7 @@ export class UqlModule {
       },
     ];
     if (contextOf) {
-      // Scope every request to its context so multi-tenancy / security filters apply automatically.
+      // Scope every request to its context so policies apply automatically.
       providers.push({ provide: APP_INTERCEPTOR, useValue: new UqlContextInterceptor(contextOf) });
     }
     return { module: UqlModule, global, imports, providers, exports: [UQL_QUERIER_POOL] };

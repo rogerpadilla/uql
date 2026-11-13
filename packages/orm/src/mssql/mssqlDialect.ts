@@ -87,6 +87,8 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
     deferrable: false,
   },
   namedLocks: 'transaction',
+  rowSecurity: false,
+  transactions: true,
 };
 
 /** The `type` `OPENJSON` reports for each JSON kind. */

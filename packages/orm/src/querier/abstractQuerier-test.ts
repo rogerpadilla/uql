@@ -6,6 +6,9 @@ import {
   assertDefined,
   Company,
   AuthoredNote,
+  CheckedNote,
+  MemberProject,
+  ProjectMember,
   Carrier,
   Label,
   Parcel,
@@ -55,7 +58,7 @@ import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
 const thrownValue = (thrown: unknown) => thrown;
-const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantId }, fn);
+const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantCode: tenantId }, fn);
 const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
 const asUser = <T>(userId: string, fn: () => Promise<T>) => withContext({ userId }, fn);
 
@@ -3249,6 +3252,77 @@ export abstract class AbstractQuerierIt<
     expect(queryErrorKind(refused)).toBe('uniqueViolation');
     const row = await this.querier.findOneById(AuthoredNote, theirs, { $select: { title: true } });
     expect(row).toEqual({ title: 'theirs' });
+  }
+
+  async shouldReadNoRowWhereThePolicyContextIsMissing() {
+    await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'mine' }));
+
+    expect(await this.querier.count(TenantNote)).toBe(0);
+    expect(await this.querier.findMany(TenantNote, {})).toEqual([]);
+  }
+
+  async shouldRefuseAnInsertItsPolicyCheckDoesNotHold() {
+    const refused = await asUser('a', () =>
+      this.querier.transaction(() => this.querier.insertOne(CheckedNote, { title: 'void' })),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await asSystem(() => this.querier.count(CheckedNote))).toBe(0);
+  }
+
+  async shouldInsertARowItsPolicyCheckHolds() {
+    const id = await asUser('a', () =>
+      this.querier.transaction(() => this.querier.insertOne(CheckedNote, { title: 'draft' })),
+    );
+
+    const row = await asSystem(() => this.querier.findOneById(CheckedNote, id, { $select: { authorId: true } }));
+    expect(row).toEqual({ authorId: 'a' });
+  }
+
+  async shouldRefuseAnUpdateItsPolicyCheckDoesNotHold() {
+    const id = await asUser('a', () =>
+      this.querier.transaction(() => this.querier.insertOne(CheckedNote, { title: 'draft' })),
+    );
+
+    const refused = await asUser('a', () =>
+      this.querier.transaction(() => this.querier.updateOneById(CheckedNote, id, { title: 'void' })),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    const row = await asSystem(() => this.querier.findOneById(CheckedNote, id, { $select: { title: true } }));
+    expect(row).toEqual({ title: 'draft' });
+  }
+
+  async shouldRefuseAReportedUpdateItsPolicyCheckDoesNotHold() {
+    const id = await asUser('a', () =>
+      this.querier.transaction(() => this.querier.insertOne(CheckedNote, { title: 'draft' })),
+    );
+
+    const refused = await asUser('a', () =>
+      this.querier.transaction(() =>
+        this.querier.updateOneById(CheckedNote, id, { title: 'void' }, { returning: { title: true } }),
+      ),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    const row = await asSystem(() => this.querier.findOneById(CheckedNote, id, { $select: { title: true } }));
+    expect(row).toEqual({ title: 'draft' });
+  }
+
+  async shouldReadAProjectThroughItsMembers() {
+    const [mine, theirs] = await asSystem(() =>
+      this.querier.insertMany(MemberProject, [{ name: 'mine' }, { name: 'theirs' }]),
+    );
+    await asSystem(() =>
+      this.querier.insertMany(ProjectMember, [
+        { projectId: mine, userId: 'a' },
+        { projectId: theirs, userId: 'b' },
+      ]),
+    );
+
+    const rows = await asUser('a', () => this.querier.findMany(MemberProject, { $select: { name: true } }));
+
+    expect(rows).toEqual([{ name: 'mine' }]);
   }
 
   async shouldFindOne() {

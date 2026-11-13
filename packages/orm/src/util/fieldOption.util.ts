@@ -34,6 +34,7 @@ const FIELD_OPTION_FAMILY = {
   onInsert: '*',
   onUpdate: '*',
   softDelete: '*',
+  tenant: '*',
   version: 'numeric',
   columnType: '*',
   length: 'string',

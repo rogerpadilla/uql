@@ -2,7 +2,7 @@ import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
-import type { CheckSchema, ColumnDefault, TriggerSchema } from '../../schema/types.js';
+import type { CheckSchema, ColumnDefault, PolicySchema, TriggerSchema } from '../../schema/types.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnRenames,
@@ -106,13 +106,14 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
         return undefined;
       }
 
-      const [columns, indexes, foreignKeys, primaryKey, checks, triggers, definition] = await Promise.all([
+      const [columns, indexes, foreignKeys, primaryKey, checks, triggers, policies, definition] = await Promise.all([
         this.getColumns(read, tableName),
         this.getIndexes(read, tableName),
         this.getForeignKeys(read, tableName),
         this.getPrimaryKey(read, tableName),
         this.getChecks(read, tableName),
         this.getTriggers(read, tableName),
+        this.getPolicies(read, tableName),
         this.getDefinition(read, tableName),
       ]);
 
@@ -129,6 +130,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
         foreignKeys,
         checks,
         triggers,
+        policies,
         definition,
       };
     });
@@ -194,6 +196,11 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
    * what uql wrote, which is exactly what a rollback restores.
    */
   protected abstract triggersQuery(tableName: string): QuerySql;
+
+  /** The row-level policies uql installed on the table: none, but where the engine holds rows to policies. */
+  protected async getPolicies(_read: TableRowReader, _tableName: string): Promise<PolicySchema[]> {
+    return [];
+  }
 
   /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
   protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
