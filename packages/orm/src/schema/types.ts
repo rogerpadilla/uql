@@ -190,6 +190,11 @@ export interface TableNode {
   readonly triggers: TriggerSchema[];
   /** The row-level policies uql installs on this table. */
   readonly policies: PolicySchema[];
+  /**
+   * Whether row-level security holds the table, enabled and forced: from entities, whether uql installs a policy on
+   * it; from a database, as its catalogue says. Unset where the engine has none.
+   */
+  rowSecurity?: boolean;
   /** Optional table comment */
   readonly comment?: string;
   /** The statements the engine keeps for the table, where it keeps them; none on a table built from entities. */
@@ -288,6 +293,8 @@ export interface TableDiff {
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
   readonly policies: TableChange<PolicySchema>[];
+  /** Set only where {@link TableNode.rowSecurity} differs as uql's policies need it. */
+  readonly rowSecurity?: TableChange<boolean>;
   /** Set only when the two primary keys have different columns. */
   readonly primaryKey?: PrimaryKeyDiff;
 }
@@ -301,6 +308,7 @@ export interface SchemaDiffResult {
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
   readonly policies: TableChange<PolicySchema>[];
+  readonly rowSecurity: TableChange<boolean>[];
   readonly primaryKeys: PrimaryKeyDiff[];
   readonly relationships: RelationshipDiff[];
 }

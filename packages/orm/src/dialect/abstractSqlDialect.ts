@@ -3390,8 +3390,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     throw new UqlUsageError(`${this.engineName} reads no context key in SQL, so '${key}' has no rendering`);
   }
 
-  /** What answers whether the connected role reads past row-level security, as one row's `bypasses`. */
-  rowSecurityBypassQuery(): string {
+  /**
+   * What answers whether `role`, or the role a transaction runs as where it names none, reads past row-level
+   * security, as one row's `bypasses`.
+   */
+  rowSecurityBypassQuery(_role?: string): string {
     throw new UqlUsageError(`${this.engineName} holds no row to a policy itself`);
   }
 

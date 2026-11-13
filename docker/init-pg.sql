@@ -6,3 +6,9 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = name)\gexec
 -- The role a native-policy suite connects as: no superuser and no BYPASSRLS, so the database holds it to them.
 SELECT 'CREATE ROLE uql_policy LOGIN PASSWORD ''test'' NOSUPERUSER NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'uql_policy')\gexec
+-- The database roles that suite's context binds, both granted to it: one its policies name, one reading past them.
+SELECT 'CREATE ROLE uql_policy_reader NOLOGIN NOBYPASSRLS'
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'uql_policy_reader')\gexec
+SELECT 'CREATE ROLE uql_policy_bypass NOLOGIN BYPASSRLS'
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'uql_policy_bypass')\gexec
+GRANT uql_policy_reader, uql_policy_bypass TO uql_policy;

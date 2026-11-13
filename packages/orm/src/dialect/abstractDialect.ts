@@ -12,6 +12,7 @@ import type {
   StatementOptions,
   QueryWhere,
   AbstractType,
+  ContextRef,
 } from '../type/index.js';
 import { ENGINE_NAMES, type EngineName, parseQueryLock, PAST_POLICIES } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
@@ -33,6 +34,8 @@ export interface DialectOptions {
   readonly schema?: string;
   /** See {@link ExtraOptions.policies}. */
   readonly policies?: PolicyMode;
+  /** See {@link ExtraOptions.role}. */
+  readonly role?: ContextRef<string>;
 }
 
 /**
@@ -41,7 +44,8 @@ export interface DialectOptions {
  * each pool's constructor.
  */
 export function dialectOptionsFrom(extra: ExtraOptions | undefined): DialectOptions {
-  return { namingStrategy: extra?.namingStrategy, schema: extra?.schema, policies: extra?.policies };
+  const { namingStrategy, schema, policies, role } = extra ?? {};
+  return { namingStrategy, schema, policies, role };
 }
 
 /** A name a score can be projected under: what every engine takes as a key, with nothing to escape. */
@@ -159,15 +163,31 @@ export abstract class AbstractDialect {
     }
   }
 
-  /** How its pool's statements are held to the entities' policies, refusing a database that holds no row to one. */
+  #policies?: PolicyEnforcement;
+
+  /**
+   * How its pool's statements are held to the entities' policies, refusing a database that holds no row to one.
+   * Resolved on first read, once the subclass has stated its features.
+   */
   get policies(): PolicyEnforcement {
-    const enforcement = enforcementOf(this.options.policies);
+    this.#policies ??= this.enforcement();
+    return this.#policies;
+  }
+
+  private enforcement(): PolicyEnforcement {
+    const { policies, role } = this.options;
+    const enforcement = enforcementOf(policies);
     if (enforcement.database && this.features.rowSecurity === false) {
       throw new UqlUsageError(
         `${this.engineName} holds no row to a policy itself: leave policies unset, for uql to hold them`,
       );
     }
-    return enforcement;
+    if (role && !enforcement.database) {
+      throw new UqlUsageError(
+        "a pool's role is a database role its transactions run as, which only policies: 'native' binds",
+      );
+    }
+    return role ? { ...enforcement, role: role.$context } : enforcement;
   }
 
   /**

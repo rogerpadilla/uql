@@ -722,14 +722,16 @@ describe('AbstractSqlQuerier native policy binding', () => {
   /** A Postgres querier whose database holds the policies: records each binding, its role held to them. */
   class NativeSqlQuerier extends AbstractSqlQuerier {
     readonly bindings: [sql: string, values: unknown[] | undefined][] = [];
+    readonly roleChecks: string[] = [];
     roleCheck: () => Promise<SqlExecution> = async () => ({ rows: [{ bypasses: false }] });
 
-    constructor() {
-      super(new PostgresDialect({ policies: 'native' }));
+    constructor(options: ExtraOptions = {}) {
+      super(new PostgresDialect({ policies: 'native', ...options }));
     }
 
     protected override async execute(query: string, values?: unknown[]): Promise<SqlExecution> {
       if (query.includes('rolbypassrls')) {
+        this.roleChecks.push(query);
         return this.roleCheck();
       }
       if (query.includes('set_config')) {
@@ -772,6 +774,39 @@ describe('AbstractSqlQuerier native policy binding', () => {
     await withContext({ orgId: 1 }, () => querier.run(ping));
 
     expect(querier.bindings).toHaveLength(1);
+  });
+
+  it('should run a transaction as the database role its context names, and as its own where the next names none', async () => {
+    const querier = new NativeSqlQuerier({ role: $context.role });
+
+    await querier.transaction(async () => {
+      await withContext({ orgId: 1, role: 'reader' }, () => querier.run(ping));
+      await withContext({ orgId: 1 }, () => querier.run(ping));
+    });
+
+    expect(querier.bindings).toEqual([
+      [
+        'SELECT set_config($1, $2, true), set_config($3, $4, true), set_config($5, $6, true)',
+        ['uql.orgId', '1', 'uql.role', 'reader', 'role', 'reader'],
+      ],
+      [
+        'SELECT set_config($1, $2, true), set_config($3, $4, true), set_config($5, $6, true)',
+        ['uql.orgId', '1', 'uql.role', '', 'role', 'none'],
+      ],
+    ]);
+  });
+
+  it('should ask once per role whether the role a context names reads past the policies', async () => {
+    const querier = new NativeSqlQuerier({ role: $context.role });
+
+    await withContext({ role: 'reader' }, () => querier.run(ping));
+    await withContext({ role: 'reader' }, () => querier.run(ping));
+    await withContext({ orgId: 1 }, () => querier.run(ping));
+
+    expect(querier.roleChecks).toEqual([
+      "SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = 'reader'",
+      'SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = session_user',
+    ]);
   });
 
   it('should bind nothing again for a statement under the context its transaction holds', async () => {

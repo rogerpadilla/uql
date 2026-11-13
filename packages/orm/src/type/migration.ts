@@ -134,6 +134,8 @@ export interface TableSchema {
   readonly triggers?: TriggerSchema[];
   /** The row-level policies uql installed, each with the statement the engine would recreate it from. */
   readonly policies?: PolicySchema[];
+  /** See {@link TableNode.rowSecurity}. */
+  readonly rowSecurity?: boolean;
   /** The statements the engine keeps for the table, where it keeps them: SQLite's `sqlite_master`. */
   readonly definition?: readonly StoredDefinition[];
 }
@@ -246,6 +248,8 @@ export interface SchemaDiff {
   readonly triggers?: readonly Change<TriggerSchema>[];
   /** The row-level policies installed or declared, none kept: a changed one is a new name. */
   readonly policies?: readonly Change<PolicySchema>[];
+  /** See {@link TableDiff.rowSecurity}. */
+  readonly rowSecurity?: Change<boolean>;
   /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
   readonly renamedColumns?: readonly Rename[];
   /**

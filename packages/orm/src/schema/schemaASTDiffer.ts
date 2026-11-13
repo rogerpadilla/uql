@@ -62,6 +62,7 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     checks: altered.flatMap((tableDiff) => tableDiff.checks),
     triggers: altered.flatMap((tableDiff) => tableDiff.triggers),
     policies: altered.flatMap((tableDiff) => tableDiff.policies),
+    rowSecurity: altered.flatMap((tableDiff) => tableDiff.rowSecurity ?? []),
     primaryKeys: altered.flatMap((tableDiff) => tableDiff.primaryKey ?? []),
     // Relationships span tables, so they are compared over the whole schema rather than per table.
     relationships: diffRelationshipNodes(source.relationships, target.relationships),
@@ -78,9 +79,25 @@ export function diffTable(source: TableNode, target: TableNode, options: DiffOpt
   const checks = diffOwned(source.name, source.checks, target.checks);
   const triggers = diffOwned(source.name, source.triggers, target.triggers);
   const policies = diffOwned(source.name, source.policies, target.policies);
+  const rowSecurity = diffRowSecurity(source, target);
   const primaryKey = diffPrimaryKey(source, target);
-  return columns.length || checks.length || triggers.length || policies.length || primaryKey
-    ? { columns, checks, triggers, policies, primaryKey }
+  return columns.length || checks.length || triggers.length || policies.length || rowSecurity || primaryKey
+    ? { columns, checks, triggers, policies, rowSecurity, primaryKey }
+    : undefined;
+}
+
+/**
+ * Row-level security where the database switches it otherwise than uql's policies need: on under them, off once its
+ * last is gone. Left alone on a table holding none of uql's, whose switch is a second writer's.
+ */
+function diffRowSecurity(source: TableNode, target: TableNode): TableChange<boolean> | undefined {
+  const { rowSecurity: to } = source;
+  const { rowSecurity: from } = target;
+  if (to === undefined || from === undefined || from === to) {
+    return undefined;
+  }
+  return to || target.policies.some((policy) => isOwnedName(policy.name))
+    ? { table: source.name, from, to }
     : undefined;
 }
 

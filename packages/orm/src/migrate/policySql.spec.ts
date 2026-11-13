@@ -6,6 +6,7 @@ import { assertDefined } from '../test/index.js';
 import type { Type } from '../type/index.js';
 import { $context } from '../util/contextRefs.js';
 import { renderPolicies } from './policySql.js';
+import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 const dialect = new PostgresDialect({ policies: 'native' });
@@ -19,6 +20,40 @@ describe('renderPolicies', () => {
     }
     const [policy] = renderPolicies(dialect, getMeta(Nobody), text);
     expect(policy!.statements.at(-1)).toContain('USING (false)');
+  });
+
+  it('should hold a policy whose when names the role key to the database roles it lists, as TO does', () => {
+    @Entity({ policies: [{ allow: {}, when: { role: ['anon', 'authenticated'], userId: 'u1' } }] })
+    class Listed {
+      @Field(f.number().autoIncrement()) id?: number;
+    }
+    const roled = new PostgresDialect({ policies: 'native', role: $context.role });
+
+    const [policy] = renderPolicies(roled, getMeta(Listed), text);
+
+    expect(policy!.statements).toEqual([
+      expect.stringMatching(
+        /^CREATE POLICY "\w+" ON "Listed" AS PERMISSIVE FOR ALL TO "anon", "authenticated" USING \(\(SELECT nullif\(current_setting\('uql\.userId', true\), ''\)::text\) IN \('u1'\)\) WITH CHECK/,
+      ),
+    ]);
+  });
+
+  it('should hold a policy whose when lists no database role under no context', () => {
+    @Entity({ policies: [{ allow: {}, when: { role: [] } }] })
+    class NoRole {
+      @Field(f.number().autoIncrement()) id?: number;
+    }
+    const roled = new PostgresDialect({ policies: 'native', role: $context.role });
+
+    const [policy] = renderPolicies(roled, getMeta(NoRole), text);
+
+    expect(policy!.statements.at(-1)).toMatch(/ TO PUBLIC USING \(false\)/);
+  });
+
+  it('should refuse a role bound for policies the database does not hold', () => {
+    expect(() => new PostgresDialect({ role: $context.role }).policies).toThrow(
+      "a pool's role is a database role its transactions run as, which only policies: 'native' binds",
+    );
   });
 
   it('should refuse a context key compared with what is no field', () => {
@@ -53,11 +88,12 @@ describe('policy migrations', () => {
     @Field(f.string().nullable()) note?: string | null;
   }
 
-  /** `entity`'s table as the database reports it, holding `installed` for policies. */
+  /** `entity`'s table as the database reports it, holding `installed` for policies, row-level security on with them. */
   const installed = (entity: Type<object>, ...policies: PolicySchema[]) => {
     const table = generator.buildAST([entity]).getTable('Ticket');
     assertDefined(table);
     table.policies.splice(0, table.policies.length, ...policies);
+    table.rowSecurity = policies.length > 0;
     return table;
   };
   const declared = () => generator.buildAST([Ticket]).getTable('Ticket')!.policies;
@@ -87,6 +123,30 @@ describe('policy migrations', () => {
   // Forced with no policy left, the table would show no row to anyone, its owner included.
   it('should disable row-level security where a table loses its last policy', () => {
     expect(alter(OpenTicket, installed(OpenTicket, ...declared()))).toEqual([
+      ...declared().map((policy) => `DROP POLICY IF EXISTS "${policy.name}" ON "Ticket";`),
+      'ALTER TABLE "Ticket" NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;',
+    ]);
+  });
+
+  it('should turn row-level security back on where the database has it off under its policies', () => {
+    const table = installed(Ticket, ...declared());
+    table.rowSecurity = false;
+
+    expect(alter(Ticket, table)).toEqual(['ALTER TABLE "Ticket" ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;']);
+  });
+
+  it('should leave alone row-level security a table holding no policy of its own has on', () => {
+    const table = installed(OpenTicket);
+    table.rowSecurity = true;
+
+    expect(generator.diffSchema(OpenTicket, table)).toBeUndefined();
+  });
+
+  it('should put row-level security back as it was, rolling back a change of it', () => {
+    const diff = generator.diffSchema(Ticket, installed(Ticket));
+    assertDefined(diff);
+
+    expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
       ...declared().map((policy) => `DROP POLICY IF EXISTS "${policy.name}" ON "Ticket";`),
       'ALTER TABLE "Ticket" NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;',
     ]);

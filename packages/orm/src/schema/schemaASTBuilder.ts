@@ -45,6 +45,8 @@ export interface BuildSchemaASTOptions {
   renderTriggers: (meta: EntityMeta<object>) => TriggerSchema[];
   /** The row-level policies the database holds an entity's table to, none where the querier holds them. */
   renderPolicies: (meta: EntityMeta<object>) => PolicySchema[];
+  /** Whether the engine has row-level security, which a table then states as on or off. */
+  rowSecurity: boolean;
 }
 
 /** What the passes below share. */
@@ -120,6 +122,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
   table.primaryKey = keyOfColumns(columns.values());
   table.triggers.push(...ctx.renderTriggers(meta));
   table.policies.push(...ctx.renderPolicies(meta));
+  table.rowSecurity = ctx.rowSecurity ? table.policies.length > 0 : undefined;
 
   ctx.ast.addTable(table);
   return table;

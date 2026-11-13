@@ -58,6 +58,17 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return rows.flatMap(({ name, definition }) => (isOwnedName(name) ? [{ name, statements: [definition] }] : []));
   }
 
+  /** Enabled and forced, as uql switches it: enabled alone still lets the owner past. */
+  protected override async getRowSecurity(read: TableRowReader, tableName: string): Promise<boolean | undefined> {
+    const [row] = await read<{ held: boolean }>(sql`
+      SELECT c.relrowsecurity AND c.relforcerowsecurity AS held
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = ${this.schemaExpr} AND c.relname = ${tableName}
+    `);
+    return row?.held;
+  }
+
   /** `pg_get_expr` answers NULL for a table dropped mid-read, where `pg_get_constraintdef` raises. */
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     const rows = await read<{ name: string; expression: string | null }>(

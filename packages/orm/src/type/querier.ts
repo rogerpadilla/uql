@@ -3,6 +3,7 @@ import type { SqlDialectName } from './dialect.js';
 import type { EntityWrite, FieldKey, HookEvent, UpdateWrite } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
+import type { ContextRef } from './policy.js';
 import type {
   Captured,
   QueryFilter,
@@ -278,4 +279,9 @@ export type ExtraOptions = {
   readonly listeners?: readonly QuerierListener[];
   /** Who holds this pool's statements to the entities' policies: see {@link PolicyMode}. `'app'` where unset. */
   readonly policies?: PolicyMode;
+  /**
+   * The context key naming the database role a native pool's transactions run as, `role: $context.role`: a policy's
+   * `when` on it is `CREATE POLICY ... TO` those roles. Unset, they run as the role the pool connects as.
+   */
+  readonly role?: ContextRef<string>;
 };

@@ -106,9 +106,16 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly sqlValues: SqlValues = PG_SQL_VALUES;
 
-  /** `set_config(..., true)`: bound to the transaction, so a pooled connection carries none past it. */
+  /**
+   * `set_config(..., true)`: bound to the transaction, so a pooled connection carries none past it. The role key is
+   * also the transaction's `role`, back to the connection's own (`none`) where unbound.
+   */
   override contextBinding(entries: readonly (readonly [string, string])[]): BoundStatement | undefined {
-    const configs = entries.map(([key, value]) => sql`set_config(${contextSetting(key)}, ${value}, true)`);
+    const { role } = this.policies;
+    const configs = entries.flatMap(([key, value]) => [
+      sql`set_config(${contextSetting(key)}, ${value}, true)`,
+      ...(key === role ? [sql`set_config(${'role'}, ${value || 'none'}, true)`] : []),
+    ]);
     return configs.length ? this.compile(sql`SELECT ${sql.join(configs)}`) : undefined;
   }
 
@@ -122,8 +129,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return `nullif(current_setting(${this.escape(contextSetting(key))}, true), '')::${type}`;
   }
 
-  override rowSecurityBypassQuery(): string {
-    return 'SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = current_user';
+  /** Where the pool binds roles, an unnamed one is the connection's own, which unbinding one goes back to. */
+  override rowSecurityBypassQuery(role?: string): string {
+    const name = role === undefined ? (this.policies.role ? 'session_user' : 'current_user') : this.escape(role);
+    return `SELECT rolsuper OR rolbypassrls AS bypasses FROM pg_roles WHERE rolname = ${name}`;
   }
 
   /** `USING MESSAGE`, so the text is taken as it is rather than as a format reading each `%`. */

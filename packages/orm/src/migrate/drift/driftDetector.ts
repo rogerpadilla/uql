@@ -79,6 +79,7 @@ export function detectDrift(
     ...detectOwnedDrifts('Check', diff.checks),
     ...detectOwnedDrifts('Trigger', diff.triggers),
     ...detectOwnedDrifts('Policy', diff.policies),
+    ...diff.rowSecurity.map(rowSecurityDrift),
     ...diff.relationships.map(relationshipDrift),
   ];
   const count = (severity: DriftSeverity) => drifts.filter((drift) => drift.severity === severity).length;
@@ -115,14 +116,40 @@ function detectOwnedDrifts(
   kind: 'Check' | 'Trigger' | 'Policy',
   changes: readonly TableChange<{ readonly name: string }>[],
 ): Drift[] {
-  return changes.map(({ table, from, to }): Drift => ({
+  return changes.map(({ table, from, to }) =>
+    ownedDrift(
+      table,
+      to
+        ? `${kind} "${to.name}" expected but not found in database`
+        : `${kind} "${from?.name}" exists in database but not in entity`,
+      Boolean(to),
+    ),
+  );
+}
+
+/**
+ * Row-level security off under uql's policies, critical since the database then holds no row to them; or left on
+ * with none, where a table forced with no policy shows no row.
+ */
+function rowSecurityDrift({ table, to }: TableChange<boolean>): Drift {
+  return ownedDrift(
+    table,
+    to
+      ? `Row-level security is off on "${table}", so the database holds no row to its policies`
+      : `Row-level security is on for "${table}", whose entity declares no policy`,
+    Boolean(to),
+  );
+}
+
+/** What uql owns on `table` differing from the entity: critical where the database lacks what it `expected`. */
+function ownedDrift(table: string, details: string, expected: boolean): Drift {
+  return {
     type: 'constraint_mismatch',
     table,
+    details,
+    severity: expected ? 'critical' : 'warning',
     suggestion: 'Generate a migration to match the entity',
-    ...(to
-      ? { severity: 'critical', details: `${kind} "${to.name}" expected but not found in database` }
-      : { severity: 'warning', details: `${kind} "${from?.name}" exists in database but not in entity` }),
-  }));
+  };
 }
 
 /** A key's columns as a drift names them, `none` where there is no key. */

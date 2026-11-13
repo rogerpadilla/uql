@@ -124,6 +124,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       renderPolicies: (meta) =>
         renderPolicies(this.dialect, meta, (field) => canonicalToSql(resolveColumnCanonicalType(field), this.dialect)),
       textScoreIndexes: this.dialect.features.textScoreIndexes,
+      rowSecurity: this.dialect.features.rowSecurity !== false,
       vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
   }
@@ -152,11 +153,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       // Triggers last: each needs its own table, and a body may read any other the same schema just made.
       ...terminated(tables.flatMap((table) => table.triggers.flatMap((trigger) => trigger.statements))),
       // Policies after them, a membership read through a table the same schema just made included.
-      ...tables.flatMap((table) => {
-        const policies = table.policies.map((to) => ({ to }));
-        const [, on] = this.rowSecurityChange(qualifyName(table.name, table.schema), policies);
-        return [...on, ...terminated(sides(policies, 'to').flatMap((policy) => policy.statements))];
-      }),
+      ...tables.flatMap((table) => [
+        ...(table.rowSecurity ? this.tableDdl.rowSecurity(qualifyName(table.name, table.schema), true) : []),
+        ...terminated(table.policies.flatMap((policy) => policy.statements)),
+      ]),
     ];
   }
 
@@ -250,7 +250,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     );
     const triggerCreates = terminated(sides(triggers, 'to').flatMap((trigger) => trigger.statements));
     const policies = cycled(diff.policies);
-    const [off, on] = this.rowSecurityChange(tableName, diff.policies);
+    // Row-level security goes off after the last policy, and on before the first.
+    const switched = diff.rowSecurity ? this.tableDdl.rowSecurity(tableName, diff.rowSecurity.to === true) : [];
+    const [off, on] = diff.rowSecurity?.to ? [[], switched] : [switched, []];
     const policyDrops = [
       ...terminated(sides(policies, 'from').map((policy) => dropPolicy(this.dialect, tableName, policy.name))),
       ...off,
@@ -289,15 +291,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...triggerCreates,
       ...policyCreates,
     ];
-  }
-
-  /** What switches `tableName`'s row-level security as `policies` change it, as `[off, on]`: on with its first, off with its last. */
-  private rowSecurityChange(tableName: string, policies: readonly Change<OwnedSchema>[] = []): [string[], string[]] {
-    const had = sides(policies, 'from').length > 0;
-    const has = sides(policies, 'to').length > 0;
-    return had === has
-      ? [[], []]
-      : [had ? this.tableDdl.rowSecurity(tableName, false) : [], has ? this.tableDdl.rowSecurity(tableName, true) : []];
   }
 
   /** `CONSTRAINT <name> CHECK (...)`, in a `CREATE TABLE`, after `ADD`, or inline where a column brings it. */
@@ -405,6 +398,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       // A kept trigger or policy as both sides, which the alter cycles only where a column it names moves under it.
       triggers: nonEmpty([...(tableDiff?.triggers ?? []), ...kept(desired.triggers, currentTable.triggers)]),
       policies: nonEmpty([...(tableDiff?.policies ?? []), ...kept(desired.policies, currentTable.policies)]),
+      rowSecurity: tableDiff?.rowSecurity,
       renamedColumns: nonEmpty(renamedColumns ?? []),
     };
     if (!(tableDiff || alter.indexes || alter.foreignKeys || alter.renamedColumns)) {

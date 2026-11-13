@@ -106,16 +106,18 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
         return undefined;
       }
 
-      const [columns, indexes, foreignKeys, primaryKey, checks, triggers, policies, definition] = await Promise.all([
-        this.getColumns(read, tableName),
-        this.getIndexes(read, tableName),
-        this.getForeignKeys(read, tableName),
-        this.getPrimaryKey(read, tableName),
-        this.getChecks(read, tableName),
-        this.getTriggers(read, tableName),
-        this.getPolicies(read, tableName),
-        this.getDefinition(read, tableName),
-      ]);
+      const [columns, indexes, foreignKeys, primaryKey, checks, triggers, policies, rowSecurity, definition] =
+        await Promise.all([
+          this.getColumns(read, tableName),
+          this.getIndexes(read, tableName),
+          this.getForeignKeys(read, tableName),
+          this.getPrimaryKey(read, tableName),
+          this.getChecks(read, tableName),
+          this.getTriggers(read, tableName),
+          this.getPolicies(read, tableName),
+          this.getRowSecurity(read, tableName),
+          this.getDefinition(read, tableName),
+        ]);
 
       const unique = uniqueColumns(indexes);
       return {
@@ -131,6 +133,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
         checks,
         triggers,
         policies,
+        rowSecurity,
         definition,
       };
     });
@@ -200,6 +203,11 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   /** The row-level policies uql installed on the table: none, but where the engine holds rows to policies. */
   protected async getPolicies(_read: TableRowReader, _tableName: string): Promise<PolicySchema[]> {
     return [];
+  }
+
+  /** Whether row-level security holds the table: unknown, but where the engine holds rows to policies. */
+  protected async getRowSecurity(_read: TableRowReader, _tableName: string): Promise<boolean | undefined> {
+    return undefined;
   }
 
   /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */

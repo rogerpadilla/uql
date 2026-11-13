@@ -72,6 +72,36 @@ describe('DriftDetector', () => {
       ]);
     });
 
+    it('should report row-level security off under the policies the entity declares, and on past them', () => {
+      const policy = { name: '_uql_notes__allow_0_aaaaaa', statements: ['CREATE POLICY ...'] };
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      const held = mockTableNode('notes', [{ name: 'id', isPrimaryKey: true }]);
+      held.policies.push(policy);
+      held.rowSecurity = true;
+      const off = mockTableNode('notes', [{ name: 'id', isPrimaryKey: true }]);
+      off.policies.push(policy);
+      off.rowSecurity = false;
+      const open = mockTableNode('memos', [{ name: 'id', isPrimaryKey: true }]);
+      open.rowSecurity = false;
+      const left = mockTableNode('memos', [{ name: 'id', isPrimaryKey: true }]);
+      left.policies.push({ ...policy, name: '_uql_memos__allow_0_bbbbbb' });
+      left.rowSecurity = true;
+      expected.addTable(held);
+      expected.addTable(open);
+      actual.addTable(off);
+      actual.addTable(left);
+
+      expect(detectDrift(expected, actual).drifts.map(({ severity, details }) => ({ severity, details }))).toEqual([
+        { severity: 'warning', details: 'Policy "_uql_memos__allow_0_bbbbbb" exists in database but not in entity' },
+        {
+          severity: 'critical',
+          details: 'Row-level security is off on "notes", so the database holds no row to its policies',
+        },
+        { severity: 'warning', details: 'Row-level security is on for "memos", whose entity declares no policy' },
+      ]);
+    });
+
     /** A `jsonb` column reprints its document, keys reordered and spaced: the same document is no drift. */
     it('should report a JSON default only where the document differs, and show it as JSON', () => {
       const expected = new SchemaAST();

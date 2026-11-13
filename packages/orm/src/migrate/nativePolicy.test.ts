@@ -9,9 +9,10 @@ import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { queryErrorKind } from '../querier/queryError.js';
 import { cockroachConnection, postgresConnection, provisioningTimeout } from '../test/index.js';
-import type { SqlQuerierPool } from '../type/index.js';
+import type { ExtraOptions, SqlQuerierPool } from '../type/index.js';
 import { $context } from '../util/contextRefs.js';
 import { sql } from '../util/sql.js';
+import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -54,6 +55,18 @@ class NpChecked {
   @Field(f.string().nullable()) title?: string | null;
 }
 
+/** Read by the login role, not by the role a context binds, which is no member of it. */
+@Entity({
+  policies: [
+    { allow: {}, ops: ['read'], when: { dbRole: 'uql_policy' } },
+    { allow: {}, ops: ['insert'] },
+  ],
+})
+class NpGranted {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.string().nullable()) title?: string | null;
+}
+
 /** `NpNote` once its `allow` is edited: the same table, a policy under a new name. */
 @Entity({
   name: 'NpNote',
@@ -65,7 +78,10 @@ class NpNoteEdited {
   @Field(f.string().nullable()) title?: string | null;
 }
 
-const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject'];
+const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted'];
+
+/** Native, its transactions run as the database role context key `dbRole` names. */
+const native: ExtraOptions = { policies: 'native', role: $context.dbRole };
 
 /**
  * Each engine holding rows to policies: the owner it migrates as, the role its app connects as, what it grants that
@@ -74,16 +90,16 @@ const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject'];
 const engines: readonly [string, () => SqlQuerierPool, () => SqlQuerierPool, string, boolean][] = [
   [
     'postgres',
-    () => new PgQuerierPool(postgresConnection('test_policy'), { policies: 'native' }),
-    () => new PgQuerierPool({ ...postgresConnection('test_policy'), user: 'uql_policy' }, { policies: 'native' }),
-    'GRANT USAGE ON SCHEMA public TO uql_policy; GRANT ALL ON ALL TABLES IN SCHEMA public TO uql_policy; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO uql_policy',
+    () => new PgQuerierPool(postgresConnection('test_policy'), native),
+    () => new PgQuerierPool({ ...postgresConnection('test_policy'), user: 'uql_policy' }, native),
+    'GRANT USAGE ON SCHEMA public TO uql_policy, uql_policy_reader; GRANT ALL ON ALL TABLES IN SCHEMA public TO uql_policy; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO uql_policy; GRANT SELECT ON "NpGranted" TO uql_policy_reader',
     true,
   ],
   [
     'cockroachdb',
-    () => new CrdbQuerierPool(cockroachConnection('test_policy'), { policies: 'native' }),
-    () => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy' }, { policies: 'native' }),
-    'GRANT ALL ON TABLE "NpNote", "NpChecked" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq" TO uql_policy',
+    () => new CrdbQuerierPool(cockroachConnection('test_policy'), native),
+    () => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy' }, native),
+    'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
     false,
   ],
 ];
@@ -99,7 +115,7 @@ const refusal = (promise: Promise<unknown>) =>
 describe.each(engines)('native policies on %s', (_engine, owned, held, grant, subqueries) => {
   let owner: SqlQuerierPool;
   let app: SqlQuerierPool;
-  const entities = subqueries ? [NpNote, NpProject, NpMember, NpChecked] : [NpNote, NpChecked];
+  const entities = subqueries ? [NpNote, NpProject, NpMember, NpChecked, NpGranted] : [NpNote, NpChecked, NpGranted];
 
   const dropAll = async () => {
     for (const table of tables) {
@@ -248,5 +264,45 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
     await expect(asTenant(1, () => owner.count(NpNote))).rejects.toThrow(
       "a pool with policies: 'native' runs a context's statements as a role",
     );
+  });
+
+  it('should install a policy whose when names the role key for the database roles it lists', () => {
+    const statements = new SqlSchemaGenerator(owner.dialect).generateCreateSchema([NpGranted]);
+
+    expect(statements.find((statement) => statement.includes('FOR SELECT'))).toMatch(
+      /^CREATE POLICY "_uql_NpGranted__allow_0_read_[0-9a-f]{6}" ON "NpGranted" AS PERMISSIVE FOR SELECT TO "uql_policy" USING \(true\);$/,
+    );
+  });
+
+  it('should run a context as the database role it names, for its transaction alone', async () => {
+    await owner.insertOne(NpGranted, { title: 'granted' });
+    const granted = sql.text('SELECT current_user AS "role", "title" FROM "NpGranted"');
+
+    expect(await withContext({ userId: 'a', dbRole: 'uql_policy_reader' }, () => app.all(granted))).toEqual([]);
+    expect(await asUser('a', () => app.all(granted))).toEqual([{ role: 'uql_policy', title: 'granted' }]);
+  });
+
+  it('should refuse statements under a context naming a role that reads past the policies', async () => {
+    const bypassing = withContext({ dbRole: 'uql_policy_bypass' }, () => app.count(NpNote));
+
+    await expect(bypassing).rejects.toThrow("a pool with policies: 'native' runs a context's statements as a role");
+    expect(await withContext({ dbRole: 'uql_policy_reader' }, () => app.count(NpGranted))).toBe(0);
+  });
+
+  it('should report row-level security turned off under its policies as critical, and turn it back on', async () => {
+    const migrator = new Migrator(owner, { entities: [NpNote] });
+    const generator = new SqlSchemaGenerator(owner.dialect);
+    await owner.run(sql.text('ALTER TABLE "NpNote" NO FORCE ROW LEVEL SECURITY'));
+
+    const { drifts } = detectDrift(
+      generator.buildAST([NpNote]),
+      await migrator.schemaIntrospector.introspect(['NpNote']),
+    );
+    const plan = await migrator.planSync({ safe: false });
+    await migrator.sync();
+
+    expect(drifts).toEqual([expect.objectContaining({ table: 'NpNote', severity: 'critical' })]);
+    expect(plan.join(' ')).toMatch(/^ALTER TABLE "NpNote" ENABLE ROW LEVEL SECURITY.* FORCE ROW LEVEL SECURITY;$/);
+    expect(await migrator.planSync({ safe: false })).toEqual([]);
   });
 });

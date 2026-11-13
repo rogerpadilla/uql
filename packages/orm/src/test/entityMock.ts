@@ -24,6 +24,8 @@ declare module '../type/index.js' {
     userId?: string | null;
     authorNo?: number;
     role?: string;
+    /** The database role a native pool's transactions run as, apart from `role`, which policies compare as data. */
+    dbRole?: string;
     system?: boolean;
   }
 }

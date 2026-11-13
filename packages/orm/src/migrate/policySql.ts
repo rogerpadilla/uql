@@ -24,8 +24,7 @@ const COMMANDS: Readonly<Record<EntityAccess, string>> = {
 
 /**
  * The policies a native pool's database holds `meta` to, each named for its table and label and ending in a hash of
- * its own SQL, as a trigger is: one `FOR ALL` where it holds every statement, else one per statement. The table's
- * row-level security is switched with its first policy and its last, as `TableDdl.rowSecurity` says. See
+ * its own SQL, as a trigger is: one `FOR ALL` where it holds every statement, else one per statement. See
  * architecture/row-level-security.md.
  */
 export function renderPolicies(
@@ -47,6 +46,7 @@ export function renderPolicies(
   };
   return policiesOf(meta.policies).flatMap((policy, position) => {
     const label = policy.name ?? `${policy.effect}_${position}`;
+    const [roles, when] = rolesOf(policy.when, dialect.policies.role);
     const predicate = (where: PolicyWhere<object>) => {
       const bound = asWhere(meta, bindContext(meta, where, read));
       const { rowSecurity } = dialect.features;
@@ -56,8 +56,7 @@ export function renderPolicies(
         );
       }
       return (
-        [...whenSql(dialect, policy.when), dialect.compileDdl(bound, meta.entity)].filter(Boolean).join(' AND ') ||
-        'true'
+        [...whenSql(dialect, when), dialect.compileDdl(bound, meta.entity)].filter(Boolean).join(' AND ') || 'true'
       );
     };
     const commands: [string, EntityAccess | undefined][] = POLICY_OPS.every((op) => policy.ops.includes(op))
@@ -68,7 +67,7 @@ export function renderPolicies(
       const check = writes(command) ? predicate(policy.check ?? policy.where) : undefined;
       const create = (name: string) =>
         [
-          `CREATE POLICY ${dialect.escapeId(name)} ON ${target} AS ${policy.effect === 'allow' ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${command} TO PUBLIC`,
+          `CREATE POLICY ${dialect.escapeId(name)} ON ${target} AS ${policy.effect === 'allow' ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${command} TO ${roles.map((role) => dialect.escapeId(role)).join(', ') || 'PUBLIC'}`,
           ...(using === undefined ? [] : [`USING (${using})`]),
           ...(check === undefined ? [] : [`WITH CHECK (${check})`]),
         ].join(' ');
@@ -88,9 +87,19 @@ export function dropPolicy(dialect: AbstractSqlDialect, table: string, name: str
   return `DROP POLICY IF EXISTS ${dialect.escapeId(name)} ON ${dialect.escapeId(table)}`;
 }
 
-/** A `when` as the context comparisons it is, each read as text, as the binding sends every value. */
-function whenSql(dialect: AbstractSqlDialect, when: PolicyWhen | undefined): string[] {
-  return Object.entries(when ?? {}).map(([key, value]) => {
+/**
+ * The database roles a `when` lists at the pool's role key, which `TO` holds, and the rest of it. None where it lists
+ * none, the key then left in the rest, which holds under no context.
+ */
+function rolesOf(when: PolicyWhen | undefined, key: string | undefined): [roles: string[], rest: [string, unknown][]] {
+  const entries: [string, unknown][] = Object.entries(when ?? {});
+  const roles = entries.flatMap(([it, value]) => (it === key ? [value].flat().map(String) : []));
+  return [roles, roles.length ? entries.filter(([it]) => it !== key) : entries];
+}
+
+/** A `when`'s entries as the context comparisons they are, each read as text, as the binding sends every value. */
+function whenSql(dialect: AbstractSqlDialect, when: readonly [string, unknown][]): string[] {
+  return when.map(([key, value]) => {
     const values = [value].flat().map((it) => dialect.escape(String(it)));
     return values.length ? `${dialect.contextRead(key, 'text')} IN (${values.join(', ')})` : 'false';
   });

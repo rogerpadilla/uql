@@ -28,3 +28,7 @@ CREATE DATABASE IF NOT EXISTS test_vector;
 CREATE DATABASE IF NOT EXISTS test_policy;
 -- The user a native-policy suite connects as: not an admin, so the database holds it to them.
 CREATE USER IF NOT EXISTS uql_policy;
+-- The roles that suite's context binds, both granted to it: one its policies name, one reading past them.
+CREATE ROLE IF NOT EXISTS uql_policy_reader;
+CREATE ROLE IF NOT EXISTS uql_policy_bypass WITH BYPASSRLS;
+GRANT uql_policy_reader, uql_policy_bypass TO uql_policy;

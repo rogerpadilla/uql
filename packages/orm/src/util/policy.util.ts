@@ -32,6 +32,8 @@ export type PolicyEnforcement = {
   readonly guards: boolean;
   readonly checks: boolean;
   readonly database: boolean;
+  /** The context key naming the database role its transactions run as, where the database holds the policies. */
+  readonly role?: string;
 };
 
 const ENFORCEMENT = {
@@ -216,6 +218,11 @@ export function contextEntries(context: UqlContext | undefined): [string, string
       typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean';
     return scalar ? [[key, String(value)]] : [];
   });
+}
+
+/** The database role `entries` bind at the pool's role `key`: none where unset, or set empty to unbind it. */
+export function roleOf(entries: readonly (readonly [string, string])[], key: string | undefined): string | undefined {
+  return entries.find(([it]) => it === key)?.[1] || undefined;
 }
 
 /** The context of a transaction that bound none yet, or whose binding a savepoint's rollback undid. */

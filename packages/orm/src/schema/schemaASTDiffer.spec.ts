@@ -16,6 +16,7 @@ const NO_DIFFERENCES = {
   checks: [],
   triggers: [],
   policies: [],
+  rowSecurity: [],
   primaryKeys: [],
   relationships: [],
 };

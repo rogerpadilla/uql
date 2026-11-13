@@ -69,6 +69,7 @@ function tableNode(schema: TableSchema, { dialectName, schema: namespace, indexF
   table.checks.push(...(schema.checks ?? []));
   table.triggers.push(...(schema.triggers ?? []));
   table.policies.push(...(schema.policies ?? []));
+  table.rowSecurity = schema.rowSecurity;
   table.definition = schema.definition;
   return table;
 }

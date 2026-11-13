@@ -41,7 +41,7 @@ import {
   getKeys,
   rowKey,
 } from '../util/index.js';
-import { contextEntries, nextBinding, NOTHING_BOUND, unsettled } from '../util/policy.util.js';
+import { contextEntries, nextBinding, NOTHING_BOUND, roleOf, unsettled } from '../util/policy.util.js';
 import { sql, statementOf } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -119,8 +119,8 @@ function inPayloadOrder<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[], 
   return generatesKey(meta) ? reported.toSorted((a, b) => byGeneratedKey(a[idKey], b[idKey])) : reported;
 }
 
-/** Each dialect whose connected role was found held to its policies, answered once per pool. */
-const heldToPolicies = new WeakMap<AbstractSqlDialect, Promise<void>>();
+/** Each role found held to a dialect's policies, by name (`undefined` the connection's own), answered once per pool. */
+const heldToPolicies = new WeakMap<AbstractSqlDialect, Map<string | undefined, Promise<void>>>();
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   override hasOpenTransaction = false;
@@ -211,7 +211,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   private async pendingBinding(ask: (sql: string) => Promise<SqlExecution>): Promise<BoundStatement | undefined> {
     const { entries, bound } = nextBinding(this.#bound, getContext());
     if (entries.length && this.bindsContext()) {
-      await this.assertHeldToPolicies(ask);
+      await this.assertHeldToPolicies(ask, roleOf(entries, this.dialect.policies.role));
     }
     this.#bound = bound;
     return this.dialect.contextBinding(entries);
@@ -223,21 +223,22 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Refuses a statement under a context where the connected role reads past the database's policies, which would show
-   * one tenant another's rows. A statement under none, a migration's, runs as the owner it connects as.
+   * Refuses a statement under a context whose role, `role` or the connection's own, reads past the database's
+   * policies, which would show one tenant another's rows. A statement under none, a migration's, runs as the owner.
    */
-  private assertHeldToPolicies(ask: (sql: string) => Promise<SqlExecution>): Promise<void> {
+  private assertHeldToPolicies(ask: (sql: string) => Promise<SqlExecution>, role: string | undefined): Promise<void> {
     const { dialect } = this;
-    return cachedIn(heldToPolicies, dialect, () =>
-      ask(dialect.rowSecurityBypassQuery()).then(({ rows }) => {
+    const held = cachedIn(heldToPolicies, dialect, () => new Map<string | undefined, Promise<void>>());
+    return cachedIn(held, role, () =>
+      ask(dialect.rowSecurityBypassQuery(role)).then(({ rows }) => {
         if (rows[0]?.['bypasses'] !== false) {
           throw new UqlUsageError(
-            `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as one that does not, or leave policies unset`,
+            `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as, or name, one that does not, or leave policies unset`,
           );
         }
       }),
     ).catch((error: unknown) => {
-      heldToPolicies.delete(dialect);
+      held.delete(role);
       throw error;
     });
   }
