@@ -24,7 +24,8 @@ const mysqlLock = (name: string): LockSql => {
 
 /**
  * The journal's lock row, inserted only where it is absent, which one run alone can: the lock of an engine with no
- * named one. CockroachDB's write to it cannot stay uncommitted for the run, which a function it creates would wait on.
+ * usable named one. CockroachDB's advisory lock held for a session excludes nobody, and one held by a transaction, or
+ * an uncommitted write to this row, stalls the run's own DDL on its other connection (verified on v26.4).
  */
 const journalRowLock = (name: string): LockSql => {
   const { table, name: column } = journalIds(name);

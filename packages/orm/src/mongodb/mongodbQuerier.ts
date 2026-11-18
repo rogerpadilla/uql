@@ -234,7 +234,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
    * The collection's metadata count, which the driver exposes as its own call and which takes no
    * filter - the reason {@link UniversalQuerier.estimatedCount} takes none either.
    */
-  override async estimatedCount<E extends Document>(entity: Type<E>) {
+  protected override async internalEstimatedCount<E extends Document>(entity: Type<E>) {
     return this.execute('estimatedCount', (session) => this.collection(entity).estimatedDocumentCount({ session }));
   }
 

@@ -57,7 +57,7 @@ class MockQuerier extends AbstractQuerier {
     return [];
   }
 
-  override estimatedCount(): Promise<number> {
+  protected override internalEstimatedCount(): Promise<number> {
     return Promise.resolve(0);
   }
 

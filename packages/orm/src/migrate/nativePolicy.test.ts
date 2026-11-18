@@ -215,6 +215,12 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
     expect(await app.all(sql.text('SELECT "title" FROM "NpNote"'))).toEqual([]);
   });
 
+  it('should refuse to estimate an entity the database holds to its policies, as the querier does', async () => {
+    await expect(asTenant(1, () => app.estimatedCount(NpNote))).rejects.toThrow(
+      "cannot estimate 'NpNote', which its policies hold: count it instead",
+    );
+  });
+
   /** `test` on a pool of one connection, so every statement it runs shares that connection. */
   const onOneConnection = async (test: (pool: AbstractPgQuerierPool<AbstractSqlDialect>) => Promise<void>) => {
     const single = held({ max: 1 });

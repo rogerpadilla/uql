@@ -62,18 +62,21 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /** A held lock is only visible to another connection, which a shared-handle pool has not got. */
   override requirements(): SpecRequirements<this> {
     const rowLocks = !!this.pool.dialect.features.rowLocks;
+    const ownConnections = !(this.pool instanceof AbstractSharedHandleQuerierPool);
     return {
       ...super.requirements(),
       shouldRefuseALockOutsideATransaction: rowLocks,
       shouldRefuseALockOutsideATransactionOnAStream: rowLocks,
       shouldFindManyAndCountUnderALock: rowLocks,
-      shouldSkipOrRefuseLockedRows: rowLocks && !(this.pool instanceof AbstractSharedHandleQuerierPool),
+      shouldSkipOrRefuseLockedRows: rowLocks && ownConnections,
       shouldRefuseAWriteInAReadOnlyTransaction: this.pool.dialect
         .getBeginTransactionStatements({ readOnly: true })
         .some((statement) => statement.includes('READ ONLY')),
-      shouldReturnWhatAnUpdateWroteWhileAnotherWriterRaces: !(this.pool instanceof AbstractSharedHandleQuerierPool),
-      shouldNotOverwriteARowAnotherWriterMovedOutOfAPage: !(this.pool instanceof AbstractSharedHandleQuerierPool),
-      shouldHoldTheRowAnUpsertFound: !(this.pool instanceof AbstractSharedHandleQuerierPool),
+      shouldReturnWhatAnUpdateWroteWhileAnotherWriterRaces: ownConnections,
+      shouldNotOverwriteARowAnotherWriterMovedOutOfAPage: ownConnections,
+      shouldHoldTheRowAnUpsertFound: ownConnections,
+      // A database lock rather than row locks: one writer at a time, so a second transaction waits instead of racing.
+      shouldFailTheTransactionThatLosesARaceAsRetryable: rowLocks && ownConnections,
     };
   }
 

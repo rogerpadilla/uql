@@ -166,6 +166,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** Whether `information_schema.columns c` lists a column the table shows: every one, on Postgres. */
   protected readonly visibleColumnSql: QuerySql = sql`TRUE`;
 
+  /** Whether index entry `a` is a column the table shows, or an expression: every one, on Postgres. */
+  protected readonly visibleIndexEntrySql: QuerySql = sql`TRUE`;
+
   /**
    * `attname` where the entry is a column, `pg_get_indexdef` for that one position where it is an
    * expression. Neither alone will do: an expression entry has `attnum = 0`, so joining `pg_attribute`
@@ -205,6 +208,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND NOT EXISTS (
           SELECT 1 FROM pg_constraint con WHERE con.conindid = ix.indexrelid AND con.contype = 'x'
         )
+        AND ${this.visibleIndexEntrySql}
       ORDER BY i.relname, k.n
     `,
     );
@@ -405,7 +409,7 @@ function mapIndexEntry(row: PostgresIndexRow): IndexEntry<string> {
 }
 
 /**
- * CockroachDB answers the same catalogue queries and differs only in what it can express: v26.2.5
+ * CockroachDB answers the same catalogue queries and differs only in what it can express: v26.4
  * still rejects `NULLS FIRST/LAST` and operator classes as "unimplemented", and it sorts nulls first
  * on an ASC column where Postgres sorts them last. Reading a nulls order back would therefore report
  * every ascending index as drifted, against an entity that could not have asked for one.
@@ -416,19 +420,27 @@ export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
     'include',
     'vector',
     'distance',
+    'hash',
   ]);
 
   /** Not `rowid`, the `NOT VISIBLE` key it gives a table declared without one, which no entity can name. */
   protected override readonly visibleColumnSql = sql`c.is_hidden = 'NO'`;
 
+  /** Not the hidden shard column a hash-sharded index keys on first. */
+  protected override readonly visibleIndexEntrySql = sql`(a.attname IS NULL OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema = n.nspname AND c.table_name = t.relname AND c.column_name = a.attname AND c.is_hidden = 'YES'
+  ))`;
+
   /** None: it rejects a stated nulls order, so reading one back gives an index it would refuse to rebuild. */
   protected override readonly nullsFirstSql = sql`NULL::BOOL`;
 
   /**
-   * Every index reports the access method `prefix` and no operator class, so a vector index is read off
-   * its definition, `USING cspann (vec vector_cosine_ops)`: its type, and its last key's class.
+   * Every index reports the access method `prefix` and no operator class, so its type is read off its definition:
+   * `USING cspann (vec vector_cosine_ops)` a vector one, with its last key's class, and `(a) USING HASH` a hash one.
    */
-  protected override readonly indexMethodSql = sql`CASE WHEN pg_get_indexdef(ix.indexrelid) LIKE '% USING cspann %' THEN 'vector' ELSE am.amname END`;
+  protected override readonly indexMethodSql = sql`CASE substring(pg_get_indexdef(ix.indexrelid) from ' USING (cspann|HASH)')
+    WHEN 'cspann' THEN 'vector' WHEN 'HASH' THEN 'hash' ELSE am.amname END`;
 
   protected override readonly opsClassSql = sql`CASE WHEN k.n = ix.indnkeyatts THEN substring(pg_get_indexdef(ix.indexrelid) from '(\\w+_ops)\\)') END`;
 }

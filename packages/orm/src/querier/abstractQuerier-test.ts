@@ -65,6 +65,22 @@ const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ te
 const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
 const asUser = <T>(userId: string, fn: () => Promise<T>) => withContext({ userId }, fn);
 
+/** A wait each of `parties` callers passes once all of them reached it. */
+const barrier = (parties: number) => {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  let waiting = parties;
+  return () => {
+    waiting -= 1;
+    if (waiting === 0) {
+      resolve();
+    }
+    return promise;
+  };
+};
+
+const isRejected = (result: PromiseSettledResult<unknown>): result is PromiseRejectedResult =>
+  result.status === 'rejected';
+
 /** The rows a find matched are those each tally counted, by id. */
 const expectSameRows = (rows: readonly { id?: unknown }[], tallies: readonly { id?: unknown; n: number }[]) => {
   const ids = (it: readonly { id?: unknown }[]) => it.map(({ id }) => String(id)).sort();
@@ -255,7 +271,7 @@ export abstract class AbstractQuerierIt<
         this.querier.updateOneById(VersionedNote, id, { title: 'a', version: 0 }),
         other.updateOneById(VersionedNote, id, { title: 'b', version: 0 }),
       ]);
-      const lost = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      const lost = results.filter(isRejected);
       expect(results).toHaveLength(2);
       expect(lost).toHaveLength(1);
       expect(queryErrorKind(lost[0].reason)).toBe('optimisticLock');
@@ -3047,6 +3063,17 @@ export abstract class AbstractQuerierIt<
     expect(row).toEqual({ tenantId: 'a' });
   }
 
+  /** An estimate counts every row of the table, the ones its policies hide included, so it is refused for one they hold. */
+  async shouldRefuseToEstimateAnEntityItsPoliciesHold() {
+    const refused = await asTenant('a', () => this.querier.estimatedCount(TenantNote)).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(refused).toHaveProperty(
+      'message',
+      "cannot estimate 'TenantNote', which its policies hold: count it instead",
+    );
+  }
+
   async shouldInsertARowNamingItsOwnTenant() {
     await asTenant('a', () => this.querier.insertOne(TenantNote, { tenantId: 'a', title: 'mine' }));
 
@@ -3619,6 +3646,30 @@ export abstract class AbstractQuerierIt<
     ).rejects.toThrow('roll back');
 
     await expect(this.querier.count(User, {})).resolves.toBe(0);
+  }
+
+  /**
+   * Two transactions read a counter, then both write it: the one that loses fails as `retryable`, whatever the engine
+   * calls it (a serialization failure, a deadlock, a write conflict), for the caller to run again whole.
+   */
+  async shouldFailTheTransactionThatLosesARaceAsRetryable() {
+    const id = await this.querier.insertOne(Item, { salePrice: 0 });
+    const bothRead = barrier(2);
+    const increment = () =>
+      this.pool.transaction(
+        async (querier) => {
+          const found = await querier.findOneById(Item, id, { $select: { salePrice: true } });
+          await bothRead();
+          await querier.updateOneById(Item, id, { salePrice: Number(found?.salePrice) + 1 });
+        },
+        { isolationLevel: 'serializable' },
+      );
+    const lost = (await Promise.allSettled([increment(), increment()])).filter(isRejected);
+
+    expect(lost.map(({ reason }) => queryErrorKind(reason))).toEqual(['retryable']);
+    await expect(this.querier.findOneById(Item, id, { $select: { salePrice: true } })).resolves.toEqual({
+      salePrice: 1,
+    });
   }
 
   /** The callback's value comes back once its writes commit. */

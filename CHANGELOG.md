@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.116.4] - 2026-11-18
+
+- **Fixed (querier):** `estimatedCount` throws `UqlSecurityError` for an entity whose policies the pool holds, rather than counting the rows they hide: use `count`.
+- **Fixed (postgres, cockroachdb):** an index option its type cannot take, such as `include` on a PostgreSQL `hash` index, is refused when the migration is generated rather than failing at the database.
+- CockroachDB builds `type: 'hash'` as a hash-sharded index, and migrates an index to or from it.
+
 ## [0.116.3] - 2026-11-13
 
 - No behaviour change.

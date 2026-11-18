@@ -290,7 +290,8 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /**
    * The table's row count as the engine's statistics state it, without reading a row: approximate, as
-   * stale as the last `ANALYZE`, and unfiltered, so soft-deleted rows count. SQLite has none and throws.
+   * stale as the last `ANALYZE`, and unfiltered, so soft-deleted rows count. SQLite has none and throws, and it is
+   * refused for an entity whose policies the pool holds, since it would count the rows they hide.
    */
   estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 }

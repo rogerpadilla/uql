@@ -667,8 +667,16 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<RawRow[]>;
 
-  /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
-  abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
+  /** See {@link UniversalQuerier.estimatedCount}, refused where the pool holds the entity's policies, as CockroachDB's is. */
+  async estimatedCount<E extends object>(entity: Type<E>): Promise<number> {
+    const { scopes, database } = this.dialect.policies;
+    if ((scopes || database) && getMeta(entity).policies?.length) {
+      throw new UqlSecurityError(`cannot estimate '${entity.name}', which its policies hold: count it instead`);
+    }
+    return this.internalEstimatedCount(entity);
+  }
+
+  protected abstract internalEstimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
   insertOne<
     E extends object,

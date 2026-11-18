@@ -36,24 +36,35 @@ function typesWith(
 
 const DECLARE_VECTOR = "; declare type: 'vector' instead";
 
+/** What every Postgres index type takes. Only `btree` and `gist` add `INCLUDE`, and only `btree` a nulls order. */
+const PG_INDEX_FEATURES: readonly IndexFeature[] = ['expression', 'partial', 'opsClass', 'jsonPath'];
+
+/** CockroachDB's, which has no operator class. Neither an inverted nor a vector index takes `INCLUDE`. */
+const CRDB_INDEX_FEATURES: readonly IndexFeature[] = ['expression', 'partial', 'jsonPath'];
+
 /** Each engine's {@link IndexCapabilities}, total over the engines. */
 export const INDEX_CAPABILITIES: Readonly<Record<DialectName, IndexCapabilities>> = {
   /** Postgres 18's `pg_am`, with pgvector's two, and `fulltext`, which builds a `gin` one. */
   postgres: {
-    types: typesWith(
-      ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat', 'fulltext'],
-      ['expression', 'partial', 'nullsOrder', 'opsClass', 'include', 'jsonPath'],
-    ),
+    types: new Map([
+      ...typesWith(['btree'], [...PG_INDEX_FEATURES, 'include', 'nullsOrder']),
+      ...typesWith(['gist'], [...PG_INDEX_FEATURES, 'include']),
+      ...typesWith(['hash', 'gin', 'brin', 'hnsw', 'ivfflat', 'fulltext'], PG_INDEX_FEATURES),
+    ]),
     keywords: NONE,
     hints: NONE,
     inline: false,
   },
-  /** v26.3 answers `hash` and `brin` "unimplemented", `ivfflat` "unrecognized"; no nulls order nor operator class. */
+  /**
+   * v26.4 answers `brin` "unimplemented" and `ivfflat` "unrecognized". A `hash` index is hash-sharded, spreading
+   * sequential keys over 16 buckets, and keys on no computed column.
+   */
   cockroachdb: {
-    types: typesWith(
-      ['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext'],
-      ['expression', 'partial', 'include', 'jsonPath'],
-    ),
+    types: new Map([
+      ...typesWith(['btree'], [...CRDB_INDEX_FEATURES, 'include']),
+      ...typesWith(['hash'], ['partial', 'include']),
+      ...typesWith(['gin', 'gist', 'hnsw', 'vector', 'fulltext'], CRDB_INDEX_FEATURES),
+    ]),
     keywords: new Map([['vector', 'VECTOR INDEX']]),
     hints: new Map([['ivfflat', DECLARE_VECTOR]]),
     inline: true,

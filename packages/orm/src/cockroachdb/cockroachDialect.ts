@@ -20,12 +20,12 @@ export class CockroachDialect extends PgLikeSqlDialect {
 
   /**
    * pgvector's but `l1`: `<+>` and `vector_l1_ops` answer "unimplemented: operator class ... is not
-   * supported" (verified live on v26.2), tracked at https://github.com/cockroachdb/cockroach/issues/147839.
+   * supported" (verified live on v26.4), tracked at https://github.com/cockroachdb/cockroach/issues/147839.
    * Re-check that issue before adding it.
    */
   override readonly vectorMetrics = new Map([...PG_VECTOR_METRICS].filter(([metric]) => metric !== 'l1'));
 
-  /** Neither `regconfig` nor `WEBSEARCH_TO_TSQUERY` exist here (v26.3): the config goes as text, the search as plain words. */
+  /** Neither `regconfig` nor `WEBSEARCH_TO_TSQUERY` exist here (v26.4): the config goes as text, the search as plain words. */
   protected override readonly textConfigCast = '';
   protected override readonly textQueryFn = 'PLAINTO_TSQUERY';
 
@@ -46,7 +46,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
 
   /**
    * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an
-   * `ANALYZE` (verified live on v26.2) - it keeps its optimizer's row counts in its own statistics
+   * `ANALYZE` (verified live on v26.4) - it keeps its optimizer's row counts in its own statistics
    * instead, and `SHOW STATISTICS` is how they are read. Bracketed so it can be selected from; the
    * newest row wins, and a table never analyzed has none at all, which reads as `0`.
    */

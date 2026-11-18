@@ -446,6 +446,40 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))('in
   });
 });
 
+const HASHED = 'drift_index_hashed';
+
+/** A hash index: hash-sharded on CockroachDB, whose hidden shard column the read back leaves out. */
+@Entity({
+  name: HASHED,
+  indexes: (hashedEvent, index) => [index([hashedEvent.at], { type: 'hash', name: 'drift_at_idx' })],
+})
+class HashedEvent {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.date().nullable()) at?: Date | null;
+}
+
+/** The same index declared plain. */
+@Entity({ name: HASHED, indexes: (plainEvent, index) => [index([plainEvent.at], 'drift_at_idx')] })
+class PlainEvent {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.date().nullable()) at?: Date | null;
+}
+
+describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))(
+  'hash index drift (%s)',
+  (_engine, connect) => {
+    const pool = syncedPool(connect, [HashedEvent]);
+
+    it('should report nothing for the index it just created', async () => {
+      expect(await driftOf(pool(), HashedEvent, HASHED)).toEqual([]);
+    });
+
+    it('should report the index once the entity declares it plain', async () => {
+      expect(await driftOf(pool(), PlainEvent, HASHED)).toEqual([{ type: 'index_mismatch', index: 'drift_at_idx' }]);
+    });
+  },
+);
+
 const CLASSED = 'drift_index_classed';
 
 /** An operator class, which CockroachDB cannot state. */

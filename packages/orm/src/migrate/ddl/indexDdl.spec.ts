@@ -55,12 +55,12 @@ describe('index features', () => {
 
   /**
    * The types each engine's `CREATE INDEX` takes, verified live: Postgres 18's `pg_am` with pgvector,
-   * CockroachDB 26.3, MySQL 26.7, MariaDB 12.3, SQL Server 2025. SQLite has no `USING` clause, so any
+   * CockroachDB 26.4, MySQL 26.7, MariaDB 12.3, SQL Server 2025. SQLite has no `USING` clause, so any
    * type builds its plain index there, which is what lets an entity written for Postgres migrate.
    */
   const indexTypes: Record<keyof typeof dialects, readonly IndexType[]> = {
     postgres: ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat', 'fulltext'],
-    cockroachdb: ['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext'],
+    cockroachdb: ['btree', 'hash', 'gin', 'gist', 'hnsw', 'vector', 'fulltext'],
     mysql: ['btree', 'hash', 'fulltext'],
     mariadb: ['btree', 'hash', 'fulltext', 'vector'],
     sqlite: INDEX_TYPES,
@@ -146,6 +146,35 @@ describe('index features', () => {
     ['mariadb', 'CREATE INDEX IF NOT EXISTS `i` ON `t` (`c`) USING hash;'],
   ] as const)('should put USING after the columns on %s', (dialect, expected) => {
     expect(render(dialect, { entries: [{ column: 'c' }], type: 'hash' })).toBe(expected);
+  });
+
+  // Each answers "does not support" at the server (Postgres 18, CockroachDB v26.4), so each is refused before it.
+  it.each([
+    [
+      'postgres',
+      { entries: [{ column: 'c' }], type: 'hash', include: ['d'] },
+      'covering indexes (INCLUDE) on a hash index',
+    ],
+    [
+      'postgres',
+      { entries: [{ column: 'c', nulls: 'first' }], type: 'gist' },
+      'NULLS FIRST/LAST in an index on a gist index',
+    ],
+    [
+      'cockroachdb',
+      { entries: [{ column: 'c' }], type: 'gin', include: ['d'] },
+      'covering indexes (INCLUDE) on a gin index',
+    ],
+    ['cockroachdb', { entries: [{ expression: 'lower("c")' }], type: 'hash' }, 'expression indexes on a hash index'],
+  ] as const)('should refuse on %s what one index type cannot take: %o', (dialect, index, expected) => {
+    expect(() => render(dialect, index)).toThrow(expected);
+  });
+
+  // `USING hash (c)` answers "unimplemented"; after the columns it is the hash-sharded index, ahead of what it stores.
+  it('should build a CockroachDB hash index hash-sharded, after its columns', () => {
+    expect(render('cockroachdb', { entries: [{ column: 'c' }], type: 'hash', include: ['d'], where: '"c" > 0' })).toBe(
+      'CREATE INDEX IF NOT EXISTS "i" ON "t" ("c") USING hash INCLUDE ("d") WHERE "c" > 0;',
+    );
   });
 
   // CockroachDB builds `USING hnsw` as its native vector index, which answers pgvector's `WITH (m = 16)`

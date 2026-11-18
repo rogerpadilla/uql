@@ -472,7 +472,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.runCount((ctx) => this.dialect.count(ctx, entity, q, opts));
   }
 
-  override async estimatedCount<E extends object>(entity: Type<E>) {
+  protected override async internalEstimatedCount<E extends object>(entity: Type<E>) {
     return this.runCount((ctx) => this.dialect.estimatedCount(ctx, entity));
   }
 

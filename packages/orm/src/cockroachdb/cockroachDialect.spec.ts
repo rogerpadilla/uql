@@ -85,7 +85,7 @@ class CockroachDialectSpec extends PgFamilySpec {
     ).toThrow('CockroachDB does not support vector distance metric: toString');
   }
 
-  /** v26.3 has neither `regconfig` nor `WEBSEARCH_TO_TSQUERY`: the config is text, the search plain words. */
+  /** v26.4 has neither `regconfig` nor `WEBSEARCH_TO_TSQUERY`: the config is text, the search plain words. */
   protected override readonly textConfigCast = '';
   protected override readonly textQueryFn = 'PLAINTO_TSQUERY';
 }

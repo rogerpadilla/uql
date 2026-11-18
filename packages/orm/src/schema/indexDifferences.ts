@@ -10,7 +10,7 @@ import type { IndexNode, TableNode } from './types.js';
 /**
  * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
  * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it;
- * `distance` is the metric a vector index was built for.
+ * `distance` is the metric a vector index was built for. `hash` is whether it is hash-sharded, for an engine reading no other type.
  * `textIndex` is a text index's weights and language, kept by an engine that lists its fields in no declared order.
  */
 export type IndexFacet =
@@ -21,6 +21,7 @@ export type IndexFacet =
   | 'include'
   | 'vector'
   | 'distance'
+  | 'hash'
   | 'textIndex';
 
 type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique' | 'where'>;
@@ -195,6 +196,11 @@ export function describeIndexDifferences(
   if (facets.has('vector') && isVectorIndexType(source.type) !== isVectorIndexType(target.type)) {
     const [expected, actual] = [source, target].map((index) => (isVectorIndexType(index.type) ? 'yes' : 'no'));
     differences.push(`vector index: ${actual} -> ${expected}`);
+  }
+
+  if (facets.has('hash') && (source.type === 'hash') !== (target.type === 'hash')) {
+    const [expected, actual] = [source, target].map((index) => (index.type === 'hash' ? 'yes' : 'no'));
+    differences.push(`hash-sharded: ${actual} -> ${expected}`);
   }
 
   if (facets.has('include')) {

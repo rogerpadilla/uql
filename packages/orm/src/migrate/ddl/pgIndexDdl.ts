@@ -59,6 +59,15 @@ export class CockroachIndexDdl extends PgIndexDdl {
     return index.type === 'vector' || super.isVectorIndex(index);
   }
 
+  /** Hash-sharded: `(a) USING hash INCLUDE (b)`, since `USING hash (a)` answers "unimplemented". */
+  protected override indexAccessMethod(index: IndexSchema): string {
+    return index.type === 'hash' ? '' : super.indexAccessMethod(index);
+  }
+
+  protected override indexInclude(index: IndexSchema): string {
+    return (index.type === 'hash' ? ' USING hash' : '') + super.indexInclude(index);
+  }
+
   /** Its build-time candidate list alone: pgvector's `WITH (m = 16)` answers "invalid storage parameter", `hnsw` included. */
   protected override indexTuning(index: IndexSchema): string {
     return this.isVectorIndex(index) && index.efConstruction !== undefined

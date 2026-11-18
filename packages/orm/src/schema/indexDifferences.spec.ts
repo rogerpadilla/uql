@@ -76,6 +76,14 @@ describe('describeIndexDifferences', () => {
     expect(describeIndexDifferences(index({ type: 'hnsw' }), index({}), vector)).toEqual(['vector index: no -> yes']);
     expect(describeIndexDifferences(index({ type: 'hnsw' }), index({ type: 'vector' }), vector)).toEqual([]);
   });
+
+  /** CockroachDB reads no other type back, so whether an index is hash-sharded is all its type can differ by. */
+  it('should report an index turned hash-sharded or back, and no other type against another', () => {
+    const hash = new Set(['hash'] as const);
+    expect(describeIndexDifferences(index({ type: 'hash' }), index({}), hash)).toEqual(['hash-sharded: no -> yes']);
+    expect(describeIndexDifferences(index({}), index({ type: 'hash' }), hash)).toEqual(['hash-sharded: yes -> no']);
+    expect(describeIndexDifferences(index({ type: 'gist' }), index({}), hash)).toEqual([]);
+  });
 });
 
 describe('indexChanges', () => {
