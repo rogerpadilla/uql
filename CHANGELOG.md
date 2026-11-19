@@ -4,15 +4,14 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.117.1] - 2026-11-19
 
-- An entity with no primary key, such as a log or a view, registers as read-only instead of being refused: every read works, and every write or by-id call is refused by name before any hook runs, on every engine and over the API. It may hold a to-one by its foreign key and be reached by a to-many without `cascade`.
-- A custom dialect's `upsertReportsIds` is now `upsertReportedKey`, answering the key itself.
+- An entity with no primary key registers as read-only: reads work; writes and by-id calls are refused, on every engine and over the API.
+- Custom dialects: `upsertReportsIds` is now `upsertReportedKey`.
 
 ## [0.117.0] - 2026-11-19
 
-- Read replicas: the `pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server and Bun SQL pools take `{ replicas: [config] }`, each a config of their own driver. Reads, and a `withQuerier` or `transaction` given `{ readOnly: true }`, run on a replica; everything else, and any call inside a transaction, on the primary.
-- The API serves reads through `withQuerier(..., { readOnly: true })`, so on a pool with replicas they run on one.
-- `API_OPS` entries no longer carry `access`: `opDoes(op, access)` from `uql-orm/http` answers it, from the new `QUERIER_OPS` table covering every querier method.
-- A custom pool implements `getMigrationQuerier`, now required; `AbstractQuerierPool` defaults it to `getQuerier`.
+- Read replicas: the `pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server and Bun SQL pools take `{ replicas: [config] }`. Reads, API reads and `readOnly` units of work run on a replica; the rest, and anything inside a transaction, on the primary.
+- `API_OPS` entries drop `access`: use `opDoes(op, access)` from `uql-orm/http`.
+- Custom pools implement `getMigrationQuerier`, now required; `AbstractQuerierPool` defaults it.
 
 ## [0.116.6] - 2026-11-18
 
