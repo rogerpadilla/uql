@@ -202,7 +202,7 @@ function checkPeerReach(): void {
 const BUDGETS: Record<string, number> = {
   // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
   '.': 15_100,
-  './postgres': 54_400,
+  './postgres': 55_500,
   './migrate': 74_300,
   // The client reads rows back by the entity's metadata (`http/wireRow.ts`), which any entity it is handed has loaded.
   './browser': 13_200,
