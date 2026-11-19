@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.117.1] - 2026-11-19
+
+- An entity with no primary key, such as a log or a view, registers as read-only instead of being refused: every read works, and every write or by-id call is refused by name before any hook runs, on every engine and over the API. It may hold a to-one by its foreign key and be reached by a to-many without `cascade`.
+- A custom dialect's `upsertReportsIds` is now `upsertReportedKey`, answering the key itself.
+
 ## [0.117.0] - 2026-11-19
 
 - Read replicas: the `pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server and Bun SQL pools take `{ replicas: [config] }`, each a config of their own driver. Reads, and a `withQuerier` or `transaction` given `{ readOnly: true }`, run on a replica; everything else, and any call inside a transaction, on the primary.

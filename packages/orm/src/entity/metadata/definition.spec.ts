@@ -849,19 +849,6 @@ it('should list every registered entity', () => {
   );
 });
 
-it('should refuse an entity with no @Id', () => {
-  expect(() => {
-    @Entity()
-    class SomeEntity {
-      @Field(f.string().nullable())
-      id!: string | null;
-    }
-    return SomeEntity;
-  }).toThrow(
-    `'SomeEntity' must have at least one id field (declare one with '.autoIncrement()', which the database generates, or '.id()', which the caller supplies)`,
-  );
-});
-
 it('should refuse an entity with no fields', () => {
   expect(() => {
     @Entity()

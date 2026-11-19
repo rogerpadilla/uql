@@ -1027,6 +1027,8 @@ export type EntityMeta<E> = {
   policies?: PolicyMeta<E>[];
   /** What a client may do over an API, see {@link Wire}; a subclass declaring none takes its base's. */
   wire?: Wire<EntityAccess>;
+  /** Whether no write takes it, on the server or over an API: an entity with no key. Set once registered, never inherited. */
+  readOnly?: true;
   fields: {
     [K in FieldKey<E>]?: FieldMeta;
   } & { [key: string]: FieldMeta | undefined };

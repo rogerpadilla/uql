@@ -40,6 +40,7 @@ import type {
   DialectFeatures,
   EntityData,
   EntityMeta,
+  IdKey,
   FieldOptions,
   FieldUpdateOp,
   Query,
@@ -437,6 +438,11 @@ function isNullExpr(ref: string): Record<string, unknown> {
   return { $eq: [{ $ifNull: [ref, null] }, null] };
 }
 
+/** The key stored as `_id`: none on an entity with no key, a composite refused. */
+function soleIdIfAny<E>(meta: EntityMeta<E>): IdKey<E> | undefined {
+  return meta.ids.length ? soleIdOf(meta, 'MongoDB') : undefined;
+}
+
 export class MongoDialect extends AbstractDialect {
   override readonly features: DialectFeatures = mongoDialectFeatures;
 
@@ -800,8 +806,9 @@ export class MongoDialect extends AbstractDialect {
     }, {});
     // MongoDB returns `_id` unless it is explicitly excluded, so a projection without the key sets `_id: 0`,
     // the one inclusion/exclusion mix MongoDB allows. This returns the same fields a SQL engine would, and is
-    // what makes `$select: { id: false }` work at all.
-    if (!fields.includes(soleIdOf(meta, 'MongoDB'))) {
+    // what makes `$select: { id: false }` work at all. An entity with no key never reads `_id`.
+    const key = soleIdIfAny(meta);
+    if (!key || !fields.includes(key)) {
       projection[ID_KEY] = 0;
     }
     return projection;
@@ -1506,10 +1513,12 @@ export class MongoDialect extends AbstractDialect {
     const res = doc as Record<string, unknown>;
     const _id = ID_KEY;
 
-    // `!== undefined`, not truthiness: `0` is a key MongoDB accepts and a truthy test dropped it.
+    // `!== undefined`, not truthiness: `0` is a key MongoDB accepts. An entity with no key drops `_id`, as on SQL.
     if (res[_id] !== undefined) {
-      const idKey = soleIdOf(meta, 'MongoDB');
-      res[idKey] = this.fromWireId(res[_id]);
+      const idKey = soleIdIfAny(meta);
+      if (idKey) {
+        res[idKey] = this.fromWireId(res[_id]);
+      }
       if (idKey !== _id) {
         delete res[_id];
       }
@@ -1641,7 +1650,7 @@ export class MongoDialect extends AbstractDialect {
       return;
     }
     throw new UqlUsageError(
-      `'${entityName(meta)}.${meta.ids[0]}' is declared '${declaredTypeName(field.type)}' and left to the ` +
+      `'${entityName(meta)}.${soleIdOf(meta, 'MongoDB')}' is declared '${declaredTypeName(field.type)}' and left to the ` +
         'database, which MongoDB cannot do: the only key it generates is an ObjectId, read back as a string. ' +
         "Declare the key as a string, or give it an 'onInsert' generator.",
     );
@@ -1653,8 +1662,7 @@ export class MongoDialect extends AbstractDialect {
     callbackKey: CallbackKey,
   ): Partial<E>[] {
     // What `columnOf` refuses, a write has to refuse too.
-    assertSoleId(meta, 'MongoDB');
-    const [idKey] = meta.ids;
+    const idKey = soleIdOf(meta, 'MongoDB');
     const payloads = fillOnFields(meta, payload, callbackKey);
     // Keys are resolved per document so heterogeneous payloads keep every provided field.
     const inserting = callbackKey === 'onInsert';

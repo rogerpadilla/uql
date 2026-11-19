@@ -49,6 +49,8 @@ import {
   type DefinedEntity,
   SOFT_DELETE_FILTER,
   QuerySql,
+  type EntityAccess,
+  type Wire,
 } from '../../type/index.js';
 import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
@@ -734,16 +736,21 @@ export function registerEntity<E>(
     meta.fields[meta.version] = { ...meta.fields[meta.version]!, defaultValue: 0, onInsert: 0 };
   }
 
-  const ids = getIdKeys(meta);
-  if (!ids.length && !meta.abstract) {
-    throw new UqlUsageError(
-      `'${entity.name}' must have at least one id field (declare one with '.autoIncrement()', which the database generates, or '.id()', which the caller supplies)`,
-    );
+  meta.ids = getIdKeys(meta);
+  if (!meta.ids.length && !meta.abstract) {
+    assertReadingWire(entity.name, meta.wire);
+    meta.readOnly = true;
   }
-  meta.ids = ids;
 
   metas.set(entity, meta);
   return meta;
+}
+
+/** Refuses a `wire` stating a write on an entity with no key, which no write takes. */
+function assertReadingWire(name: string, wire: Wire<EntityAccess> | undefined): void {
+  if (wire && wire.some((access) => access !== 'read')) {
+    throw new UqlUsageError(`'${name}' has no primary key, so its wire takes 'read' alone`);
+  }
 }
 
 /**
@@ -760,8 +767,7 @@ export function assertSoleId<E>(meta: EntityMeta<E>, what: string): void {
   throw new UqlUsageError(
     ids.length
       ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support.`
-      : // An entity registered with `@Field` but no `@Entity` never ran the check registration makes.
-        `'${meta.entity.name}' has no primary key, which ${what} needs.`,
+      : `'${meta.entity.name}' has no primary key, which ${what} needs.`,
   );
 }
 
@@ -844,7 +850,7 @@ export function getEntities(): Type<object>[] {
     settleEntity(entity);
   }
   return [...metas.values()]
-    .filter((meta) => meta.ids.length)
+    .filter((meta) => meta.name !== undefined)
     .map((meta) => meta.entity)
     .filter(isTable);
 }
@@ -923,12 +929,29 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
     if (!relation.through) {
       assertJoins(at, meta, relation, references);
     }
+    assertKeyedJoin(at, relation);
     if (holdsForeignKey(relation) && isCascadable('delete', relation.cascade)) {
       throw new UqlUsageError(
         `${at} holds the key of a '${relation.entity().name}' other rows may point at too, so it cascades ` +
           "'persist' only: cascade a delete from the side that owns the rows.",
       );
     }
+  }
+}
+
+/**
+ * Refuses a relation reaching an entity with no key where it needs one: a to-one tells no row from a row of nulls
+ * without it, and a cascade writes rows such an entity never takes. A to-many reads it by the parent's key alone.
+ */
+function assertKeyedJoin(at: string, relation: RelationRegistration): void {
+  const target = knownMeta(relation.entity());
+  if (target.readOnly && relation.cascade) {
+    throw new UqlUsageError(
+      `${at} cascades into '${target.entity.name}', which has no primary key, so it is read-only`,
+    );
+  }
+  if (!target.ids.length && !isToManyRelation(relation)) {
+    throw new UqlUsageError(`${at} reaches '${target.entity.name}', which has no primary key to join to`);
   }
 }
 
@@ -1046,7 +1069,7 @@ function fillInverseSide<E>(
       );
     }
     // `local` is this entity's own key, as in every other pair.
-    relOpts.references = [{ local: meta.ids[0], foreign: mappedBy }];
+    relOpts.references = [{ local: soleIdOf(meta, `${at}, mapped by a column,`), foreign: mappedBy }];
     return relOpts.references;
   }
 
@@ -1184,9 +1207,10 @@ export function referenceKeys<E>(meta: EntityMeta<E>): ReadonlySet<string> {
   );
 }
 
-/** Whether the database generates `meta`'s key on insert: the one answer every insert path reads. */
-export function generatesKey<E>(meta: EntityMeta<E>): boolean {
-  return soleId(meta)?.field.autoIncrement === true;
+/** The key the database generates on insert, if it does: the one answer every insert path reads. */
+export function generatedKeyOf<E>(meta: EntityMeta<E>): IdKey<E> | undefined {
+  const sole = soleId(meta);
+  return sole?.field.autoIncrement ? sole.key : undefined;
 }
 
 /** The kinds a column of `type` holds as a join compares them, as `HoldsKind` does: a bigint is a number, which BIGINT widens. */

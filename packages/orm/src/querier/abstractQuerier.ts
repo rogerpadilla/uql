@@ -1,5 +1,5 @@
 import { getMeta, idOf, namesEvery, namesKey, relationOf } from '../entity/index.js';
-import type { KeyedRow } from '../entity/metadata/definition.js';
+import { type KeyedRow, soleId } from '../entity/metadata/definition.js';
 
 import { getContext } from '../context/context.js';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
@@ -191,6 +191,15 @@ function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySea
   }
 }
 
+/** The metadata of an entity a write takes, refused before any hook runs where it has no key: such an entity is read-only. */
+function writableMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const meta = getMeta(entity);
+  if (meta.readOnly) {
+    throw new UqlUsageError(`'${entity.name}' has no primary key, so it is read-only: declare one to write it`);
+  }
+  return meta;
+}
+
 /**
  * The id each written row is named by, in payload order. Read off the rows as written, so a key the
  * database generated or the ORM filled is there, and a composite is named by every column of it.
@@ -216,10 +225,11 @@ function upsertBranch<E>(q: QueryUpsert<E>): (row: KeyedRow<E>) => 'insert' | 'u
  * an `onInsert` value was never written to a row the upsert updated. Answers `id`.
  */
 function adoptId<E, I extends WrittenId<E>>(meta: EntityMeta<E>, row: EntityData<E>, id: I): I {
-  if (meta.ids.length > 1) {
-    Object.assign(row, id);
+  const sole = soleId(meta);
+  if (sole) {
+    row[sole.key] = id as E[IdKey<E>];
   } else {
-    row[meta.ids[0]] = id as E[IdKey<E>];
+    Object.assign(row, id);
   }
   return id;
 }
@@ -716,7 +726,7 @@ export abstract class AbstractQuerier implements Querier {
     payload: readonly EntityWrite<E>[],
     opts: WriteOptions<E> | undefined,
   ): Promise<NonNullable<WrittenId<E>>[] | Partial<E>[]> {
-    const meta = getMeta(entity);
+    const meta = writableMeta(entity);
     const keys = returnedKeys(meta, opts?.returning);
     const reportingWrites = keys && this.reportingWrites(meta, 'insert');
     if (!keys || !reportingWrites || !payload.length) {
@@ -1062,8 +1072,8 @@ export abstract class AbstractQuerier implements Querier {
     payload: UpdateWrite<E>,
     opts?: QueryOptions & WriteOptions<E>,
   ): Promise<number | Partial<E>[]> {
+    const meta = writableMeta(entity);
     assertNamesRows(entity, 'updateMany', q, opts);
-    const meta = getMeta(entity);
     const { returning, ...given } = opts ?? {};
     const rest: StatementOptions = { ...given, access: 'update' };
     const keys = returnedKeys(meta, returning);
@@ -1311,7 +1321,7 @@ export abstract class AbstractQuerier implements Querier {
   restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
   async restoreMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<number> {
     const [entity, q] = entityArgs(args);
-    const meta = getMeta(entity);
+    const meta = writableMeta(entity);
     if (!meta.softDelete) {
       throw new UqlUsageError(`'${entity.name}' has not enabled 'softDelete'`);
     }
@@ -1377,7 +1387,7 @@ export abstract class AbstractQuerier implements Querier {
     ...args: PayloadArgs<E, QueryUpsert<E>, readonly EntityWrite<E>[], WriteOptions<E>>
   ) {
     const [entity, q, payload, opts] = payloadArgs(args);
-    const meta = getMeta(entity);
+    const meta = writableMeta(entity);
     const keys = returnedKeys(meta, opts?.returning);
     const reportingWrites = keys && this.reportingWrites(meta, 'upsert');
     // Fires `beforeUpsert`/`afterUpsert`: whether a found row is updated is the database's to decide, so neither the
@@ -1659,8 +1669,8 @@ export abstract class AbstractQuerier implements Querier {
     q: QuerySearch<E>,
     opts?: QueryOptions & WriteOptions<E>,
   ): Promise<number | Partial<E>[]> {
+    const meta = writableMeta(entity);
     assertNamesRows(entity, 'deleteMany', q, opts);
-    const meta = getMeta(entity);
     const { returning, ...given } = opts ?? {};
     const rest: StatementOptions = { ...given, access: 'delete' };
     const keys = returnedKeys(meta, returning);
@@ -1806,7 +1816,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
   ): Promise<NonNullable<WrittenId<E>>[]> {
-    const meta = getMeta(entity);
+    const meta = writableMeta(entity);
     // A row that names its key and carries nothing else is a *reference*, not a write - the shape a to-many
     // uses to link rows it did not author. Upserting it would stamp `onUpdate` fields on a row the caller
     // never asked to change, and create one that was meant to exist.

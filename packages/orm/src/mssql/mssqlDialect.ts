@@ -21,7 +21,7 @@ import {
 } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import { generatesKey, soleId } from '../entity/metadata/definition.js';
+import { generatedKeyOf, soleId } from '../entity/metadata/definition.js';
 import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { QuerySql } from '../type/index.js';
 import type {
@@ -229,10 +229,10 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   /** The table to toggle, or nothing when no record writes a key the engine would have generated. */
   private identityInsertTarget<E>(meta: EntityMeta<E>, payload: E | E[]): string | undefined {
-    if (!generatesKey(meta)) {
+    const idKey = generatedKeyOf(meta);
+    if (!idKey) {
       return undefined;
     }
-    const [idKey] = meta.ids;
     const records = Array.isArray(payload) ? payload : [payload];
     const stated = records.some((record) => record[idKey] !== undefined);
     return stated ? this.escapedTableName(meta) : undefined;

@@ -3,13 +3,12 @@ import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, KEY_DEFAULT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { generatesKey, idOf, namesKey, soleId } from '../entity/metadata/definition.js';
+import { generatedKeyOf, idOf, namesKey, soleId } from '../entity/metadata/definition.js';
 import type {
   QueryContext,
   EntityData,
   EntityMeta,
   ExtraOptions,
-  IdKey,
   WrittenId,
   Query,
   QueryAggregate,
@@ -54,11 +53,12 @@ import { rowReader } from './rowReader.js';
  * Row indexes split by whether the row names its key, the one thing that changes what an insert can
  * report; coarser than {@link groupByInsertShape} on purpose, since an insert fills a missing column with `DEFAULT`.
  */
-function partitionBySuppliedId<E extends object>(payload: EntityData<E>[], idKey: IdKey<E>): number[][] {
+function partitionBySuppliedId<E extends object>(meta: EntityMeta<E>, payload: EntityData<E>[]): number[][] {
   const supplied: number[] = [];
   const generated: number[] = [];
   for (let index = 0; index < payload.length; index++) {
-    (payload[index][idKey] === undefined ? generated : supplied).push(index);
+    const row = payload[index];
+    (meta.ids.some((key) => row[key] === undefined) ? generated : supplied).push(index);
   }
   return supplied.length && generated.length ? [supplied, generated] : [supplied.length ? supplied : generated];
 }
@@ -115,8 +115,8 @@ function inPayloadOrder<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[], 
     const byKey = new Map(reported.map((row) => [rowKey(row, meta.ids), row]));
     return rows.map((row) => byKey.get(rowKey(row, meta.ids)));
   }
-  const [idKey] = meta.ids;
-  return generatesKey(meta) ? reported.toSorted((a, b) => byGeneratedKey(a[idKey], b[idKey])) : reported;
+  const key = generatedKeyOf(meta);
+  return key ? reported.toSorted((a, b) => byGeneratedKey(a[key], b[key])) : reported;
 }
 
 /** Each role found held to a dialect's policies, by name (`undefined` the connection's own), answered once per pool. */
@@ -508,26 +508,21 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
 
   override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {
     const meta = getMeta(entity);
-    // What comes back is one column's value, so nothing is read back for a composite: its rows
-    // already carry every column of it. `sole` is what keeps every id path off such a key.
-    const [idKey] = meta.ids;
-    const sole = soleId(meta);
-    const generatedKey = generatesKey(meta);
+    // The key the ids an insert reports land on: one column, so none for a composite, whose rows carry every column
+    // of it, nor a keyless row. A `RETURNING` reports any key, a header only a generated one.
+    const generatedKey = generatedKeyOf(meta);
+    const reportable = this.dialect.insertIdSource === 'returning' ? soleId(meta)?.key : generatedKey;
     await this.settleLeftOutKeys(meta, rows);
-    // Only a statement whose every row left its key to the database needs its ids, which a supplied one would void
-    // in a header: a `RETURNING` reports them all, a header only a generated key's.
+    // Only a statement whose every row left its key to the database needs its ids, which a supplied one would void.
     const statements = this.insertChunks(meta, rows).map((indexes) => ({
       indexes,
-      idsReliable:
-        !!sole &&
-        indexes.every((index) => rows[index][idKey] === undefined) &&
-        (this.dialect.insertIdSource === 'returning' || generatedKey),
+      reported: reportable && indexes.every((index) => rows[index][reportable] === undefined) ? reportable : undefined,
     }));
     // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
     // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
     if (
       this.dialect.insertIdSource === 'firstId' &&
-      statements.some(({ indexes, idsReliable }) => idsReliable && indexes.length > 1)
+      statements.some(({ indexes, reported }) => reported && indexes.length > 1)
     ) {
       this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
     }
@@ -539,15 +534,15 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
       statements.length > 1,
     );
     results.forEach((result, at) => {
-      const { indexes, idsReliable } = statements[at];
-      if (idsReliable) {
+      const { indexes, reported } = statements[at];
+      if (reported) {
         const { ids } = this.updateResultOf(result);
         // Ascending, as the engine numbered the rows, whatever order its `RETURNING` lists them in.
         if (generatedKey && ids.some((id, position) => position && byGeneratedKey(ids[position - 1], id) > 0)) {
           ids.sort(byGeneratedKey);
         }
         indexes.forEach((index, position) => {
-          rows[index][idKey] = ids[position] as E[typeof idKey];
+          rows[index][reported] = ids[position] as E[typeof reported];
         });
       }
     });
@@ -560,7 +555,7 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
    */
   private async settleLeftOutKeys<E extends object>(meta: EntityMeta<E>, rows: EntityData<E>[]): Promise<void> {
     const sole = soleId(meta);
-    if (!sole || generatesKey(meta)) {
+    if (!sole || generatedKeyOf(meta)) {
       return;
     }
     const unnamed = rows.filter((row) => !namesKey(meta, row));
@@ -597,8 +592,8 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
   private insertChunks<E extends object>(meta: EntityMeta<E>, rows: EntityData<E>[]): number[][] {
     const { maxBindValues, maxInsertRows, insertIdSource } = this.dialect;
     const unordered = (row: EntityData<E>) =>
-      insertIdSource === 'returning' && !!soleId(meta) && !generatesKey(meta) && !namesKey(meta, row);
-    return partitionBySuppliedId(rows, meta.ids[0]).flatMap((group) =>
+      insertIdSource === 'returning' && !!soleId(meta) && !generatedKeyOf(meta) && !namesKey(meta, row);
+    return partitionBySuppliedId(meta, rows).flatMap((group) =>
       chunkWithinLimits(meta, rows, group, maxBindValues, unordered(rows[group[0]]) ? 1 : maxInsertRows),
     );
   }
@@ -773,7 +768,7 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
       const chunks = chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - binds);
       return chunks.map((indexes) => ({
         indexes,
-        reports: assigns && this.dialect.upsertReportsIds(meta, indexes.length),
+        reports: assigns && this.dialect.upsertReportedKey(meta, indexes.length) !== undefined,
       }));
     });
   }

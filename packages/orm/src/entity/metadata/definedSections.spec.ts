@@ -91,19 +91,25 @@ describe('a defined entity', () => {
   });
 
   it('should report a mistake on every read until it is fixed', () => {
-    const Keyless = defineEntity({ name: 'Keyless', fields: { name: f.string() } });
-    expect(() => getMeta(Keyless)).toThrow("'Keyless' must have at least one id field");
-    expect(() => getMeta(Keyless)).toThrow("'Keyless' must have at least one id field");
-    removeEntity(Keyless);
+    const Twice = defineEntity({
+      name: 'Twice',
+      fields: { id: f.number().autoIncrement(), a: f.version(), b: f.version() },
+    });
+    expect(() => getMeta(Twice)).toThrow("'Twice' must have at most one field with 'version'");
+    expect(() => getMeta(Twice)).toThrow("'Twice' must have at most one field with 'version'");
+    removeEntity(Twice);
   });
 
   it('should report the same mistake again after one registered part of it', () => {
-    const Unkeyed = defineEntity({ name: 'Unkeyed', fields: { body: f.text() } }).triggers((unkeyed, trigger) => [
-      trigger({ name: 'touch', on: 'beforeUpdate', of: [unkeyed.body], run: () => sql`SELECT 1` }),
+    const Versioned = defineEntity({
+      name: 'Versioned',
+      fields: { id: f.number().autoIncrement(), body: f.text(), a: f.version(), b: f.version() },
+    }).triggers((versioned, trigger) => [
+      trigger({ name: 'touch', on: 'beforeUpdate', of: [versioned.body], run: () => sql`SELECT 1` }),
     ]);
-    expect(() => getMeta(Unkeyed)).toThrow("'Unkeyed' must have at least one id field");
-    expect(() => getMeta(Unkeyed)).toThrow("'Unkeyed' must have at least one id field");
-    removeEntity(Unkeyed);
+    expect(() => getMeta(Versioned)).toThrow("'Versioned' must have at most one field with 'version'");
+    expect(() => getMeta(Versioned)).toThrow("'Versioned' must have at most one field with 'version'");
+    removeEntity(Versioned);
   });
 
   it('should inherit its base sections, the base read first', () => {

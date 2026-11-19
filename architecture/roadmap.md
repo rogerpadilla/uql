@@ -6,11 +6,9 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
 
-- **R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. A keyless entity is read-only, and a write to it is refused by name at run time. _Unlocks views._
-
 - **R2: a `writable` flag.** One optional flag on the entity's type, `writable: false`, that the write methods' signatures check once, so a write to a view is a compile error. Optional and defaulting to writable, so it adds no break. Gated on `bun run ts.perf`. A general capability set is not planned.
 
-- **Views and materialized views** (R1, R2).
+- **Views and materialized views** (R2).
 
 ```ts
 export const WorkspaceUsage = defineView({
@@ -56,6 +54,7 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **No fuzzy-match or `$max`/`$min` update operator.** Neither has a portable form or a caller `sql` does not already serve.
 - **A split write runs all or none, through one `runStatements` per querier.** One request on D1, Turso Cloud, libSQL and Neon over HTTP, a transaction elsewhere. [The design](split-writes.md).
 - **Row-level security.** One policy as data, held by the querier on every engine and, on a `policies: 'native'` pool, by Postgres and CockroachDB themselves, bound per transaction; filters are convenience scopes again. [The design](row-level-security.md).
+- **An entity with no key is read-only.** Every write refuses it by name in the querier (`writableMeta`), before any hook, on every engine, and a by-id call through `soleIdOf`. It holds a to-one by its own foreign key and is reached by a to-many without cascade; a to-one reaching it, which tells no row from a row of nulls without a key, and a cascade into it are refused on first read. Its `wire` takes `'read'` alone, so the API refuses a client's write as it refuses any it does not expose. Its table has no primary key, and MongoDB reads its documents without `_id`.
 - **Read replicas are an option of the pool, not a pool wrapping pools** (0.117.0). `{ replicas: [config] }` takes configs of the pool's own driver, each opened as the primary is (`AbstractDriverQuerierPool`), so a replica cannot drift from the primary's `policies`, naming or logging, and its queriers carry the pool's dialect, which keeps a call inside any of its transactions on that transaction's querier. A wrapper composing built pools was built first and dropped for that drift. A read, a stream and a `readOnly` unit of work run on a random replica, what `QUERIER_OPS` says reads; no picker until an app needs one. `pool.withQuerier(...)` reads past the lag on the primary.
 - **What each querier method does to rows is one table, `QUERIER_OPS`**, total over `UniversalQuerier` and asked through `opDoes`: pool routing, the API's transaction choice, its HTTP methods and exposure all read it. A save or upsert is `['insert', 'update']`, not a kind of its own. The 22 pool delegators stay written out: building them from the table needs a cast.
 - **No `await using` on a per-call path.** Lowered for the target, it cost every pool call 1.7 KB (`pgAllocation.test.ts`); `try`/`finally` costs nothing. A stream, which holds its querier across yields, keeps it.

@@ -21,6 +21,7 @@ import {
   type UqlContext,
 } from '../type/index.js';
 import { utcTimestamp } from './date.js';
+import { fieldKeys } from './field.util.js';
 import { isPlainObject } from './object.util.js';
 import { whereAnd, whereAnyOf, whereWith } from './query.util.js';
 
@@ -98,9 +99,10 @@ export function withContextValues<E>(
 /** A predicate once its context is read: a `$where`, or what it reduced to, every row or none. */
 export type BoundWhere<E> = QueryWhere<E> | boolean;
 
-/** No row of `meta`: `$where` has no false, and an empty `$or` reads as no condition at all. */
+/** No row of `meta`: `$where` has no false, and an empty `$or` reads as no condition at all. Any field says it. */
 function noRows<E>(meta: EntityMeta<E>): QueryWhere<E> {
-  return whereWith(meta.ids[0]!, { $in: [] });
+  const [field] = fieldKeys(meta, () => true);
+  return whereWith(field, { $in: [] });
 }
 
 /** `bound` as a `$where` of `meta`: `{}` for every row, {@link noRows} for none. */

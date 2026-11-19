@@ -160,9 +160,9 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const insert = this.buildFragment(ctx, (fragment) => this.appendInsertValues(fragment, entity, payload));
     const { assignments } = this.foundRowUpdate(ctx, entity, entries, q.$where);
     const rows = Array.isArray(payload) ? payload.length : 1;
-    const headerId = assignments && this.upsertReportsIds(meta, rows);
+    const headerId = assignments ? this.upsertReportedKey(meta, rows) : undefined;
     // Qualified: where the rows name the key, the new row's alias carries a column of the same name.
-    const key = headerId ? `${this.escapedTableName(meta)}.${this.escapedColumnName(meta, meta.ids[0])}` : '';
+    const key = headerId ? `${this.escapedTableName(meta)}.${this.escapedColumnName(meta, headerId)}` : '';
     const assigned = key ? `${key} = LAST_INSERT_ID(${key}), ${assignments}` : assignments;
     return this.reportedWrite(ctx, entity, returning, 'upsert', () => {
       ctx.append(this.onDuplicateKey(insert, assigned));

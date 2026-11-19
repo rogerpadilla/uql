@@ -4,7 +4,7 @@ import { Entity, f, Field, ManyToOne, OneToOne } from '../index.js';
 import { Dog } from './definedFixture/animal.js';
 import { Author } from './definedFixture/author.js';
 import { Book } from './definedFixture/book.js';
-import { defineEntity, generatesKey, getMeta, referenceKeys, removeEntity } from './definition.js';
+import { defineEntity, generatedKeyOf, getMeta, referenceKeys, removeEntity } from './definition.js';
 
 it('should register the class defineEntity declares, its relations once first read', () => {
   expect(getMeta(Author)).toMatchObject({ name: 'Author', ids: ['id'] });
@@ -185,9 +185,9 @@ it('should not auto-increment a numeric key a one-to-one shares with its target'
     @OneToOne(() => Person, { references: (visa) => visa.id }) person?: Person;
   }
 
-  expect(generatesKey(getMeta(Passport))).toBe(false);
-  expect(generatesKey(getMeta(Visa))).toBe(false);
-  expect(generatesKey(getMeta(Person))).toBe(true);
+  expect(generatedKeyOf(getMeta(Passport))).toBeUndefined();
+  expect(generatedKeyOf(getMeta(Visa))).toBeUndefined();
+  expect(generatedKeyOf(getMeta(Person))).toBe('id');
 });
 
 it('should map a one-to-many naming no options by the one relation of its target pointing back', () => {

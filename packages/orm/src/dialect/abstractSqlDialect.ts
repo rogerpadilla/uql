@@ -1,5 +1,5 @@
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
-import { generatesKey, valueFieldOf } from '../entity/metadata/definition.js';
+import { generatedKeyOf, soleId, valueFieldOf } from '../entity/metadata/definition.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -7,6 +7,7 @@ import {
   type DdlRenderOptions,
   COUNT_RESULT_KEY,
   type EntityData,
+  type IdKey,
   type EntityMeta,
   type EntityWhereMeta,
   type FieldKey,
@@ -632,9 +633,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** `<id column> AS` {@link RETURNED_ID}, as a clause reporting an insert's id lists it. */
   protected returningIdExpression<E>(meta: EntityMeta<E>): string {
-    const [idKey] = meta.ids;
-    return meta.ids.length === 1
-      ? `${this.returnedRowPrefix}${this.escapedColumnName(meta, idKey)} ${this.escapeId(RETURNED_ID)}`
+    const sole = soleId(meta);
+    return sole
+      ? `${this.returnedRowPrefix}${this.escapedColumnName(meta, sole.key)} ${this.escapeId(RETURNED_ID)}`
       : '';
   }
 
@@ -2516,12 +2517,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * Whether an upsert of `rows` rows that assigns a found row something names its row's generated key in the header,
+   * The generated key an upsert of `rows` rows that assigns a found row something names in the header, if any,
    * a found row's too, since the upsert assigns it through `LAST_INSERT_ID`: one row's only. An engine with
    * `RETURNING` reports its keys there instead.
    */
-  upsertReportsIds<E>(meta: EntityMeta<E>, rows: number): boolean {
-    return this.insertIdSource === 'firstId' && rows === 1 && generatesKey(meta);
+  upsertReportedKey<E>(meta: EntityMeta<E>, rows: number): IdKey<E> | undefined {
+    return this.insertIdSource === 'firstId' && rows === 1 ? generatedKeyOf(meta) : undefined;
   }
 
   /** How an upsert's assignment reads `column` of the row that was being inserted. */

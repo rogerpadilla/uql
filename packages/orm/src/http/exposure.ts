@@ -93,7 +93,9 @@ function assertOps<E extends object>(
   served: ServedEntities,
   path?: UqlErrorPath,
 ): void {
-  const missing = needs.find((need) => !served.has(meta.entity) || !takes(meta.wire, need));
+  const missing = needs.find(
+    (need) => !served.has(meta.entity) || !takes(meta.wire, need) || (meta.readOnly && need !== 'read'),
+  );
   if (missing) {
     throw new UqlSecurityError(`'${meta.entity.name}' cannot be ${PAST[missing]} through this API`, { path });
   }
