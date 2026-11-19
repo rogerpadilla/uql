@@ -59,18 +59,21 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
    * where the work is `readOnly` and the pool has some, and released after.
    */
   async withQuerier<T>(callback: (querier: Q) => Promise<T>, opts?: PoolRunOptions): Promise<T> {
-    await using lent = await this.lend(opts?.readOnly);
-    return await this.runScoped(opts?.context, () => callback(lent.querier));
-  }
-
-  /** Lends the querier of the transaction this flow runs in, kept, or an acquired one, released on dispose. */
-  private async lend(readOnly: boolean | undefined): Promise<AsyncDisposable & { readonly querier: Q }> {
     const ambient = this.ambientQuerier();
     if (ambient) {
-      return { querier: ambient, [Symbol.asyncDispose]: async () => {} };
+      return this.runScoped(opts?.context, () => callback(ambient));
     }
-    const querier = await (readOnly ? this.getReadQuerier() : this.getQuerier());
-    return { querier, [Symbol.asyncDispose]: () => querier[Symbol.asyncDispose]() };
+    const querier = await this.acquire(opts?.readOnly);
+    try {
+      return await this.runScoped(opts?.context, () => callback(querier));
+    } finally {
+      await querier.release();
+    }
+  }
+
+  /** A querier for a unit of work outside a transaction: {@link getReadQuerier}'s where it only reads. */
+  private acquire(readOnly: boolean | undefined): Promise<Q> {
+    return readOnly ? this.getReadQuerier() : this.getQuerier();
   }
 
   /** Runs `op` as {@link withQuerier} does, read-only where it only reads. */
@@ -99,8 +102,13 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
 
   /** Streams `op` as {@link perform} runs one, on a querier held to the end of the iterator. */
   private async *stream<T>(op: keyof UniversalQuerier, read: (querier: Q) => AsyncIterable<T>): AsyncGenerator<T> {
-    await using lent = await this.lend(opDoes(op, 'read'));
-    yield* read(lent.querier);
+    const ambient = this.ambientQuerier();
+    if (ambient) {
+      yield* read(ambient);
+      return;
+    }
+    await using querier = await this.acquire(opDoes(op, 'read'));
+    yield* read(querier);
   }
 
   readonly findManyAndCount: UniversalQuerier['findManyAndCount'] = (...args) =>
