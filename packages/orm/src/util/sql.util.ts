@@ -133,12 +133,13 @@ export function escapeSqlId(
 
 /**
  * What a statement came back with: the rows it read (a `RETURNING`'s included), how many rows it changed where
- * the driver tells it, and the first id a header reports (MySQL's `insertId`).
+ * the driver tells it, the first id a header reports (MySQL's `insertId`), and the Postgres wire's command tag.
  */
 export type SqlExecution = {
   readonly rows: RawRow[];
   readonly changes?: number | null;
   readonly id?: PrimaryKey;
+  readonly command?: string | null;
 };
 
 /** The column a `RETURNING` reports ids under: uql's own statements alias the key to it, and a raw `run()` names it so. */

@@ -6,6 +6,7 @@ import { decodeBigInts, decodeWideNumber } from '../util/wideNumber.js';
 
 /** The header a `bun:sql` result carries next to its rows. */
 export type BunSqlHeader = {
+  command?: string;
   count?: number;
   affectedRows?: number | null;
   lastInsertRowid?: PrimaryKey;
@@ -26,11 +27,16 @@ export type BunSqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb'
 /**
  * A `bun:sql` result as the querier reads it: its rows, each BIGINT decoded exactly; the rows it touched,
  * `affectedRows` on MySQL (whose `count` is 0 on a write) then `count` on Postgres, `undefined` to leave it to
- * the rows; and a MySQL-family insert's id, by the same wide-integer rule.
+ * the rows; a MySQL-family insert's id, by the same wide-integer rule; and the command tag.
  */
 export function bunSqlExecution(res: BunSqlResult): SqlExecution {
   const id = typeof res.lastInsertRowid === 'bigint' ? decodeWideNumber(res.lastInsertRowid) : res.lastInsertRowid;
-  return { rows: Array.from(res, decodeBigInts), changes: res.affectedRows || res.count || undefined, id };
+  return {
+    rows: Array.from(res, decodeBigInts),
+    changes: res.affectedRows || res.count || undefined,
+    id,
+    command: res.command,
+  };
 }
 
 /**

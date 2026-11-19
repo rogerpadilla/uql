@@ -74,6 +74,15 @@ const SQLITE_MESSAGE_KINDS: readonly (readonly [string, QueryErrorKind])[] = [
   ['database is locked', 'retryable'],
 ];
 
+/** Whether `err` is Postgres refusing a commit because a failed statement aborted the transaction (SQLSTATE `25P02`). */
+export function isAbortedTransaction(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+  const { code }: DriverErrorFields = err;
+  return code === '25P02';
+}
+
 /**
  * Names what `err` ran into on any engine, or `undefined` for anything else. Pure: the error is only
  * read, so it works on any driver error, whether or not a querier saw it first.

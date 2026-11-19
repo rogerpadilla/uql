@@ -47,7 +47,7 @@ import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier, type ReportingWrites } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
-import { enrichError, failedIndexOf } from './queryError.js';
+import { enrichError, failedIndexOf, isAbortedTransaction } from './queryError.js';
 import { rowReader } from './rowReader.js';
 
 /**
@@ -122,8 +122,29 @@ function inPayloadOrder<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[], 
 /** Each role found held to a dialect's policies, by name (`undefined` the connection's own), answered once per pool. */
 const heldToPolicies = new WeakMap<AbstractSqlDialect, Map<string | undefined, Promise<void>>>();
 
-export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
+/**
+ * A transaction a driver holds as an object rather than statements: Hrana's session, `mssql`'s `Transaction`,
+ * PGlite's lock. Its `internalBegin` sets {@link AbstractSqlQuerier.tx}, of the type its querier names, and its
+ * statements run on it.
+ */
+export type TransactionHandle = { commit(): Promise<unknown>; rollback(): Promise<unknown> };
+
+/** A commit the engine answered with a rollback: on the Postgres family, a failed statement aborts the transaction whole. */
+function abortedCommitError(cause?: unknown): UqlUsageError {
+  return new UqlUsageError(
+    'the transaction rolled back instead of committing, as a statement in it failed: let the failure end it, or run that statement in a nested transaction, whose savepoint keeps the failure to itself',
+    { cause },
+  );
+}
+
+export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = TransactionHandle>
+  extends AbstractQuerier
+  implements SqlQuerier
+{
   override hasOpenTransaction = false;
+
+  /** The open transaction, where the driver holds it as a {@link TransactionHandle}. */
+  protected tx?: Tx;
 
   #bound = NOTHING_BOUND;
   /** Cached `auto_increment_increment` stride; see {@link loadInsertIdIncrement}. */
@@ -446,7 +467,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * closes itself when the loop exits early.
    */
   protected async *internalStream(query: string, values?: unknown[]): AsyncIterable<RawRow> {
-    if (!this.dialect.features.serverSideCursors) {
+    // A session the pool's queriers share would hold a cursor's transaction open under every other caller of it.
+    if (!this.dialect.features.serverSideCursors || this.connection !== this) {
       yield* (await this.execute(query, values)).rows;
       return;
     }
@@ -773,18 +795,29 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * A `COMMIT` that fails can leave the transaction open (SQLite answers `SQLITE_BUSY` and keeps it), so the
-   * flag stays for the rollback after it. A `ROLLBACK` always ends it: one the server refuses, a deadlock
-   * victim's on SQL Server, left nothing open to roll back.
+   * A handle is dropped before it ends: one outliving a failed end would carry every later statement into a
+   * transaction the server may have ended. A `ROLLBACK` always ends it, a deadlock victim's on SQL Server included;
+   * a `COMMIT` that fails can leave it open (SQLite's `SQLITE_BUSY`) for the rollback after it.
    */
   protected override async endTransaction(commit: boolean) {
-    if (commit) {
-      await this.internalCommit();
+    const { tx, dialect } = this;
+    if (commit && !tx) {
+      const { command } = await this.runTransactionCommand(dialect.commitTransactionCommand);
       this.hasOpenTransaction = false;
+      if (command === 'ROLLBACK') {
+        throw abortedCommitError();
+      }
       return;
     }
+    this.tx = undefined;
     try {
-      await this.internalRollback();
+      if (tx) {
+        await (commit ? tx.commit() : tx.rollback());
+      } else {
+        await this.runTransactionCommand(dialect.rollbackTransactionCommand);
+      }
+    } catch (err) {
+      throw isAbortedTransaction(err) ? abortedCommitError(err) : err;
     } finally {
       this.hasOpenTransaction = false;
     }
@@ -801,29 +834,17 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
-  /**
-   * How this driver opens, commits and rolls back: the dialect's statements, unless its transactions
-   * are objects rather than statements - Hrana's session handle, `mssql`'s `Transaction` - in which
-   * case it overrides all three. The bookkeeping around them stays above, written once.
-   */
+  /** Opens a transaction on the engine: the dialect's statements, or a driver's {@link tx} it sets instead. */
   protected async internalBegin(opts?: TransactionOptions): Promise<void> {
     for (const sql of this.dialect.getBeginTransactionStatements(opts)) {
       await this.runTransactionCommand(sql);
     }
   }
 
-  protected internalCommit(): Promise<void> {
-    return this.runTransactionCommand(this.dialect.commitTransactionCommand);
-  }
-
-  protected internalRollback(): Promise<void> {
-    return this.runTransactionCommand(this.dialect.rollbackTransactionCommand);
-  }
-
   /** Transaction statements skip `timed()`, so they attach their own query context to a failure. */
-  private async runTransactionCommand(sql: string) {
+  private async runTransactionCommand(sql: string): Promise<SqlExecution> {
     try {
-      await this.execute(sql);
+      return await this.execute(sql);
     } catch (err) {
       throw enrichError(err, this.logger, sql);
     }

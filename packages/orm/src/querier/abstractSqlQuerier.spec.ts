@@ -366,6 +366,20 @@ describe('AbstractSqlQuerier row locks', () => {
 });
 
 describe('AbstractSqlQuerier error context', () => {
+  /** Answers its first COMMIT as Postgres answers one for an aborted transaction. */
+  class RollingBackSqlQuerier extends StubSqlQuerier {
+    #rolledBack = false;
+
+    protected override async execute(query: string): Promise<SqlExecution> {
+      const result = await super.execute(query);
+      if (query !== 'COMMIT' || this.#rolledBack) {
+        return result;
+      }
+      this.#rolledBack = true;
+      return { ...result, command: 'ROLLBACK' };
+    }
+  }
+
   /** Drains a stream query and returns the error the stub driver ends it with. */
   function streamError(querier: StubSqlQuerier, $where: QueryWhere<HydratedParent> = {}): Promise<QueryError> {
     const consume = async () => {
@@ -401,6 +415,16 @@ describe('AbstractSqlQuerier error context', () => {
     expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'COMMIT', 'ROLLBACK']);
     expect(querier.handedBackWithOpenTransaction).toBe(false);
     expect(querier.releases).toBe(1);
+  });
+
+  /** Postgres answers the COMMIT of a transaction a failed statement aborted with a rollback, not an error. */
+  it('should refuse a COMMIT the engine answered with a rollback, ending the transaction', async () => {
+    const querier = new RollingBackSqlQuerier();
+
+    await expect(querier.transaction(async () => {})).rejects.toThrow(UqlUsageError);
+    await querier.transaction(async () => {});
+
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'COMMIT', 'BEGIN TRANSACTION', 'COMMIT']);
   });
 
   /** A refused ROLLBACK (SQL Server's, for a deadlock victim) left nothing open to roll back. */

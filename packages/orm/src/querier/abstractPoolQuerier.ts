@@ -1,8 +1,11 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
+import { AbstractSqlQuerier, type TransactionHandle } from './abstractSqlQuerier.js';
 
-export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
+export abstract class AbstractPoolQuerier<
+  C,
+  Tx extends TransactionHandle = TransactionHandle,
+> extends AbstractSqlQuerier<Tx> {
   protected conn: C | undefined;
 
   protected getConn(): C {

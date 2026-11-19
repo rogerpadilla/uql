@@ -492,10 +492,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   readonly maxFunctionArgs: number = Infinity;
 
   /** The statements opening a transaction, its modes inline in the `BEGIN` as the Postgres family takes them. */
-  getBeginTransactionStatements({ isolationLevel, readOnly }: TransactionOptions = {}): string[] {
+  getBeginTransactionStatements(opts?: TransactionOptions): string[] {
+    const modes = this.transactionModes(opts);
+    return [modes ? `${this.beginTransactionCommand} ${modes}` : this.beginTransactionCommand];
+  }
+
+  /** A transaction's modes as the Postgres family spells them after `BEGIN` or `SET TRANSACTION`, `''` for none. */
+  transactionModes({ isolationLevel, readOnly }: TransactionOptions = {}): string {
     const modes = [isolationLevel && `ISOLATION LEVEL ${isolationLevel.toUpperCase()}`, readOnly && 'READ ONLY'];
-    const inline = modes.filter((mode) => typeof mode === 'string');
-    return [inline.length ? `${this.beginTransactionCommand} ${inline.join(', ')}` : this.beginTransactionCommand];
+    return modes.filter((mode) => typeof mode === 'string').join(', ');
   }
 
   createContext(options: QueryContextOptions = {}): QueryContext {

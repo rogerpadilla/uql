@@ -49,8 +49,7 @@ export type HranaQuerierConnectionOptions = {
  * @remarks Transactions use the client's own session handle rather than `BEGIN`/`COMMIT` statements,
  * because over plain HTTP consecutive requests need not share a connection.
  */
-export class HranaQuerier extends AbstractSqlQuerier {
-  private tx?: HranaTransaction;
+export class HranaQuerier extends AbstractSqlQuerier<HranaTransaction> {
   private readonly closeClientOnRelease: boolean;
 
   constructor(
@@ -77,22 +76,6 @@ export class HranaQuerier extends AbstractSqlQuerier {
 
   protected override async internalBegin(opts?: TransactionOptions) {
     this.tx = await this.client.transaction(opts?.readOnly ? 'read' : 'write');
-  }
-
-  /**
-   * Both drop the handle before the call, not after: one that outlived a failed commit would carry
-   * every later statement into a transaction the server may already have ended.
-   */
-  protected override async internalCommit() {
-    const tx = this.tx;
-    this.tx = undefined;
-    await tx?.commit();
-  }
-
-  protected override async internalRollback() {
-    const tx = this.tx;
-    this.tx = undefined;
-    await tx?.rollback();
   }
 
   override async internalRelease() {

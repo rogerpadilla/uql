@@ -6,7 +6,7 @@ import {
   UqlSecurityError,
   UqlUsageError,
 } from '../util/uqlError.js';
-import { failedIndexOf, queryErrorKind } from './queryError.js';
+import { failedIndexOf, isAbortedTransaction, queryErrorKind } from './queryError.js';
 
 describe('queryErrorKind', () => {
   it.each<[string, unknown, QueryErrorKind]>([
@@ -75,6 +75,20 @@ describe('queryErrorKind', () => {
     ['null', null],
   ])('names nothing for %s', (_, err) => {
     expect(queryErrorKind(err)).toBeUndefined();
+  });
+});
+
+describe('isAbortedTransaction', () => {
+  it('should know Postgres refusing to commit an aborted transaction by its SQLSTATE', () => {
+    expect(isAbortedTransaction({ code: '25P02' })).toBe(true);
+  });
+
+  it.each([
+    ['another SQLSTATE', { code: '23505' }],
+    ['a thrown string', 'connection lost'],
+    ['null', null],
+  ])('should not take %s for one', (_, err) => {
+    expect(isAbortedTransaction(err)).toBe(false);
   });
 });
 

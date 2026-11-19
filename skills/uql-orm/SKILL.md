@@ -37,7 +37,7 @@ export const pool = new PgQuerierPool({ connectionString: process.env.DATABASE_U
 export default { pool, entities: [User, Post] } satisfies Config;
 ```
 
-Driver entry points: `uql-orm/postgres`, `mysql`, `mariadb`, `sqlite`, `mongodb`, `libsql`, `turso`, `neon`, `d1`, `pglite`, `bun-sql`, `mssql`, `cockroachdb`. Build the pool once per process and import it.
+Driver entry points: `uql-orm/postgres`, `mysql`, `mariadb`, `sqlite`, `mongodb`, `libsql`, `turso`, `neon`, `d1`, `pglite`, `bun-sql`, `mssql`, `cockroachdb`. Build the pool once per process and import it. `new PgliteQuerierPool(dataDir, opts)` opens PGlite itself; `new PgliteQuerierPool(() => PGliteWorker.create(worker))` runs on a handle you open, as a worker sharing one database across tabs, and its transactions hold PGlite's lock, which every other user of the handle waits on.
 
 The pool's first argument is the driver's own config; set an acquire timeout there (`connectionTimeoutMillis` on the `pg` family), which otherwise waits forever. The second holds uql's options: `namingStrategy: new SnakeCaseNamingStrategy()` maps `createdAt` to `created_at` in queries and migrations alike (never name each column by hand), `logger: true` or a level list, `slowQuery: 200` (ms), and a default `schema`. Call `await pool.end()` on shutdown, except in serverless functions: https://uql-orm.dev/pool.md
 
@@ -276,6 +276,7 @@ await pool.transaction(async (querier) => {
 ```
 
 - The callback commits when it returns and rolls back when it throws. Inside it, `pool` calls run on its querier. A nested `transaction()` is a savepoint; MongoDB refuses it.
+- On the Postgres family a failed statement aborts its whole transaction, so one caught and carried past cannot commit: the commit rejects with `UqlUsageError`. Run a statement that may fail in a nested `transaction()`, whose savepoint keeps the failure to itself.
 - `querier.onCommit(fn)` runs `fn` after the outermost commit, never on rollback.
 - A transaction opened in one place and ended in another uses `beginTransaction`, `commitTransaction` and `rollbackTransaction`. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 - A `findManyStream` holds its querier until the loop ends, refusing other statements meanwhile: run them after the loop, or on another connection.

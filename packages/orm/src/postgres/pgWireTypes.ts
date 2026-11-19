@@ -49,16 +49,25 @@ const ELEMENT_OIDS: ReadonlyMap<number, number> = new Map([
 ]);
 
 /**
- * {@link PG_DECODERS} as `pg`'s text-format parsers, an array decoding each element as its scalar does.
- * At the wire, which every result crosses; per pool, never a global parser, and a caller's own `types` win.
+ * {@link PG_DECODERS} and each array of {@link ELEMENT_OIDS}, decoding each element as its scalar does, over the
+ * text parsers a driver answers by OID: its `TEXT[]` one splits the array, its own decodes a `NUMERIC`.
  */
-export function wireTypes(types: PgTypes): CustomTypesConfig {
-  const splitArray = types.getTypeParser(OID.TEXT_ARRAY, 'text');
+export function wireDecoders(textParser: (oid: number) => Decode): Map<number, Decode> {
+  const splitArray = textParser(OID.TEXT_ARRAY);
   const decoders = new Map(PG_DECODERS);
   for (const [arrayOid, oid] of ELEMENT_OIDS) {
-    const decode = PG_DECODERS.get(oid) ?? types.getTypeParser(oid, 'text');
+    const decode = PG_DECODERS.get(oid) ?? textParser(oid);
     decoders.set(arrayOid, (text) => decodeElements(splitArray(text), decode));
   }
+  return decoders;
+}
+
+/**
+ * {@link wireDecoders} as `pg`'s text-format parsers. At the wire, which every result crosses; per pool, never
+ * a global parser, and a caller's own `types` win.
+ */
+export function wireTypes(types: PgTypes): CustomTypesConfig {
+  const decoders = wireDecoders((oid) => types.getTypeParser(oid, 'text'));
   return {
     // Text only: in binary mode an INT8 arrives as an 8-byte Buffer, and `Number(buffer)` is `NaN`.
     getTypeParser: (oid, format) => (format === 'text' && decoders.get(oid)) || types.getTypeParser(oid, format),

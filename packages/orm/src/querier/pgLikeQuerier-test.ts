@@ -1,8 +1,9 @@
 import { expect } from 'vitest';
 import { getMeta } from '../entity/index.js';
-import { NarrowVectorItem } from '../test/index.js';
+import { NarrowVectorItem, Parcel } from '../test/index.js';
 import type { Type } from '../type/index.js';
 import { sql } from '../util/sql.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -13,6 +14,17 @@ export class PgLikeQuerierIt extends VectorQuerierIt {
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
     await this.querier.run(sql.text(`ANALYZE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
+  }
+
+  /** A failed statement aborts a Postgres transaction whole, so its commit refuses rather than report a rollback as a commit. */
+  async shouldRefuseToCommitATransactionAFailedStatementAborted() {
+    const committing = this.querier.transaction(async () => {
+      await this.querier.insertOne(Parcel, { content: 'lost' });
+      await expect(this.querier.run`SELECT 1 / 0`).rejects.toThrow('division by zero');
+    });
+
+    await expect(committing).rejects.toThrow(UqlUsageError);
+    await expect(this.querier.count(Parcel, {})).resolves.toBe(0);
   }
 
   /**

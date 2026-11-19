@@ -45,16 +45,14 @@ export type MsSqlConnection = {
  * own pool and hands out `Request`s, so what UQL holds is the pool plus, once a transaction opens,
  * the `Transaction` every later request has to be bound to.
  */
-export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
-  #transaction?: MsSqlTransaction;
-
+export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection, MsSqlTransaction> {
   /**
    * Values bind by name, `@p1` upward, matching {@link MsSqlDialect.placeholder}. `mssql` infers a type
    * from the JS value, right for a `Uint8Array` and harmlessly wrong for a bare `null` (`NVarChar`), but
    * a `Date` it binds as the legacy `DATETIME`, whose 1/300 s steps no `DATETIME2` column compares equal to.
    */
   #request(values?: unknown[]): MsSqlRequest {
-    const request = this.#transaction ? this.#transaction.request() : this.getConn().request();
+    const request = (this.tx ?? this.getConn()).request();
     values?.forEach((value, index) => {
       const name = `p${index + 1}`;
       return value instanceof Date ? request.input(name, mssql.DateTime2, value) : request.input(name, value);
@@ -104,19 +102,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
   protected override async internalBegin(opts?: TransactionOptions) {
     const transaction = this.getConn().transaction();
     await transaction.begin(opts?.isolationLevel && mssql.ISOLATION_LEVEL[ISOLATION[opts.isolationLevel]]);
-    this.#transaction = transaction;
-  }
-
-  protected override async internalCommit() {
-    const transaction = this.#transaction;
-    this.#transaction = undefined;
-    await transaction?.commit();
-  }
-
-  protected override async internalRollback() {
-    const transaction = this.#transaction;
-    this.#transaction = undefined;
-    await transaction?.rollback();
+    this.tx = transaction;
   }
 
   /**

@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.116.5] - 2026-11-18
+
+- **Fixed (querier):** on the Postgres family (PostgreSQL, Neon, CockroachDB, PGlite, Bun SQL), a transaction whose failed statement was caught and carried past no longer reports a commit that the database rolled back: the commit rejects with `UqlUsageError`. Run a statement that may fail in a nested `transaction()`.
+- **Fixed (pglite):** a transaction holds PGlite's own lock, so a statement sent to the same handle from outside uql waits for it rather than landing inside it and rolling back with it.
+- `PgliteQuerierPool` runs on a handle you open, `new PgliteQuerierPool(() => PGliteWorker.create(worker), extra)`, such as a `PGliteWorker` sharing one database across tabs. uql decodes its rows the same way without changing the handle's own parsers.
+- On PGlite, `findManyStream` reads its rows in one statement instead of through a cursor, so it holds no transaction on the shared session.
+- The `@electric-sql/pglite` peer is now `>=0.5.15`.
+
 ## [0.116.4] - 2026-11-18
 
 - **Fixed (querier):** `estimatedCount` throws `UqlSecurityError` for an entity whose policies the pool holds, rather than counting the rows they hide: use `count`.
