@@ -4,11 +4,9 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.116.5] - 2026-11-18
 
-- **Fixed (querier):** on the Postgres family (PostgreSQL, Neon, CockroachDB, PGlite, Bun SQL), a transaction whose failed statement was caught and carried past no longer reports a commit that the database rolled back: the commit rejects with `UqlUsageError`. Run a statement that may fail in a nested `transaction()`.
-- **Fixed (pglite):** a transaction holds PGlite's own lock, so a statement sent to the same handle from outside uql waits for it rather than landing inside it and rolling back with it.
-- `PgliteQuerierPool` runs on a handle you open, `new PgliteQuerierPool(() => PGliteWorker.create(worker), extra)`, such as a `PGliteWorker` sharing one database across tabs. uql decodes its rows the same way without changing the handle's own parsers.
-- On PGlite, `findManyStream` reads its rows in one statement instead of through a cursor, so it holds no transaction on the shared session.
-- The `@electric-sql/pglite` peer is now `>=0.5.15`.
+- **Fixed (querier):** on the Postgres family, a commit the database rolled back, because a caught statement failed, rejects with `UqlUsageError` instead of resolving.
+- **Fixed (pglite):** a transaction holds PGlite's lock, so other callers of the handle wait for it instead of writing into it.
+- `PgliteQuerierPool` runs on a handle you open, such as a `PGliteWorker`: `new PgliteQuerierPool(() => PGliteWorker.create(worker))`. On PGlite, `findManyStream` reads in one statement. The `@electric-sql/pglite` peer is now `>=0.5.15`.
 
 ## [0.116.4] - 2026-11-18
 
