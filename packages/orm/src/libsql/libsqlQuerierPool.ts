@@ -37,7 +37,7 @@ export class LibsqlQuerierPool extends AbstractSharedHandleQuerierPool<HranaClie
    * For an embedded replica - a `file:` url with a `syncUrl` - a querier on the sync url, so migrations
    * reach sqld, its client closing with it. Anything else migrates like any other querier.
    */
-  async getMigrationQuerier(): Promise<HranaQuerier> {
+  override async getMigrationQuerier(): Promise<HranaQuerier> {
     if ('execute' in this.conf) {
       return this.getQuerier();
     }

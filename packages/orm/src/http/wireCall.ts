@@ -1,6 +1,7 @@
-import type { AbstractType, EntityAccess, UniversalQuerier } from '../type/index.js';
+import type { AbstractType, UniversalQuerier } from '../type/index.js';
 // the brand, which a `sql` fragment and a column ref both carry
 import { SQL_FN } from '../type/querySql.js';
+import { opDoes } from '../type/universalQuerier.js';
 // the specific util modules, not the barrel, which reaches every dialect helper and would land in the browser bundle
 import { getKeys, isPlainObject } from '../util/object.util.js';
 import { kebabCase } from '../util/string.util.js';
@@ -10,8 +11,6 @@ import { UqlUsageError } from '../util/uqlError.js';
 export type WireAnswer = 'rows' | 'page' | 'rowsAndCount' | 'ids' | 'count';
 
 type OpShape = {
-  /** What the op does to the entity's rows; a save inserts or updates, so it needs both. */
-  readonly access: EntityAccess | 'save';
   readonly answers: WireAnswer;
   /** Whether it addresses one row by its key, its call's `id`. */
   readonly byId?: true;
@@ -20,24 +19,25 @@ type OpShape = {
 };
 
 /**
- * The querier methods a client may call, what each does, and what it answers: the one table the server, every
- * transport and the client read, keyed by {@link UniversalQuerier} method names so a rename is a compile error.
+ * The querier methods a client may call and what each answers: the one table the server, every transport and the
+ * client read, keyed by {@link UniversalQuerier} method names so a rename is a compile error. What each does to the
+ * entity's rows is its {@link QUERIER_OPS} entry.
  */
 export const API_OPS = {
-  findOneById: { access: 'read', answers: 'rows', byId: true },
-  findOne: { access: 'read', answers: 'rows' },
-  findMany: { access: 'read', answers: 'rows' },
-  findManyAndCount: { access: 'read', answers: 'rowsAndCount' },
-  findManyPage: { access: 'read', answers: 'page' },
-  count: { access: 'read', answers: 'count' },
-  insertOne: { access: 'insert', answers: 'ids', writes: 'row' },
-  insertMany: { access: 'insert', answers: 'ids', writes: 'rows' },
-  saveOne: { access: 'save', answers: 'ids', writes: 'row' },
-  saveMany: { access: 'save', answers: 'ids', writes: 'rows' },
-  updateMany: { access: 'update', answers: 'count', writes: 'changes' },
-  updateOneById: { access: 'update', answers: 'count', byId: true, writes: 'changes' },
-  deleteMany: { access: 'delete', answers: 'count' },
-  deleteOneById: { access: 'delete', answers: 'count', byId: true },
+  findOneById: { answers: 'rows', byId: true },
+  findOne: { answers: 'rows' },
+  findMany: { answers: 'rows' },
+  findManyAndCount: { answers: 'rowsAndCount' },
+  findManyPage: { answers: 'page' },
+  count: { answers: 'count' },
+  insertOne: { answers: 'ids', writes: 'row' },
+  insertMany: { answers: 'ids', writes: 'rows' },
+  saveOne: { answers: 'ids', writes: 'row' },
+  saveMany: { answers: 'ids', writes: 'rows' },
+  updateMany: { answers: 'count', writes: 'changes' },
+  updateOneById: { answers: 'count', byId: true, writes: 'changes' },
+  deleteMany: { answers: 'count' },
+  deleteOneById: { answers: 'count', byId: true },
 } as const satisfies Partial<Record<keyof UniversalQuerier, OpShape>>;
 
 export type ApiOp = keyof typeof API_OPS;
@@ -106,7 +106,7 @@ export function parseWireCall(value: unknown): WireCall {
   if (payload !== undefined && !shape.writes) {
     throw refused(`'${op}' writes no 'payload'`, 'payload');
   }
-  if (hardDelete !== undefined && shape.access !== 'delete') {
+  if (hardDelete !== undefined && !opDoes(op, 'delete')) {
     throw refused(`'${op}' deletes nothing, so takes no 'hardDelete'`, 'hardDelete');
   }
   if (hardDelete !== undefined && typeof hardDelete !== 'boolean') {

@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.117.0] - 2026-11-19
+
+- Read replicas: the `pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server and Bun SQL pools take `{ replicas: [config] }`, each a config of their own driver. Reads, and a `withQuerier` or `transaction` given `{ readOnly: true }`, run on a replica; everything else, and any call inside a transaction, on the primary.
+- The API serves reads through `withQuerier(..., { readOnly: true })`, so on a pool with replicas they run on one.
+- `API_OPS` entries no longer carry `access`: `opDoes(op, access)` from `uql-orm/http` answers it, from the new `QUERIER_OPS` table covering every querier method.
+- A custom pool implements `getMigrationQuerier`, now required; `AbstractQuerierPool` defaults it to `getQuerier`.
+
 ## [0.116.6] - 2026-11-18
 
 - Dependencies upgraded: `mssql` 12.7.15 (an empty `Encrypt` in a connection string is no longer read as a value) and `better-sqlite3` 13.2.0 (musl detection on Linux no longer hangs on DNS lookups).

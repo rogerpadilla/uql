@@ -277,6 +277,7 @@ await pool.transaction(async (querier) => {
 
 - The callback commits when it returns and rolls back when it throws. Inside it, `pool` calls run on its querier. A nested `transaction()` is a savepoint; MongoDB refuses it.
 - On the Postgres family a failed statement aborts its whole transaction, so one caught and carried past cannot commit: the commit rejects with `UqlUsageError`. Run a statement that may fail in a nested `transaction()`, whose savepoint keeps the failure to itself.
+- Read replicas: `new PgQuerierPool(primaryConfig, { replicas: [replicaConfig] })`, each a config of the pool's own driver (`pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server, Bun SQL), under the pool's options. Reads, and a `withQuerier` or `transaction` given `{ readOnly: true }`, run on a replica; writes, other transactions, raw `all`/`run` and migrations on the primary. A call inside a transaction stays on it; outside one, read what was just written through `pool.withQuerier(...)`, since a replica may lag.
 - `querier.onCommit(fn)` runs `fn` after the outermost commit, never on rollback.
 - A transaction opened in one place and ended in another uses `beginTransaction`, `commitTransaction` and `rollbackTransaction`. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 - A `findManyStream` holds its querier until the loop ends, refusing other statements meanwhile: run them after the loop, or on another connection.

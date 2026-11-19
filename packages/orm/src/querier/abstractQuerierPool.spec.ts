@@ -84,6 +84,13 @@ it('should run a transaction under the given context', async () => {
   expect(getContext()).toBeUndefined();
 });
 
+it('should migrate on a querier of its own where nothing says otherwise', async () => {
+  const querier = createMockQuerier();
+  const pool = new CountingPool(() => querier);
+
+  expect(await pool.getMigrationQuerier()).toBe(querier);
+});
+
 class Item {
   id?: number;
 }

@@ -1,16 +1,6 @@
 import { isSqlQuerier, type Querier, type QuerierPool, type SqlQuerier } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
-/**
- * Querier used for schema migrations and the migration journal.
- *
- * Pools may override {@link QuerierPool.getMigrationQuerier} so DDL runs on a different target than
- * app traffic (e.g. LibSQL embedded replica: local `file:` + remote `syncUrl`).
- */
-export async function acquireQuerierForMigrations(pool: QuerierPool): Promise<Querier> {
-  return (await pool.getMigrationQuerier?.()) ?? (await pool.getQuerier());
-}
-
 /** Runs `task` on a migration querier over SQL, and releases it. `requiredBy` names the caller in the error. */
 export function withSqlQuerierForMigrations<T>(
   pool: QuerierPool,
@@ -30,7 +20,7 @@ export async function withQuerierOfKind<Q extends Querier, T>(
   error: string,
   task: (querier: Q) => Promise<T>,
 ): Promise<T> {
-  const querier = await acquireQuerierForMigrations(pool);
+  const querier = await pool.getMigrationQuerier();
   try {
     if (!isKind(querier)) {
       throw new UqlUsageError(error);

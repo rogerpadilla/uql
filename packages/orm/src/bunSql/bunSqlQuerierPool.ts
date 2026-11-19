@@ -5,8 +5,8 @@ import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { AbstractSqlQuerierPool } from '../querier/index.js';
-import type { DriverCapabilities, ExtraOptions, SqlPoolCompat } from '../type/index.js';
+import { AbstractDriverQuerierPool } from '../querier/index.js';
+import type { DriverCapabilities, DriverPoolOptions, SqlPoolCompat } from '../type/index.js';
 import { noop } from '../util/object.util.js';
 import {
   type BunSqlDialectName,
@@ -35,17 +35,24 @@ const DIALECTS: Record<BunSqlDialectName, (options: DialectOptions) => AbstractS
   mariadb: (options) => new MariaDialect(options),
 };
 
-export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, AbstractSqlDialect> {
-  readonly sql: SQL;
-
-  /** @param config Bun's own `SQL.Options`, from which the engine is inferred. */
+export class BunSqlQuerierPool extends AbstractDriverQuerierPool<SQL.Options, SQL, BunSqlQuerier, AbstractSqlDialect> {
+  /** @param config Bun's own `SQL.Options`, from which the engine is inferred, a replica's on the same engine. */
   constructor(
     readonly config: SQL.Options,
-    extra?: ExtraOptions,
+    extra?: DriverPoolOptions<SQL.Options>,
   ) {
     const dialectName = inferDialectName(config);
-    super(DIALECTS[dialectName](dialectOptionsFrom(extra)), extra);
-    this.sql = new SQL(normalizeBunOpts(config, dialectName));
+    super(
+      DIALECTS[dialectName](dialectOptionsFrom(extra)),
+      config,
+      extra,
+      (options) => new SQL(normalizeBunOpts(options, dialectName)),
+    );
+  }
+
+  /** The primary's `SQL` instance. */
+  get sql(): SQL {
+    return this.primary;
   }
 
   /**
@@ -68,11 +75,11 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
     };
   }
 
-  async getQuerier() {
-    return new BunSqlQuerier(() => this.sql.reserve(), this.dialect, this.extra);
+  protected querierOn(sql: SQL) {
+    return new BunSqlQuerier(() => sql.reserve(), this.dialect, this.extra);
   }
 
-  override async end() {
-    await this.sql.close();
+  protected close(sql: SQL) {
+    return sql.close();
   }
 }

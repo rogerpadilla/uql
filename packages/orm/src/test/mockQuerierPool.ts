@@ -8,19 +8,25 @@ import type { Querier, QuerierPool } from '../type/index.js';
  */
 class MockQuerierPool<Q extends Querier, D extends AbstractDialect> extends AbstractQuerierPool<Q, D> {
   override readonly getQuerier: () => Promise<Q>;
-  readonly getMigrationQuerier?: () => Promise<Q>;
 
-  constructor(dialect: D, getQuerier: () => Promise<Q>, getMigrationQuerier?: () => Promise<Q>) {
+  constructor(
+    dialect: D,
+    getQuerier: () => Promise<Q>,
+    private readonly migrationQuerier?: () => Promise<Q>,
+  ) {
     super(dialect);
     this.getQuerier = getQuerier;
-    this.getMigrationQuerier = getMigrationQuerier;
+  }
+
+  override getMigrationQuerier(): Promise<Q> {
+    return this.migrationQuerier?.() ?? super.getMigrationQuerier();
   }
 }
 
 export function createMockQuerierPool<Q extends Querier, D extends AbstractDialect>(
   dialect: D,
   getQuerier: () => Promise<Q>,
-  options?: { getMigrationQuerier?: () => Promise<Q> },
+  getMigrationQuerier?: () => Promise<Q>,
 ): QuerierPool<Q, D> {
-  return new MockQuerierPool(dialect, getQuerier, options?.getMigrationQuerier);
+  return new MockQuerierPool(dialect, getQuerier, getMigrationQuerier);
 }

@@ -1,5 +1,5 @@
 import type { ClientSession, Db } from 'mongodb';
-import { withQuerierOfKind } from '../migrate/acquireQuerierForMigrations.js';
+import { withQuerierOfKind } from '../migrate/migrationQuerier.js';
 import { isSqlQuerier, type Querier, type QuerierPool } from '../type/index.js';
 
 /**

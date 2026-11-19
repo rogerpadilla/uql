@@ -50,7 +50,7 @@ export class NeonQuerierPool extends AbstractSqlQuerierPool<PgQuerier, NeonDiale
     return new NeonQuerier(this.#http, () => this.#session(), this.dialect, this.extra);
   }
 
-  async getMigrationQuerier(): Promise<PgQuerier> {
+  override async getMigrationQuerier(): Promise<PgQuerier> {
     return new PgQuerier(() => this.#session(), this.dialect, this.extra);
   }
 

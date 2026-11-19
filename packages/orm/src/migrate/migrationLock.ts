@@ -4,7 +4,7 @@ import { noop } from '../util/object.util.js';
 import { sql } from '../util/sql.js';
 import { fnv1a } from '../util/string.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
+import { withSqlQuerierForMigrations } from './migrationQuerier.js';
 import { createMigrationsTable, journalIds, LOCK_RECORD } from './storage/databaseStorage.js';
 
 /** How long `up` and `down` wait for the lock another run holds, unless told otherwise. */

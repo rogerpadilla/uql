@@ -4,7 +4,7 @@ import type { UqlContext } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 
 /** Options for a pool-level unit of work ({@link QuerierPool.withQuerier} / {@link QuerierPool.transaction}). */
-export interface PoolRunOptions {
+export interface PoolRunOptions extends Pick<TransactionOptions, 'readOnly'> {
   /**
    * {@link UqlContext} to run the callback under, so policies and parameterized filters scope every
    * query inside it. Same mechanism as `withContext`, scoped to this unit of work - ideal where no
@@ -13,6 +13,11 @@ export interface PoolRunOptions {
    */
   readonly context?: UqlContext;
 }
+
+/** A driver pool's options: uql's, and its read replicas, each a config of its own driver, opened as the primary is. */
+export type DriverPoolOptions<C> = ExtraOptions & {
+  readonly replicas?: readonly C[];
+};
 
 /**
  * A pool of queriers, and a {@link UniversalQuerier} itself: each call runs on a querier of its own, so
@@ -39,12 +44,10 @@ export interface QuerierPool<
   getQuerier: () => Promise<Q>;
 
   /**
-   * When omitted, migrations use {@link getQuerier} - same type (`Q`), same dialect, often the same physical connection
-   * (e.g. `:memory:` or a single remote URL). When set, **DDL and the migration journal** use this handle instead so they
-   * can target another server while the app keeps using the replica (LibSQL `file:` + `syncUrl`). Call sites use
-   * `acquireQuerierForMigrations` from `uql-orm/migrate`.
+   * The connection schema changes and the migration journal run on: {@link getQuerier}'s, unless the pool's app
+   * traffic runs elsewhere (a libSQL embedded replica's local file, Neon's HTTP).
    */
-  getMigrationQuerier?: () => Promise<Q>;
+  getMigrationQuerier: () => Promise<Q>;
 
   /**
    * get a querier from the pool and run the given callback inside a transaction.

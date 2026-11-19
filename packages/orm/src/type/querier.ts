@@ -38,7 +38,8 @@ export type TransactionOptions = {
   /**
    * A transaction that only reads, so the engine refuses its writes where it has the mode (Postgres,
    * CockroachDB, MySQL, MariaDB, libSQL's client), and the SQLite family takes no write lock for it.
-   * SQL Server and MongoDB have no such mode and ignore it.
+   * SQL Server and MongoDB have no such mode and ignore it. A pool with read replicas runs a read-only unit of
+   * work, a `withQuerier` included, on one.
    */
   readonly readOnly?: boolean;
 };

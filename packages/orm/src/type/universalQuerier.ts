@@ -1,5 +1,7 @@
 import type { EntityId, EntityWrite, FieldKey, UpdateWrite } from './entity.js';
 import type {
+  EntityAccess,
+  FieldAccess,
   Captured,
   CursorPage,
   Query,
@@ -294,4 +296,42 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * refused for an entity whose policies the pool holds, since it would count the rows they hide.
    */
   estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
+}
+
+/** What a save does to the rows it writes, as a cascade does to the rows a write nests: inserts new ones, updates listed ones. */
+export const SAVES: readonly FieldAccess[] = ['insert', 'update'];
+
+/**
+ * What each querier method does to an entity's rows, a save or an upsert inserting or updating: the one table a pool
+ * routes by, a read running on a replica where it has some, and the API checks a call's exposure by. Total, so a new
+ * method says.
+ */
+export const QUERIER_OPS: Readonly<Record<keyof UniversalQuerier, readonly EntityAccess[]>> = {
+  findOneById: ['read'],
+  findOne: ['read'],
+  findMany: ['read'],
+  findManyStream: ['read'],
+  findManyAndCount: ['read'],
+  findManyPage: ['read'],
+  count: ['read'],
+  exists: ['read'],
+  aggregate: ['read'],
+  estimatedCount: ['read'],
+  insertOne: ['insert'],
+  insertMany: ['insert'],
+  saveOne: SAVES,
+  saveMany: SAVES,
+  upsertOne: SAVES,
+  upsertMany: SAVES,
+  updateOneById: ['update'],
+  updateMany: ['update'],
+  restoreOneById: ['update'],
+  restoreMany: ['update'],
+  deleteOneById: ['delete'],
+  deleteMany: ['delete'],
+};
+
+/** Whether `op` does `access` to an entity's rows: a read may run on a read replica. */
+export function opDoes(op: keyof UniversalQuerier, access: EntityAccess): boolean {
+  return QUERIER_OPS[op].includes(access);
 }

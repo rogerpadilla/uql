@@ -1,13 +1,16 @@
 import { getMeta } from '../entity/metadata/definition.js';
-import type {
-  AbstractType,
-  EntityAccess,
-  EntityMeta,
-  FieldAccess,
-  FieldMeta,
-  RelationMeta,
-  Type,
-  Wire,
+import {
+  type AbstractType,
+  type EntityAccess,
+  type EntityMeta,
+  type FieldAccess,
+  type FieldMeta,
+  opDoes,
+  QUERIER_OPS,
+  SAVES,
+  type RelationMeta,
+  type Type,
+  type Wire,
 } from '../type/index.js';
 import { isCascadable } from '../util/dialect.util.js';
 import { fieldKeys, isFieldKey, isWrittenOn } from '../util/field.util.js';
@@ -56,13 +59,8 @@ const PAST: Readonly<Record<EntityAccess, string>> = {
   delete: 'deleted',
 };
 
-/** What a save does to the rows it writes, as a cascade does to the rows a write nests: inserts new ones, updates listed ones. */
-const SAVED: readonly FieldAccess[] = ['insert', 'update'];
-
-/** What `op` does to the rows it writes, a save doing either. */
-function writesOf(op: ApiOp): readonly FieldAccess[] {
-  const { access } = API_OPS[op];
-  return access === 'save' ? SAVED : access === 'insert' || access === 'update' ? [access] : [];
+function isFieldWrite(access: EntityAccess): access is FieldAccess {
+  return access === 'insert' || access === 'update';
 }
 
 /** The relation `key` names on `meta`, a client's key included: an own key alone, never one of `Object`'s. */
@@ -83,11 +81,10 @@ export function assertExposed<E extends object>(
   payload: unknown,
   served: ServedEntities,
 ): void {
-  const { access } = API_OPS[op];
-  const writes = writesOf(op);
-  assertOps(meta, access === 'save' ? writes : [access], served);
+  const needs = QUERIER_OPS[op];
+  assertOps(meta, needs, served);
   walk(meta, query, ['read'], served, ['query']);
-  walk(meta, payload, writes, served, ['payload']);
+  walk(meta, payload, needs.filter(isFieldWrite), served, ['payload']);
 }
 
 function assertOps<E extends object>(
@@ -152,7 +149,7 @@ function walk<E extends object>(
           { path: at },
         );
       }
-      const nested = writing ? SAVED : needs;
+      const nested = writing ? SAVES : needs;
       // An update of a to-many replaces its rows: those it stops listing are deleted.
       const replaces = relation.cardinality === '1m' && needs.includes('update');
       assertOps(target, replaces ? [...nested, 'delete'] : nested, served, at);
@@ -225,6 +222,5 @@ export function exposedQuery<E extends object, Q extends Readonly<Record<string,
   served: ServedEntities,
 ): Q {
   assertExposed(meta, op, query, payload, served);
-  const { access, answers } = API_OPS[op];
-  return access === 'read' && answers !== 'count' ? hideUnreadable(meta, query) : query;
+  return opDoes(op, 'read') && API_OPS[op].answers !== 'count' ? hideUnreadable(meta, query) : query;
 }

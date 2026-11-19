@@ -213,7 +213,7 @@ describe('AbstractSqlSchemaIntrospector', () => {
     const dialect = new SqliteDialect({});
     const migration = createMockQuerier({ all: vi.fn(async () => [{ table_name: 'users' }]), run: vi.fn(), dialect });
     const getQuerier = vi.fn();
-    const pool = createMockQuerierPool(dialect, getQuerier, { getMigrationQuerier: async () => migration });
+    const pool = createMockQuerierPool(dialect, getQuerier, async () => migration);
 
     expect(await new SqliteSchemaIntrospector(pool).getTableNames()).toEqual(['users']);
     expect(getQuerier).not.toHaveBeenCalled();

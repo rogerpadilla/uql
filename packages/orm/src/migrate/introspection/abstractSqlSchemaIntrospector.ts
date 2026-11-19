@@ -25,8 +25,8 @@ import { entryModifiers } from '../../util/indexEntry.util.js';
 import { cachedIn } from '../../util/object.util.js';
 import { sql } from '../../util/sql.js';
 import { isOwnedName } from '../../util/sql.util.js';
-import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { knownDefault } from '../ddl/defaultSql.js';
+import { withSqlQuerierForMigrations } from '../migrationQuerier.js';
 import { readIndexEntry } from './jsonIndexEntry.js';
 import { renamedTable, tableSchemasToAST } from './tableSchemaAST.js';
 

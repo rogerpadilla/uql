@@ -32,11 +32,11 @@ import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
 import { sql } from '../util/sql.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import type { MigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
 import { DEFAULT_LOCK_TIMEOUT, type MigrationLockOptions } from './migrationLock.js';
+import { withSqlQuerierForMigrations } from './migrationQuerier.js';
 import {
   type MigrationSession,
   type MigrationTarget,

@@ -1,7 +1,8 @@
+import { opDoes } from '../type/universalQuerier.js';
 // the specific util modules, not the barrel, which reaches every dialect helper and would land in the browser bundle
 import { isPlainObject, jsonDocument } from '../util/object.util.js';
 import { type UqlErrorPath, UqlRequestError, UqlUsageError } from '../util/uqlError.js';
-import { API_OPS, type ApiOp, type WireCall, wireJson } from './wireCall.js';
+import { type ApiOp, type WireCall, wireJson } from './wireCall.js';
 
 /**
  * How a client sends a read. `GET` carries the call in `?q=`, so a read caches and an `EventSource` can open it;
@@ -15,7 +16,7 @@ const WRITES: readonly string[] = ['POST'];
 
 /** The methods `op` takes. */
 function methodsOf(op: ApiOp): readonly string[] {
-  return API_OPS[op].access === 'read' ? READS : WRITES;
+  return opDoes(op, 'read') ? READS : WRITES;
 }
 
 /** A call as HTTP carries it, under the API's base: `/{entity}/{op}`, the rest of the call as JSON in `?q=` or the body. */
@@ -25,7 +26,7 @@ export type HttpCall = { readonly method: ReadMethod; readonly path: string; rea
 export function encodeCall({ entity, op, ...rest }: WireCall, readMethod: ReadMethod = 'GET'): HttpCall {
   const path = `/${encodeURIComponent(entity)}/${op}`;
   const json = wireJson(rest);
-  const method = API_OPS[op].access === 'read' ? readMethod : 'POST';
+  const method = opDoes(op, 'read') ? readMethod : 'POST';
   if (method !== 'GET') {
     return { method, path, body: json };
   }

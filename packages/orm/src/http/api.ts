@@ -1,7 +1,7 @@
 import { getContext as ambientContext, withContext } from '../context/context.js';
 import { getMeta, soleIdOf } from '../entity/index.js';
 import { assertPageable } from '../querier/keyset.js';
-import type { Querier, QuerierPool, Type, UqlContext } from '../type/index.js';
+import { opDoes, type Querier, type QuerierPool, type Type, type UqlContext } from '../type/index.js';
 import { whereWith } from '../util/query.util.js';
 import { UqlError, UqlRequestError, UqlUsageError } from '../util/uqlError.js';
 import { type ApiCall, type ApiMiddleware, callOf, chain, isCallOf } from './apiCall.js';
@@ -103,7 +103,6 @@ export function createApi<Ctx = unknown>(opts: ApiOptions<Ctx>): Api<Ctx> {
 
   async function run<E extends object>(entity: Type<E>, sent: WireCall, context: Ctx): Promise<unknown> {
     const meta = getMeta(entity);
-    const shape = API_OPS[sent.op];
     const call = decodedCall(entity, sent, served);
     const appContext = contextOf ? ((await contextOf(context)) ?? {}) : (ambientContext() ?? {});
     const around = served.get(entity);
@@ -114,15 +113,18 @@ export function createApi<Ctx = unknown>(opts: ApiOptions<Ctx>): Api<Ctx> {
         }
         // Resolved after the middleware: one that aborts the call must not reach the pool at all.
         const resolved = typeof pool === 'function' ? await pool(context, appContext) : pool;
-        // A read acquires and releases; a write is one transaction, so a failing cascade takes its parent with it.
+        // A read acquires and releases, on a replica where the pool has some; a write is one transaction, so a
+        // failing cascade takes its parent with it.
         const execute = (querier: Querier) => executeOn(querier, reshaped);
-        const pending = shape.access === 'read' ? resolved.withQuerier(execute) : resolved.transaction(execute);
+        const pending = opDoes(sent.op, 'read')
+          ? resolved.withQuerier(execute, { readOnly: true })
+          : resolved.transaction(execute);
         return pending.catch(placedInQuery);
       })(call);
     // Scope the whole call (middleware, querier, relation and cascade queries) to the context `contextOf` resolved;
     // without one, the call keeps the context its caller runs in.
     const result = await (contextOf ? withContext(appContext, answer) : answer());
-    return writeWireData(meta, result, shape.answers);
+    return writeWireData(meta, result, API_OPS[sent.op].answers);
   }
 }
 

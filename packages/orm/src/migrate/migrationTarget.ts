@@ -13,7 +13,6 @@ import {
 } from '../type/index.js';
 import { sql } from '../util/sql.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import { MigrationOperationBuilder } from './builder/migrationBuilder.js';
 import type { MigrationBuilder } from './builder/types.js';
 import { type MigrationSource, migrationSource } from './codegen/migrationFile.js';
@@ -24,6 +23,7 @@ import {
   staleRecord,
   withSqlMigrationLock,
 } from './migrationLock.js';
+import { withSqlQuerierForMigrations } from './migrationQuerier.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 import { DatabaseMigrationStorage, LOCK_RECORD, type MigrationStorage } from './storage/databaseStorage.js';
 

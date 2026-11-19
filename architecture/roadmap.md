@@ -6,8 +6,6 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
 
-- **Read replicas.** `withReplicas(primary, [replicaA, replicaB], { pick? })` composes pools of one engine into one pool: a read (`find*`, `count`, `exists`, `aggregate`, `estimatedCount`, a stream) runs on a replica, `pick` choosing which (random where unset); everything else runs on the primary: writes, `transaction`, `withQuerier`, `getQuerier`, migrations and raw `all`/`run`, which may write. A read inside a transaction runs on its querier, so a transaction reads its own writes; `pool.primary` reads past the lag outside one. Built on any driver's pool, so no driver learns of it; failover stays the driver's. Its own dialect is the primary's, which is how a pool knows the ambient transaction is its own. MongoDB and D1 keep their own (`readPreference`, `withSession()`).
-
 - **R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. A keyless entity is read-only, and a write to it is refused by name at run time. _Unlocks views._
 
 - **R2: a `writable` flag.** One optional flag on the entity's type, `writable: false`, that the write methods' signatures check once, so a write to a view is a compile error. Optional and defaulting to writable, so it adds no break. Gated on `bun run ts.perf`. A general capability set is not planned.

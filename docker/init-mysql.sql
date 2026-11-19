@@ -23,3 +23,7 @@ CREATE DATABASE IF NOT EXISTS test_builder;
 GRANT ALL PRIVILEGES ON test_builder.* TO 'test'@'%';
 CREATE DATABASE IF NOT EXISTS test_sync;
 GRANT ALL PRIVILEGES ON test_sync.* TO 'test'@'%';
+CREATE DATABASE IF NOT EXISTS test_primary;
+GRANT ALL PRIVILEGES ON test_primary.* TO 'test'@'%';
+CREATE DATABASE IF NOT EXISTS test_replica;
+GRANT ALL PRIVILEGES ON test_replica.* TO 'test'@'%';
