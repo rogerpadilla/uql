@@ -1,6 +1,6 @@
 # Views
 
-**Steps 1 to 3 are built**: `defineView` declares a view as a query, uql reads a plain one by it on every engine, and a materialized one is a table `refreshView` brings to its query's rows. Left: installing plain views in the database for every other tool, a MongoDB view collection included (step 4).
+**Steps 1 to 3 are built**: `defineView` declares a view as a query, uql reads a plain one by it on every engine, and a materialized one is a table `refreshView` brings to its query's rows. Step 4, installing a plain view in the database for other tools, is deferred until an app needs it: a materialized view is already a table any tool reads by its name.
 
 A view mapped by hand as a read-only entity, its SQL written and migrated outside uql, leaves its columns typed by hand, its SQL unchecked when the tables it reads change, and nothing to say when the database's copy went stale. `defineView` is the answer.
 
@@ -69,6 +69,8 @@ await pool.refreshView(WorkspaceUsage);
 
 ## In the database
 
+Deferred until an app needs it: a materialized view already gives every other tool a table to read, held by its own policies. The design stays settled for then.
+
 A plain view is also installed as a view, so an editor, a BI tool or another app reads it by its name. uql never reads it, so it is never what holds a policy: it is the query as the database runs it, created with the reader's rights where the engine has them (`security_invoker` on Postgres, `SQL SECURITY INVOKER` on MySQL and MariaDB), on MongoDB a view collection (`viewOn`, `pipeline`).
 
 - **A view is a node of its own in the schema AST**, not a table's: its name, its schema, its SQL and the tables and views its query reads, read off the query tree (`from`, and each relation its `$group`, `$where` and aggregates reach), never off its SQL text. `createOrder` sorts views with tables by those edges: created after what they read, dropped before. A materialized view's table takes the same edges, so a view over it follows it.
@@ -90,4 +92,4 @@ A plain view is also installed as a view, so an editor, a BI tool or another app
 1. Declaration and types: `defineView` over an aggregate or a find, its key, `readOnly`, sections. Pinned in a `.test-d.ts` beside `readOnlyEntity.test-d.ts`.
 2. Reading: the derived table on every SQL dialect and its stages on MongoDB, under the source's filters and policies, and `tableOf`. Held by `querier/view.test.ts` on every SQL engine, `mongodb/mongoView.test.ts`, and `dialect/view.spec.ts`, which pins the SQL under policies.
 3. Materialized: the table from the result's kinds, its fill, its policies, `refreshView`, per engine. Held by `dialect/view.spec.ts`, which pins the refresh and fill SQL, `querier/view.test.ts` and `mongodb/mongoView.test.ts` on every engine, and `nativePolicy.test.ts`.
-4. In the database: the view node, edges, the normalising probe per engine, drop and create around alters, drift. Held by a shared suite on every engine, on a database of its own.
+4. In the database: the view node, edges, the normalising probe per engine, drop and create around alters, drift. Held by a shared suite on every engine, on a database of its own. Deferred until an app needs it.

@@ -95,10 +95,9 @@ export type FindView<S, Q, M = false> = View<QueryFindResult<S, Q>, FindKey<S, Q
 export const PLAIN_VIEW_SECTIONS = ['filters', 'policies', 'relations'] as const;
 export const VIEW_SECTIONS = ['indexes', ...PLAIN_VIEW_SECTIONS] as const;
 
-/** A plain view's: no indexes, having no rows of its own. */
-
 type ViewSection = (typeof VIEW_SECTIONS)[number];
 
+/** A plain view's: no indexes, having no rows of its own. */
 type PlainSection = (typeof PLAIN_VIEW_SECTIONS)[number];
 
 /** A view's class while its sections may still be declared, each once. */

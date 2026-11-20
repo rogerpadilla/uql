@@ -502,7 +502,7 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
 
 /**
  * Declares a view by its query and returns its class, whose row type the query derives: an aggregate or a find over
- * `from`. Read-only, read by its query, and installed for every other tool. See architecture/views.md.
+ * `from`. Read-only, and read by its query, or from the table it refreshes where materialized. See architecture/views.md.
  */
 export function defineView<S extends object, const Q extends ViewAggregate<S>, M extends boolean = false>(
   options: AggregateViewOptions<S, Q, M>,
