@@ -55,6 +55,7 @@ import {
   type ViewMeta,
   type ViewOptions,
   SOFT_DELETE_FILTER,
+  PLAIN_VIEW_SECTIONS,
   VIEW_SECTIONS,
   QuerySql,
 } from '../../type/index.js';
@@ -93,7 +94,7 @@ import {
 } from '../../util/policy.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
-import { fieldOf } from './lookup.js';
+import { fieldOf, queriedView } from './lookup.js';
 import { aggregateColumns, findColumns, type ViewSources } from './viewColumns.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
@@ -503,20 +504,22 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
  * Declares a view by its query and returns its class, whose row type the query derives: an aggregate or a find over
  * `from`. Read-only, read by its query, and installed for every other tool. See architecture/views.md.
  */
-export function defineView<S extends object, const Q extends ViewAggregate<S>>(
-  options: AggregateViewOptions<S, Q>,
-): AggregateView<S, Q>;
-export function defineView<S extends object, const Q extends ViewFind<S>>(
-  options: FindViewOptions<S, Q>,
-): FindView<S, Q>;
+export function defineView<S extends object, const Q extends ViewAggregate<S>, M extends boolean = false>(
+  options: AggregateViewOptions<S, Q, M>,
+): AggregateView<S, Q, M>;
+export function defineView<S extends object, const Q extends ViewFind<S>, M extends boolean = false>(
+  options: FindViewOptions<S, Q, M>,
+): FindView<S, Q, M>;
 export function defineView(options: ErasedViewOptions): ErasedClass {
-  const { name, table, schema, wire, from } = options;
+  const { name, table, schema, wire, from, materialized } = options;
+  const common = { from, ...(materialized && { materialized }) };
   const view: ViewMeta =
     options.aggregate === undefined
-      ? { from, kind: 'find', query: options.find }
-      : { from, kind: 'aggregate', query: options.aggregate };
+      ? { ...common, kind: 'find', query: options.find }
+      : { ...common, kind: 'aggregate', query: options.aggregate };
   const declared: ErasedOptions = { name, table, schema, wire, readOnly: true, fields: {} };
-  return declareClass(declared, VIEW_SECTIONS, () => viewFields(view), view);
+  const sections = materialized ? VIEW_SECTIONS : PLAIN_VIEW_SECTIONS;
+  return declareClass(declared, sections, () => viewFields(view), view);
 }
 
 /**
@@ -621,6 +624,28 @@ function settleEntity(entity: AbstractType<unknown>): void {
       ),
     },
   );
+}
+
+/**
+ * Refuses a materialized view refreshed past a source's policies unless it holds its own: a refresh computes every
+ * row, under no caller, so a source's policies cannot hold its rows. A plain view it reads passes its source's on.
+ */
+function assertOwnPolicies<E>(meta: EntityMeta<E>, view: ViewMeta): void {
+  if (meta.policies?.length) {
+    return;
+  }
+  const holder = policyHolder(registeredMeta(view.from()));
+  if (holder) {
+    throw new UqlUsageError(
+      `'${meta.entity.name}' is refreshed past the policies of '${holder.entity.name}': declare its own, which hold its rows`,
+    );
+  }
+}
+
+/** The entity whose policies hold `meta`'s rows: its own, or through the plain views it reads, its source's. */
+function policyHolder(meta: EntityMeta<object>): EntityMeta<object> | undefined {
+  const read = queriedView(meta);
+  return meta.policies?.length ? meta : read && policyHolder(registeredMeta(read.from()));
 }
 
 /** A view's columns, off its query over its source, whose relations it may group through. */
@@ -821,6 +846,9 @@ export function registerEntity<E>(
 
   if (opts.view) {
     meta.view = opts.view;
+    if (opts.view.materialized) {
+      assertOwnPolicies(meta, opts.view);
+    }
   }
 
   meta.ids = getIdKeys(meta);
@@ -940,10 +968,23 @@ function isConcrete<E extends object>(entity: AbstractType<E>): entity is Type<E
   return !metas.get(entity)?.abstract;
 }
 
+/** The materialized views among `entities`, each after the views it reads, the order a migration fills them in. */
+export function refreshOrder(entities: readonly AbstractType<object>[]): EntityMeta<object>[] {
+  return entities
+    .map((entity) => registeredMeta(entity))
+    .filter((meta) => meta.view?.materialized)
+    .sort((a, b) => viewDepth(a) - viewDepth(b));
+}
+
+/** How many views `meta` reads through to reach a table's rows. */
+function viewDepth(meta: EntityMeta<object>): number {
+  return meta.view ? 1 + viewDepth(registeredMeta(meta.view.from())) : 0;
+}
+
 /** Whether `entity` is a table in the database: concrete, and no plain view, which is read by its query. */
 export function isTable(entity: AbstractType<object>): boolean {
   const meta = registeredMeta(entity);
-  return !meta.abstract && !meta.view;
+  return !meta.abstract && !queriedView(meta);
 }
 
 function emptyMeta<E>(entity: AbstractType<E>): EntityMeta<E> {

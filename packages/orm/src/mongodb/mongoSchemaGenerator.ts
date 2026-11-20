@@ -1,4 +1,5 @@
 import { getMeta } from '../entity/index.js';
+import { refreshOrder } from '../entity/metadata/definition.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../migrate/builder/types.js';
 import { INDEX_CAPABILITIES } from '../migrate/ddl/indexCapabilities.js';
 import { assertExpressible } from '../migrate/ddl/indexDdl.js';
@@ -51,13 +52,23 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    */
   generateCreateSchema(entities: readonly AbstractType<object>[], options?: CreateSchemaOptions): string[] {
     const wanted = options?.only && new Set(options.only);
-    return entities
-      .map((entity) => getMeta(entity))
-      .filter((meta) => !wanted || wanted.has(this.resolveTableName(meta)))
-      .flatMap((meta) => {
+    const created = entities.filter((entity) => !wanted || wanted.has(this.resolveTableName(getMeta(entity))));
+    return [
+      ...created.flatMap((entity) => {
+        const meta = getMeta(entity);
         const name = this.resolveTableName(meta);
         return this.createCollection(name, this.indexesOf(meta, name), this.validatorOf(meta, name));
-      });
+      }),
+      ...this.viewFills(created),
+    ];
+  }
+
+  /** Each new materialized view's collection filled from its query, a view after the views it reads. */
+  private viewFills(created: readonly AbstractType<object>[]): string[] {
+    return refreshOrder(created).map((meta) => {
+      const { collection, stages } = this.refreshPipeline(meta);
+      return serializeMongoCommand({ action: 'aggregate', collection, pipeline: stages });
+    });
   }
 
   generateDropSchema(entities: readonly AbstractType<object>[]): string[] {

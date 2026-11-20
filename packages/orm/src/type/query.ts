@@ -36,9 +36,6 @@ export type QueryOptions = {
   unfiltered?: boolean;
 };
 
-/** Marks a statement as reading past the policies. A symbol, so no options a call or a client carries can name it. */
-export const PAST_POLICIES: unique symbol = Symbol('pastPolicies');
-
 /**
  * What a statement runs with, on top of the options its caller passed. Kept apart from {@link QueryOptions}
  * because that one is public, the third argument of every querier method, and none of this is a caller's to set.
@@ -46,8 +43,6 @@ export const PAST_POLICIES: unique symbol = Symbol('pastPolicies');
 export type StatementOptions = QueryOptions & {
   /** What the statement does, which picks the policies scoping it: a read by default. A write's reads take its own. */
   readonly access?: ScopedAccess;
-  /** Reads past the policies: the querier's own read-back of what a policy check settled, or a pool not holding them. */
-  readonly [PAST_POLICIES]?: true;
 };
 
 /** What a statement is rendered with: an alias is the dialect's to choose and to spell. */

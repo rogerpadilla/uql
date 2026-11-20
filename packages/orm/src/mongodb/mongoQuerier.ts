@@ -1,11 +1,15 @@
 import type { ClientSession, Db } from 'mongodb';
 import { withQuerierOfKind } from '../migrate/migrationQuerier.js';
 import { isSqlQuerier, type Querier, type QuerierPool } from '../type/index.js';
+import type { MongoDialect } from './mongoDialect.js';
 
 /**
  * Extended querier interface for MongoDB execution.
  */
 export interface MongoQuerier extends Querier {
+  /** The MongoDB dialect: how a query and an id are spelled for the driver. */
+  readonly dialect: MongoDialect;
+
   /**
    * The MongoDB database instance.
    */

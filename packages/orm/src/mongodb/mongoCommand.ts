@@ -1,5 +1,7 @@
 import type { CheckSchema } from '../schema/types.js';
+import type { MongoId } from '../type/utility.js';
 import { ownedCheck } from '../util/ddlExpression.util.js';
+import { isPlainObject, soleEntry } from '../util/object.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 /** A collection validator in query-filter syntax: every document written has to match it, `{}` none. */
@@ -46,15 +48,38 @@ export type MongoCommand =
     }
   | { readonly action: 'dropIndex'; readonly collection: string; readonly name: string }
   | { readonly action: 'createSearchIndex'; readonly collection: string; readonly index: MongoSearchIndex }
-  | { readonly action: 'dropSearchIndex'; readonly collection: string; readonly name: string };
+  | { readonly action: 'dropSearchIndex'; readonly collection: string; readonly name: string }
+  /** A pipeline run for what it writes: a materialized view's fill, ending in `$out`. */
+  | { readonly action: 'aggregate'; readonly collection: string; readonly pipeline: readonly MongoStage[] };
 
 /** A collection's validator as the check it is, named for its JSON, so an edited one is a new name. */
 export function validatorCheck(collection: string, validator: MongoValidator): CheckSchema {
   return ownedCheck(collection, 'validator', JSON.stringify(validator));
 }
 
+/** A pipeline stage as a migration carries it: plain data, with no driver type. */
+type MongoStage = Readonly<Record<string, unknown>>;
+
+/** A command as text: JSON, a `Date` and an `ObjectId` written as Extended JSON (`{ $date }`, `{ $oid }`), not as text. */
 export function serializeMongoCommand(command: MongoCommand): string {
-  return JSON.stringify(command);
+  return JSON.stringify(command, function (this: Record<string, unknown>, key: string, value: unknown) {
+    const raw = this[key];
+    if (raw instanceof Date) {
+      return { $date: raw.toISOString() };
+    }
+    return isObjectId(raw) ? { $oid: raw.toHexString() } : value;
+  });
+}
+
+/** Whether `value` is the driver's `ObjectId`, told by its BSON tag, so this module never imports the driver. */
+function isObjectId(value: unknown): value is MongoId {
+  return value instanceof Object && '_bsontype' in value && value._bsontype === 'ObjectId' && 'toHexString' in value;
+}
+
+/** An Extended JSON `{ $date }` or `{ $oid }`: its marker and the text it holds. */
+function extendedOf(value: unknown): readonly ['$date' | '$oid', string] | undefined {
+  const [marker, text] = soleEntry(value) ?? [];
+  return (marker === '$date' || marker === '$oid') && typeof text === 'string' ? [marker, text] : undefined;
 }
 
 /**
@@ -72,24 +97,36 @@ export type MongoCommandTarget = {
     dropIndex(name: string): Promise<unknown>;
     createSearchIndex(index: MongoSearchIndex): Promise<unknown>;
     dropSearchIndex(name: string): Promise<unknown>;
+    aggregate(pipeline: MongoStage[]): { toArray(): Promise<unknown> };
   };
 };
 
 /**
- * Read one emitted command back. The single cast lives here, where the union it casts to is defined
- * alongside the only code that writes these strings.
+ * Read one emitted command back: as written, or, given the driver's `ObjectId`, each `{ $date }` a `Date` and each
+ * `{ $oid }` an `ObjectId`. The single cast lives here, where the union it casts to is defined beside its writer.
  */
-function parseMongoCommand(statement: string): MongoCommand {
-  return JSON.parse(statement) as MongoCommand;
+function parseMongoCommand(statement: string, objectId?: (hex: string) => unknown): MongoCommand {
+  const revive = (_key: string, value: unknown) => {
+    const extended = extendedOf(value);
+    if (!extended || !objectId) {
+      return value;
+    }
+    const [marker, text] = extended;
+    return marker === '$date' ? new Date(text) : objectId(text);
+  };
+  return JSON.parse(statement, revive) as MongoCommand;
 }
 
 function unsupportedMongoCommand(statement: string): TypeError {
   return new UqlUsageError(`unsupported MongoDB migration command: ${statement}`);
 }
 
+/** What reads an `ObjectId` back from its hex, the querier's dialect, so this module never imports the driver. */
+export type MongoIds = { toWireId(value: unknown): unknown };
+
 /** Execute one emitted command. */
-export function runMongoCommand(db: MongoCommandTarget, statement: string): Promise<unknown> {
-  const command = parseMongoCommand(statement);
+export function runMongoCommand(db: MongoCommandTarget, statement: string, ids: MongoIds): Promise<unknown> {
+  const command = parseMongoCommand(statement, (hex) => ids.toWireId(hex));
   switch (command.action) {
     case 'createCollection':
       return command.validator
@@ -109,6 +146,11 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
       return db.collection(command.collection).createSearchIndex(command.index);
     case 'dropSearchIndex':
       return db.collection(command.collection).dropSearchIndex(command.name);
+    case 'aggregate':
+      return db
+        .collection(command.collection)
+        .aggregate([...command.pipeline])
+        .toArray();
     default:
       // Unreachable for a command this module produced; a hand-written statement lands here rather
       // than being silently skipped.
@@ -119,7 +161,7 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
 /** The driver call {@link runMongoCommand} makes, as source on the handle `db` names, for a generated migration. */
 export function mongoCommandSource(statement: string, db: string): string {
   const command = parseMongoCommand(statement);
-  const literal = JSON.stringify;
+  const literal = valueSource;
   switch (command.action) {
     case 'createCollection':
       return command.validator
@@ -139,7 +181,28 @@ export function mongoCommandSource(statement: string, db: string): string {
       return `${db}.collection(${literal(command.collection)}).createSearchIndex(${literal(command.index)})`;
     case 'dropSearchIndex':
       return `${db}.collection(${literal(command.collection)}).dropSearchIndex(${literal(command.name)})`;
+    case 'aggregate':
+      return `${db}.collection(${literal(command.collection)}).aggregate(${literal(command.pipeline)}).toArray()`;
     default:
       throw unsupportedMongoCommand(statement);
   }
+}
+
+/** `value` as source: JSON, but a `{ $date }` or `{ $oid }` as the `Date` or `ObjectId` it stands for. */
+function valueSource(value: unknown): string {
+  const extended = extendedOf(value);
+  if (extended) {
+    const [marker, text] = extended;
+    return `new ${marker === '$date' ? 'Date' : 'ObjectId'}(${JSON.stringify(text)})`;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(valueSource).join(',')}]`;
+  }
+  if (isPlainObject(value)) {
+    return `{${Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => `${JSON.stringify(key)}:${valueSource(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }

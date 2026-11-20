@@ -201,10 +201,11 @@ function checkPeerReach(): void {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
-  // `defineView` derives a view's columns off its query (`viewColumns.ts`), which only it reaches.
-  '.': 16_600,
+  // `defineView` derives a view's columns off its query (`viewColumns.ts`), which only it reaches; `tenant()` refuses a non-ref key.
+  '.': 17_000,
   './postgres': 55_500,
-  './migrate': 74_300,
+  // The migrator fills a new materialized view after creating its table (`viewFills`).
+  './migrate': 75_900,
   // The client reads rows back by the entity's metadata (`http/wireRow.ts`), which any entity it is handed has loaded.
   './browser': 13_500,
 };

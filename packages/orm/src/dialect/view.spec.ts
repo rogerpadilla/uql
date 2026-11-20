@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { withContext } from '../context/context.js';
 import { defineEntity, defineView, f } from '../entity/index.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
-import { PostgresDialect } from '../postgres/postgresDialect.js';
 import '../test/secureEntityMock.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import type { AbstractType } from '../type/index.js';
 import { renderSql } from '../type/querySql.js';
 import { $context } from '../util/contextRefs.js';
 import { refs, sql, tableOf } from '../util/sql.js';
+import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 const Item = defineEntity({
   name: 'ViewItem',
@@ -152,6 +155,46 @@ describe('reading a view', () => {
         ' FROM "ViewTag" "tags" WHERE "tags"."id" IN (SELECT "ViewLiveLink"."tagId" FROM (SELECT "postId", "tagId"' +
         ' FROM "ViewLink" WHERE "active" = $1) "ViewLiveLink" WHERE "ViewLiveLink"."postId" = "ViewPost"."id")) "tags"' +
         ' CROSS JOIN LATERAL (SELECT "tags"."id") "_uql_row") "tags" FROM "ViewPost"',
+    );
+  });
+});
+
+const Stored = defineView({
+  name: 'ViewStored',
+  from: () => Item,
+  aggregate: { $group: { groupId: true }, $select: { total: { $count: '*' } }, $where: { published: true } },
+  materialized: true,
+}).policies([{ allow: { groupId: $context.secureTenantId } }]);
+
+/** Each statement a refresh runs, under a caller's context, which none of them reads. */
+function refresh(dialect: AbstractSqlDialect, entity: AbstractType<object>): { sql: string; values: unknown[] }[] {
+  return withContext({ secureTenantId: 7 }, () => dialect.refreshView(entity).map((build) => dialect.compile(build)));
+}
+
+describe('refreshing a materialized view', () => {
+  const rows =
+    '(SELECT "groupId", COUNT(*) "total" FROM "ViewItem" WHERE "published" = $1 AND "deletedAt" IS NULL' +
+    ' GROUP BY "groupId") "_uql_view"';
+
+  it("should replace its rows with its query's, past every policy, whatever context the caller holds", () => {
+    expect(refresh(new PostgresDialect(), Stored)).toEqual([
+      { sql: 'DELETE FROM "ViewStored"', values: [] },
+      { sql: `INSERT INTO "ViewStored" ("groupId", "total") SELECT "groupId", "total" FROM ${rows}`, values: [true] },
+    ]);
+  });
+
+  it('should fill a new materialized view after its table, its values inlined as a migration carries them', () => {
+    const statements = new SqlSchemaGenerator(new PostgresDialect()).generateCreateSchema([Item, Stored]);
+
+    expect(statements.at(-1)).toBe(
+      'INSERT INTO "ViewStored" ("groupId", "total") SELECT "groupId", "total" FROM (SELECT "groupId", COUNT(*) "total"' +
+        ' FROM "ViewItem" WHERE "published" = true AND "deletedAt" IS NULL GROUP BY "groupId") "_uql_view";',
+    );
+  });
+
+  it('should refuse a refresh of what is no materialized view', () => {
+    expect(() => new PostgresDialect().refreshView(Totals)).toThrow(
+      "'ViewTotals' is no materialized view: only one is refreshed",
     );
   });
 });

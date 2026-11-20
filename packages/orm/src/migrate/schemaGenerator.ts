@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
+import { refreshOrder } from '../entity/metadata/definition.js';
 import {
   canonicalToSql,
   engineType,
@@ -159,7 +160,18 @@ export class SqlSchemaGenerator implements SchemaGenerator {
           : []),
         ...terminated(table.policies.flatMap((policy) => policy.statements)),
       ]),
+      // Each new materialized view filled last, from tables that now exist, so it never reads empty.
+      ...this.viewFills(entities, tables),
     ];
+  }
+
+  /** Each materialized view among `tables` filled from its query, a view after the views it reads. */
+  private viewFills(entities: readonly AbstractType<object>[], tables: readonly TableNode[]): string[] {
+    const created = new Set(tables.map((table) => qualifyName(table.name, table.schema)));
+    const { dialect } = this;
+    return refreshOrder(entities)
+      .filter((meta) => created.has(qualifyName(dialect.resolveTableName(meta), dialect.resolveSchema(meta))))
+      .flatMap((meta) => dialect.refreshView(meta.entity).map((build) => `${dialect.compileInlined(build)};`));
   }
 
   /**

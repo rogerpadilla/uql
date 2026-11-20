@@ -2,7 +2,7 @@
  * A consuming project as `tsc` sees it: decorated entities, `queries` call sites mixing the clauses a real query
  * does, then `definitions` decorated and `defined` entities from `defineEntity` declaring the same indexes, each read once,
  * `wide` decorated pairs whose every column names its SQL type and whose relation is checked against each field, and
- * `views`, an aggregate and a find view over an entity, each read once.
+ * `views`, an aggregate, a materialized and a find view over an entity, each used once.
  * The caller makes `uql-orm` resolve. Shared by `type-perf.ts`, `type-floor.ts` and `packages/orm/verify-dist.ts`.
  */
 
@@ -129,7 +129,7 @@ export const DefinedChild${i} = defineEntity({
 }).relations((rel) => ({ parent: () => rel.manyToOne(Defined${i}, { references: (child) => child.parentId }) }));
 ${read('Defined', i)}`;
 
-/** An aggregate and a find view over one entity, a relation onto the first, each read so its row is weighed. */
+/** An aggregate, a materialized and a find view over one entity, a relation onto the first, each used so its row is weighed. */
 const view = (i: number) => /*ts*/ `
 export const Order${i} = defineEntity({
   name: 'Order${i}',
@@ -145,6 +145,12 @@ export const Totals${i} = defineView({
     $where: { paidAt: { $ne: null } },
   },
 }).relations((rel) => ({ customer: () => rel.manyToOne(Customer${i}, { references: (row) => row.customerId }) }));
+export const Kept${i} = defineView({
+  name: 'Kept${i}',
+  from: () => Order${i},
+  aggregate: { $group: { customerId: true }, $select: { spent: { $sum: { total: true } } } },
+  materialized: true,
+}).indexes((row, index) => [index([row.spent])]);
 export const Open${i} = defineView({
   name: 'Open${i}',
   from: () => Order${i},
@@ -158,6 +164,7 @@ export async function readViews${i}(q: Querier) {
     $populate: { customer: { $select: { name: true } } },
   });
   const open = await q.findOneById(Open${i}, 1);
+  await q.refreshView(Kept${i});
   return [totals[0]?.customer?.name, totals[0]?.last, open?.total] as const;
 }`;
 

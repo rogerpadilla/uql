@@ -143,3 +143,9 @@ export function jsonDocument(text: string): unknown {
     return undefined;
   }
 }
+
+/** The one entry of a plain object holding exactly one, the shape a marker value takes: `{ $context: 'tenantId' }`. */
+export function soleEntry(value: unknown): readonly [string, unknown] | undefined {
+  const entries = isPlainObject(value) ? Object.entries(value) : [];
+  return entries.length === 1 ? entries[0] : undefined;
+}

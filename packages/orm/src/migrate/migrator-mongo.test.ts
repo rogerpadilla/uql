@@ -99,21 +99,23 @@ describe('Migrator on MongoDB (integration)', () => {
 
   it('should run a generated migration module: collection and index up, collection down', async () => {
     const index = 'ticket__subject_idx';
+    const upInner = emitMongoCommandCalls([
+      serializeMongoCommand({ action: 'createCollection', name: 'ticket' }),
+      serializeMongoCommand({
+        action: 'createIndex',
+        collection: 'ticket',
+        name: index,
+        key: { subject: 1 },
+        options: { unique: true, name: index },
+      }),
+    ]);
+    const downInner = emitMongoCommandCalls([serializeMongoCommand({ action: 'dropCollection', name: 'ticket' })]);
     const source = buildMigrationModule({
       migrationName: 'ticket',
       createdAt: new Date('2026-09-12T00:00:00.000Z'),
       querier: 'MongoQuerier',
-      upInner: emitMongoCommandCalls([
-        serializeMongoCommand({ action: 'createCollection', name: 'ticket' }),
-        serializeMongoCommand({
-          action: 'createIndex',
-          collection: 'ticket',
-          name: index,
-          key: { subject: 1 },
-          options: { unique: true, name: index },
-        }),
-      ]),
-      downInner: emitMongoCommandCalls([serializeMongoCommand({ action: 'dropCollection', name: 'ticket' })]),
+      upInner,
+      downInner,
     });
     const migration = await loadTsDefaultExport<MigrationDefinition<MongoQuerier>>(source);
 
@@ -210,7 +212,7 @@ describe('Migrator on MongoDB (integration)', () => {
 
     await pool.withQuerier(async (querier) => {
       for (const statement of new MongoSchemaGenerator().generateCreateSchema([UrgentTicket])) {
-        await runMongoCommand(querier.db, statement);
+        await runMongoCommand(querier.db, statement, querier.dialect);
       }
       const tickets = querier.db.collection('UrgentTicket');
       expect(await tickets.indexes()).toContainEqual(

@@ -31,7 +31,6 @@ import {
   type QueryVectorSearch,
   type QueryWhere,
   type RelationKey,
-  PAST_POLICIES,
   type StatementOptions,
   type UqlContext,
   resolveAggregateOp,
@@ -578,14 +577,21 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
 
 /**
  * `$where` with the entity's active filters merged in, then ANDed with the rows its policies let the statement reach
- * under the ambient {@link UqlContext}. A filter yields to a `$where` on its key; a policy yields to nothing.
+ * under the ambient {@link UqlContext}. A policy yields to nothing.
  */
 export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: StatementOptions): QueryWhere<E> {
-  if (!meta.filters && !meta.policies?.length) {
+  const merged = mergeFilters(meta, whereMap, opts);
+  const scope = meta.policies?.length ? policyWhere(meta, accessOf(meta, opts), '$old', getContext()) : undefined;
+  return scope === undefined || scope === true ? merged : whereAnd(merged, conjuncts(asWhere(meta, scope)));
+}
+
+/** `$where` with the entity's active filters merged in, a filter yielding to a `$where` on its key. */
+export function mergeFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: StatementOptions): QueryWhere<E> {
+  if (!meta.filters) {
     return whereMap;
   }
   const result: Record<string, unknown> = { ...whereMap };
-  for (const [name, filter] of Object.entries(meta.filters ?? {})) {
+  for (const [name, filter] of Object.entries(meta.filters)) {
     const active = opts?.filters !== false && (opts?.filters?.[name] ?? filter.default !== false);
     const condition: Record<string, unknown> = (active && filterCondition(filter)) || {};
     for (const key of getKeys(condition)) {
@@ -594,9 +600,7 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
       }
     }
   }
-  const merged = result as QueryWhere<E>;
-  const scope = opts?.[PAST_POLICIES] ? undefined : policyWhere(meta, accessOf(meta, opts), '$old', getContext());
-  return scope === undefined || scope === true ? merged : whereAnd(merged, conjuncts(asWhere(meta, scope)));
+  return result as QueryWhere<E>;
 }
 
 /** A filter's condition under the ambient context, `undefined` where it reads what the context lacks, which skips it. */

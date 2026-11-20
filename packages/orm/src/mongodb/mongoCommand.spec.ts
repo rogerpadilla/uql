@@ -1,7 +1,9 @@
+import { ObjectId } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 import {
   type MongoCommand,
   type MongoCommandTarget,
+  type MongoIds,
   type MongoSearchIndex,
   mongoCommandSource,
   runMongoCommand,
@@ -15,6 +17,9 @@ const SEARCH_INDEX: MongoSearchIndex = {
   type: 'vectorSearch',
   definition: { fields: [{ type: 'vector', path: 'vec', numDimensions: 3, similarity: 'cosine' }] },
 };
+
+/** Reads an `ObjectId` back as the querier's dialect does. */
+const IDS: MongoIds = { toWireId: (hex) => new ObjectId(String(hex)) };
 
 function target(): { calls: Call[]; db: MongoCommandTarget } {
   const calls: Call[] = [];
@@ -34,6 +39,7 @@ function target(): { calls: Call[]; db: MongoCommandTarget } {
         dropIndex: (indexName) => record('dropIndex', name, indexName),
         createSearchIndex: (index) => record('createSearchIndex', name, index),
         dropSearchIndex: (indexName) => record('dropSearchIndex', name, indexName),
+        aggregate: (pipeline) => ({ toArray: () => record('aggregate', name, pipeline) }),
       }),
     },
   };
@@ -41,7 +47,7 @@ function target(): { calls: Call[]; db: MongoCommandTarget } {
 
 async function run(command: MongoCommand): Promise<Call[]> {
   const { calls, db } = target();
-  await runMongoCommand(db, serializeMongoCommand(command));
+  await runMongoCommand(db, serializeMongoCommand(command), IDS);
   return calls;
 }
 
@@ -63,6 +69,7 @@ describe('mongoCommandSource', () => {
       { action: 'dropIndex', collection: 'users', name: 'users__email_idx' },
       { action: 'createSearchIndex', collection: 'items', index: SEARCH_INDEX },
       { action: 'dropSearchIndex', collection: 'items', name: 'vec_index' },
+      { action: 'aggregate', collection: 'items', pipeline: [{ $out: 'totals' }] },
     ];
 
     expect(commands.map((command) => mongoCommandSource(serializeMongoCommand(command), 'db'))).toEqual([
@@ -75,6 +82,7 @@ describe('mongoCommandSource', () => {
       'db.collection("users").dropIndex("users__email_idx")',
       `db.collection("items").createSearchIndex(${JSON.stringify(SEARCH_INDEX)})`,
       'db.collection("items").dropSearchIndex("vec_index")',
+      'db.collection("items").aggregate([{"$out":"totals"}]).toArray()',
     ]);
   });
 
@@ -135,6 +143,24 @@ describe('runMongoCommand', () => {
     ]);
   });
 
+  it("should run a pipeline for what it writes, a materialized view's fill", async () => {
+    expect(await run({ action: 'aggregate', collection: 'items', pipeline: [{ $out: 'totals' }] })).toEqual([
+      ['aggregate', 'items', [{ $out: 'totals' }]],
+    ]);
+  });
+
+  it('should keep a date and an ObjectId a command holds, which JSON would turn to text', async () => {
+    const owner = new ObjectId('64b7f3c2a1b2c3d4e5f60718');
+    const at = new Date(0);
+    const command: MongoCommand = { action: 'aggregate', collection: 'items', pipeline: [{ $match: { owner, at } }] };
+
+    expect(await run(command)).toEqual([['aggregate', 'items', [{ $match: { owner, at } }]]]);
+    expect(mongoCommandSource(serializeMongoCommand(command), 'db')).toBe(
+      'db.collection("items").aggregate([{"$match":{"owner":new ObjectId("64b7f3c2a1b2c3d4e5f60718"),' +
+        '"at":new Date("1970-01-01T00:00:00.000Z")}}]).toArray()',
+    );
+  });
+
   it('should drop an index by name', async () => {
     expect(await run({ action: 'dropIndex', collection: 'users', name: 'users__email_idx' })).toEqual([
       ['dropIndex', 'users', 'users__email_idx'],
@@ -144,6 +170,6 @@ describe('runMongoCommand', () => {
   it('should refuse a statement it has no command for, rather than skip it', () => {
     const { db } = target();
 
-    expect(() => runMongoCommand(db, '{}')).toThrow('unsupported MongoDB migration command: {}');
+    expect(() => runMongoCommand(db, '{}', IDS)).toThrow('unsupported MongoDB migration command: {}');
   });
 });

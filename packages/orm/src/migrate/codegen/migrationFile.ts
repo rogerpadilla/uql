@@ -76,7 +76,12 @@ export function buildMigrationModule(options: MigrationModuleOptions): string {
   const iso = options.createdAt.toISOString();
   const extra = options.docExtraLines?.map((line) => `\n * ${line}`).join('') ?? '';
 
-  return /*ts*/ `import type { ${querier} } from '${migrationSource[querier].entry}';
+  // A MongoDB command writes an `ObjectId` it holds as the driver's, which the module then imports.
+  const objectId = `${options.upInner}${options.downInner}`.includes('new ObjectId(')
+    ? `import { ObjectId } from 'mongodb';\n`
+    : '';
+
+  return /*ts*/ `${objectId}import type { ${querier} } from '${migrationSource[querier].entry}';
 
 /**
  * Migration: ${options.migrationName}

@@ -12,6 +12,8 @@ import {
   type VectorDistance,
   type Wire,
 } from '../type/index.js';
+import { isContextRef } from '../util/contextRefs.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * Every family's builder at run time: the types offer each family only its own methods. Immutable, so a shared
@@ -57,6 +59,9 @@ export class ColumnOptionsBuilder {
   }
 
   tenant(contextKey?: ContextKeyRef): ColumnOptionsBuilder {
+    if (contextKey !== undefined && !isContextRef(contextKey)) {
+      throw new UqlUsageError('tenant() takes a context ref, such as $context.tenantId');
+    }
     return this.with({ tenant: contextKey?.$context ?? 'tenantId' });
   }
 

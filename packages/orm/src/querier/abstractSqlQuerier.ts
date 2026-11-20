@@ -120,7 +120,7 @@ function inPayloadOrder<E>(meta: EntityMeta<E>, rows: readonly EntityData<E>[], 
 }
 
 /** Each role found held to a dialect's policies, by name (`undefined` the connection's own), answered once per pool. */
-const heldToPolicies = new WeakMap<AbstractSqlDialect, Map<string | undefined, Promise<void>>>();
+const bypassAnswers = new WeakMap<AbstractSqlDialect, Map<string | undefined, Promise<boolean | undefined>>>();
 
 /**
  * A transaction a driver holds as an object rather than statements: Hrana's session, `mssql`'s `Transaction`,
@@ -218,7 +218,7 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
       return this.atomically(() => this.runStatements(statements, atomic));
     }
     const binding = this.dialect.policies.database
-      ? await this.pendingBinding((sql) => this.onConnection(() => this.execute(sql)))
+      ? await this.pendingBinding((sql) => this.askOnConnection(sql))
       : undefined;
     const results = await this.runBound(binding ? [binding, ...statements] : statements, atomic);
     return binding ? results.slice(1) : results;
@@ -250,24 +250,42 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
    * Refuses a statement under a context whose role, `role` or the connection's own, reads past the database's
    * policies, which would show one tenant another's rows. A statement under none, a migration's, runs as the owner.
    */
-  private assertHeldToPolicies(ask: (sql: string) => Promise<SqlExecution>, role: string | undefined): Promise<void> {
+  private async assertHeldToPolicies(
+    ask: (sql: string) => Promise<SqlExecution>,
+    role: string | undefined,
+  ): Promise<void> {
+    // An answer that is not `false` is refused too: one the database could not give holds no tenant apart.
+    if ((await this.bypassesRowSecurity(ask, role)) !== false) {
+      throw new UqlUsageError(
+        `a pool with policies: 'native' runs a context's statements as a role ${this.dialect.engineName} lets past row-level security: connect as, or name, one that does not, or leave policies unset`,
+      );
+    }
+  }
+
+  /** Whether `role`, or the connection's own, reads past row-level security, as the database answers: asked once per pool. */
+  private bypassesRowSecurity(
+    ask: (sql: string) => Promise<SqlExecution>,
+    role: string | undefined,
+  ): Promise<boolean | undefined> {
     const { dialect } = this;
-    const held = cachedIn(heldToPolicies, dialect, () => new Map<string | undefined, Promise<void>>());
+    const answers = cachedIn(bypassAnswers, dialect, () => new Map<string | undefined, Promise<boolean | undefined>>());
     // A failed answer is forgotten, so the next statement asks again.
-    return cachedIn(held, role, () =>
+    return cachedIn(answers, role, () =>
       ask(dialect.rowSecurityBypassQuery(role))
         .then(({ rows }) => {
-          if (rows[0]?.['bypasses'] !== false) {
-            throw new UqlUsageError(
-              `a pool with policies: 'native' runs a context's statements as a role ${dialect.engineName} lets past row-level security: connect as, or name, one that does not, or leave policies unset`,
-            );
-          }
+          const bypasses = rows[0]?.['bypasses'];
+          return typeof bypasses === 'boolean' ? bypasses : undefined;
         })
         .catch((error: unknown) => {
-          held.delete(role);
+          answers.delete(role);
           throw error;
         }),
     );
+  }
+
+  /** Runs `sql` on the connection, for a question asked of the role it connects as. */
+  private askOnConnection(sql: string): Promise<SqlExecution> {
+    return this.onConnection(() => this.execute(sql));
   }
 
   /** {@link runStatements} once the context is bound. */
@@ -496,6 +514,25 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
 
   protected override async internalEstimatedCount<E extends object>(entity: Type<E>) {
     return this.runCount((ctx) => this.dialect.estimatedCount(ctx, entity));
+  }
+
+  /**
+   * Runs the refresh's statements all or none. Where the database holds the view's policies, the role it connects as
+   * has to read past them, as the refresh computes every row: refused by name otherwise.
+   */
+  protected override async internalRefreshView<E extends object>(entity: Type<E>): Promise<void> {
+    const builds = this.dialect.refreshView(entity);
+    if (this.dialect.policies.database && getMeta(entity).policies?.length) {
+      if (!(await this.bypassesRowSecurity((sql) => this.askOnConnection(sql), undefined))) {
+        throw new UqlUsageError(
+          `refreshing '${entity.name}' computes every row past row-level security, which the role ${this.dialect.engineName} connects as does not read past: connect as one with BYPASSRLS`,
+        );
+      }
+    }
+    await this.runStatements(
+      builds.map((build) => this.bound(build)),
+      true,
+    );
   }
 
   protected override async internalAggregate<E extends object>(

@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.118.1] - 2026-11-20
+
+- `defineView({ ..., materialized: true })` keeps a view as a table, created and filled by migrations, indexed with `.indexes(...)`, and brought to its query's rows by `pool.refreshView(View)`, one write a reader sees all at once (`$out` on MongoDB). It is computed past every policy, so one over a source holding policies must declare its own. A stored `$sum` is as wide as a total needs, and an `$avg` a `double`.
+- A view's query takes a top N: `$sort` with `$limit`.
+- **Fixed (entity):** `tenant()` given anything but a context ref, such as a string, is refused by name, where it read `$context.tenantId`.
+- **Fixed (mongodb):** a `Date` or an `ObjectId` in a migration command, a partial index's filter or a materialized view's fill, stays one, where it became text.
+
 ## [0.118.0] - 2026-11-20
 
 - `defineView` declares a view as an `aggregate` or a `find` over an entity: its rows are typed by the query, and it is read by its query on every engine, its source's filters and policies included.

@@ -1,5 +1,7 @@
+import { underNoCaller } from '../context/context.js';
 import { fieldOf, getMeta, relationOf } from '../entity/index.js';
 import { generatedKeyOf, soleId, valueFieldOf } from '../entity/metadata/definition.js';
+import { materializedView, queriedView } from '../entity/metadata/lookup.js';
 import {
   type AggregateCall,
   type ColumnFamily,
@@ -929,7 +931,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * so its source's filters and policies hold every read of it. See architecture/views.md.
    */
   appendRows<E>(ctx: QueryContext, meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): void {
-    const { view } = meta;
+    const view = queriedView(meta);
     if (!view) {
       const name = this.escapedTableName(meta);
       const aliased = !!this.resolveSchema(meta) || alias !== this.resolveTableAlias(meta);
@@ -962,6 +964,29 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (wrapped) {
       ctx.append(`) ${this.escapeId(VIEW_ROWS_ALIAS, true)}`);
     }
+  }
+
+  /**
+   * The statements bringing materialized view `entity`'s table to its query's rows, which a reader sees all at once:
+   * its rows deleted, then its query's inserted, each built under no caller and past every policy, so the rows are
+   * the same whoever refreshes. A migration fills a new one with them too. See architecture/views.md.
+   */
+  refreshView<E>(entity: AbstractType<E>): readonly QueryBuildFn[] {
+    const meta = getMeta(entity);
+    const view = materializedView(meta);
+    const table = this.escapedTableName(meta);
+    const columns = getKeys(meta.fields)
+      .map((key) => this.escapedColumnName(meta, key))
+      .join(', ');
+    return [
+      (ctx) => ctx.append(`DELETE FROM ${table}`),
+      (ctx) =>
+        underNoCaller(() => {
+          ctx.append(`INSERT INTO ${table} (${columns}) SELECT ${columns} FROM (`);
+          this.appendViewQuery(ctx, meta, view);
+          ctx.append(`) ${this.escapeId(VIEW_ROWS_ALIAS, true)}`);
+        }),
+    ];
   }
 
   /**
@@ -2889,15 +2914,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity?: AbstractType<E>,
     { rows, escapedPrefix, operand }: DdlRenderOptions = {},
   ): string {
+    return this.compileInlined((ctx) => {
+      if (sql instanceof QuerySql) {
+        renderSql(sql, { ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
+      } else if (entity) {
+        assertNoUndefined(sql, `a predicate over '${entity.name}'`);
+        this.renderWhere(ctx, entity, sql, { clause: false, escapedPrefix, operand });
+      } else {
+        throw new UqlUsageError('a predicate compiles against the entity it is written for, and none was given');
+      }
+    });
+  }
+
+  /** What `build` writes, its values as literals, as DDL and a migration carry SQL: none may be left bound. */
+  compileInlined(build: QueryBuildFn): string {
     const ctx = this.createContext({ inlineValues: true });
-    if (sql instanceof QuerySql) {
-      renderSql(sql, { ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
-    } else if (entity) {
-      assertNoUndefined(sql, `a predicate over '${entity.name}'`);
-      this.renderWhere(ctx, entity, sql, { clause: false, escapedPrefix, operand });
-    } else {
-      throw new UqlUsageError('a predicate compiles against the entity it is written for, and none was given');
-    }
+    build(ctx);
     if (ctx.values.length) {
       throw new UqlUsageError(`DDL has no placeholder to bind a value into, and this SQL left one bound: ${ctx.sql}`);
     }

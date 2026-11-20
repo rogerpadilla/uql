@@ -1,3 +1,4 @@
+import { readsPastPolicies } from '../context/context.js';
 import { getMeta } from '../entity/index.js';
 import { assertOwnRows } from '../entity/metadata/lookup.js';
 import type {
@@ -15,9 +16,9 @@ import type {
   AbstractType,
   ContextRef,
 } from '../type/index.js';
-import { ENGINE_NAMES, type EngineName, parseQueryLock, PAST_POLICIES } from '../type/index.js';
+import { ENGINE_NAMES, type EngineName, parseQueryLock } from '../type/index.js';
 import { QuerySql } from '../type/querySql.js';
-import { applyFilters } from '../util/dialect.util.js';
+import { applyFilters, mergeFilters } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
 import { enforcementOf, type PolicyEnforcement } from '../util/policy.util.js';
 import { assertNoUndefined, assertWhere } from '../util/query.util.js';
@@ -209,7 +210,7 @@ export abstract class AbstractDialect {
    */
   protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: StatementOptions): QueryWhere<E> {
     assertWhere(meta, where);
-    const scoped = applyFilters(meta, where, this.scopeOptions(opts));
+    const scoped = this.scoped(meta, where, opts);
     assertNoUndefined(scoped, `$where on '${entityName(meta)}'`);
     return scoped;
   }
@@ -221,12 +222,16 @@ export abstract class AbstractDialect {
    */
   constrainsRelations<E>(entity: AbstractType<E>, where: QueryWhere<E> | undefined, opts?: StatementOptions): boolean {
     const meta = getMeta(entity);
-    return readsRelations(meta, applyFilters(meta, where ?? {}, this.scopeOptions(opts)));
+    return readsRelations(meta, this.scoped(meta, where ?? {}, opts));
   }
 
-  /** `opts` as a scope is merged with: past the policies where the querier is not who holds them. */
-  private scopeOptions(opts: StatementOptions | undefined): StatementOptions | undefined {
-    return this.policies.scopes ? opts : { ...opts, [PAST_POLICIES]: true };
+  /**
+   * `where` with the filters merged in, and the policies too where the querier is who holds them and the statement is
+   * not built past them (`pastPolicies`): the one place a scope decides whether its policies hold it.
+   */
+  private scoped<E>(meta: EntityMeta<E>, where: QueryWhere<E>, opts: StatementOptions | undefined): QueryWhere<E> {
+    const held = this.policies.scopes && !readsPastPolicies();
+    return held ? applyFilters(meta, where, opts) : mergeFilters(meta, where, opts);
   }
 }
 

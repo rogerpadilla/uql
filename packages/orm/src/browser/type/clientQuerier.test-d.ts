@@ -48,7 +48,9 @@ type ServerOnlyOperation =
   | 'restoreOneById'
   | 'restoreMany'
   // reads the engine's own statistics, which a browser has no business asking a server to go read
-  | 'estimatedCount';
+  | 'estimatedCount'
+  // computes every row past the policies, which only the server decides when to run
+  | 'refreshView';
 
 /** A server method (other than the reviewed server-only ones) is missing on the client. */
 export type MissingOnClient = AssertEmpty<Exclude<keyof UniversalQuerier, ServerOnlyOperation | keyof ClientQuerier>>;

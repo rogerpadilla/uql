@@ -8,7 +8,7 @@ import type {
   ViewFind,
 } from '../../type/index.js';
 import { normalizeScalarFieldSelection, parseGroupMap } from '../../util/dialect.util.js';
-import { aggregatedColumn, aggregateOf } from '../../util/field.util.js';
+import { aggregatedColumn, aggregateOf, isIntegerColumn } from '../../util/field.util.js';
 import { getKeys } from '../../util/object.util.js';
 import { fieldOf, relationOf } from './lookup.js';
 
@@ -132,7 +132,7 @@ function fieldShape(meta: EntityMeta<object>, key: string, sources: ViewSources)
 
 /**
  * What an aggregate over `meta`'s `key` answers, as {@link aggregatedColumn} says, less its nullability, which its
- * caller decides. Only a `$min` or a `$max` is one of the values it read, so only it holds the key that column does.
+ * caller decides. Only a `$min` or a `$max` is one of the values it read, so only it keeps that column's shape and key.
  */
 function aggregateShape(
   meta: EntityMeta<object>,
@@ -142,10 +142,21 @@ function aggregateShape(
 ): Shape {
   const column = aggregatedColumn(op, key);
   if (column === undefined) {
-    return { type: Number };
+    return op === '$avg' ? { type: Number, columnType: 'double' } : { type: Number };
   }
-  const { nullable: _, references, ...shape } = fieldShape(meta, column, sources);
-  return references && (op === '$min' || op === '$max') ? { ...shape, references } : shape;
+  const { nullable: _, ...shape } = fieldShape(meta, column, sources);
+  return op === '$min' || op === '$max' ? shape : summedShape(shape);
+}
+
+/** A sum of a column: its kind, past any bound, since a sum outgrows its values; a whole number's is a `BIGINT`. */
+function summedShape(shape: Shape): Shape {
+  const { type, columnType, wire } = shape;
+  const exposed = wire !== undefined && { wire };
+  if (isIntegerColumn(shape)) {
+    return { type: type === BigInt ? BigInt : Number, ...exposed };
+  }
+  const unbounded = columnType ?? (type === Number ? 'decimal' : undefined);
+  return { type, ...(unbounded !== undefined && { columnType: unbounded }), ...exposed };
 }
 
 function pickShape(field: FieldOptions): Shape {

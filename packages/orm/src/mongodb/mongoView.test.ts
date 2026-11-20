@@ -40,6 +40,13 @@ const Published = defineView({
   find: { $select: { id: true, ownerId: true, vec: true, groupId: true }, $where: { published: true } },
 });
 
+const Stored = defineView({
+  name: 'MongoViewStored',
+  from: () => Item,
+  aggregate: { $group: { groupId: true }, $select: { total: { $count: '*' } }, $where: { published: true } },
+  materialized: true,
+});
+
 const Busy = defineView({ name: 'MongoViewBusy', from: () => Totals, find: { $where: { total: { $gt: 1 } } } });
 
 const Pin = defineEntity({
@@ -56,7 +63,9 @@ let ids: string[] = [];
 
 beforeAll(async () => {
   await pool.withQuerier((querier) => querier.db.dropDatabase());
-  await new Migrator(pool, { entities: [Owner, Item, Pin, Totals, Kinds, Published, Busy] }).sync({ logging: false });
+  await new Migrator(pool, { entities: [Owner, Item, Pin, Totals, Kinds, Published, Busy, Stored] }).sync({
+    logging: false,
+  });
   ownerId = await pool.insertOne(Owner, {});
   const item = { ownerId, vec: [1, 0], kind: 'a', published: true };
   ids = await pool.insertMany(Item, [
@@ -124,4 +133,48 @@ it('should read a view over a view, and filter by a relation into one', async ()
   expect(await pool.findMany(Busy, {})).toEqual([{ groupId: 1, total: 2 }]);
   expect(await pool.count(Pin, { $where: { published: { groupId: 2 } } })).toBe(1);
   expect(await pool.count(Pin, { $where: { published: { groupId: 1 } } })).toBe(0);
+});
+
+it("should refresh a materialized view with $out, its documents keyed by the view's key", async () => {
+  await pool.refreshView(Stored);
+  expect(await pool.findMany(Stored, { $sort: { groupId: 'asc' } })).toEqual([
+    { groupId: 1, total: 2 },
+    { groupId: 2, total: 1 },
+  ]);
+
+  await pool.updateOneById(Item, ids[3]!, { published: true });
+  await pool.refreshView(Stored);
+  expect(await pool.findOneById(Stored, 2)).toEqual({ groupId: 2, total: 2 });
+  await pool.updateOneById(Item, ids[3]!, { published: false });
+});
+
+it('should refuse a refresh inside a transaction, which $out runs outside of', async () => {
+  await expect(pool.transaction((querier) => querier.refreshView(Stored))).rejects.toThrow(
+    "MongoDB refreshes 'MongoViewStored' with $out, which runs outside a transaction",
+  );
+});
+
+it('should fill a materialized view the sync creates, over documents already there', async () => {
+  const Filled = defineView({
+    name: 'MongoViewFilled',
+    from: () => Item,
+    aggregate: { $group: { groupId: true }, $select: { total: { $count: '*' } }, $where: { published: true } },
+    materialized: true,
+  });
+  await new Migrator(pool, { entities: [Item, Filled] }).sync({ logging: false });
+
+  expect(await pool.findMany(Filled, { $sort: { groupId: 'asc' } })).toEqual([
+    { groupId: 1, total: 2 },
+    { groupId: 2, total: 1 },
+  ]);
+});
+
+it('should read a view of its top rows', async () => {
+  const Top = defineView({
+    name: 'MongoViewTop',
+    from: () => Item,
+    find: { $select: { id: true, groupId: true }, $where: { published: true }, $sort: { groupId: 'desc' }, $limit: 1 },
+  });
+
+  expect(await pool.findMany(Top, { $select: { groupId: true } })).toEqual([{ groupId: 2 }]);
 });

@@ -1,4 +1,5 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
+import { underNoCaller } from '../context/context.js';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import {
   AGGREGATE_VALUE_ALIAS,
@@ -35,6 +36,7 @@ import {
 } from '../dialect/queryJoins.js';
 import { assertSoleId, fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import { referenceKeys } from '../entity/metadata/definition.js';
+import { materializedView, queriedView } from '../entity/metadata/lookup.js';
 import type {
   RelationAggregateOp,
   RelationAggregateSpec,
@@ -60,6 +62,7 @@ import type {
   RelationMeta,
   RelationQuery,
   AbstractType,
+  ViewMeta,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/query.js';
 import { ColumnRef, QuerySql, REF_ENTITY, REF_KEY } from '../type/querySql.js';
@@ -472,7 +475,7 @@ export class MongoDialect extends AbstractDialect {
     if (key === ID_KEY) {
       return ID_KEY;
     }
-    if (meta.fields[key]?.isId && !(meta.ids.length > 1 && meta.view)) {
+    if (meta.fields[key]?.isId && !(meta.ids.length > 1 && queriedView(meta))) {
       // A document has one `_id`. A composite key is a different document shape - a sub-document,
       // whose field order decides equality - rather than a translation, so it is refused here, which
       // every read reaches, and in `getPersistables`, which every write reaches. A plain view's rows are stored
@@ -1137,7 +1140,7 @@ export class MongoDialect extends AbstractDialect {
    */
   public readPlan<E extends Document>(entity: AbstractType<E>, q: Query<E>, opts?: StatementOptions): MongoRead {
     // A plain view's rows are a pipeline already, which no `$vectorSearch` can lead: its distance is computed.
-    if (getMeta(entity).view) {
+    if (queriedView(getMeta(entity))) {
       return { pipeline: this.aggregationPipeline(entity, q, opts) };
     }
     const vector = this.extractVectorSort(q.$sort);
@@ -1504,10 +1507,24 @@ export class MongoDialect extends AbstractDialect {
    * each column projected under the name the view reads it by. Every read and lookup starts here. See architecture/views.md.
    */
   public rowSource<E>(meta: EntityMeta<E>): MongoRows {
-    const { view } = meta;
-    if (!view) {
-      return { collection: this.resolveTableName(meta), stages: [] };
-    }
+    const view = queriedView(meta);
+    return view ? this.viewRows(meta, view) : { collection: this.resolveTableName(meta), stages: [] };
+  }
+
+  /**
+   * The pipeline bringing a materialized view's collection to its query's documents, `$out` replacing them at once,
+   * its indexes kept: built under no caller, past every policy.
+   */
+  public refreshPipeline<E>(meta: EntityMeta<E>): MongoRows {
+    const view = materializedView(meta);
+    return underNoCaller(() => {
+      const { collection, stages } = this.viewRows(meta, view);
+      return { collection, stages: [...stages, { $out: this.resolveTableName(meta) }] };
+    });
+  }
+
+  /** A view's query as stages over its source's rows, each column under the name `meta` reads it by. */
+  private viewRows<E>(meta: EntityMeta<E>, view: ViewMeta): MongoRows {
     const from = view.from();
     const source = getMeta(from);
     const { collection, stages } = this.rowSource(source);
@@ -2115,6 +2132,8 @@ export type MongoAggregationPipelineEntry<E extends Document> = {
   $unset?: string | string[];
   $skip?: number;
   $limit?: number;
+  /** The collection a pipeline's documents replace, a materialized view's refresh. */
+  $out?: string;
 };
 
 /** A `$lookup`, whose pipeline runs over the collection it reads. */

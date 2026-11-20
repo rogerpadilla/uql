@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CrdbQuerierPool } from '../cockroachdb/crdbQuerierPool.js';
 import { withContext } from '../context/context.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
+import { defineView, Entity, f, Field, ManyToOne, OneToMany } from '../entity/index.js';
 import type { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { queryErrorKind } from '../querier/queryError.js';
@@ -109,7 +109,15 @@ class NpNoteEdited {
   @Field(f.string().nullable()) title?: string | null;
 }
 
-const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted', 'NpShared', 'NpStaged'];
+/** Each tenant's note count, refreshed past the policies on the notes and held by its own. */
+const NpTotals = defineView({
+  name: 'NpTotals',
+  from: () => NpNote,
+  aggregate: { $group: { tenantId: true }, $select: { notes: { $count: '*' } } },
+  materialized: true,
+}).policies([{ allow: { tenantId: $context.orgId } }]);
+
+const tables = ['NpMember', 'NpChecked', 'NpNote', 'NpProject', 'NpGranted', 'NpShared', 'NpStaged', 'NpTotals'];
 
 /** Native, its transactions run as the database role context key `dbRole` names. */
 const native: ExtraOptions = { policies: 'native', role: $context.dbRole };
@@ -136,7 +144,7 @@ const engines: readonly [
     'cockroachdb',
     () => new CrdbQuerierPool(cockroachConnection('test_policy'), native),
     (config) => new CrdbQuerierPool({ ...cockroachConnection('test_policy'), user: 'uql_policy', ...config }, native),
-    'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted", "NpStaged" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq", "NpStaged_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
+    'GRANT ALL ON TABLE "NpNote", "NpChecked", "NpGranted", "NpStaged", "NpTotals" TO uql_policy; GRANT ALL ON SEQUENCE "NpNote_id_seq", "NpChecked_id_seq", "NpGranted_id_seq", "NpStaged_id_seq" TO uql_policy; GRANT SELECT ON TABLE "NpGranted" TO uql_policy_reader',
     false,
   ],
 ];
@@ -166,8 +174,8 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
   let owner: SqlQuerierPool;
   let app: SqlQuerierPool;
   const entities = subqueries
-    ? [NpNote, NpProject, NpMember, NpChecked, NpGranted, NpStaged]
-    : [NpNote, NpChecked, NpGranted, NpStaged];
+    ? [NpNote, NpProject, NpMember, NpChecked, NpGranted, NpStaged, NpTotals]
+    : [NpNote, NpChecked, NpGranted, NpStaged, NpTotals];
 
   const dropAll = async () => {
     for (const table of tables) {
@@ -339,6 +347,16 @@ describe.each(engines)('native policies on %s', (_engine, owned, held, grant, su
 
     expect(edited).toEqual([]);
     expect(await asTenant(1, () => app.all(hidden))).toEqual([{ title: 'hidden' }]);
+  });
+
+  it('should refresh a materialized view as a role reading past the policies, its own holding each tenant', async () => {
+    await asTenant(1, () => app.insertOne(NpNote, { title: 'counted' }));
+    await owner.refreshView(NpTotals);
+
+    expect(await asTenant(1, () => app.findMany(NpTotals, {}))).toEqual([{ tenantId: 1, notes: expect.any(Number) }]);
+    await expect(app.refreshView(NpTotals)).rejects.toThrow(
+      "refreshing 'NpTotals' computes every row past row-level security, which the role",
+    );
   });
 
   it('should refuse statements under a context where the role reads past the policies', async () => {

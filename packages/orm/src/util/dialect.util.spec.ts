@@ -11,7 +11,6 @@ import type {
   QueryWhere,
   StatementOptions,
 } from '../type/index.js';
-import { PAST_POLICIES } from '../type/index.js';
 import { $context } from './contextRefs.js';
 import {
   applyFilters,
@@ -194,10 +193,6 @@ it('should keep a policy against a client $where on the same field', () => {
 
 it('should reach no row where the context a policy reads is missing', () => {
   expect(tenantApplied({})).toEqual({ deletedAt: null, $and: [{ id: { $in: [] } }] });
-});
-
-it('should read past the policies for a statement the querier checks with', () => {
-  expect(tenantApplied({}, { [PAST_POLICIES]: true })).toEqual({ deletedAt: null });
 });
 
 it("should fill an inserted row's pinned field from a policy", () => {

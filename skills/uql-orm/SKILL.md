@@ -167,7 +167,8 @@ export const OpenOrder = defineView({ name: 'OpenOrder', from: () => Order, find
 
 - A view is a query over `from`: `aggregate` as `pool.aggregate` takes it, or `find`, a `Query` less `$populate`, `$count` and `$lock`. Its row is what the query answers, typed by it.
 - uql reads it by its query on every engine, MongoDB included, so its source's filters and policies hold every read. It reads like any entity and is read-only. A find view is keyed by its source's key where it selects it; an aggregate view by its `$group` columns where none is nullable. Sections: `relations`, `filters`, `policies`.
-- It has no rows of its own: `$lock`, `estimatedCount`, and `$text` on MySQL, MariaDB, SQLite and MongoDB are refused, and it takes no `indexes`. Its query takes no `$sort`, `$limit` or `$skip`: a read orders and pages its rows. It has no table, so migrations leave it out. `tableOf(refs(CustomerTotals))` renders it in raw SQL: https://uql-orm.dev/entities/views.md
+- A plain view has no rows of its own: `$lock`, `estimatedCount`, and `$text` on MySQL, MariaDB, SQLite and MongoDB are refused, and it takes no `indexes`. Its query takes `$sort` only with `$limit`, a top N: otherwise a read orders and pages its rows. It has no table, so migrations leave it out. `tableOf(refs(CustomerTotals))` renders it in raw SQL: https://uql-orm.dev/entities/views.md
+- `materialized: true` keeps it as a table, read from its rows, which takes `.indexes(...)`. Migrations create and fill it; `await pool.refreshView(CustomerTotals)` replaces its rows with its query's in one write (MongoDB with `$out`, outside a transaction). Its refresh runs past every policy, so one over a source holding policies or a tenant must declare `.policies(...)` of its own; on `policies: 'native'` the role refreshing must read past row-level security. Writes refuse it, and `refreshView` takes nothing else.
 
 ### Filters, soft delete, tenants and policies
 

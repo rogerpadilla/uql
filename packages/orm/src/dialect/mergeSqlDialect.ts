@@ -2,7 +2,6 @@ import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
   FieldKey,
-  Key,
   QueryConflictKeys,
   QueryUpsert,
   QueryContext,
@@ -77,7 +76,7 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * The rest of a `MERGE` once its source is written: the source named, matched on the conflict keys, updated
+   * The rest of a `MERGE` once its source is written: the source named, matched on `keys`, updated
    * as `found` says where it matched and its condition holds, if it assigns anything, and inserted where it did not.
    */
   private mergeMatch<E>(
@@ -105,9 +104,9 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
 
   /** `<target>.<col> = <source>.<col>` for every conflict key, which is what makes a row "the same". */
   private mergeOn<E>(meta: EntityMeta<E>, conflictKeys: QueryConflictKeys<E>, table: string, source: string): string {
-    return (getKeys(conflictKeys) as Key<E>[])
+    return getKeys(conflictKeys)
       .map((key) => {
-        const column = this.escapeId(this.resolveColumnName(key, meta.fields[key]));
+        const column = this.escapedColumnName(meta, key);
         return `${table}.${column} = ${source}.${column}`;
       })
       .join(' AND ');

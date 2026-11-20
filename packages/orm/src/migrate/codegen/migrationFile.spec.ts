@@ -48,6 +48,24 @@ describe('buildMigrationModule', () => {
     expect(source).toContain('async down(querier: MongoQuerier): Promise<void> {');
   });
 
+  it('should import the ObjectId a MongoDB migration writes, and only then', () => {
+    const module = (upInner: string) =>
+      buildMigrationModule({
+        migrationName: 'fill',
+        createdAt: new Date(0),
+        querier: 'MongoQuerier',
+        upInner,
+        downInner: '',
+      });
+
+    expect(
+      module(
+        '    await querier.db.collection("a").aggregate([{"$match":{"b":new ObjectId("64b7f3c2a1b2c3d4e5f60718")}}]).toArray();',
+      ),
+    ).toContain("import { ObjectId } from 'mongodb';\nimport type { MongoQuerier } from 'uql-orm/mongodb';");
+    expect(module('')).not.toContain('ObjectId');
+  });
+
   it('should default to the SQL querier, with doc extras and emitted run calls', () => {
     const src = buildMigrationModule({
       migrationName: 'add_foo',

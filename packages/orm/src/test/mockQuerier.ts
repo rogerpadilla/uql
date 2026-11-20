@@ -28,6 +28,7 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
     count: vi.fn(),
     exists: vi.fn(),
     estimatedCount: vi.fn(),
+    refreshView: vi.fn(),
     aggregate: vi.fn(),
     insertOne: vi.fn(),
     insertMany: vi.fn(),

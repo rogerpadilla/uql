@@ -67,6 +67,13 @@ describe('f', () => {
     });
   });
 
+  it('should read a tenant off the context key its ref names, refusing any other spelling of one', () => {
+    expect(optionsOf(f.number().tenant())).toEqual({ type: Number, tenant: 'tenantId' });
+    expect(optionsOf(f.number().tenant({ $context: 'siteId' }))).toEqual({ type: Number, tenant: 'siteId' });
+    // @ts-expect-error a context key is named by its ref, which an untyped caller is refused at run time
+    expect(() => f.number().tenant('siteId')).toThrow('tenant() takes a context ref, such as $context.tenantId');
+  });
+
   it('should keep a foreign key, its action and a computed column', () => {
     class User {}
     const target = () => User;

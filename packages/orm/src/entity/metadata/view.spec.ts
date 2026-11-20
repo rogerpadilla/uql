@@ -42,11 +42,43 @@ describe('a view', () => {
       label: { name: 'label', type: String, length: 40, nullable: true },
       total: { name: 'total', type: Number },
       size: { name: 'size', type: BigInt, nullable: true },
-      mean: { name: 'mean', type: Number, nullable: true },
+      mean: { name: 'mean', type: Number, columnType: 'double', nullable: true },
     });
     expect(meta.ids).toEqual([]);
     expect(meta.readOnly).toBe(true);
     expect(meta.view?.kind).toBe('aggregate');
+  });
+
+  it("should size a column by what it holds: a sum outgrows its column's type, a min or a max is one of its values", () => {
+    const Line = defineEntity({
+      name: 'ViewLine',
+      fields: {
+        id: f.number().autoIncrement(),
+        qty: f.column('int'),
+        price: f.decimal(12, 2),
+        weight: f.column('double'),
+        rate: f.number().precision(5).wire(['read']),
+      },
+    });
+    const Totals = defineView({
+      name: 'ViewLineTotals',
+      from: () => Line,
+      aggregate: {
+        $select: {
+          qty: { $sum: { qty: true } },
+          weight: { $sum: { weight: true } },
+          rates: { $sum: { rate: true } },
+          top: { $max: { price: true } },
+        },
+      },
+    });
+
+    expect(getMeta(Totals).fields).toEqual({
+      qty: { name: 'qty', type: Number, nullable: true },
+      weight: { name: 'weight', type: 'double', nullable: true },
+      rates: { name: 'rates', type: Number, columnType: 'decimal', wire: ['read'], nullable: true },
+      top: { ...getMeta(Line).fields['price'], name: 'top', nullable: true },
+    });
   });
 
   it('should key an aggregate by its groups where none is nullable', () => {
@@ -146,11 +178,74 @@ describe('a view', () => {
     expect(isTable(Resource)).toBe(true);
   });
 
+  it('should keep a materialized view as a table its query refreshes, read from its rows', () => {
+    const Stored = defineView({
+      name: 'ViewStored',
+      from: () => Resource,
+      aggregate: { $group: { workspaceId: true }, $select: { total: { $count: '*' } } },
+      materialized: true,
+    }).indexes((row, index) => [index([row.total])]);
+    const meta = getMeta(Stored);
+
+    expect(isTable(Stored)).toBe(true);
+    expect(meta.view).toMatchObject({ kind: 'aggregate', materialized: true });
+    expect(meta.ids).toEqual(['workspaceId']);
+    expect(meta.indexes).toHaveLength(1);
+    expect(meta.readOnly).toBe(true);
+  });
+
+  it('should refuse a materialized view over rows a policy holds, unless it declares its own', () => {
+    const Held = defineEntity({
+      name: 'ViewHeld',
+      fields: { id: f.number().autoIncrement(), tenantId: f.number().tenant() },
+    });
+    const Leaky = defineView({
+      name: 'ViewLeaky',
+      from: () => Held,
+      aggregate: { $group: { tenantId: true }, $select: { total: { $count: '*' } } },
+      materialized: true,
+    });
+    const Plain = defineView({
+      name: 'ViewHeldPlain',
+      from: () => Held,
+      find: { $select: { id: true, tenantId: true } },
+    });
+    const Over = defineView({
+      name: 'ViewOverPlain',
+      from: () => Plain,
+      find: { $select: { id: true } },
+      materialized: true,
+    });
+    const Owned = defineView({
+      name: 'ViewOwned',
+      from: () => Held,
+      aggregate: { $group: { tenantId: true }, $select: { total: { $count: '*' } } },
+      materialized: true,
+    }).policies([{ allow: { tenantId: { $context: 'tenantId' } } }]);
+
+    const refusal = "is refreshed past the policies of 'ViewHeld': declare its own, which hold its rows";
+    expect(() => getMeta(Leaky)).toThrow(`'ViewLeaky' ${refusal}`);
+    expect(() => getMeta(Over)).toThrow(`'ViewOverPlain' ${refusal}`);
+    expect(getMeta(Owned).policies).toHaveLength(1);
+  });
+
   it('should refuse a view as a base, whose rows no table holds', () => {
     const Live = defineView({ name: 'ViewLive2', from: () => Resource, find: { $select: { id: true } } });
     const Kid = defineEntity({ name: 'ViewKid', extends: Live, fields: { note: f.string() } });
 
     expect(() => getMeta(Kid)).toThrow("'ViewKid' extends 'ViewLive2', a view: an entity extends an entity");
+  });
+
+  it('should refuse a materialized view as a base, whose rows its query decides', () => {
+    const Kept = defineView({
+      name: 'ViewKept',
+      from: () => Resource,
+      find: { $select: { id: true } },
+      materialized: true,
+    });
+    const Kid = defineEntity({ name: 'ViewKeptKid', extends: Kept, fields: { note: f.string() } });
+
+    expect(() => getMeta(Kid)).toThrow("'ViewKeptKid' extends 'ViewKept', a view: an entity extends an entity");
   });
 
   it('should refuse a write as to a view', async () => {

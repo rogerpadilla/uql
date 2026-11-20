@@ -20,6 +20,7 @@ import {
   QuerySql,
   type UqlContext,
 } from '../type/index.js';
+import { isContextRef } from './contextRefs.js';
 import { utcTimestamp } from './date.js';
 import { fieldKeys } from './field.util.js';
 import { isPlainObject } from './object.util.js';
@@ -57,11 +58,6 @@ export const POLICY_OPS: readonly EntityAccess[] = ['read', 'insert', 'update', 
 export function policyMeta<E>({ allow, must, ops = POLICY_OPS, ...rest }: Policy<E>): PolicyMeta<E> | undefined {
   const where = allow ?? must;
   return where && { effect: allow === undefined ? 'must' : 'allow', ops, where, ...rest };
-}
-
-/** Whether `value` reads a context key, `{ $context: 'tenantId' }`, and nothing else. */
-function isContextRef(value: unknown): value is ContextKeyRef {
-  return isPlainObject(value) && typeof value['$context'] === 'string' && Object.keys(value).length === 1;
 }
 
 /** `value` with each `{ $context }` ref replaced by what `onRef` answers, every other node copied as it was. */

@@ -1,3 +1,4 @@
+import { pastPolicies, withContext } from '../context/context.js';
 import { getMeta, idOf, namesEvery, namesKey, relationOf } from '../entity/index.js';
 import { type KeyedRow, soleId, whyReadOnly } from '../entity/metadata/definition.js';
 import { assertOwnRows } from '../entity/metadata/lookup.js';
@@ -47,9 +48,10 @@ import type {
   WrittenId,
   RawRow,
   ReportedWrite,
+  RefreshedEntity,
   WritableEntity,
 } from '../type/index.js';
-import { parseQueryLock, PAST_POLICIES } from '../type/index.js';
+import { parseQueryLock } from '../type/index.js';
 import {
   childrenExcept,
   childrenOf,
@@ -379,8 +381,8 @@ type HeldWrite<E> = {
 /** What a row an update found owes its transitions once written: its signature, and the conditions left for it. */
 type Owed<E> = { signature: string; readonly left: QueryWhere<E>[] };
 
-/** A read of rows as they are stored, past filters and policies: what checks a write the policies settled. */
-const UNPOLICED: StatementOptions = { filters: false, [PAST_POLICIES]: true };
+/** A read of rows as they are stored, past filters, run {@link pastPolicies}: what checks a write the policies settled. */
+const UNFILTERED: StatementOptions = { filters: false };
 
 const STREAM_HOLDS_QUERIER =
   'a stream is reading on this querier: run the statement after its loop, or on another querier';
@@ -692,6 +694,13 @@ export abstract class AbstractQuerier implements Querier {
 
   protected abstract internalEstimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
+  /** See {@link UniversalQuerier.refreshView}: run under no caller, so the database binds none it would read. */
+  refreshView<E extends RefreshedEntity>(entity: Type<E>): Promise<void> {
+    return withContext({}, () => this.internalRefreshView(entity));
+  }
+
+  protected abstract internalRefreshView<E extends object>(entity: Type<E>): Promise<void>;
+
   insertOne<
     E extends WritableEntity,
     const S extends FieldKey<E> = never,
@@ -954,7 +963,8 @@ export abstract class AbstractQuerier implements Querier {
     const holding = new Set<string>();
     const named = ids.map((id) => whereIds(meta, id));
     for (const q of this.keyedReads<E>(meta.ids, named, meta.ids)) {
-      const rows = await this.internalFindMany(entity, { ...q, $where: whereAnd(q.$where, [where]) }, UNPOLICED);
+      const read = { ...q, $where: whereAnd(q.$where, [where]) };
+      const rows = await pastPolicies(() => this.internalFindMany(entity, read, UNFILTERED));
       rows.forEach((row) => holding.add(rowKey(row, meta.ids)));
     }
     return holding;
@@ -1010,7 +1020,9 @@ export abstract class AbstractQuerier implements Querier {
         continue;
       }
       const holding = await this.writeBatches(group.ids, meta.ids.length, (batch) =>
-        this.internalCount(entity, { $where: whereAnd(whereIds(meta, batch), group.where) }, UNPOLICED),
+        pastPolicies(() =>
+          this.internalCount(entity, { $where: whereAnd(whereIds(meta, batch), group.where) }, UNFILTERED),
+        ),
       );
       if (holding < group.ids.length) {
         throw new UqlSecurityError(`a row written to '${entity.name}' does not hold its policies under this context`);

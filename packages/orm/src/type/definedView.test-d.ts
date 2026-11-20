@@ -100,17 +100,34 @@ export function itsQueryIsCheckedAsItsMethodChecksIt() {
   });
 }
 
-export function aViewIsASetOfRowsItsReadOrdersAndPages() {
+export function aViewSortsOnlyToTakeItsTopRows() {
+  defineView({
+    name: 'TopFind',
+    from: () => Resource,
+    find: { $select: { id: true, bytes: true }, $sort: { bytes: 'desc' }, $limit: 10 },
+  });
+  defineView({
+    name: 'TopAggregate',
+    from: () => Resource,
+    aggregate: {
+      $group: { workspaceId: true },
+      $select: { total: { $count: '*' } },
+      $sort: { total: 'desc' },
+      $limit: 3,
+      $skip: 1,
+    },
+    materialized: true,
+  });
   defineView({
     name: 'SortedFind',
     from: () => Resource,
-    // @ts-expect-error a find view takes no `$sort`: the read orders its rows
+    // @ts-expect-error a sort alone orders nothing in a set of rows: a read orders a view's
     find: { $select: { label: true }, $sort: { label: 'asc' } },
   });
   defineView({
     name: 'PagedFind',
     from: () => Resource,
-    // @ts-expect-error nor a page
+    // @ts-expect-error nor does a limit take rows in any order of its own
     find: { $select: { label: true }, $limit: 10 },
   });
   defineView({
@@ -135,4 +152,15 @@ export function aViewTakesTheSectionsAViewHas() {
   defineView({ name: 'Indexed', from: () => Resource, find: { $select: { id: true } } }).indexes(() => []);
   // @ts-expect-error a view has no hooks: nothing writes it
   defineView({ name: 'Hooked', from: () => Resource, find: { $select: { id: true } } }).hooks({});
+}
+
+export function aMaterializedViewIsATableItsQueryRefreshes() {
+  const Stored = defineView({
+    name: 'StoredUsage',
+    from: () => Resource,
+    aggregate: { $group: { workspaceId: true }, $select: { total: { $count: '*' } } },
+    materialized: true,
+  }).indexes((row, index) => [index([row.total])]);
+  // @ts-expect-error its sections are each declared once
+  Stored.indexes((row, index) => [index([row.total])]);
 }

@@ -237,6 +237,15 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     return this.execute('estimatedCount', (session) => this.collection(entity).estimatedDocumentCount({ session }));
   }
 
+  /** `$out` replaces the collection at once; it runs outside a transaction, so one open is refused. */
+  protected override async internalRefreshView<E extends Document>(entity: Type<E>) {
+    if (this.hasOpenTransaction) {
+      throw new UqlUsageError(`MongoDB refreshes '${entity.name}' with $out, which runs outside a transaction`);
+    }
+    const { collection, stages } = this.dialect.refreshPipeline(getMeta(entity));
+    await this.execute('refreshView', () => this.collectionNamed(collection).aggregate(stages).toArray());
+  }
+
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
     refuseTriggers(entity);
     const meta = getMeta(entity);

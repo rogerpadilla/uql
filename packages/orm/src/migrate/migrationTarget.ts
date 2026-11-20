@@ -84,7 +84,7 @@ async function withForeignKeysOff(querier: SqlQuerier, work: () => Promise<void>
 
 const mongoSession = (querier: MongoQuerier): MigrationSession => ({
   querier,
-  run: (statement) => runMongoCommand(querier.db, statement),
+  run: (statement) => runMongoCommand(querier.db, statement, querier.dialect),
   transaction: (work) => work(),
 });
 

@@ -1,4 +1,4 @@
-import type { EntityId, EntityWrite, FieldKey, UpdateWrite, WritableEntity } from './entity.js';
+import type { EntityId, EntityWrite, FieldKey, RefreshedEntity, UpdateWrite, WritableEntity } from './entity.js';
 import type {
   EntityAccess,
   FieldAccess,
@@ -297,6 +297,13 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * which has no rows of its own.
    */
   estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
+
+  /**
+   * Replaces a materialized view's rows with its query's in one write, readers seeing the old rows or the new:
+   * computed under no caller, past every policy, so its own hold its rows. Inside a transaction it joins it, but on
+   * MongoDB, whose `$out` runs outside one. Never over an API. See architecture/views.md.
+   */
+  refreshView<E extends RefreshedEntity>(entity: Type<E>): Promise<void>;
 }
 
 /** What a save does to the rows it writes, as a cascade does to the rows a write nests: inserts new ones, updates listed ones. */
@@ -318,6 +325,7 @@ export const QUERIER_OPS = {
   exists: ['read'],
   aggregate: ['read'],
   estimatedCount: ['read'],
+  refreshView: ['update'],
   insertOne: ['insert'],
   insertMany: ['insert'],
   saveOne: SAVES,

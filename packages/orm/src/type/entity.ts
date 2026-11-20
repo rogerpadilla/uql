@@ -47,6 +47,9 @@ export const readOnly = Symbol('readOnly');
 /** What a write's entity is held to: any but one branded {@link readOnly}. A constraint, so a generic caller's `E` passes. */
 export type WritableEntity = object & { readonly [readOnly]?: never };
 
+/** What `refreshView` takes: a materialized view, branded `'refreshed'`, which a plain view and a read-only entity are not. */
+export type RefreshedEntity = object & { readonly [readOnly]?: 'refreshed' };
+
 /** The names an entity's brand `B` lists, `never` where it declares none. */
 export type BrandNames<E, B extends EntityBrand> = B extends keyof E ? NonNullable<E[B]> : never;
 
@@ -1064,8 +1067,11 @@ export type EntityMeta<E> = {
   referenceKeys?: ReadonlyMap<string, EntityGetter>;
 };
 
-/** What a view is, as `defineView` declared it: an aggregate or a find over its source, read by its query. See architecture/views.md. */
-export type ViewMeta = { readonly from: () => AbstractType<object> } & (
+/**
+ * What a view is, as `defineView` declared it: an aggregate or a find over its source, read by its query, or kept as a
+ * table its query refreshes where materialized. See architecture/views.md.
+ */
+export type ViewMeta = { readonly from: () => AbstractType<object>; readonly materialized?: true } & (
   | { readonly kind: 'aggregate'; readonly query: ViewAggregate<object> }
   | { readonly kind: 'find'; readonly query: ViewFind<object> }
 );

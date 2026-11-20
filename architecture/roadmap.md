@@ -6,19 +6,7 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
 
-- **Views and materialized views.**
-
-```ts
-export const WorkspaceUsage = defineView({
-  name: 'WorkspaceUsage',
-  materialized: true,
-  from: () => Resource,
-  aggregate: { $group: { workspaceId: true }, $select: { total: { $count: '*' } } },
-});
-```
-
-[The design](views.md). A view is a read-only entity, keyed by what keeps a row unique, declared as data alone (no `@View`, since a decorator cannot type its class from a query), its row typed by its query. Built: uql reads a view by its query, so its source's policies hold it on every engine. Left: installing it in the database for every other tool, compared through the engine's own normalisation, and a materialized view, a table uql owns on every engine, refreshed by key as `REFRESH ... CONCURRENTLY` would be.
-
+- **Views in the database.** [The design](views.md). Built: `defineView` declares a view as an aggregate or a find, uql reads a plain one by its query, so its source's policies hold it on every engine, and a materialized one is a table `refreshView` replaces with its query's rows in one write, on every engine. Left: installing a plain view in the database for every other tool, compared through the engine's own normalisation, and a MongoDB view collection.
 - **Value types.** `.of(Type)` on a string, number or date builder, `f.column('date').of(Temporal.PlainDate)` or `f.decimal(12, 2).of(Money)`, `Type` being any `{ from(text) }` that parses what its value's `toJSON()` prints. A codec per field, worked out at registration, converts a value to the column's own JS value at each edge (a write, a compared operand but not a pattern, a read, an aggregate, a cursor, a default), so no dialect learns of it; uql's types never name Temporal, so a polyfill works. Waits for a second app that needs it: the one measured has one field for it.
 - **Polymorphic entities.** Single-table inheritance: a base declares a discriminator field, each subclass the value it stores, `@Entity({ discriminator: 'card' })` or `defineEntity({ extends, discriminator })`. A subclass's statements are held to its value as a filter is, and an insert is given it as a tenant is; a base's read answers each row as its subclass, typed as the union. A subclass's own fields are nullable columns of the one table. Its data form is the discriminator field and value, so it travels in the schema document. Table-per-type waits for an app that needs it: it is a join on every read.
 - **Recursive reads (CTEs).** What a CTE is used for, without spelling one: a tree read through a self-relation, `$populate: { children: { $recursive: true } }` (or `{ $depth: 5 }`), and its filter form, `$where: { ancestors: { ... } }`. `WITH RECURSIVE` on SQL, `$graphLookup` on MongoDB, so the rule holds on every engine; a cycle stops at a row already reached. A named, reused subquery is not planned: computed fields and `$exists` cover it. Open: how a recursive relation is declared, and its result type's cost in `ts.perf`.

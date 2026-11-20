@@ -122,6 +122,8 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     this.perform('aggregate', (querier) => querier.aggregate(...args));
   readonly estimatedCount: UniversalQuerier['estimatedCount'] = (...args) =>
     this.perform('estimatedCount', (querier) => querier.estimatedCount(...args));
+  readonly refreshView: UniversalQuerier['refreshView'] = (...args) =>
+    this.perform('refreshView', (querier) => querier.refreshView(...args));
   readonly insertOne: UniversalQuerier['insertOne'] = (...args) =>
     this.perform('insertOne', (querier) => querier.insertOne(...args));
   readonly insertMany: UniversalQuerier['insertMany'] = (...args) =>
