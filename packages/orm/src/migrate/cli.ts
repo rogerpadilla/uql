@@ -225,7 +225,7 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
         'drift:check compares tables, and this database has none: `sync --dry-run` prints the index and validator changes a sync would make',
       );
     }
-    const expectedAST = generator.buildAST(config.entities);
+    const expectedAST = generator.buildAST(migrator.tables);
 
     // Build actual schema from database
     const actualAST = await migrator.schemaIntrospector.introspect();

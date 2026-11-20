@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { httpTransport } from '../browser/http/httpTransport.js';
 import { createClientQuerier } from '../browser/querier/clientQuerier.js';
 import type { ClientQuerier } from '../browser/type/index.js';
-import { defineEntity, Entity, f, Field } from '../entity/index.js';
+import { defineEntity, defineView, Entity, f, Field } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { type Api, createApi } from './api.js';
@@ -98,6 +98,16 @@ const Courier = defineEntity({
   (courier) => ({ firstPickup: () => courier.parcels.min((parcel) => parcel.pickupDate) }),
 );
 
+/** A view the client reads as the server's query answers it: its latest date a `Date`, its total weight a `bigint`. */
+const CourierLoad = defineView({
+  name: 'WireCourierLoad',
+  from: () => Parcel,
+  aggregate: {
+    $group: { courierId: true },
+    $select: { latest: { $max: { createdAt: true } }, weight: { $sum: { weight: true } } },
+  },
+});
+
 /** A day as a `date` column holds it: its UTC midnight. */
 const day = (text: string) => new Date(`${text}T00:00:00Z`);
 
@@ -120,7 +130,7 @@ describe('the client against the fetch handler', () => {
     await pool.insertMany(Gadget, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
     let baseUrl: string;
     [server, baseUrl] = await listen(
-      createApi({ pool, include: [Gadget, Widget, Parcel, Courier, Ledger], use: [record] }),
+      createApi({ pool, include: [Gadget, Widget, Parcel, Courier, Ledger, CourierLoad], use: [record] }),
     );
     querier = createClientQuerier(httpTransport(baseUrl));
   });
@@ -130,6 +140,21 @@ describe('the client against the fetch handler', () => {
       server.close(resolve);
     });
     await pool.end();
+  });
+
+  it('should read a view as its query answers it, each value as its column decodes', async () => {
+    const courierId = await pool.insertOne(Courier, { name: 'load' });
+    const createdAt = new Date('2026-03-01T10:00:00.000Z');
+    await pool.insertMany(Parcel, [
+      { weight: 2n ** 60n, createdAt, courierId },
+      { weight: 1n, createdAt: new Date('2026-01-01T00:00:00.000Z'), courierId },
+    ]);
+
+    expect(await querier.findOneById(CourierLoad, courierId)).toEqual({
+      courierId,
+      latest: createdAt,
+      weight: 2n ** 60n + 1n,
+    });
   });
 
   it('should count every matching row beside a page of them', async () => {

@@ -66,6 +66,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   reportsWrites: ['insert', 'update', 'delete', 'upsert'],
   nullsSortLowest: true,
   nullsOrdering: 'clause',
+  textSearchReadsIndex: true,
   textScoreIndexes: false,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,

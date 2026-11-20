@@ -64,6 +64,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   reportsWrites: [],
   nullsSortLowest: true,
   nullsOrdering: 'expression',
+  textSearchReadsIndex: true,
   textScoreIndexes: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,

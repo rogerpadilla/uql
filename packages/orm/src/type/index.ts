@@ -13,6 +13,7 @@ export * from './queryLock.js';
 export * from './querySql.js';
 export * from './policy.js';
 export * from './definedEntity.js';
+export * from './definedView.js';
 export * from './queryWhere.js';
 export * from './universalQuerier.js';
 export * from './standardSchema.js';

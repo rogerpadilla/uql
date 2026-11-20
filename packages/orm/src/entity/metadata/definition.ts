@@ -23,7 +23,6 @@ import {
   type HookFunction,
   type IdKey,
   type KeyMap,
-  type RelationKey,
   type RelationMeta,
   type RelationOptions,
   type RelationReferences,
@@ -47,10 +46,17 @@ import {
   type SectionEntry,
   type AggregateFields,
   type DefinedEntity,
+  type AggregateView,
+  type AggregateViewOptions,
+  type FindView,
+  type FindViewOptions,
+  type ViewAggregate,
+  type ViewFind,
+  type ViewMeta,
+  type ViewOptions,
   SOFT_DELETE_FILTER,
+  VIEW_SECTIONS,
   QuerySql,
-  type EntityAccess,
-  type Wire,
 } from '../../type/index.js';
 import { aggregateField, defaultReadKeys, fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
@@ -87,6 +93,8 @@ import {
 } from '../../util/policy.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { type MemberRegistrations, ownRegistrations } from '../decorator/bag.js';
+import { fieldOf } from './lookup.js';
+import { aggregateColumns, findColumns, type ViewSources } from './viewColumns.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<AbstractType<unknown>, EntityMeta<any>>;
@@ -450,19 +458,25 @@ type ErasedOptions = Merge<
   DefineEntityOptions<DefinedFields>,
   {
     readonly extends?: ErasedClass;
+    readonly readOnly?: true;
     readonly fields: Readonly<Record<string, Column>>;
   }
 >;
 
 /**
- * What a defined entity declared: its sections are open while its meta is `'declared'`, and its relations are read
- * on first lookup of it or of an entity extending it, once each target exists.
+ * What a defined entity declared: its sections are open while its meta is `'declared'`, its relations are read on
+ * first lookup of it or of an entity extending it, once each target exists, and its columns are a view's off its query.
  */
-type DeclaredEntity = { readonly options: ErasedOptions; readonly sections: ErasedSections };
+type DeclaredEntity = {
+  readonly options: ErasedOptions;
+  readonly sections: ErasedSections;
+  readonly columns: () => Record<string, FieldOptions>;
+  readonly view?: ViewMeta;
+};
 
 const declaredEntities = new WeakMap<object, DeclaredEntity>();
 
-type DeclaredRow<F extends DefinedFields, B> = Except<B, EntityBrand & keyof B> & ColumnRow<F> & Brands<F, B>;
+type DeclaredRow<F extends DefinedFields, B, R> = Except<B, EntityBrand & keyof B> & ColumnRow<F> & Brands<F, B, R>;
 
 /**
  * Declares an entity by its options and returns its class, whose row type the columns derive, so nothing is
@@ -471,11 +485,50 @@ type DeclaredRow<F extends DefinedFields, B> = Except<B, EntityBrand & keyof B> 
  */
 export function defineEntity<const F extends DefinedFields, B = object, BK = unknown, BC = unknown>(
   options: DefineEntityOptions<F, B, BK, BC> & { readonly abstract: true },
-): DefinedEntity<DeclaredRow<F, B>, DefinedKey<F, BK>, BC & ColumnRow<F>, B, true>;
-export function defineEntity<const F extends DefinedFields, B = object, BK = unknown, BC = unknown>(
-  options: DefineEntityOptions<F, B, BK, BC>,
-): DefinedEntity<DeclaredRow<F, B>, DefinedKey<F, BK>, BC & ColumnRow<F>, B>;
+): DefinedEntity<DeclaredRow<F, B, undefined>, DefinedKey<F, BK>, BC & ColumnRow<F>, B, true>;
+export function defineEntity<
+  const F extends DefinedFields,
+  B = object,
+  BK = unknown,
+  BC = unknown,
+  R extends true | undefined = undefined,
+>(
+  options: DefineEntityOptions<F, B, BK, BC, R>,
+): DefinedEntity<DeclaredRow<F, B, R>, DefinedKey<F, BK>, BC & ColumnRow<F>, B>;
 export function defineEntity(options: ErasedOptions): ErasedClass {
+  return declareClass(options, SECTIONS, () => fieldsOf(options.name, options.fields));
+}
+
+/**
+ * Declares a view by its query and returns its class, whose row type the query derives: an aggregate or a find over
+ * `from`. Read-only, read by its query, and installed for every other tool. See architecture/views.md.
+ */
+export function defineView<S extends object, const Q extends ViewAggregate<S>>(
+  options: AggregateViewOptions<S, Q>,
+): AggregateView<S, Q>;
+export function defineView<S extends object, const Q extends ViewFind<S>>(
+  options: FindViewOptions<S, Q>,
+): FindView<S, Q>;
+export function defineView(options: ErasedViewOptions): ErasedClass {
+  const { name, table, schema, wire, from } = options;
+  const view: ViewMeta =
+    options.aggregate === undefined
+      ? { from, kind: 'find', query: options.find }
+      : { from, kind: 'aggregate', query: options.aggregate };
+  const declared: ErasedOptions = { name, table, schema, wire, readOnly: true, fields: {} };
+  return declareClass(declared, VIEW_SECTIONS, () => viewFields(view), view);
+}
+
+/**
+ * Declares a class whose sections stay open until its first read registers it. Its columns are a thunk, so only
+ * `defineView` reaches the view's derivation, and a bundle defining none leaves it out.
+ */
+function declareClass(
+  options: ErasedOptions,
+  sections: readonly Section[],
+  columns: () => Record<string, FieldOptions>,
+  view?: ViewMeta,
+): ErasedClass {
   const base = options.extends ?? Object;
   // Its rows are read by key alone, which is what the registry types erased options' columns by.
   const entity = {
@@ -484,8 +537,8 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
     },
   }[options.name];
   metas.set(entity, { ...emptyMeta(entity), stage: 'declared' });
-  declaredEntities.set(entity, { options, sections: {} });
-  for (const section of SECTIONS) {
+  declaredEntities.set(entity, { options, sections: {}, columns, ...(view && { view }) });
+  for (const section of sections) {
     Object.defineProperty(entity, section, {
       value(this: AbstractType<object>, declared: unknown, aggregates?: unknown) {
         declareSection(this, section, declared);
@@ -501,6 +554,14 @@ export function defineEntity(options: ErasedOptions): ErasedClass {
 
 /** The sections a defined entity declares as methods. `aggregates` is no method: `relations` takes it as its second argument. */
 const SECTIONS = ['computed', 'indexes', 'checks', 'triggers', 'filters', 'policies', 'hooks', 'relations'] as const;
+
+type Section = (typeof SECTIONS)[number];
+
+/** `defineView`'s options as the registry reads them, each query erased. */
+type ErasedViewOptions = ViewOptions & { readonly from: () => AbstractType<object> } & (
+    | { readonly aggregate: ViewAggregate<object>; readonly find?: undefined }
+    | { readonly find: ViewFind<object>; readonly aggregate?: undefined }
+  );
 
 /** Records one section of a pending defined entity, refusing a second of it and one declared after the entity was read. */
 function declareSection(entity: AbstractType<object>, section: string, declared: unknown): void {
@@ -525,8 +586,8 @@ function settleEntity(entity: AbstractType<unknown>): void {
   if (!pending) {
     return;
   }
-  const { options, sections } = pending;
-  const fields = fieldsOf(options.name, options.fields);
+  const { options, sections, columns, view } = pending;
+  const fields = columns();
   const refs = memberRefs();
   for (const added of [
     fieldsOf(options.name, sections.computed?.(refs) ?? {}),
@@ -545,6 +606,8 @@ function settleEntity(entity: AbstractType<unknown>): void {
       schema: options.schema,
       abstract: options.abstract,
       wire: options.wire,
+      readOnly: options.readOnly,
+      view,
       indexes: sections.indexes,
       checks: sections.checks,
       triggers: sections.triggers,
@@ -559,6 +622,23 @@ function settleEntity(entity: AbstractType<unknown>): void {
     },
   );
 }
+
+/** A view's columns, off its query over its source, whose relations it may group through. */
+function viewFields(view: ViewMeta): Record<string, FieldOptions> {
+  const source = registeredMeta(view.from());
+  return view.kind === 'aggregate'
+    ? aggregateColumns(source, view.query, VIEW_SOURCES)
+    : findColumns(source, view.query, VIEW_SOURCES);
+}
+
+/** How a view reads its sources: their registered meta, and the entity whose key each column holds. */
+const VIEW_SOURCES: ViewSources = {
+  metaOf: registeredMeta,
+  keyOwnerOf(meta, key) {
+    const { entity } = meta;
+    return soleId(meta)?.key === key && isConcrete(entity) ? () => entity : referenceKeys(meta).get(key);
+  },
+};
 
 /** An index as a section's `index(columns, options)` writes it, a bare string its name. */
 function indexEntry<E>(
@@ -645,13 +725,16 @@ function settleRelations<E>(meta: EntityMeta<E>): void {
   meta.stage = 'settled';
 }
 
+/** What registration reads: a decorator's options, read-only and view as the registry states them for either form. */
+type RegistrationOptions<E> = Merge<EntityOptions<E>, { readonly readOnly?: true; readonly view?: ViewMeta }>;
+
 /**
  * The registration both forms share, a defined entity's `members` given as the decorators would register them. Built
  * apart and stored once it passes, so a rejected definition leaves the registry as it was.
  */
 export function registerEntity<E>(
   entity: AbstractType<E>,
-  opts: EntityOptions<E> = {},
+  opts: RegistrationOptions<E> = {},
   members?: Partial<MemberRegistrations>,
 ): EntityMeta<E> {
   // A dotted name reads like a schema and is not one: it escapes as a single identifier, so the
@@ -736,21 +819,28 @@ export function registerEntity<E>(
     meta.fields[meta.version] = { ...meta.fields[meta.version]!, defaultValue: 0, onInsert: 0 };
   }
 
+  if (opts.view) {
+    meta.view = opts.view;
+  }
+
   meta.ids = getIdKeys(meta);
-  if (!meta.ids.length && !meta.abstract) {
-    assertReadingWire(entity.name, meta.wire);
+  if ((opts.readOnly || !meta.ids.length) && !meta.abstract) {
     meta.readOnly = true;
+    if (meta.wire && meta.wire.some((access) => access !== 'read')) {
+      throw new UqlUsageError(`'${entity.name}' ${whyReadOnly(meta)}: its wire takes 'read' alone`);
+    }
   }
 
   metas.set(entity, meta);
   return meta;
 }
 
-/** Refuses a `wire` stating a write on an entity with no key, which no write takes. */
-function assertReadingWire(name: string, wire: Wire<EntityAccess> | undefined): void {
-  if (wire && wire.some((access) => access !== 'read')) {
-    throw new UqlUsageError(`'${name}' has no primary key, so its wire takes 'read' alone`);
+/** Why no write takes a read-only entity, as a refusal says it after its name: declared so, or with no key. */
+export function whyReadOnly<E>(meta: EntityMeta<E>): string {
+  if (meta.view) {
+    return 'is a view, so it is read-only';
   }
+  return meta.ids.length ? 'is read-only' : 'has no primary key, so it is read-only';
 }
 
 /**
@@ -784,15 +874,6 @@ export function soleId<E>(meta: EntityMeta<E>): { readonly key: IdKey<E>; readon
   return field && { key, field };
 }
 
-/** The field `key` names, for a caller that took `key` from the metadata itself. */
-export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
-  const field = meta.fields[key];
-  if (!field) {
-    throw new UqlUsageError(`'${meta.entity.name}' has no field '${key}'`);
-  }
-  return field;
-}
-
 /**
  * The field whose type `field`'s values take: the key it references where it gave `references` and neither a
  * `type` nor a `columnType`, followed down a chain of them; `field` itself otherwise.
@@ -804,15 +885,6 @@ export function valueFieldOf(field: FieldMeta, seen?: Set<EntityGetter>): FieldM
   seen = (seen ?? new Set()).add(field.references);
   const target = registeredMeta(field.references());
   return valueFieldOf(fieldOf(target, soleIdOf(target, 'a foreign key')), seen);
-}
-
-/** The relation `key` names, for a caller that took `key` from the metadata itself. */
-export function relationOf<E>(meta: EntityMeta<E>, key: RelationKey<E>): RelationMeta {
-  const relation = meta.relations[key];
-  if (!relation) {
-    throw new UqlUsageError(`'${meta.entity.name}' has no relation '${key}'`);
-  }
-  return relation;
 }
 
 /** A row of `E` as far as reading its key goes: a record or a write, whatever its values. */
@@ -852,36 +924,26 @@ export function getEntities(): Type<object>[] {
   return [...metas.values()]
     .filter((meta) => meta.name !== undefined)
     .map((meta) => meta.entity)
-    .filter(isTable);
+    .filter(isConcrete);
 }
 
 /** The class a defined relation targets, refused where it is abstract: a relation needs a table to join. */
 function relationTable<E extends object>(target: AbstractType<E>): Type<E> {
-  if (!isTable(target)) {
+  if (!isConcrete(target)) {
     throw new UqlUsageError(`'${target.name}' is abstract: a relation needs a table to join`);
   }
   return target;
 }
 
-/** Whether `entity` is a table: not marked abstract, so a query or write can take it. */
-function isTable<E extends object>(entity: AbstractType<E>): entity is Type<E> {
+/** Whether `entity` is concrete: not marked abstract, so a query can take it. */
+function isConcrete<E extends object>(entity: AbstractType<E>): entity is Type<E> {
   return !metas.get(entity)?.abstract;
 }
 
-/** The metadata `entity` has, a pending defined entity registered first, without settling anything further. */
-function knownMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
-  settleEntity(entity);
-  return ensureMeta(entity);
-}
-
-function ensureMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
-  let meta = metas.get(entity);
-  if (meta) {
-    return meta;
-  }
-  meta = emptyMeta(entity);
-  metas.set(entity, meta);
-  return meta;
+/** Whether `entity` is a table in the database: concrete, and no plain view, which is read by its query. */
+export function isTable(entity: AbstractType<object>): boolean {
+  const meta = registeredMeta(entity);
+  return !meta.abstract && !meta.view;
 }
 
 function emptyMeta<E>(entity: AbstractType<E>): EntityMeta<E> {
@@ -944,11 +1006,9 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
  * without it, and a cascade writes rows such an entity never takes. A to-many reads it by the parent's key alone.
  */
 function assertKeyedJoin(at: string, relation: RelationRegistration): void {
-  const target = knownMeta(relation.entity());
+  const target = registeredMeta(relation.entity());
   if (target.readOnly && relation.cascade) {
-    throw new UqlUsageError(
-      `${at} cascades into '${target.entity.name}', which has no primary key, so it is read-only`,
-    );
+    throw new UqlUsageError(`${at} cascades into '${target.entity.name}', which ${whyReadOnly(target)}`);
   }
   if (!target.ids.length && !isToManyRelation(relation)) {
     throw new UqlUsageError(`${at} reaches '${target.entity.name}', which has no primary key to join to`);
@@ -963,7 +1023,7 @@ function assertKeyedJoin(at: string, relation: RelationRegistration): void {
 function settledReferences<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRegistration): RelationReferences {
   const { references, mappedBy, through } = relOpts;
   if (typeof references === 'string') {
-    const target = knownMeta(relOpts.entity());
+    const target = registeredMeta(relOpts.entity());
     if (mappedBy || isToManyRelation(relOpts) || target.ids.length > 1) {
       throw new UqlUsageError(
         `${at} names one column, '${references}', which only a to-one holding a foreign key to a one-column key ` +
@@ -1046,7 +1106,7 @@ function fillThrough<E>(
   const junction = registeredMeta(through());
   relOpts.references = [
     ...junctionReferences(at, junction, meta),
-    ...junctionReferences(at, junction, knownMeta(relOpts.entity())),
+    ...junctionReferences(at, junction, registeredMeta(relOpts.entity())),
   ];
   return relOpts.references;
 }
@@ -1167,7 +1227,7 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
   const joined = new Set(owning.flatMap(({ references }) => references.map(({ local }) => local)));
   const columns = definedEntries(meta.fields).flatMap(([key, field]): RelationMeta[] => {
     if (!field.references) return [];
-    const target = knownMeta(field.references());
+    const target = registeredMeta(field.references());
     // A joined column's kinds were checked when its relation settled.
     if (joined.has(key) || !target.ids.length) return [];
     if (!field.typeFromReference && target.ids.length === 1) {
@@ -1191,17 +1251,19 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
 }
 
 /**
- * The fields holding another entity's primary key: each column of a foreign key paired with a column of its
- * target's key, whether `f.references()` or a relation declares it. Per entity, not per field: an entity
- * extending another may join by other columns. Kept once resolved.
+ * The fields holding another entity's primary key, each with that entity: each column of a foreign key paired with
+ * a column of its target's key, whether `f.references()` or a relation declares it. Per entity, not per field: an
+ * entity extending another may join by other columns. Kept once resolved.
  */
-export function referenceKeys<E>(meta: EntityMeta<E>): ReadonlySet<string> {
+export function referenceKeys<E>(meta: EntityMeta<E>): ReadonlyMap<string, EntityGetter> {
   return (
     meta.referenceKeys ??
-    new Set(
+    new Map(
       foreignKeysOf(meta).flatMap(({ entity, references }) => {
-        const { ids } = knownMeta(entity());
-        return references.filter(({ foreign }) => ids.some((id) => id === foreign)).map(({ local }) => local);
+        const { ids } = registeredMeta(entity());
+        return references
+          .filter(({ foreign }) => ids.some((id) => id === foreign))
+          .map(({ local }) => [local, entity] as const);
       }),
     )
   );
@@ -1271,8 +1333,14 @@ function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
 function inheritFrom<E>(meta: EntityMeta<E>, ancestor: AbstractType<object> | undefined): void {
   for (let parent = ancestor; parent && parent !== Object; parent = parentOf(parent)) {
     const base = parent as AbstractType<E>;
-    applyMembers(ensureMeta(base), ownRegistrations(base));
-    extendMeta(meta, knownMeta(base));
+    const baseMeta = metas.get(base) ?? emptyMeta(base);
+    metas.set(base, baseMeta);
+    applyMembers(baseMeta, ownRegistrations(base));
+    const registered = registeredMeta(base);
+    if (registered.view) {
+      throw new UqlUsageError(`'${meta.entity.name}' extends '${base.name}', a view: an entity extends an entity`);
+    }
+    extendMeta(meta, registered);
   }
 }
 

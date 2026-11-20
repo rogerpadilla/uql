@@ -8,7 +8,17 @@ import {
   relTempField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
-import { Computed, defineEntity, Entity, f, Field, getMeta, ManyToOne, OneToMany } from '../entity/index.js';
+import {
+  Computed,
+  defineEntity,
+  defineView,
+  Entity,
+  f,
+  Field,
+  getMeta,
+  ManyToOne,
+  OneToMany,
+} from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
   Company,
@@ -57,6 +67,17 @@ class Doc {
   @Field(f.string().nullable())
   title?: string | null;
 }
+
+const LiveDoc = defineView({
+  name: 'LiveDoc',
+  from: () => Doc,
+  find: { $select: { id: true }, $where: { title: 'live' } },
+});
+
+const DocPin = defineEntity({
+  name: 'DocPin',
+  fields: { id: f.string().id(), liveId: f.string() },
+}).relations((rel) => ({ live: () => rel.manyToOne(LiveDoc, { references: (pin) => pin.liveId }) }));
 
 /**
  * Every read path has to address the *stored* names: the primary key is `_id` and a `@Field({ name })`
@@ -2490,6 +2511,33 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.normalizeId(meta, { _id: 'kept-as-is', parentId: 7 })).toEqual({
       id: 'kept-as-is',
       parentId: 7,
+    });
+  }
+
+  /** A row is built in field order, its key first, keeping what the pipeline added, each 64-bit integer decoded. */
+  shouldReadARowInFieldOrderKeepingWhatThePipelineAdded() {
+    const row = this.dialect.normalizeId(getMeta(Doc), { title: 'a', score: 2n, _id: 'd1', parentId: 'd0' });
+
+    expect(Object.keys(row)).toEqual(['id', 'parentId', 'title', 'score']);
+    expect(row).toEqual({ id: 'd1', parentId: 'd0', title: 'a', score: 2 });
+  }
+
+  /** A lookup into a view runs the view's stages, then matches the key, as `localField` would, an array's elements too. */
+  shouldLookUpAViewAfterItsStages() {
+    const [lookup] = this.dialect.aggregationPipeline(DocPin, { $populate: { live: true } });
+
+    expect(lookup).toEqual({
+      $lookup: {
+        from: 'Doc',
+        let: { uql_key: '$liveId' },
+        pipeline: [
+          { $match: { title: 'live' } },
+          { $project: { _id: 1 } },
+          { $project: { _id: '$_id' } },
+          { $match: { $expr: { $in: ['$_id', { $cond: [{ $isArray: '$$uql_key' }, '$$uql_key', ['$$uql_key']] }] } } },
+        ],
+        as: `${REL_FIELD_PREFIX}live`,
+      },
     });
   }
 }

@@ -201,11 +201,12 @@ function checkPeerReach(): void {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   // The root is decorators, the column builders, types and helpers: no querier or dialect is reachable from it.
-  '.': 15_100,
+  // `defineView` derives a view's columns off its query (`viewColumns.ts`), which only it reaches.
+  '.': 16_600,
   './postgres': 55_500,
   './migrate': 74_300,
   // The client reads rows back by the entity's metadata (`http/wireRow.ts`), which any entity it is handed has loaded.
-  './browser': 13_200,
+  './browser': 13_500,
 };
 
 async function checkSizeBudgets(): Promise<void> {

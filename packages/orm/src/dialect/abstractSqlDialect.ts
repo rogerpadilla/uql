@@ -23,6 +23,7 @@ import {
   parseQueryLock,
   type Query,
   type QueryAggregate,
+  type ViewMeta,
   type QueryAggregateOp,
   type QueryBuildFn,
   type QueryComparisonOptions,
@@ -71,6 +72,7 @@ import {
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
 import {
+  aggregatedColumn,
   ancestorPaths,
   isExactDecimal,
   isInlinedExpression,
@@ -141,6 +143,7 @@ import {
   AGGREGATE_PAGE_ALIAS,
   AGGREGATE_VALUE_ALIAS,
   ROWS_ALIAS,
+  VIEW_ROWS_ALIAS,
   JSON_ELEM_ALIAS,
   JSON_PULL_ALIAS,
   relationSortColumn,
@@ -812,7 +815,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     totalAlias?: string,
   ): ReadProjection {
     const meta = getMeta(entity);
-    const { alias, ref } = this.tableRef(meta, opts.alias);
+    const alias = opts.alias ?? this.resolveTableAlias(meta);
     const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
     const terms = this.projection(ctx, entity, q, { prefix, json: opts.json }, joins);
     const carried = opts.carried ? this.carrySort(ctx, meta, q, { prefix, joins }) : undefined;
@@ -823,7 +826,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
     ctx.append(this.selectModifier(q));
     ctx.append(this.termsSql(columns));
-    ctx.append(` FROM ${ref}${this.lockHint(q)}`);
+    ctx.append(' FROM ');
+    this.appendRows(ctx, meta, alias);
+    ctx.append(this.lockHint(q));
     this.selectRelationJoins(ctx, meta, alias, joins);
     return { terms, order: carried?.order };
   }
@@ -919,14 +924,44 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * A FROM or JOIN operand plus the alias to prefix its columns by, aliased once a schema puts something
-   * in front of the name, or the read takes an alias of its own. See {@link resolveTableAlias} for why
-   * the prefix cannot be the qualified path.
+   * A FROM or JOIN operand, appended where the statement reads it: the table, aliased once a schema qualifies it or
+   * the read takes an alias of its own (see {@link resolveTableAlias}), or a plain view's query as a derived table,
+   * so its source's filters and policies hold every read of it. See architecture/views.md.
    */
-  tableRef<E>(meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): { alias: string; ref: string } {
-    const name = this.escapedTableName(meta);
-    const aliased = !!this.resolveSchema(meta) || alias !== this.resolveTableAlias(meta);
-    return { alias, ref: aliased ? `${name} ${this.escapeId(alias, true)}` : name };
+  appendRows<E>(ctx: QueryContext, meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): void {
+    const { view } = meta;
+    if (!view) {
+      const name = this.escapedTableName(meta);
+      const aliased = !!this.resolveSchema(meta) || alias !== this.resolveTableAlias(meta);
+      ctx.append(aliased ? `${name} ${this.escapeId(alias, true)}` : name);
+      return;
+    }
+    ctx.append('(');
+    this.appendViewQuery(ctx, meta, view);
+    ctx.append(`) ${this.escapeId(alias, true)}`);
+  }
+
+  /**
+   * A view's query under its own column names: the query names each column by its key, so a naming strategy renaming
+   * one wraps it in a projection renaming them.
+   */
+  private appendViewQuery<E>(ctx: QueryContext, meta: EntityMeta<E>, view: ViewMeta): void {
+    const terms = getKeys(meta.fields).map((key) => {
+      const column = this.columnOf(meta, key);
+      return { sql: this.escapeId(key), key: column, bare: key === column };
+    });
+    const wrapped = terms.some(({ bare }) => !bare);
+    if (wrapped) {
+      ctx.append(`SELECT ${this.termsSql(terms)} FROM (`);
+    }
+    if (view.kind === 'aggregate') {
+      this.aggregate(ctx, view.from(), view.query);
+    } else {
+      this.find(ctx, view.from(), view.query);
+    }
+    if (wrapped) {
+      ctx.append(`) ${this.escapeId(VIEW_ROWS_ALIAS, true)}`);
+    }
   }
 
   /**
@@ -984,7 +1019,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const joinAlias = this.escapeId(join.alias, true);
       const parentAlias = this.escapeId(join.parent ? join.parent.alias : rootAlias, true);
 
-      ctx.append(` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapedTableName(join.meta)} ${joinAlias} ON `);
+      ctx.append(` ${join.required ? 'INNER' : 'LEFT'} JOIN `);
+      this.appendRows(ctx, join.meta, join.alias);
+      ctx.append(' ON ');
       join.relation.references.forEach((reference, index) => {
         if (index > 0) ctx.append(' AND ');
         const foreign = this.escapedColumnName(join.meta, reference.foreign);
@@ -1063,6 +1100,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     if (key === '$text') {
+      this.assertTextSearchable(meta);
       this.appendTextSearch(ctx, meta, val as QueryTextSearchOptions<E>, opts.prefix);
       return;
     }
@@ -1805,9 +1843,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (!entries.length) {
       throw new UqlUsageError('aggregate requires at least one $group column or $select function');
     }
-    const table = this.tableRef(meta, this.readOptions(ctx, meta).alias);
+    const alias = this.readOptions(ctx, meta).alias ?? this.resolveTableAlias(meta);
     const { joins, where } = resolveGroupJoins(meta, q, (path) => ctx.claimAlias(path));
-    const prefix = joins.size ? table.alias : undefined;
+    const prefix = joins.size ? alias : undefined;
     const reads = entries.map((entry) => ({ entry, value: this.aggregateValue(ctx, entity, entry, joins, prefix) }));
     // Only bare columns are read inline: SQL Server refuses a subquery inside an aggregate or a
     // `GROUP BY`, and a filter's bound values would repeat in `HAVING`. A derived table answers by alias.
@@ -1838,10 +1876,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     const columns = reads.flatMap(({ entry, value }) => (value.sql === '*' ? [] : [named(value.sql, entry.alias)]));
-    ctx.append(
-      `SELECT ${selectParts.join(', ')} FROM ${derived ? `(SELECT ${columns.join(', ')} FROM ` : ''}${table.ref}`,
-    );
-    this.selectRelationJoins(ctx, meta, table.alias, joins);
+    ctx.append(`SELECT ${selectParts.join(', ')} FROM ${derived ? `(SELECT ${columns.join(', ')} FROM ` : ''}`);
+    this.appendRows(ctx, meta, alias);
+    this.selectRelationJoins(ctx, meta, alias, joins);
     this.where<E>(ctx, entity, where, { ...opts, prefix });
     if (derived) {
       ctx.append(`) ${this.escapeId(ROWS_ALIAS, true)}`);
@@ -2610,19 +2647,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * What an aggregate's value decodes as, which the engine widens beyond the column it read: a tally
-   * (`COUNT` to Postgres's `bigint`) and a mean (`AVG` to `numeric`) are numbers whatever they counted,
-   * and the rest read as the column they aggregate - so a `SUM` over a wide integer stays exact rather
-   * than rounding through a float, which is what every driver's BIGINT decoding promises.
-   *
-   * One rule for both readers: a relation aggregate a field declares, and an aggregate a query names.
-   */
-  private aggregateKind(op: QueryAggregateOp, fieldKind: HydrateKind | undefined): HydrateKind | undefined {
-    return op === '$count' || op === '$avg' ? 'number' : fieldKind;
-  }
-
-  /**
-   * What a field decodes as: its column's kind, or a relation aggregate's {@link aggregateKind}. `undecoded` is a
+   * What a field decodes as: its column's kind, or a relation aggregate's as the column it answers as. `undecoded` is a
    * value the driver decodes nothing of, one crossing JSON or an aggregate; on the wire it may decode some itself.
    */
   private fieldKind<E>(
@@ -2635,11 +2660,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const kind = this.hydrateKind(field);
       return kind && !undecoded && this.decodedAtWire(kind, field) ? undefined : kind;
     }
-    const target = getMeta(relationOf(meta, spec.relation as RelationKey<E>).entity());
-    return this.aggregateKind(
-      spec.op,
-      spec.field ? this.fieldKind(target, target.fields[spec.field], true) : undefined,
-    );
+    const target = getMeta(relationOf(meta, spec.relation).entity());
+    const key = aggregatedColumn(spec.op, spec.field);
+    return key === undefined ? 'number' : this.fieldKind(target, target.fields[key], true);
   }
 
   /**
@@ -2968,27 +2991,27 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
       ctx.append(junction.from);
       if (hasKeys(targetWhere)) {
-        const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey));
+        const alias = ctx.claimAlias(relKey);
         ctx.append(' AND ');
         this.appendPartner(
           ctx,
           junction.targets.map(({ key, column }) => ({
             junction: column,
-            target: this.escapedColumn(related.alias, relatedMeta, key),
+            target: this.escapedColumn(alias, relatedMeta, key),
           })),
           'junction',
-          related.ref,
-          (clause) => this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause }),
+          this.buildFragment(ctx, (rowsCtx) => this.appendRows(rowsCtx, relatedMeta, alias)),
+          (clause) => this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: alias, clause }),
         );
       }
     } else {
       // The alias is claimed before the SELECT is written, since an aggregate names a column of it.
-      const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey, parent));
-      ctx.append(
-        `(SELECT ${this.aggregateProjection(ctx, read, related.alias, relatedMeta)} FROM ${related.ref} WHERE `,
-      );
-      this.appendCorrelation(ctx, meta, rel, parent, related.alias);
-      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'AND' });
+      const alias = ctx.claimAlias(relKey, parent);
+      ctx.append(`(SELECT ${this.aggregateProjection(ctx, read, alias, relatedMeta)} FROM `);
+      this.appendRows(ctx, relatedMeta, alias);
+      ctx.append(' WHERE ');
+      this.appendCorrelation(ctx, meta, rel, parent, alias);
+      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: alias, clause: 'AND' });
     }
 
     ctx.append(')');
@@ -3032,7 +3055,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     prefix: string,
   ): void {
     const meta = getMeta(entity);
-    const rel = relationOf(meta, aggregate.relation as RelationKey<E>);
+    const rel = relationOf(meta, aggregate.relation);
     const parent = prefix || this.resolveTableAlias(meta);
     if (!aggregate.page || (aggregate.page.$limit === undefined && aggregate.page.$skip === undefined)) {
       this.appendRelationSubquery(ctx, meta, aggregate.relation, rel, { prefix: parent }, aggregate);
@@ -3225,7 +3248,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     parent: string,
   ): JunctionRows {
     const junctionMeta = getMeta(junction);
-    const { alias, ref } = this.tableRef(junctionMeta, ctx.claimAlias(this.resolveTableAlias(junctionMeta), parent));
+    const alias = ctx.claimAlias(this.resolveTableAlias(junctionMeta), parent);
+    const ref = this.buildFragment(ctx, (fragmentCtx) => this.appendRows(fragmentCtx, junctionMeta, alias));
     const scope = this.buildFragment(ctx, (fragmentCtx) =>
       this.where(fragmentCtx, junction, {}, { prefix: alias, clause: 'AND' }),
     );

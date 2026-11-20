@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.118.0] - 2026-11-20
+
+- `defineView` declares a view as an `aggregate` or a `find` over an entity: its rows are typed by the query, and it is read by its query on every engine, its source's filters and policies included.
+- `readOnly: true` on `@Entity` or `defineEntity` makes an entity with a key read-only, a view mapped by hand. A write to a read-only entity is a compile error: `defineEntity` brands one, and a decorated class declares `[readOnly]?: true`.
+- MongoDB returns a row's fields in their declared order, its key first.
+- **Breaking (mongodb):** with a naming strategy, reads and writes use the collection it names (`user_account`), as lookups and migrations already did, where they used the class name (`UserAccount`). Rename a collection written before: `db.UserAccount.renameCollection('user_account')`.
+- **Fixed (entity):** a relation or a `.references()` column pointing at a class that is no entity is refused on first read with "is not an entity".
+
 ## [0.117.1] - 2026-11-19
 
 - An entity with no primary key registers as read-only: reads work; writes and by-id calls are refused, on every engine and over the API.

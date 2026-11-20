@@ -1,4 +1,5 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
+import type { ViewAggregate, ViewFind } from './definedView.js';
 import type { SqlDialectName } from './dialect.js';
 import type { PolicyMeta, PolicySection } from './policy.js';
 import type { Querier } from './querier.js';
@@ -39,6 +40,12 @@ export const versionKey = Symbol('versionKey');
 export const filledKey = Symbol('filledKey');
 
 export type EntityBrand = typeof idKey | typeof versionKey | typeof filledKey;
+
+/** Brands an entity no querier write takes, `[readOnly]?: true`: a defined entity is branded so by its `readOnly` or by having no key. */
+export const readOnly = Symbol('readOnly');
+
+/** What a write's entity is held to: any but one branded {@link readOnly}. A constraint, so a generic caller's `E` passes. */
+export type WritableEntity = object & { readonly [readOnly]?: never };
 
 /** The names an entity's brand `B` lists, `never` where it declares none. */
 export type BrandNames<E, B extends EntityBrand> = B extends keyof E ? NonNullable<E[B]> : never;
@@ -1027,8 +1034,10 @@ export type EntityMeta<E> = {
   policies?: PolicyMeta<E>[];
   /** What a client may do over an API, see {@link Wire}; a subclass declaring none takes its base's. */
   wire?: Wire<EntityAccess>;
-  /** Whether no write takes it, on the server or over an API: an entity with no key. Set once registered, never inherited. */
+  /** Whether no write takes it, on the server or over an API: declared so, or with no key. Never inherited. */
   readOnly?: true;
+  /** The query a view is, where it is one: see {@link ViewMeta}. */
+  view?: ViewMeta;
   fields: {
     [K in FieldKey<E>]?: FieldMeta;
   } & { [key: string]: FieldMeta | undefined };
@@ -1051,9 +1060,15 @@ export type EntityMeta<E> = {
   stage?: 'declared' | 'settled' | 'resolved';
   /** The fields a read answers with where it names none, set once resolved: see `defaultReadKeys`. */
   readKeys?: readonly FieldKey<E>[];
-  /** The fields holding another entity's key, set once resolved: see `referenceKeys`. */
-  referenceKeys?: ReadonlySet<string>;
+  /** The fields holding another entity's key, each with that entity, set once resolved: see `referenceKeys`. */
+  referenceKeys?: ReadonlyMap<string, EntityGetter>;
 };
+
+/** What a view is, as `defineView` declared it: an aggregate or a find over its source, read by its query. See architecture/views.md. */
+export type ViewMeta = { readonly from: () => AbstractType<object> } & (
+  | { readonly kind: 'aggregate'; readonly query: ViewAggregate<object> }
+  | { readonly kind: 'find'; readonly query: ViewFind<object> }
+);
 
 /** When the database writes a stamp: as the row is inserted, as it is updated, or both. */
 export type StampEvent = 'insert' | 'update';
@@ -1238,6 +1253,8 @@ export type EntityOptions<E = unknown> = {
   readonly schema?: string;
   /** What a client may do over an API: see {@link Wire}. */
   readonly wire?: Wire<EntityAccess>;
+  /** No write takes it, a view mapped by hand, as one with no key is; only a class declaring `readonly [readOnly]?: true`. */
+  readonly readOnly?: typeof readOnly extends keyof E ? true : never;
   readonly filters?: FilterSection<E>;
   /** Row-level policies: see {@link PolicySection}. */
   readonly policies?: PolicySection<E>;

@@ -3,15 +3,16 @@ export * from './decorator/entity.js';
 export * from './decorator/members.js';
 export {
   defineEntity,
+  defineView,
   getEntities,
   getMeta,
+  isTable,
   removeEntity,
   assertSoleId,
-  fieldOf,
   idOf,
   keyOf,
   namesEvery,
   namesKey,
-  relationOf,
   soleIdOf,
 } from './metadata/definition.js';
+export { fieldOf, relationOf } from './metadata/lookup.js';

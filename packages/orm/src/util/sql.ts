@@ -196,10 +196,10 @@ function ownSql<E>(source: AbstractType<E> | RefMap<E>, key: typeof TABLE | type
   return own;
 }
 
-/** The table of the entity `resolve` reads, as its statements name it, under `alias` where one is given. */
+/** The rows of the entity `resolve` reads, as its statements read them, under `alias` where one is given: a plain view's query. */
 function tableSql(resolve: () => AbstractType<unknown>, alias?: string): QuerySql {
   return sql(({ ctx, dialect }) => {
-    ctx.append(dialect.tableRef(getMeta(resolve()), alias).ref);
+    dialect.appendRows(ctx, getMeta(resolve()), alias);
   });
 }
 
@@ -211,7 +211,7 @@ function aliasSql(resolve: () => AbstractType<unknown>, alias?: string): QuerySq
   return sql((opts) => {
     const owner = resolve();
     assertRendersIn(owner, opts);
-    return opts.dialect.escapeId(opts.prefix || opts.dialect.tableRef(getMeta(owner)).alias, true);
+    return opts.dialect.escapeId(opts.prefix || opts.dialect.resolveTableAlias(getMeta(owner)), true);
   });
 }
 

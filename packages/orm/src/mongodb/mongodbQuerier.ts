@@ -130,7 +130,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   ): AggregationCursor<E> | FindCursor<E> {
     const read = this.dialect.readPlan(entity, q, opts);
     return 'pipeline' in read
-      ? this.collection(entity).aggregate<E>(read.pipeline, { session })
+      ? this.aggregateRows<E>(entity, read.pipeline, session)
       : this.buildFindCursor(entity, q, read.sort, opts, session);
   }
 
@@ -177,7 +177,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   ): Promise<RawRow[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     const rows = await this.execute('internalAggregate', (session) =>
-      this.collection(entity).aggregate(pipeline, { session }).toArray(),
+      this.aggregateRows(entity, pipeline, session).toArray(),
     );
     return this.dialect.normalizeAggregateRows(entity, q, rows);
   }
@@ -199,12 +199,11 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     const [founds, counted] = await Promise.all([
       this.internalFindMany(entity, q, opts),
       this.execute('internalFindManyAndCount', (session) =>
-        this.collection(entity)
-          .aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(
-            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: AGGREGATE_VALUE_ALIAS }],
-            { session },
-          )
-          .toArray(),
+        this.aggregateRows<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(
+          entity,
+          [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: AGGREGATE_VALUE_ALIAS }],
+          session,
+        ).toArray(),
       ),
     ]);
     return [founds, counted[0]?.[AGGREGATE_VALUE_ALIAS] ?? 0];
@@ -225,7 +224,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       { $count: AGGREGATE_VALUE_ALIAS },
     ];
     const [counted] = await this.execute('internalCount', (session) =>
-      this.collection(entity).aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(pipeline, { session }).toArray(),
+      this.aggregateRows<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(entity, pipeline, session).toArray(),
     );
     return counted?.[AGGREGATE_VALUE_ALIAS] ?? 0;
   }
@@ -370,9 +369,24 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
   /** Every read and write goes through here, which makes it where a released querier is caught. */
   collection<E extends Document>(entity: Type<E>) {
+    return this.collectionNamed<E>(this.dialect.resolveTableName(getMeta(entity)));
+  }
+
+  /** `pipeline` over `entity`'s rows: its collection's, or a plain view's, computed by its stages first. */
+  private aggregateRows<T extends Document>(
+    entity: Type<object>,
+    pipeline: Document[],
+    session: ClientSession | undefined,
+  ): AggregationCursor<T> {
+    const { collection, stages } = this.dialect.rowSource(getMeta(entity));
+    return this.collectionNamed(collection).aggregate<T>(stages.length ? [...stages, ...pipeline] : pipeline, {
+      session,
+    });
+  }
+
+  private collectionNamed<E extends Document>(name: string) {
     this.assertActive();
-    const { name } = getMeta(entity);
-    return this.db.collection<E>(name!);
+    return this.db.collection<E>(name);
   }
 
   get db() {

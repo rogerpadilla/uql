@@ -1,4 +1,5 @@
-import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
+import { foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
+import { fieldOf } from '../entity/metadata/lookup.js';
 import type {
   IndexEntry,
   EntityIndexMeta,

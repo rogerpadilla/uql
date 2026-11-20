@@ -1,7 +1,7 @@
 /**
  * What UQL's types cost a consuming project's compiler, measured on `dist` as a consumer compiles it (build
  * first): a project with no queries, the fixed cost, then `calls` blocks of queries, then `calls` indexed entities
- * of each form.
+ * of each form, then `calls` pairs of views.
  * A published version, `bun run ts.perf 200 0.93.1`, is measured beside it. Instantiations are deterministic.
  */
 
@@ -65,6 +65,7 @@ try {
     [`${calls} definitions`, { definitions: calls }],
     [`${calls} defined`, { defined: calls }],
     [`${calls} wide`, { wide: calls }],
+    [`${calls} views`, { views: calls }],
   ];
   for (const [label, declarations] of targets) {
     for (const [what, size] of rows) {

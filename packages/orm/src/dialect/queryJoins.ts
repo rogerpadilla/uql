@@ -12,6 +12,7 @@ import type {
   RelationQuery,
   AbstractType,
 } from '../type/index.js';
+import { aggregatedColumn } from '../util/field.util.js';
 import {
   getKeys,
   getRelationRequestSummary,
@@ -145,9 +146,8 @@ export function aggregateColumnField<E>(
   entry: ParsedGroupEntry<E>,
 ): { readonly field: FieldMeta | undefined; readonly join?: QueryJoin } | undefined {
   if (entry.kind === 'fn') {
-    return entry.op === '$count' || entry.op === '$avg' || entry.field === undefined
-      ? undefined
-      : { field: meta.fields[entry.field] };
+    const key = aggregatedColumn(entry.op, entry.field);
+    return key === undefined ? undefined : { field: meta.fields[key] };
   }
   const { key, join } = groupPathField(joins, entry.path);
   return join ? { field: join.meta.fields[key], join } : { field: meta.fields[key] };

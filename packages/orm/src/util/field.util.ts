@@ -6,6 +6,7 @@ import {
   type FieldMeta,
   type FieldOptions,
   type NumericColumnType,
+  type QueryAggregateOp,
   type StampEvent,
   RelationAggregate,
   type RelationAggregateSpec,
@@ -92,6 +93,14 @@ export function stampEvents(field: FieldOptions): readonly StampEvent[] | undefi
 export function aggregateOf(field: FieldOptions | undefined): RelationAggregateSpec | undefined {
   const computed = field?.computed;
   return computed instanceof RelationAggregate ? computed.spec : undefined;
+}
+
+/**
+ * The column an aggregate answers as: a tally or a mean is a number whatever it read, which `undefined` says, and the
+ * rest answer as the column they read, so a `SUM` over a wide integer stays exact. The run-time twin of `QueryAggregateFnResult`.
+ */
+export function aggregatedColumn(op: QueryAggregateOp, key: string | undefined): string | undefined {
+  return op === '$count' || op === '$avg' ? undefined : key;
 }
 
 /** An aggregate as a computed field holds it: `null` where the relation holds no row, but for a count or a sum. */

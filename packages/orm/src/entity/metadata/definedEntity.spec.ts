@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import type { AbstractType } from '../../type/index.js';
 import { sql } from '../../util/index.js';
 import { Entity, f, Field, ManyToOne, OneToOne } from '../index.js';
 import { Dog } from './definedFixture/animal.js';
@@ -120,6 +121,11 @@ it("should keep a defined entity's own relation over its decorated base's", () =
   expect(getMeta(Stall).relations.keeper?.references).toEqual([{ local: 'keeperId', foreign: 'id' }]);
 });
 
+/** Each column holding another entity's key, with that entity. */
+function heldKeys(entity: AbstractType<object>): [string, AbstractType<object>][] {
+  return [...referenceKeys(getMeta(entity))].map(([key, owner]) => [key, owner()]);
+}
+
 /** What MongoDB stores as an `ObjectId`, and what keeps a shared key from being generated. */
 it('should read a column an owning to-one joins by as holding its key, as an f.references() one', () => {
   const Writer = defineEntity({ name: 'Writer', fields: { id: f.string().id() } });
@@ -135,8 +141,8 @@ it('should read a column an owning to-one joins by as holding its key, as an f.r
     @ManyToOne(() => Writer, { references: (note) => note.writerId }) writer?: Writer;
   }
 
-  expect(referenceKeys(getMeta(Essay))).toEqual(new Set(['writerId']));
-  expect(referenceKeys(getMeta(Note))).toEqual(new Set(['writerId']));
+  expect(heldKeys(Essay)).toEqual([['writerId', Writer]]);
+  expect(heldKeys(Note)).toEqual([['writerId', Writer]]);
 });
 
 it("should not read a column a to-one joins to another than its target's key as holding a key", () => {
@@ -152,7 +158,7 @@ it("should not read a column a to-one joins to another than its target's key as 
       rel.manyToOne(Region, { references: (office, region) => [{ local: office.regionCode, foreign: region.code }] }),
   }));
 
-  expect(referenceKeys(getMeta(Office))).toEqual(new Set());
+  expect(heldKeys(Office)).toEqual([]);
 });
 
 it("should read the key columns of each entity by its own relations, not its base's", () => {
@@ -167,8 +173,8 @@ it("should read the key columns of each entity by its own relations, not its bas
     fields: { fosterId: f.number().nullable() },
   }).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (foster) => foster.fosterId }) }));
 
-  expect(referenceKeys(getMeta(Pet))).toEqual(new Set(['ownerId']));
-  expect(referenceKeys(getMeta(Foster))).toEqual(new Set(['fosterId']));
+  expect(heldKeys(Pet)).toEqual([['ownerId', Owner]]);
+  expect(heldKeys(Foster)).toEqual([['fosterId', Owner]]);
 });
 
 /** A key shared with the row it extends is that row's, so the database must not generate it. */

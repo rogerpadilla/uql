@@ -2,6 +2,7 @@ import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import {
   AGGREGATE_VALUE_ALIAS,
+  LOOKUP_KEY_VAR,
   REL_NESTED_KEY,
   REL_FIELD_PREFIX,
   relTempField,
@@ -40,7 +41,6 @@ import type {
   DialectFeatures,
   EntityData,
   EntityMeta,
-  IdKey,
   FieldOptions,
   FieldUpdateOp,
   Query,
@@ -113,7 +113,7 @@ import {
   cachedIn,
 } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { decodeBigIntsExcept } from '../util/wideNumber.js';
+import { decodeBigIntsExcept, decodeBigIntsIn } from '../util/wideNumber.js';
 import { textLanguage } from './textLanguage.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
 
@@ -137,6 +137,12 @@ type MongoSortPlan = {
   readonly fields: string[];
 };
 
+/** Where a read's rows come from: a collection, and the stages computing them out of it, a plain view's query. */
+export type MongoRows = { readonly collection: string; readonly stages: MongoAggregationPipelineEntry<Document>[] };
+
+/** The fields a lookup matches, `localField` on the row looking up against `foreignField` on the rows it reads. */
+type LookupKeys = { readonly localField: string; readonly foreignField: string };
+
 /** How a read runs: its pipeline, or the ordering of the `find` cursor where one expresses it. */
 export type MongoRead = { readonly pipeline: MongoAggregationPipelineEntry<Document>[] } | { readonly sort: Sort };
 
@@ -152,8 +158,16 @@ type MongoReadStages = {
 /** A score as a field: `value` computes it, a `$meta` or an expression. */
 type MongoScore = { readonly field: string; readonly value: Document; readonly temporary?: boolean };
 
-/** A relation as `normalizeId` reads it: its key, the field a lookup put its rows on, and its entity. */
-type RelationRead = { readonly key: string; readonly field: string; readonly meta: EntityMeta<object> };
+/** How a document of an entity reads as a row: see {@link MongoDialect.rowPlan}. */
+type RowPlan = {
+  readonly columns: readonly {
+    readonly column: string;
+    readonly key: string;
+    readonly decode: (value: unknown) => unknown;
+  }[];
+  readonly relations: readonly { readonly key: string; readonly field: string; readonly meta: EntityMeta<object> }[];
+  readonly read: ReadonlySet<string>;
+};
 
 /** The field a lookup puts a relation's rows on, prefixed so a stored field of the same name (a Mongoose `ref`) survives. */
 function relationField(relKey: string): string {
@@ -242,6 +256,7 @@ function jsonAssignments(column: string, writes: JsonWrites): Document {
 /** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {
   indexIfNotExists: false,
+  textSearchReadsIndex: true,
   schemas: false, // the connection picks the database, and a collection name takes no dot
   dropTableCascade: false,
   rebuildsTables: false,
@@ -438,9 +453,9 @@ function isNullExpr(ref: string): Record<string, unknown> {
   return { $eq: [{ $ifNull: [ref, null] }, null] };
 }
 
-/** The key stored as `_id`: none on an entity with no key, a composite refused. */
-function soleIdIfAny<E>(meta: EntityMeta<E>): IdKey<E> | undefined {
-  return meta.ids.length ? soleIdOf(meta, 'MongoDB') : undefined;
+/** Whether a field's value is a key MongoDB stores as an `ObjectId`: its own `_id`, or a reference to one. */
+function holdsWireId(column: string, key: string, references: ReadonlyMap<string, unknown>): boolean {
+  return column === ID_KEY || references.has(key);
 }
 
 export class MongoDialect extends AbstractDialect {
@@ -457,10 +472,11 @@ export class MongoDialect extends AbstractDialect {
     if (key === ID_KEY) {
       return ID_KEY;
     }
-    if (meta.fields[key]?.isId) {
+    if (meta.fields[key]?.isId && !(meta.ids.length > 1 && meta.view)) {
       // A document has one `_id`. A composite key is a different document shape - a sub-document,
       // whose field order decides equality - rather than a translation, so it is refused here, which
-      // every read reaches, and in `getPersistables`, which every write reaches.
+      // every read reaches, and in `getPersistables`, which every write reaches. A plain view's rows are stored
+      // nowhere, so its composite key stays its columns.
       assertSoleId(meta, 'MongoDB');
       return ID_KEY;
     }
@@ -516,6 +532,7 @@ export class MongoDialect extends AbstractDialect {
       if (isGroupOp(key)) {
         this.appendLogicalOperator(filter, entity, key, val as QueryWhereArray<E>, lookup);
       } else if (key === '$text') {
+        this.assertTextSearchable(meta);
         // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
         // the way it does elsewhere - the same shape as `$distance` being index-defined here.
         const { $value, $config } = val as QueryTextSearchOptions<E>;
@@ -622,29 +639,22 @@ export class MongoDialect extends AbstractDialect {
     const relMeta = getMeta(relEntity);
     const targetScope = this.renderFilter(relEntity, this.scopedWhere(relMeta, where));
     const targetMatch = hasKeys(targetScope) ? [{ $match: targetScope }] : [];
-    const from = this.resolveTableName(relMeta);
     if (!relOpts.through) {
-      return {
-        $lookup: { from, ...this.joinKeys(meta, relMeta, relOpts), pipeline: [...targetMatch, ...tail], as: temp },
-      };
+      return this.lookupRows(relMeta, this.joinKeys(meta, relMeta, relOpts), [...targetMatch, ...tail], temp);
     }
     const junction = this.junctionOf(meta, relOpts, relMeta, relOpts.through());
-    const target = {
-      $lookup: {
-        from,
-        localField: junction.target,
-        foreignField: ID_KEY,
-        pipeline: [...targetMatch, { $limit: 1 }],
-        as: REL_NESTED_KEY,
-      },
-    };
-    return {
-      $lookup: {
-        ...junction.lookup,
-        pipeline: [...junction.scope, target, { $match: { [`${REL_NESTED_KEY}.0`]: { $exists: true } } }, ...tail],
-        as: temp,
-      },
-    };
+    const target = this.lookupRows(
+      relMeta,
+      { localField: junction.target, foreignField: ID_KEY },
+      [...targetMatch, { $limit: 1 }],
+      REL_NESTED_KEY,
+    );
+    return this.lookupRows(
+      junction.meta,
+      junction.keys,
+      [...junction.scope, target, { $match: { [`${REL_NESTED_KEY}.0`]: { $exists: true } } }, ...tail],
+      temp,
+    );
   }
 
   /**
@@ -665,11 +675,8 @@ export class MongoDialect extends AbstractDialect {
     const [{ column: targetColumn }] = targetJoins(relOpts, meta.ids.length);
     const scope = this.renderFilter(through, this.scopedWhere(throughMeta, {}));
     return {
-      lookup: {
-        from: this.resolveTableName(throughMeta),
-        localField: ID_KEY,
-        foreignField: this.columnOf(throughMeta, parentJoin.column),
-      },
+      meta: throughMeta,
+      keys: { localField: ID_KEY, foreignField: this.columnOf(throughMeta, parentJoin.column) },
       scope: hasKeys(scope) ? [{ $match: scope }] : [],
       target: this.columnOf(throughMeta, targetColumn),
     };
@@ -807,7 +814,7 @@ export class MongoDialect extends AbstractDialect {
     // MongoDB returns `_id` unless it is explicitly excluded, so a projection without the key sets `_id: 0`,
     // the one inclusion/exclusion mix MongoDB allows. This returns the same fields a SQL engine would, and is
     // what makes `$select: { id: false }` work at all. An entity with no key never reads `_id`.
-    const key = soleIdIfAny(meta);
+    const key = meta.ids.length ? soleIdOf(meta, 'MongoDB') : undefined;
     if (!key || !fields.includes(key)) {
       projection[ID_KEY] = 0;
     }
@@ -1063,13 +1070,9 @@ export class MongoDialect extends AbstractDialect {
     const relMeta = getMeta(relEntity);
     assertNoRelationText(relKey, query);
     const read = this.aggregationPipeline(relEntity, query);
-    const pipeline = read.length ? { pipeline: read } : {};
-    const from = this.resolveTableName(relMeta);
     if (!relOpts.through) {
       return {
-        stages: [
-          { $lookup: { from, ...this.joinKeys(meta, relMeta, relOpts), ...pipeline, as: relationField(relKey) } },
-        ],
+        stages: [this.lookupRows(relMeta, this.joinKeys(meta, relMeta, relOpts), read, relationField(relKey))],
         temps: [],
       };
     }
@@ -1078,22 +1081,18 @@ export class MongoDialect extends AbstractDialect {
     return {
       temps: [temp],
       stages: [
-        {
-          $lookup: {
-            ...junction.lookup,
-            pipeline: [...junction.scope, { $project: { [junction.target]: 1 } }],
-            as: temp,
-          },
-        },
-        {
-          $lookup: {
-            from,
-            localField: `${temp}.${junction.target}`,
-            foreignField: ID_KEY,
-            ...pipeline,
-            as: relationField(relKey),
-          },
-        },
+        this.lookupRows(
+          junction.meta,
+          junction.keys,
+          [...junction.scope, { $project: { [junction.target]: 1 } }],
+          temp,
+        ),
+        this.lookupRows(
+          relMeta,
+          { localField: `${temp}.${junction.target}`, foreignField: ID_KEY },
+          read,
+          relationField(relKey),
+        ),
       ],
     };
   }
@@ -1137,6 +1136,10 @@ export class MongoDialect extends AbstractDialect {
    * deciding how a read is scored and ranked, a root vector search through Atlas.
    */
   public readPlan<E extends Document>(entity: AbstractType<E>, q: Query<E>, opts?: StatementOptions): MongoRead {
+    // A plain view's rows are a pipeline already, which no `$vectorSearch` can lead: its distance is computed.
+    if (getMeta(entity).view) {
+      return { pipeline: this.aggregationPipeline(entity, q, opts) };
+    }
     const vector = this.extractVectorSort(q.$sort);
     if (vector) {
       return { pipeline: this.vectorSearchPipeline(entity, q, vector, opts) };
@@ -1434,14 +1437,14 @@ export class MongoDialect extends AbstractDialect {
         ...(relationProjection ? [{ $project: relationProjection }] : []),
       ];
 
-      pipeline.push({
-        $lookup: {
-          from: this.resolveTableName(join.meta),
-          ...this.joinKeys(parentMeta, join.meta, join.relation),
-          ...(lookupPipeline.length ? { pipeline: lookupPipeline } : {}),
-          as: relationField(join.key),
-        },
-      });
+      pipeline.push(
+        this.lookupRows(
+          join.meta,
+          this.joinKeys(parentMeta, join.meta, join.relation),
+          lookupPipeline,
+          relationField(join.key),
+        ),
+      );
 
       // `$required` drops parents with no match, the aggregation equivalent of an INNER JOIN.
       pipeline.push({
@@ -1462,7 +1465,7 @@ export class MongoDialect extends AbstractDialect {
     meta: EntityMeta<E>,
     relMeta: EntityMeta<R>,
     relOpts: RelationMeta,
-  ): { localField: string; foreignField: string } {
+  ): LookupKeys {
     if (holdsForeignKey(relOpts)) {
       // The target's side, not this entity's: a lookup matches one `localField` against one
       // `foreignField`, so a composite target would join on its first column alone and gather the
@@ -1474,85 +1477,121 @@ export class MongoDialect extends AbstractDialect {
     return { localField: ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
   }
 
-  /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */
-  private renamedColumns<E>(meta: EntityMeta<E>): readonly [string, string][] {
-    return cachedIn(this.#renamedColumns, meta, () =>
-      getKeys(meta.fields)
-        .map((key): [string, string] => [this.columnOf(meta, key), key])
-        .filter(([column, key]) => column !== key),
-    );
+  /**
+   * A `$lookup` of `meta`'s rows matching `keys`, then running `pipeline`. A plain view's rows are its stages, so the
+   * match follows them as an expression: as `localField` does, an array key matches any of its elements.
+   */
+  private lookupRows<R>(
+    meta: EntityMeta<R>,
+    { localField, foreignField }: LookupKeys,
+    pipeline: MongoAggregationPipelineEntry<Document>[],
+    as: string,
+  ): MongoAggregationPipelineEntry<Document> {
+    const { collection: from, stages } = this.rowSource(meta);
+    if (!stages.length) {
+      return { $lookup: { from, localField, foreignField, ...(pipeline.length && { pipeline }), as } };
+    }
+    const key = `$$${LOOKUP_KEY_VAR}`;
+    const keys = { $cond: [{ $isArray: key }, key, [key]] };
+    const match = { $match: { $expr: { $in: [`$${foreignField}`, keys] } } };
+    return {
+      $lookup: { from, let: { [LOOKUP_KEY_VAR]: `$${localField}` }, pipeline: [...stages, match, ...pipeline], as },
+    };
   }
 
-  /** Each relation's key, the field its rows are read from, and its entity, memoized per entity for `normalizeId`. */
-  private relationReads<E>(meta: EntityMeta<E>): readonly RelationRead[] {
-    return cachedIn(this.#relationReads, meta, () =>
-      definedEntries(meta.relations).map(([key, relation]) => ({
+  /**
+   * Where a read of `meta` takes its rows: its collection, or a plain view's source's with the stages its query is,
+   * each column projected under the name the view reads it by. Every read and lookup starts here. See architecture/views.md.
+   */
+  public rowSource<E>(meta: EntityMeta<E>): MongoRows {
+    const { view } = meta;
+    if (!view) {
+      return { collection: this.resolveTableName(meta), stages: [] };
+    }
+    const from = view.from();
+    const source = getMeta(from);
+    const { collection, stages } = this.rowSource(source);
+    // An aggregate answers each column by its key; a find, under its source's name for it.
+    const [query, emitted] =
+      view.kind === 'aggregate'
+        ? [this.buildAggregateStages(from, view.query), (key: string) => key]
+        : [this.aggregationPipeline(from, view.query), (key: string) => this.columnOf(source, key)];
+    const columns = getKeys(meta.fields).map((key) => [this.columnOf(meta, key), `$${emitted(key)}`]);
+    return { collection, stages: [...stages, ...query, { $project: { _id: 0, ...Object.fromEntries(columns) } }] };
+  }
+
+  /**
+   * How a document of `meta` reads as a row, compiled once per entity: each field's stored column, the key it reads
+   * under and how its value decodes, then each relation's joined field. Anything else the pipeline left, a score
+   * or a projected distance, is kept as it came.
+   */
+  private rowPlan<E>(meta: EntityMeta<E>): RowPlan {
+    return cachedIn(this.#rowPlans, meta, () => {
+      const references = referenceKeys(meta);
+      const columns = getKeys(meta.fields).map((key) => {
+        const column = this.columnOf(meta, key);
+        const wireId = holdsWireId(column, key, references);
+        // A 64-bit integer the pool reads as a `bigint` stays one for a `BigInt` field, and elsewhere is the number
+        // it is where exact and its exact text past 2^53, as every SQL driver decodes one.
+        const exact = meta.fields[key]?.type === BigInt;
+        const decode = (value: unknown) => {
+          const read = wireId ? this.fromWireId(value) : value;
+          return exact ? read : decodeBigIntsIn(read);
+        };
+        return { column, key, decode };
+      });
+      const relations = definedEntries(meta.relations).map(([key, relation]) => ({
         key,
         field: relationField(key),
         meta: getMeta(relation.entity()),
-      })),
-    );
+      }));
+      // `_id` is read even where no field takes it: an entity with no key drops it, as on SQL.
+      const read = new Set([ID_KEY, ...columns.map(({ column }) => column), ...relations.map(({ field }) => field)]);
+      return { columns, relations, read };
+    });
   }
 
   // Keyed by the meta object itself; entity metadata is immutable once defined.
-  readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
-  readonly #relationReads = new WeakMap<object, readonly RelationRead[]>();
+  readonly #rowPlans = new WeakMap<object, RowPlan>();
 
   public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[]): E[] {
-    return docs.map((doc) => this.normalizeId(meta, doc));
+    const plan = this.rowPlan(meta);
+    return docs.map((doc) => this.normalizeRow<E>(plan, doc));
   }
 
-  /** `doc` is the wire shape - `_id`, stored names, `ObjectId`s - and what comes back is the code's. */
+  /** `doc` is the wire shape - `_id`, stored names, `ObjectId`s - and what comes back is the code's, in field order. */
   public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document): E;
   public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document | undefined): E | undefined;
   public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document | undefined): E | undefined {
     if (!doc) {
       return doc;
     }
+    return this.normalizeRow(this.rowPlan(meta), doc);
+  }
 
-    const res = doc as Record<string, unknown>;
-    const _id = ID_KEY;
-
-    // `!== undefined`, not truthiness: `0` is a key MongoDB accepts. An entity with no key drops `_id`, as on SQL.
-    if (res[_id] !== undefined) {
-      const idKey = soleIdIfAny(meta);
-      if (idKey) {
-        res[idKey] = this.fromWireId(res[_id]);
-      }
-      if (idKey !== _id) {
-        delete res[_id];
+  private normalizeRow<E>({ columns, relations, read }: RowPlan, doc: Document): E {
+    const row: Document = {};
+    for (const { column, key, decode } of columns) {
+      // `!== undefined`, not truthiness: `0` is a key MongoDB accepts.
+      if (doc[column] !== undefined) {
+        row[key] = decode(doc[column]);
       }
     }
-
-    // Only the renamed fields need touching, and which those are is a property of the entity, not of
-    // the document - so it is derived once instead of for every row of a result set.
-    for (const [column, key] of this.renamedColumns(meta)) {
-      if (res[column] !== undefined) {
-        res[key] = res[column];
-        delete res[column];
+    // Before the relations, which a stored field of the same name (a Mongoose `ref`) gives way to.
+    for (const column in doc) {
+      if (!read.has(column)) {
+        row[column] = decodeBigIntsIn(doc[column]);
       }
     }
-    // After the rename, so a renamed reference is converted under the name the code reads.
-    for (const key of referenceKeys(meta)) {
-      if (res[key] !== undefined) {
-        res[key] = this.fromWireId(res[key]);
+    for (const { key, field, meta: relMeta } of relations) {
+      const value: unknown = doc[field];
+      if (Array.isArray(value)) {
+        row[key] = this.normalizeIds(relMeta, value);
+      } else if (isRecord(value)) {
+        row[key] = this.normalizeId(relMeta, value);
       }
     }
-    // A 64-bit integer, which the pool reads as a `bigint`: kept for a `BigInt` field, and elsewhere the
-    // number it is where exact and its exact text past 2^53, as every SQL driver decodes one.
-    decodeBigIntsExcept(res, (key) => meta.fields[key]?.type === BigInt);
-
-    for (const { key: relKey, field, meta: relMeta } of this.relationReads(meta)) {
-      const value = res[field];
-      delete res[field];
-      if (value) {
-        res[relKey] = Array.isArray(value)
-          ? this.normalizeIds(relMeta, value as Document[])
-          : this.normalizeId(relMeta, value as Document);
-      }
-    }
-
-    return res as E;
+    return row as E;
   }
 
   /** An aggregate's rows with each 64-bit integer decoded as a document's is: a `bigint` only where the column reads a `BigInt` field. */
@@ -1587,7 +1626,7 @@ export class MongoDialect extends AbstractDialect {
 
   /** Whether `key` holds ids the driver stores as `ObjectId`s: the entity's own `_id`, or a reference to one. */
   private holdsKeys<E>(meta: EntityMeta<E>, key: string): boolean {
-    return this.pathOf(meta, key) === ID_KEY || referenceKeys(meta).has(key);
+    return holdsWireId(this.pathOf(meta, key), key, referenceKeys(meta));
   }
 
   /** Converts every operand `ops` compares a key against with {@link toWireId}, including inside a `$not`. */
@@ -2083,6 +2122,8 @@ type MongoAggregationLookup = {
   readonly from?: string;
   readonly foreignField?: string;
   readonly localField?: string;
+  /** The looking-up row's values the pipeline reads, as `$$name`. */
+  readonly let?: Record<string, string>;
   readonly pipeline?: MongoAggregationPipelineEntry<Document>[];
   /** A relation key when populating, a temporary field when a relation condition is being tested. */
   readonly as?: string;

@@ -9,8 +9,7 @@
 
 <h3>JSON-native ORM for TypeScript</h3>
 
-<p align="left">UQL handles SQL databases and MongoDB with plain & type-safe JSON-syntax.
-</p>
+<p>Queries are plain JSON, checked by the compiler, on every SQL database and MongoDB.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
@@ -147,21 +146,21 @@ The same queries run from the browser too: [serve them over HTTP, tRPC or oRPC](
 
 ## Why UQL?
 
-- **One API, everywhere it runs.** PostgreSQL, PGlite, CockroachDB, MySQL, MariaDB, MSSQL, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 22.18+, Bun, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
+- **One API, everywhere it runs.** PostgreSQL, PGlite, CockroachDB, MySQL, MariaDB, MSSQL, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL and MongoDB. The same code on Node 22.18+, Bun, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
 - **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. No `.prisma` file, no generated client.
-- **Decorators or plain data, your call.** An entity is a class with [standard TC39 decorators](https://uql-orm.dev/entities/basic), or plain data via [`defineEntity`](https://uql-orm.dev/entities/define-entity), its row type derived. Both are typed the same, mix in one project, and need no compiler flags or `reflect-metadata`.
-- **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 49 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
-- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [row-level policies](https://uql-orm.dev/multi-tenancy) holding every read and write on every engine, or enforced by Postgres's own row-level security, [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
+- **Decorators or plain data, your call.** An entity is a class with [standard TC39 decorators](https://uql-orm.dev/entities/basic), or plain data via [`defineEntity`](https://uql-orm.dev/entities/define-entity). Both are typed the same and mix in one project.
+- **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 55 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
+- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [row-level policies](https://uql-orm.dev/multi-tenancy) holding every read and write on every engine, or enforced by Postgres's own row-level security, [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [views](https://uql-orm.dev/entities/views) typed by their query and held by their source's policies, [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
 - **SQL when you need it.** [`sql()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, [computed fields](https://uql-orm.dev/entities/computed-fields) are SQL you can filter and sort on, and a migration can be plain SQL.
 - **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), on Bun and Node alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by compiling ordinary mistakes in each ORM's API: UQL is the only one that catches them all.
 
 ## Get started
 
-Follow the [Quick Start](https://uql-orm.dev/getting-started), or [switch from](https://uql-orm.dev/switching-to-uql) Prisma, Drizzle, TypeORM or MikroORM. The [examples](examples) are runnable apps on Node, Bun, Next.js and Cloudflare D1, each checked in CI.
+Follow the [Quick Start](https://uql-orm.dev/getting-started), or [switch from](https://uql-orm.dev/switching-to-uql) Prisma, Drizzle, TypeORM or MikroORM. The [examples](https://github.com/rogerpadilla/uql/tree/main/examples) are runnable apps on Node, Bun, Next.js and Cloudflare D1, each checked in CI.
 
-Using a coding agent? The package ships a [skill](skills/uql-orm/SKILL.md) for it, and every docs page is Markdown: [set it up](https://uql-orm.dev/ai-agents).
+Using a coding agent? The package ships a [skill](https://github.com/rogerpadilla/uql/blob/main/skills/uql-orm/SKILL.md) for it, and every docs page is Markdown: [set it up](https://uql-orm.dev/ai-agents).
 
-Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md), and the build order for what comes next in [architecture/roadmap.md](architecture/roadmap.md).
+Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md), and the build order for what comes next in [architecture/roadmap.md](https://github.com/rogerpadilla/uql/blob/main/architecture/roadmap.md).
 
 ---
 

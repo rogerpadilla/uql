@@ -70,6 +70,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   reportsWrites: ['insert', 'update', 'delete', 'upsert'],
   nullsSortLowest: true,
   nullsOrdering: 'case',
+  textSearchReadsIndex: false,
   textScoreIndexes: false,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,

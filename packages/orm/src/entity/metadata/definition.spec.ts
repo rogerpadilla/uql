@@ -29,17 +29,8 @@ import { $context } from '../../util/contextRefs.js';
 import { getKeys, sql } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { AfterLoad, BeforeInsert, Computed, Entity, f, Field, ManyToMany, ManyToOne, OneToMany } from '../index.js';
-import {
-  assertSoleId,
-  defineEntity,
-  fieldOf,
-  foreignKeysOf,
-  getEntities,
-  getMeta,
-  idOf,
-  keyOf,
-  relationOf,
-} from './definition.js';
+import { assertSoleId, defineEntity, getEntities, getMeta, idOf, keyOf } from './definition.js';
+import { fieldOf, relationOf } from './lookup.js';
 
 it('should name an entity that declares no primary key', () => {
   class Keyless {
@@ -81,8 +72,6 @@ it('should name the field it reads, and refuse one the entity does not declare',
 it('should name the relation it reads, and refuse one the entity does not declare', () => {
   const meta = getMeta(User);
   expect(relationOf(meta, 'company')).toBe(meta.relations.company);
-  // Outside the types, which name a relation; the throw is for a key that reached it untyped.
-  // @ts-expect-error: `name` is a field
   expect(() => relationOf(meta, 'name')).toThrow("'User' has no relation 'name'");
 });
 
@@ -1699,8 +1688,7 @@ function getError(run: () => unknown): string {
   throw new Error('expected a registration error');
 }
 
-/** A column pointing at a class that is no entity constrains nothing; the schema build reads it again later. */
-it('should hold no foreign key for a column whose target registers no key', () => {
+it('should refuse a column referencing a class that is no entity, as a relation to one is', () => {
   class Shelf {
     id?: number;
   }
@@ -1716,7 +1704,7 @@ it('should hold no foreign key for a column whose target registers no key', () =
     shelfId?: number | null;
   }
 
-  expect(foreignKeysOf(getMeta(Book))).toEqual([]);
+  expect(() => getMeta(Book)).toThrow("'Shelf' is not an entity");
 });
 
 /** One column cannot reference a two-column key; the relation decorators make one column per key. */
@@ -2066,4 +2054,22 @@ it('should name the candidates where a relation join could be either', () => {
   expect(() => getMeta(Port)).toThrow(
     "'Port.voyages' could be mapped by 'from' or 'to', each a relation to 'Port': name one with 'mappedBy'.",
   );
+});
+
+it('should register a child of a decorated base whose relation targets a class declared after it', () => {
+  class Tracked {
+    @Field(f.number().id()) id!: number;
+    @Field(f.number().nullable()) ownerId?: number | null;
+    @ManyToOne(() => LaterOwner, { references: (tracked) => tracked.ownerId }) owner?: LaterOwner;
+  }
+  @Entity()
+  class TrackedKid extends Tracked {
+    @Field(f.string()) label?: string;
+  }
+  @Entity()
+  class LaterOwner {
+    @Field(f.number().id()) id!: number;
+  }
+
+  expect(getMeta(TrackedKid).relations.owner?.entity()).toBe(LaterOwner);
 });

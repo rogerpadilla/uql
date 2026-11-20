@@ -57,13 +57,14 @@ export class MariaDialect extends MysqlLikeSqlDialect {
       this.sort(fragmentCtx, entity, query, { prefix: alias, joins, unaliased: true }),
     );
     const page = this.buildFragment(ctx, (fragmentCtx) => this.pager(fragmentCtx, query));
+    const table = this.buildFragment(ctx, (fragmentCtx) => this.appendRows(fragmentCtx, meta, alias));
     const from = this.buildFragment(ctx, (fragmentCtx) => {
       this.selectRelationJoins(fragmentCtx, meta, alias, joins);
       this.where(fragmentCtx, entity, query.$where, { prefix: alias });
     });
     const object = this.jsonObject(terms.map((term) => [relationTermKey(term), term.sql]));
     const rows = `${query.$distinct ? 'DISTINCT ' : ''}${object}${order}${page}`;
-    ctx.append(`COALESCE((SELECT JSON_ARRAYAGG(${rows}) FROM ${this.tableRef(meta, alias).ref}${from}), JSON_ARRAY())`);
+    ctx.append(`COALESCE((SELECT JSON_ARRAYAGG(${rows}) FROM ${table}${from}), JSON_ARRAY())`);
     return terms;
   }
 

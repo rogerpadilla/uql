@@ -1,4 +1,4 @@
-import type { EntityId, EntityWrite, FieldKey, UpdateWrite } from './entity.js';
+import type { EntityId, EntityWrite, FieldKey, UpdateWrite, WritableEntity } from './entity.js';
 import type {
   EntityAccess,
   FieldAccess,
@@ -97,7 +97,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, QuerierSql<W>>, opts?: O): Promise<boolean>;
 
   /** Update the record with the given primary key; resolves to the number of affected rows. */
-  updateOneById<E extends object>(
+  updateOneById<E extends WritableEntity>(
     entity: Type<E>,
     id: EntityId<E>,
     payload: UpdateWrite<E, QuerierSql<W>>,
@@ -105,7 +105,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   ): Promise<number>;
 
   /** Update the records matching the query; resolves to the number of affected rows. */
-  updateMany<E extends object>(
+  updateMany<E extends WritableEntity>(
     entity: Type<E>,
     q: QuerySearch<E, QuerierSql<W>>,
     payload: UpdateWrite<E, QuerierSql<W>>,
@@ -118,7 +118,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param id the primary key of the record
    * @return the number of affected records
    */
-  deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: DO): Promise<number>;
+  deleteOneById<E extends WritableEntity>(entity: Type<E>, id: EntityId<E>, opts?: DO): Promise<number>;
 
   /**
    * delete or SoftDelete records.
@@ -126,7 +126,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param q the criteria to look for the records
    * @return the number of affected records
    */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, QuerierSql<W>>, opts?: DO): Promise<number>;
+  deleteMany<E extends WritableEntity>(entity: Type<E>, q: QuerySearch<E, QuerierSql<W>>, opts?: DO): Promise<number>;
 }
 
 /**
@@ -141,7 +141,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Insert a record and resolve to its id, or the row `returning` reads back. See {@link UniversalQuerier.insertMany}. */
   insertOne<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -156,7 +156,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * the rows `returning` reads back.
    */
   insertMany<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -168,7 +168,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Update the record with the given primary key; resolves to the number of affected rows, or the row `returning` reads back. */
   updateOneById<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -181,7 +181,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Update the records matching the query; resolves to the number of affected rows, or the rows `returning` reads back. */
   updateMany<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -194,7 +194,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Delete, or soft-delete, the record with the given key; resolves to the number of affected rows, or the row as it was. */
   deleteOneById<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -206,7 +206,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Delete, or soft-delete, the records matching the query; resolves to the number of affected rows, or the rows as they were. */
   deleteMany<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -222,7 +222,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * update: `{ uses: { $inc: 1 } }` counts, and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
    */
   upsertOne<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -235,7 +235,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Insert or update records by `q.$conflict`'s keys, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
   upsertMany<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -248,7 +248,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Insert a record, or upsert one naming its key; resolves to its id, or the row `returning` reads back. */
   saveOne<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -260,7 +260,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
 
   /** Insert records, or upsert those naming their key; resolves to their ids in payload order, or the rows. */
   saveMany<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -274,9 +274,9 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the
    * entity has no soft-delete field.
    */
-  restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number>;
+  restoreOneById<E extends WritableEntity>(entity: Type<E>, id: EntityId<E>): Promise<number>;
 
-  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  restoreMany<E extends WritableEntity>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   /**
    * runs an aggregate query (GROUP BY with aggregate functions).
@@ -293,20 +293,21 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
   /**
    * The table's row count as the engine's statistics state it, without reading a row: approximate, as
    * stale as the last `ANALYZE`, and unfiltered, so soft-deleted rows count. SQLite has none and throws, and it is
-   * refused for an entity whose policies the pool holds, since it would count the rows they hide.
+   * refused for an entity whose policies the pool holds, since it would count the rows they hide, and for a view,
+   * which has no rows of its own.
    */
   estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 }
 
 /** What a save does to the rows it writes, as a cascade does to the rows a write nests: inserts new ones, updates listed ones. */
-export const SAVES: readonly FieldAccess[] = ['insert', 'update'];
+export const SAVES = ['insert', 'update'] as const satisfies readonly FieldAccess[];
 
 /**
  * What each querier method does to an entity's rows, a save or an upsert inserting or updating: the one table a pool
  * routes by, a read running on a replica where it has some, and the API checks a call's exposure by. Total, so a new
  * method says.
  */
-export const QUERIER_OPS: Readonly<Record<keyof UniversalQuerier, readonly EntityAccess[]>> = {
+export const QUERIER_OPS = {
   findOneById: ['read'],
   findOne: ['read'],
   findMany: ['read'],
@@ -329,9 +330,10 @@ export const QUERIER_OPS: Readonly<Record<keyof UniversalQuerier, readonly Entit
   restoreMany: ['update'],
   deleteOneById: ['delete'],
   deleteMany: ['delete'],
-};
+} as const satisfies Record<keyof UniversalQuerier, readonly EntityAccess[]>;
 
 /** Whether `op` does `access` to an entity's rows: a read may run on a read replica. */
 export function opDoes(op: keyof UniversalQuerier, access: EntityAccess): boolean {
-  return QUERIER_OPS[op].includes(access);
+  const does: readonly EntityAccess[] = QUERIER_OPS[op];
+  return does.includes(access);
 }

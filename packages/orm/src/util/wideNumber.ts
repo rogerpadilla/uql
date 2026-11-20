@@ -31,7 +31,8 @@ export function decodeBigIntsExcept(row: RawRow, exact: (key: string) => boolean
   return row;
 }
 
-function decodeBigIntsIn(value: unknown): unknown {
+/** `value` with each 64-bit integer in it decoded by {@link decodeWideNumber}, an array's elements included. */
+export function decodeBigIntsIn(value: unknown): unknown {
   if (typeof value === 'bigint') {
     return decodeWideNumber(value);
   }

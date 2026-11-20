@@ -1,7 +1,7 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { getEntities, getMeta } from '../entity/index.js';
+import { getEntities, getMeta, isTable } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import {
   columnRenameCandidates,
@@ -66,6 +66,11 @@ export class Migrator {
 
   public get entities(): AbstractType<object>[] {
     return this._entities ?? getEntities();
+  }
+
+  /** The entities kept as tables: a view is read by its query instead. */
+  public get tables(): AbstractType<object>[] {
+    return this.entities.filter(isTable);
   }
   /** The generator given, or this dialect's once {@link getSchemaGenerator} has loaded it. */
   public schemaGenerator?: SchemaGenerator;
@@ -349,7 +354,7 @@ export class Migrator {
     if (!createdEntities.length || !generator.buildAST || !diffOptions) {
       return [];
     }
-    const owned = new Set(this.entities.map((entity) => this.tableOf(entity)));
+    const owned = new Set(this.tables.map((entity) => this.tableOf(entity)));
     const unowned = (await this.schemaIntrospector.getTableNames()).filter((table) => !owned.has(table));
     const current = await this.schemaIntrospector.introspect(unowned);
     return tableRenameCandidates(generator.buildAST(createdEntities), current, diffOptions);
@@ -358,7 +363,7 @@ export class Migrator {
   /** The entities whose tables are among `created`. */
   private createdEntities(created: readonly string[]): AbstractType<object>[] {
     const fresh = new Set(created);
-    return this.entities.filter((entity) => fresh.has(this.tableOf(entity)));
+    return this.tables.filter((entity) => fresh.has(this.tableOf(entity)));
   }
 
   /** The table `entity` maps to, as a diff names it. */
@@ -375,14 +380,14 @@ export class Migrator {
     // Both sides built once: the database's here, the entities' below. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
     // generator that compares no schema of its own - MongoDB, which reads only indexes and a validator.
-    const desiredAst = generator.buildAST?.(this.entities);
-    let ast = await this.introspectEntities(this.entities);
+    const desiredAst = generator.buildAST?.(this.tables);
+    let ast = await this.introspectEntities(this.tables);
     const diffOptions = generator.diffOptions?.();
     const renames: ColumnRenames =
       options.renames && desiredAst && diffOptions ? columnRenames(desiredAst, ast, diffOptions) : new Map();
     if (renames.size) {
       // Read again under the names the entities give them, so the rest compares as the columns they become.
-      ast = await this.introspectEntities(this.entities, renames);
+      ast = await this.introspectEntities(this.tables, renames);
     }
     if (desiredAst) {
       this.noteForeignChecks(desiredAst, ast);
@@ -390,7 +395,7 @@ export class Migrator {
     if (options.renames && desiredAst && diffOptions) {
       this.noteRenameCandidates(desiredAst, ast, diffOptions);
     }
-    return this.entities.flatMap((entity) => {
+    return this.tables.flatMap((entity) => {
       const tableName = this.tableOf(entity);
       const diff = generator.diffSchema(entity, ast.getTable(tableName), desiredAst, renames.get(tableName));
       return diff ? [diff] : [];
@@ -480,13 +485,13 @@ export class Migrator {
    */
   private async forceStatements(generator: SchemaGenerator): Promise<string[]> {
     const drop = { ifExists: true, cascade: true };
-    const present = await this.presentTables(this.entities);
+    const present = await this.presentTables(this.tables);
     const existing = dropsForeignKeysFirst(this.pool.dialect.features, drop)
-      ? await this.introspectEntities(this.entities)
+      ? await this.introspectEntities(this.tables)
       : undefined;
     return [
-      ...generator.generateDropSchema(this.entities, { ...drop, present, existing }),
-      ...generator.generateCreateSchema(this.entities),
+      ...generator.generateDropSchema(this.tables, { ...drop, present, existing }),
+      ...generator.generateCreateSchema(this.tables),
     ];
   }
 
@@ -500,6 +505,9 @@ export class Migrator {
     entity: AbstractType<object>,
     options: SyncOptions,
   ): Promise<string[]> {
+    if (!isTable(entity)) {
+      return [];
+    }
     const meta = getMeta(entity);
     const { dialect } = this.pool;
     const introspector = this.schemaIntrospectorFor(dialect.resolveSchema(meta));
@@ -508,20 +516,20 @@ export class Migrator {
     if (!(await introspector.tableExists(dialect.resolveTableAlias(meta)))) {
       // Spanning the whole set, so a foreign key resolves against the tables it points at, and always
       // including this entity: `only` is what keeps the statements to this table.
-      return generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
+      return generator.generateCreateSchema(this.tablesWith(entity), { only: [tableName], ifNotExists: true });
     }
     // With the tables it references, which its foreign keys resolve against.
     const ast = await this.introspectEntities([entity, ...referencedEntities(meta)]);
-    const diff = generator.diffSchema(entity, ast.getTable(tableName), generator.buildAST?.(this.entitiesWith(entity)));
+    const diff = generator.diffSchema(entity, ast.getTable(tableName), generator.buildAST?.(this.tablesWith(entity)));
     const altered = diff?.type === 'alter' ? [this.filterDiff(diff, options)] : [];
     await this.assertFillable(altered);
     return altered.flatMap((change) => generator.generateAlterTable(change));
   }
 
-  /** The configured entities, with `entity` among them however the migrator was built. */
-  private entitiesWith(entity: AbstractType<object>): AbstractType<object>[] {
-    const entities = this.entities;
-    return entities.includes(entity) ? entities : [...entities, entity];
+  /** The configured tables, with `entity`'s among them however the migrator was built. */
+  private tablesWith(entity: AbstractType<object>): AbstractType<object>[] {
+    const tables = this.tables;
+    return tables.includes(entity) ? tables : [...tables, entity];
   }
 
   /** The introspector for a claimed schema, which is the connection's own where none is claimed. */
@@ -552,7 +560,7 @@ export class Migrator {
 
   /** The new tables, created together so a foreign key between them, cyclic included, resolves. Empty in, empty out. */
   private createSchema(generator: SchemaGenerator, tableNames: readonly string[]): string[] {
-    return tableNames.length ? generator.generateCreateSchema(this.entities, { only: tableNames }) : [];
+    return tableNames.length ? generator.generateCreateSchema(this.tables, { only: tableNames }) : [];
   }
 
   /**

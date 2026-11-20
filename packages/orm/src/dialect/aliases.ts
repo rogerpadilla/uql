@@ -18,6 +18,9 @@ export const TOTAL_ALIAS = `${OWNED_PREFIX}_total`;
  */
 export const ROWS_ALIAS = `${OWNED_PREFIX}_rows`;
 
+/** The rows of a view's query, which a naming strategy's projection renames under the view's column names. */
+export const VIEW_ROWS_ALIAS = `${OWNED_PREFIX}_view`;
+
 /** The derived table a capped relation aggregate reads: the page is taken first, then aggregated over. */
 export const AGGREGATE_PAGE_ALIAS = `${OWNED_PREFIX}_page`;
 
@@ -83,6 +86,9 @@ export const REL_FIELD_PREFIX = `${OWNED_PREFIX}_joined_`;
 
 /** The field a ManyToMany lookup nests its target match under, inside the junction's own pipeline. */
 export const REL_NESTED_KEY = `${OWNED_PREFIX}_target`;
+
+/** The variable a MongoDB lookup into a view's rows passes its key in: a variable cannot start with `_`. */
+export const LOOKUP_KEY_VAR = 'uql_key';
 
 /**
  * The alias MySQL's upsert gives the row being inserted, so its `ON DUPLICATE KEY UPDATE`

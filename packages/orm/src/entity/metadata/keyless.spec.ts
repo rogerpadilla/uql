@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createApi } from '../../http/api.js';
 import { NodeSqliteQuerierPool } from '../../sqlite/nodeSqliteQuerierPool.js';
+import { idKey, readOnly } from '../../type/index.js';
+import { sql } from '../../util/sql.js';
 import { Entity, f, Field, ManyToOne, OneToMany, OneToOne } from '../index.js';
 import { defineEntity, getEntities, getMeta } from './definition.js';
 
@@ -63,6 +65,31 @@ class NotedKid extends Noted {
   @Field(f.number().autoIncrement()) id?: number;
 }
 
+@Entity({ name: 'DeclaredRate', readOnly: true })
+class Rate {
+  [idKey]?: 'code';
+  readonly [readOnly]?: true;
+  @Field(f.string().id()) code!: string;
+  @Field(f.number()) value!: number;
+}
+
+@Entity({ name: 'DeclaredRateKid' })
+class RateKid extends Rate {}
+
+@Entity({ name: 'DeclaredRateOwner' })
+class RateOwner {
+  @Field(f.number().autoIncrement()) id?: number;
+  @OneToMany(() => Rated, { mappedBy: (rated) => rated.owner, cascade: true }) rated?: Rated[];
+}
+
+@Entity({ name: 'DeclaredRated', readOnly: true })
+class Rated {
+  readonly [readOnly]?: true;
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.references(() => RateOwner)) ownerId!: number;
+  @ManyToOne(() => RateOwner, { references: (rated) => rated.ownerId }) owner?: RateOwner;
+}
+
 describe('a keyless entity', () => {
   it('should register with no key, and migrate as a table', () => {
     expect(getMeta(Sample).ids).toEqual([]);
@@ -86,7 +113,9 @@ describe('a keyless entity', () => {
   it('should refuse a wire taking a write, which it never takes', () => {
     const Wired = defineEntity({ name: 'KeylessWired', wire: ['read', 'insert'], fields: { value: f.number() } });
 
-    expect(() => getMeta(Wired)).toThrow("'KeylessWired' has no primary key, so its wire takes 'read' alone");
+    expect(() => getMeta(Wired)).toThrow(
+      "'KeylessWired' has no primary key, so it is read-only: its wire takes 'read' alone",
+    );
   });
 
   it('should hold a to-one by its foreign key, and be reached by a to-many', () => {
@@ -110,5 +139,50 @@ describe('a keyless entity', () => {
     expect(() => getMeta(Parent)).toThrow(
       "'Parent' has no primary key, which 'Parent.children', mapped by a column, needs",
     );
+  });
+});
+
+describe('an entity declared read-only', () => {
+  it('should keep its key, read by it, and refuse every write', async () => {
+    const pool = new NodeSqliteQuerierPool(':memory:');
+    await pool.run(sql.text('CREATE TABLE "DeclaredRate" ("code" TEXT PRIMARY KEY, "value" REAL)'));
+    await pool.run(sql.text(`INSERT INTO "DeclaredRate" VALUES ('eur', 1.1)`));
+
+    expect(getMeta(Rate).ids).toEqual(['code']);
+    expect(await pool.findOneById(Rate, 'eur')).toEqual({ code: 'eur', value: 1.1 });
+    // @ts-expect-error the compiler refuses it first
+    await expect(pool.insertOne(Rate, { code: 'usd', value: 1 })).rejects.toThrow("'Rate' is read-only");
+    // @ts-expect-error the compiler refuses it first
+    await expect(pool.updateOneById(Rate, 'eur', { value: 2 })).rejects.toThrow("'Rate' is read-only");
+    // @ts-expect-error the compiler refuses it first
+    await expect(pool.deleteOneById(Rate, 'eur')).rejects.toThrow("'Rate' is read-only");
+    await pool.end();
+  });
+
+  it('should take reads alone over the wire', async () => {
+    const api = createApi({ pool: new NodeSqliteQuerierPool(':memory:'), include: [Rate] });
+
+    await expect(
+      api.call({ entity: 'rate', op: 'insertOne', payload: { code: 'usd', value: 1 } }, undefined),
+    ).rejects.toThrow("'Rate' cannot be inserted through this API");
+  });
+
+  it('should refuse a wire taking a write', () => {
+    const Wired = defineEntity({
+      name: 'DeclaredWired',
+      readOnly: true,
+      wire: ['read', 'update'],
+      fields: { id: f.number().autoIncrement() },
+    });
+
+    expect(() => getMeta(Wired)).toThrow("'DeclaredWired' is read-only: its wire takes 'read' alone");
+  });
+
+  it('should refuse a cascade reaching it', () => {
+    expect(() => getMeta(RateOwner)).toThrow("'RateOwner.rated' cascades into 'Rated', which is read-only");
+  });
+
+  it('should leave an entity extending it writable, each stating its own', () => {
+    expect(getMeta(RateKid).readOnly).toBeUndefined();
   });
 });

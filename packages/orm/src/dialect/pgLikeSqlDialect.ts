@@ -67,6 +67,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
   reportsWrites: ['insert', 'update', 'delete', 'upsert'],
   nullsSortLowest: false,
   nullsOrdering: 'clause',
+  textSearchReadsIndex: false,
   textScoreIndexes: false,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,

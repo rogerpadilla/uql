@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlDialectName } from './dialect.js';
-import type { EntityWrite, FieldKey, HookEvent, UpdateWrite } from './entity.js';
+import type { EntityWrite, FieldKey, HookEvent, UpdateWrite, WritableEntity } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type { ContextRef } from './policy.js';
@@ -96,7 +96,7 @@ export interface Querier extends UniversalQuerier {
     UniversalQuerier['exists'];
 
   updateMany: (<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -107,7 +107,7 @@ export interface Querier extends UniversalQuerier {
   ) => Promise<WriteResults<E, S, V, W>['affectedMany']>) &
     UniversalQuerier['updateMany'];
 
-  restoreMany: (<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }) => Promise<number>) &
+  restoreMany: (<E extends WritableEntity>(q: QuerySearch<E> & { $entity: Type<E> }) => Promise<number>) &
     UniversalQuerier['restoreMany'];
 
   aggregate: (<E extends object, const Q extends QueryAggregate<E> & { $entity: Type<E> }>(
@@ -118,7 +118,7 @@ export interface Querier extends UniversalQuerier {
 
   /** Soft-deletes where the entity has a soft-delete field. */
   deleteMany: (<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -129,7 +129,7 @@ export interface Querier extends UniversalQuerier {
     UniversalQuerier['deleteMany'];
 
   upsertOne: (<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,
@@ -141,7 +141,7 @@ export interface Querier extends UniversalQuerier {
     UniversalQuerier['upsertOne'];
 
   upsertMany: (<
-    E extends object,
+    E extends WritableEntity,
     const S extends FieldKey<E> = never,
     const V extends BooleanLike = true,
     const W extends boolean = false,

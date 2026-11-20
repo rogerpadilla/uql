@@ -7,6 +7,7 @@ import type {
   HookContext,
   HookEvent,
   idKey,
+  readOnly,
   IdValue,
   IndexSection,
   IsUnion,
@@ -121,14 +122,23 @@ export type RelationRow<R> = { -readonly [K in keyof R]?: RelationValue<R[K]> };
  * The brands the type level reads keys off, derived from the columns rather than written by hand. A subtype's
  * brands add to its base's, since an intersection with them would narrow each to what the subtype declares.
  */
-export type Brands<F, B = object> = {
-  readonly [idKey]?: IdKeyOf<F> | BrandNames<B, typeof idKey>;
+export type Brands<F, B = object, R = undefined> = {
+  readonly [idKey]?: KeyOf<F, B>;
   readonly [versionKey]?: VersionKeyOf<F> | BrandNames<B, typeof versionKey>;
   readonly [filledKey]?: FilledKeyOf<F> | BrandNames<B, typeof filledKey>;
+  readonly [readOnly]?: [R] extends [true]
+    ? true
+    : string extends keyof F
+      ? never
+      : [KeyOf<F, B>] extends [never]
+        ? true
+        : never;
 };
 
 /** The keys of `F` a brand marks, read off its columns: the id, the version, and the fields a default fills. */
 type IdKeyOf<F> = FlagKeys<F, Column<{ readonly isId: true }>>;
+/** The key an entity holds: its own columns' and its base's. */
+type KeyOf<F, B> = IdKeyOf<F> | BrandNames<B, typeof idKey>;
 type VersionKeyOf<F> = FlagKeys<F, Column<{ readonly version: true }>>;
 type FilledKeyOf<F> = FlagKeys<F, Column<FilledOptions>>;
 
@@ -175,7 +185,7 @@ type DefinedJoinPair<O, Columns> = {
 }[keyof Columns];
 
 /** What the first call of `defineEntity` states: the class, its table and its columns. */
-export type DefineEntityOptions<F extends DefinedFields, B = object, BK = unknown, BC = unknown> = {
+export type DefineEntityOptions<F extends DefinedFields, B = object, BK = unknown, BC = unknown, R = undefined> = {
   /** The class's name, which a naming strategy derives the table's from, as it does a decorated class's. */
   readonly name: string;
   /** The table, exactly as the database names it, where it is not derived from `name`. */
@@ -186,6 +196,8 @@ export type DefineEntityOptions<F extends DefinedFields, B = object, BK = unknow
   readonly abstract?: true;
   /** What a client may do over an API: see {@link Wire}. */
   readonly wire?: Wire<EntityAccess>;
+  /** No write takes it, a view mapped by hand, as one with no key is. Not inherited. */
+  readonly readOnly?: R;
   /** The entity it inherits from, which the declared class extends, so its methods and `super` work. */
   readonly extends?: DefinedClass<B, BK, BC, boolean>;
   readonly fields: F;

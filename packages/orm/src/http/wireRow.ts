@@ -1,8 +1,9 @@
 import { EQUALITY_OPS, isGroupOp, isOrderedOp } from '../dialect/operators.js';
-import { getMeta, relationOf, valueFieldOf } from '../entity/metadata/definition.js';
-import type { EntityMeta, FieldMeta, RelationKey } from '../type/index.js';
+import { getMeta, valueFieldOf } from '../entity/metadata/definition.js';
+import { relationOf } from '../entity/metadata/lookup.js';
+import type { EntityMeta, FieldMeta } from '../type/index.js';
 import { decodeDate } from '../util/date.js';
-import { aggregateOf, columnFamily } from '../util/field.util.js';
+import { aggregatedColumn, aggregateOf, columnFamily } from '../util/field.util.js';
 import { cachedIn, definedEntries, isPlainObject } from '../util/object.util.js';
 import type { WireAnswer } from './wireCall.js';
 
@@ -206,7 +207,6 @@ function readField<E>(meta: EntityMeta<E>, field: FieldMeta): FieldMeta | undefi
   if (!spec) {
     return field;
   }
-  return spec.field && spec.op !== '$avg'
-    ? getMeta(relationOf(meta, spec.relation as RelationKey<E>).entity()).fields[spec.field]
-    : undefined;
+  const key = aggregatedColumn(spec.op, spec.field);
+  return key === undefined ? undefined : getMeta(relationOf(meta, spec.relation).entity()).fields[key];
 }

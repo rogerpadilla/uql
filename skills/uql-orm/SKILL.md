@@ -37,7 +37,7 @@ export const pool = new PgQuerierPool({ connectionString: process.env.DATABASE_U
 export default { pool, entities: [User, Post] } satisfies Config;
 ```
 
-Driver entry points: `uql-orm/postgres`, `mysql`, `mariadb`, `sqlite`, `mongodb`, `libsql`, `turso`, `neon`, `d1`, `pglite`, `bun-sql`, `mssql`, `cockroachdb`. Build the pool once per process and import it. `new PgliteQuerierPool(dataDir, opts)` opens PGlite itself; `new PgliteQuerierPool(() => PGliteWorker.create(worker))` runs on a handle you open, as a worker sharing one database across tabs, and its transactions hold PGlite's lock, which every other user of the handle waits on.
+Driver entry points: `uql-orm/postgres`, `mysql`, `mariadb`, `sqlite`, `mongodb`, `libsql`, `turso`, `neon`, `d1`, `pglite`, `bun-sql`, `mssql`, `cockroachdb`. Build the pool once per process and import it. PGlite takes a data directory, or a function returning a handle you open, such as a worker sharing one database across tabs: https://uql-orm.dev/pglite.md
 
 The pool's first argument is the driver's own config; set an acquire timeout there (`connectionTimeoutMillis` on the `pg` family), which otherwise waits forever. The second holds uql's options: `namingStrategy: new SnakeCaseNamingStrategy()` maps `createdAt` to `created_at` in queries and migrations alike (never name each column by hand), `logger: true` or a level list, `slowQuery: 200` (ms), and a default `schema`. Call `await pool.end()` on shutdown, except in serverless functions: https://uql-orm.dev/pool.md
 
@@ -45,8 +45,8 @@ The pool's first argument is the driver's own config; set an acquire timeout the
 
 Two forms, mixable per entity, producing the same queries and types:
 
-- **Decorators**: a named class type, and column-level foreign keys (`f.references`), so entities may reference each other in any order. A property may be typed narrower than its column, a branded id, and `f.references(() => User)` takes the key's type. Slightly stricter: `mappedBy` must name a relation or foreign key at compile time. Each field is written twice (builder and property), and it needs the TC39 decorator transform.
-- **`defineEntity`**: the row type is derived, nothing written twice; no transform, so it fits projects on legacy decorators (NestJS, Angular), and it can be built at run time. Cheaper to type-check. A shared set of fields spreads into `fields`.
+- **Decorators**: a named class, whose property may be typed narrower than its column (a branded id). Each field is written twice (builder and property), and it needs the TC39 decorator transform.
+- **`defineEntity`**: the row type is derived, so nothing is written twice. No transform, so it fits projects on legacy decorators (NestJS, Angular), and it can be built at run time. Cheaper to type-check.
 
 `uql-codemod` cannot convert one form into the other. Details: https://uql-orm.dev/entities/define-entity.md
 
@@ -89,7 +89,8 @@ export class Post {
 ```
 
 - A column is a builder: `f.string()`, `f.text()`, `f.uuid()`, `f.number()`, `f.bigint()`, `f.decimal(precision?, scale?)`, `f.boolean()`, `f.date()`, `f.json(schema?)`, `f.jsonb(schema?)`, `f.vector(dimensions)`, `f.enum(values)`, `f.version()`, `f.column(type)` for any other SQL type uql names (`f.column('smallint')`, `f.column('date')` for a day with no time, `f.column('timestamptz')`), typed by its family, and `f.references(() => Target)` for a foreign key typed as the target's key. A type uql does not name is ``.columnType(sql`citext`)``. Only the methods a column's type takes exist: `.length()` is a string's, `.precision()` a number's or a date's. A builder is immutable, so `const money = f.decimal(12, 2)` is shared across fields, each chaining its own `.nullable()`.
-- A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the version uql fills. A key the database generates is `@Field(f.number().autoIncrement()) id?: number` (`f.bigint().autoIncrement()` past 2^53); `.id()` alone generates nothing, so `f.number().id()` is a key the caller supplies and `@Field` refuses `?` on it, as on a `.references()` key. A NOT NULL field something fills (`.default()`, `.onInsert()`, a generated key) stays `!` when listed in the class's `[filledKey]?: 'id' | 'createdAt'`: inserts may omit it, reads always have it. MongoDB fills a text key declared `?` and `_id`. `insertOne`, `insertMany`, `saveOne`, `saveMany`, `upsertOne` and `upsertMany` resolve to a defined key, so no `!`. On SQL engines an insert leaving out a key nothing declared fills throws before writing. `defineEntity` works all of this out.
+- A column is NOT NULL unless `.nullable()`. Declare a NOT NULL property `!` (`email!: string`), and `?` what an insert may omit: nullable columns (`title?: string | null`), `.eager(false)` and computed fields, relations, and the version uql fills. A NOT NULL field something fills (`.default()`, `.onInsert()`, a generated key) stays `!` when listed in the class's `[filledKey]?: 'id' | 'createdAt'`: inserts may omit it, reads always have it. `defineEntity` works all of this out.
+- A key the database generates is `@Field(f.number().autoIncrement()) id?: number` (`f.bigint().autoIncrement()` past 2^53). `.id()` alone generates nothing: `f.number().id()` is a key the caller supplies, and `@Field` refuses `?` on it, as on a `.references()` key. Every insert, save and upsert resolves to a defined key, so its result needs no `!`; on SQL engines one leaving out a key nothing declared fills throws before writing. MongoDB generates only ObjectIds: it fills `_id` and a text key declared `?`, and refuses a `f.number()` key left to it: declare that one a string, or give it an `.onInsert()` generator.
 - `.default()` takes a value of the field's type, or SQL the database evaluates per row: `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``sql`...` ``. A plain string is always text, `'CURRENT_TIMESTAMP'` included. A JSON column defaults to a value, `.default({})` or `.default(0)`, never its JSON text (`'{}'`, `'0'` are refused); any other string there is a JSON string.
 - `Date` is an instant, stored in UTC to the millisecond. `f.decimal()` is exact text (`price?: string | null`); `f.number().precision(10).scale(2)` opts into a rounding JS number.
 - A JSON column's property is `Json<T>`: `settings?: Json<{ theme?: string }> | null`. A plain object type reads as a relation, which `$where`, `$sort` and the update operators refuse.
@@ -98,10 +99,9 @@ export class Post {
 - Optimistic lock: `@Field(f.version())` with `[versionKey]?: 'version'` on the class. An update, and an upsert or save of a row that exists, must carry the version it read; a stale one throws `UqlOptimisticLockError`.
 - Computed fields are `readonly`: ``@Computed((u) => f.string().as(sql`${u.first} || ' ' || ${u.last}`))``, `.stored()` for a generated column, or a relation aggregate, `@Computed((user) => user.posts.count())`.
 - Indexes, checks, filters and triggers are `@Entity` options, each entry made by the helper the callback is handed. A partial index's predicate is a query: `indexes: (post, index) => [index([post.authorId], { where: { archived: { $ne: true } } })]`. A JSON path is indexed off the column's ref, `index([user.settings.theme])`: https://uql-orm.dev/entities/indexes.md
-- Triggers run in the database: `triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })]`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. `on` is one event: a body several events share is one `run` passed to each entry. `where` reads `$new: {...}` and `$old: {...}`; an update's may group them (`$or: [{ $old: ... }, { $new: ... }]`), and a condition under neither holds on both rows, as in a policy. They skip entity filters and run no JavaScript: an insert fills an `.onInsert()` value or SQL, but an `insertInto` names every required column a callback fills (`.onInsert(() => crypto.randomUUID())`) where no database default does. MongoDB has none: https://uql-orm.dev/entities/triggers.md
+- Triggers run in the database: `triggers: (post, trigger) => [trigger({ on: 'afterUpdate', of: [post.status], run })]`, where `run` returns a body built from `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse(message)`. `on` is one event: a body several events share is one `run` passed to each entry. `where` reads `$new: {...}` and `$old: {...}`; an update's may group them (`$or: [{ $old: ... }, { $new: ... }]`), and a condition under neither holds on both rows, as in a policy. A body skips entity filters and runs no JavaScript: it fills an `.onInsert()` given a value or SQL, so an `insertInto` names every required column only a callback fills (`.onInsert(() => crypto.randomUUID())`). MongoDB has no triggers: https://uql-orm.dev/entities/triggers.md
 - Hooks are methods with `this` bound to the payload: `@BeforeInsert()`, `@AfterInsert()`, and the same pairs for update, upsert and delete, plus `@AfterLoad()`. Changes to `this` in a before-hook are written. `upsert*` runs only the upsert pair, and `save*` the upsert pair for a row carrying its key. Each receives `{ querier, onCommit }`.
-- An entity declaring no key (a log, a view) is read-only: reads work, every write and by-id call is refused, and its `wire` takes `'read'` alone. It may hold a to-one by its foreign key and be reached by a to-many without `cascade`.
-- **MongoDB:** a `f.number()` key left to the database is refused, since MongoDB only generates ObjectIds. Declare it a string, or give it an `.onInsert()` generator.
+- An entity declaring no key (a log, a view mapped by hand) or `readOnly: true` (one with a key) is read-only: reads work, every write is refused, its `wire` takes `'read'` alone, and no `cascade` reaches it. Neither is inherited. One with no key also refuses by-id calls; it may hold a to-one by its foreign key and be reached by a to-many. A write to one is a compile error too: `defineEntity` brands it, a decorated class declares `readonly [readOnly]?: true` (`readOnly` from `uql-orm`), which `@Entity({ readOnly: true })` requires.
 
 ### defineEntity
 
@@ -140,11 +140,34 @@ export const Book = defineEntity({
   }));
 ```
 
-- Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it. Name its rows with an interface, `export interface Author extends InstanceType<typeof Author> {}`: hovers and errors then print `Author`, which a type alias expands.
-- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `policies`, `hooks`, then `relations` last; only `filters` and `policies` follow it, and of two reading through relations the one chained last may read them.
+- Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it.
+- The `interface` beside the entity names its rows: hovers and errors then print `Author`, which a type alias expands.
+- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`, into which a shared set of fields spreads. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `policies`, `hooks`, then `relations` last; only `filters` and `policies` follow it, and of two reading through relations the one chained last may read them.
 - A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.
 - A hook is a function of the row and the same second argument. Behaviour is a plain function of the row (`label(author: Author)`): a row reads back as a plain object, so a method would never be there.
+
+### Views
+
+```ts
+import { defineView } from 'uql-orm';
+
+export const CustomerTotals = defineView({
+  name: 'CustomerTotals',
+  from: () => Order,
+  aggregate: {
+    $group: { customerId: true },
+    $select: { spent: { $sum: { total: true } } },
+    $where: { status: 'paid' },
+  },
+}).relations((rel) => ({ customer: () => rel.manyToOne(Customer, { references: (row) => row.customerId }) }));
+
+export const OpenOrder = defineView({ name: 'OpenOrder', from: () => Order, find: { $where: { status: 'open' } } });
+```
+
+- A view is a query over `from`: `aggregate` as `pool.aggregate` takes it, or `find`, a `Query` less `$populate`, `$count` and `$lock`. Its row is what the query answers, typed by it.
+- uql reads it by its query on every engine, MongoDB included, so its source's filters and policies hold every read. It reads like any entity and is read-only. A find view is keyed by its source's key where it selects it; an aggregate view by its `$group` columns where none is nullable. Sections: `relations`, `filters`, `policies`.
+- It has no rows of its own: `$lock`, `estimatedCount`, and `$text` on MySQL, MariaDB, SQLite and MongoDB are refused, and it takes no `indexes`. Its query takes no `$sort`, `$limit` or `$skip`: a read orders and pages its rows. It has no table, so migrations leave it out. `tableOf(refs(CustomerTotals))` renders it in raw SQL: https://uql-orm.dev/entities/views.md
 
 ### Filters, soft delete, tenants and policies
 
@@ -187,7 +210,9 @@ await withContext({ tenantId: 42, userId: 'u1' }, () => pool.findMany(Invoice, {
 - `.softDelete()` on one field turns a delete into a stamp (`new Date()`, or the value or callback given), and registers a `softDelete` filter hiding stamped rows. `withDeleted()` as the options reads both; `restoreOneById` and `restoreMany` undo it; `{ hardDelete: true }` removes rows for good. A restore does not cascade.
 - A filter's `where` may read the context as data, `{ authorId: $context.userId }`, and is skipped where the context lacks a key it reads; or it may be a function of the context `withContext(ctx, fn)` sets, which follows `await`, `Promise.all` and transactions but not emitters, timers or queues: wrap those callbacks with `captureContext()`.
 - `.tenant()` on one column makes it the row's tenant, read off `$context.tenantId` (`.tenant($context.orgId)` names another, which must hold the column's type): every statement is held to it, and an insert leaving it out is given it.
-- A policy is data: `{ allow: where }` or `{ must: where }`, beside `ops` (`'read'`, `'insert'`, `'update'`, `'delete'`, every one where unset), `when` (context keys at a value, or one of a list) and `name`. Its `where` holds every row a statement touches, found and written; `$old: {...}` in it holds only the row as found (a row failing it is not reached) and `$new: {...}` only the row as written (a write failing it is refused). A read or delete sees `$old`, an insert `$new`, an update both. A group pairing both, `$or: [{ $old: ... }, { $new: ... }]`, is a transition: only in a `must` with `ops: ['update']`, held on every engine (natively by a trigger), soft deletes included. There is no `check`. A row is reached when any `allow` holding the statement reaches it and every `must` holds. An entity declaring no `allow` is allowed every row its `must`s (and tenant) leave; one declaring some reaches no row in a statement none of them holds. An update or delete is held to the `read` ones too. A soft delete is an update: the `update` policies hold it, and `delete` ones a hard delete. `{}` reaches every row. A policy stated once as a constant serves every entity with the fields it names.
+- A policy is data: `{ allow: where }` or `{ must: where }`, beside `ops` (`'read'`, `'insert'`, `'update'`, `'delete'`, every one where unset), `when` (context keys at a value, or one of a list) and `name`. `{}` reaches every row. A policy stated once as a constant serves every entity with the fields it names.
+- A row is reached when any `allow` holding the statement reaches it and every `must` holds. An entity declaring no `allow` is allowed every row its `must`s (and tenant) leave; one declaring some reaches no row in a statement none of them holds. An update or delete is held to the `read` policies too. A soft delete is an update: the `update` policies hold it, and the `delete` ones a hard delete.
+- A policy's `where` holds every row a statement touches, found and written. `$old: {...}` in it holds only the row as found (a row failing it is not reached) and `$new: {...}` only the row as written (a write failing it is refused): a read or delete sees `$old`, an insert `$new`, an update both. A group pairing them, `$or: [{ $old: ... }, { $new: ... }]`, is a transition: only in a `must` with `ops: ['update']`, held on every engine (natively by a trigger), soft deletes included.
 - `explainPolicies(Invoice, 'update')` answers what the policies hold a statement to under the ambient context, as a policy states it: `$old` the rows it reaches, `$new` what a row it writes must hold, `$and` an update's transitions. What to look at when a read reaches no row.
 - `$context.tenantId` reads the context key in a predicate, typed by `UqlContext`: once it declares keys, a misspelled one, or one in `when`, does not compile; a relation is read like any `$where` (`{ allow: { members: { userId: $context.userId } } }`). A key the context lacks or holds null matches nothing, as SQL's NULL compares: no context, no rows.
 - Policies hold every read, populate, relation filter and count, and every write: an insert gets each field a policy pins to one value (`companyId`), a write setting another is refused with `UqlSecurityError`, and a `$new` condition the row alone cannot settle, or a transition, is read in the write's transaction (MongoDB needs `transaction()` for one; D1 refuses it). Nothing per call turns a policy off: run trusted, cross-tenant work on a pool built with `{ policies: false }`. `estimatedCount` throws for an entity whose policies the pool holds, since it counts the rows they hide: use `count`.
@@ -267,7 +292,7 @@ const counts = await pool.aggregate(Post, {
 
 ## Connections and transactions
 
-Every method is on the pool and on a querier. A pool call takes a connection for that call. For several operations on one connection, or atomically:
+Every method is on the pool and on a querier. A pool call takes a connection for that call. Several writes that must land together run in one transaction:
 
 ```ts
 await pool.transaction(async (querier) => {
@@ -279,7 +304,8 @@ await pool.transaction(async (querier) => {
 - The callback commits when it returns and rolls back when it throws. Inside it, `pool` calls run on its querier. A nested `transaction()` is a savepoint; MongoDB refuses it.
 - On the Postgres family a failed statement aborts its whole transaction, so one caught and carried past cannot commit: the commit rejects with `UqlUsageError`. Run a statement that may fail in a nested `transaction()`, whose savepoint keeps the failure to itself.
 - Read replicas: `new PgQuerierPool(primaryConfig, { replicas: [replicaConfig] })`, each a config of the pool's own driver (`pg`, CockroachDB, `mysql2`, `mariadb`, SQL Server, Bun SQL), under the pool's options. Reads, and a `withQuerier` or `transaction` given `{ readOnly: true }`, run on a replica; writes, other transactions, raw `all`/`run` and migrations on the primary. A call inside a transaction stays on it; outside one, read what was just written through `pool.withQuerier(...)`, since a replica may lag.
-- `querier.onCommit(fn)` runs `fn` after the outermost commit, never on rollback.
+- `querier.onCommit(fn)` runs `fn` after the outermost commit, never on rollback: mail, webhooks and queued jobs go there, never in an after-hook or mid-transaction.
+- On MongoDB, an upsert with an `$update` or `$where`, and an `updateMany` or `deleteMany` that cascades or runs hooks, must run inside a `pool.transaction(...)`.
 - A transaction opened in one place and ended in another uses `beginTransaction`, `commitTransaction` and `rollbackTransaction`. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 - A `findManyStream` holds its querier until the loop ends, refusing other statements meanwhile: run them after the loop, or on another connection.
 
@@ -301,7 +327,8 @@ export const handler = toFetchHandler(api); // on a catch-all under /api/v1
 
 - Nothing is exposed by default: defining an entity serves nothing, and `include` is required, its entities the only ones a call reaches, through a relation too. Mount the API under a versioned base: `toFetchHandler(api)` for any fetch runtime (Hono, Next.js, Bun, Workers), `app.use('/api/v1', toExpress(api))` from `uql-orm/express`, or `toRequestHandler(api)` for any other framework. Inside a tRPC or oRPC procedure call `api.call(input, ctx)`, which checks the call itself; `.input(parseWireCall)` types it.
 - The wire is `{base}/:entity/:op` (`/api/v1/user/findMany`), the entity's kebab-cased class name and a client method: a read is `GET ?q=<call as JSON>` (or a JSON body by `POST` or `QUERY`: `httpTransport(url, { readMethod: 'POST' })`), a write a JSON `POST`. A success answers `{ data }`, a failure `{ error: { message, status, kind, path } }`.
-- What a client may do is the definition's `wire`, every operation where unset. An entity's (`@Entity({ wire: ['read', 'update'] })`, `defineEntity({ wire })`) lists what it takes of `'read'`, `'insert'`, `'update'`, `'delete'`, a subclass declaring none taking its base's; `wire: false` keeps it off every API, and `createApi` refuses one in `include`. A member's: `f.string().wire(false)` hides a field, `.wire(['read'])` makes it read-only, `.wire(['insert'])` write-once; a relation takes `wire` in its options (`rel.oneToMany(Session, { mappedBy, wire: false })`, `@OneToMany(() => Session, { mappedBy, wire: false })`). It holds wherever the entity is reached, through any relation. A write the querier would drop, to a computed field or an update of an `updatable(false)` one, is refused instead; a save may insert, so it takes the latter.
+- What a client may do is the definition's `wire`, every operation where unset. An entity's (`@Entity({ wire: ['read', 'update'] })`, `defineEntity({ wire })`) lists what it takes of `'read'`, `'insert'`, `'update'`, `'delete'`, a subclass declaring none taking its base's; `wire: false` keeps it off every API, and `createApi` refuses one in `include`.
+- A member's `wire` narrows it: `f.string().wire(false)` hides a field, `.wire(['read'])` makes it read-only, `.wire(['insert'])` write-once; a relation takes `wire` in its options (`rel.oneToMany(Session, { mappedBy, wire: false })`, `@OneToMany(() => Session, { mappedBy, wire: false })`). It holds wherever the entity is reached, through any relation. A write the querier would drop, to a computed field or an update of an `updatable(false)` one, is refused instead; a save may insert, so it takes the latter.
 - `read` covers every clause naming the member (`$select`, `$where`, `$sort`, `$count`, `$populate`), and a read with no `$select` leaves out what it may not read. `.eager(false)` is no guard, since a client's `$select` still reads it: hide a secret with `.wire(false)`.
 - A middleware is `(call, context, next) => next(call)`, run after the call is checked: reshape the call before `next`, or what `next` resolves to after it. The API's `use` runs on every call, and `serve(Entity, { use })` in `include` on that entity's alone, typed by it (`call.op === 'insertOne'` types `call.payload` as a row). Refuse a client with `throw new UqlRequestError('unauthorized', 401)` from `uql-orm`; any other error answers generically by its kind, or `500`.
 - Scope tenants with a policy and `contextOf`, never with a middleware adding to `$where`. Without `contextOf` a call keeps its caller's context. On NestJS, `UqlModule.forRoot({ pool, contextOf })` does the same for your own routes.
@@ -321,11 +348,6 @@ export const handler = toFetchHandler(api); // on a catch-all under /api/v1
 - `drift:check`: fails when the database no longer matches the entities.
 
 Upgrading uql itself: `npx uql-codemod --dry-run`, then `npx uql-codemod`, which rewrites what it can and reports the rest. Breaking changes: https://uql-orm.dev/upgrade-guide.md
-
-## Before you finish
-
-- Mail, webhooks and queued jobs run from `onCommit`, never from an after-hook or mid-transaction.
-- Several writes that must land together run in one `pool.transaction(...)`; on MongoDB, so does an upsert with an `$update` or `$where`, and an `updateMany` or `deleteMany` that cascades or runs hooks.
 
 ## Where to read more
 

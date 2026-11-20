@@ -1,4 +1,5 @@
 import { getMeta } from '../entity/index.js';
+import { assertOwnRows } from '../entity/metadata/lookup.js';
 import type {
   DialectFeatures,
   DialectName,
@@ -113,12 +114,23 @@ export abstract class AbstractDialect {
 
   /**
    * Refuses a `$lock` the engine cannot take, so a caller never believes rows are held that are not.
-   * The SQLite family locks the database rather than its rows and MongoDB has no row lock at all;
-   * {@link AbstractSqlDialect} adds what a lock over a join needs on top.
+   * The SQLite family locks the database rather than its rows, MongoDB has no row lock at all, and a plain view
+   * has no rows of its own to lock. {@link AbstractSqlDialect} adds what a lock over a join needs on top.
    */
-  assertLockSupported<E>(_entity: AbstractType<E>, q: Query<E>): void {
-    if (parseQueryLock(q.$lock) && !this.features.rowLocks) {
+  assertLockSupported<E>(entity: AbstractType<E>, q: Query<E>): void {
+    if (!parseQueryLock(q.$lock)) {
+      return;
+    }
+    if (!this.features.rowLocks) {
       throw new UqlUsageError(`${this.engineName} does not support row-level locking ($lock)`);
+    }
+    assertOwnRows(getMeta(entity), 'lock');
+  }
+
+  /** Refuses a `$text` search of a plain view where the engine's search reads an index, which only stored rows have. */
+  protected assertTextSearchable<E>(meta: EntityMeta<E>): void {
+    if (this.features.textSearchReadsIndex) {
+      assertOwnRows(meta, `index for a $text search on ${this.engineName}`);
     }
   }
 

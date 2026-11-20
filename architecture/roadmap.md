@@ -6,20 +6,18 @@ What is next, in build order: groundwork first, so the features on top stay smal
 
 Additive: an entity that declares nothing keeps every capability, so none of this breaks code written for 1.0.
 
-- **R2: a `writable` flag.** One optional flag on the entity's type, `writable: false`, that the write methods' signatures check once, so a write to a view is a compile error. Optional and defaulting to writable, so it adds no break. Gated on `bun run ts.perf`. A general capability set is not planned.
-
-- **Views and materialized views** (R2).
+- **Views and materialized views.**
 
 ```ts
 export const WorkspaceUsage = defineView({
   name: 'WorkspaceUsage',
   materialized: true,
   from: () => Resource,
-  query: { $group: { workspaceId: true }, $select: { total: { $count: '*' } } },
+  aggregate: { $group: { workspaceId: true }, $select: { total: { $count: '*' } } },
 });
 ```
 
-A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction. Its migration is a schema-level object that states the tables it reads, sorted with the existing `createOrder`; tables, columns, indexes and checks keep their per-kind diff.
+[The design](views.md). A view is a read-only entity, keyed by what keeps a row unique, declared as data alone (no `@View`, since a decorator cannot type its class from a query), its row typed by its query. Built: uql reads a view by its query, so its source's policies hold it on every engine. Left: installing it in the database for every other tool, compared through the engine's own normalisation, and a materialized view, a table uql owns on every engine, refreshed by key as `REFRESH ... CONCURRENTLY` would be.
 
 - **Value types.** `.of(Type)` on a string, number or date builder, `f.column('date').of(Temporal.PlainDate)` or `f.decimal(12, 2).of(Money)`, `Type` being any `{ from(text) }` that parses what its value's `toJSON()` prints. A codec per field, worked out at registration, converts a value to the column's own JS value at each edge (a write, a compared operand but not a pattern, a read, an aggregate, a cursor, a default), so no dialect learns of it; uql's types never name Temporal, so a polyfill works. Waits for a second app that needs it: the one measured has one field for it.
 - **Polymorphic entities.** Single-table inheritance: a base declares a discriminator field, each subclass the value it stores, `@Entity({ discriminator: 'card' })` or `defineEntity({ extends, discriminator })`. A subclass's statements are held to its value as a filter is, and an insert is given it as a tenant is; a base's read answers each row as its subclass, typed as the union. A subclass's own fields are nullable columns of the one table. Its data form is the discriminator field and value, so it travels in the schema document. Table-per-type waits for an app that needs it: it is a join on every read.
@@ -29,6 +27,7 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **Live queries.** A read the client subscribes to, answered again when a write changes it, as a `GET ?q=` an `EventSource` opens. Re-running each subscription after uql's own writes, under the subscriber's context, comes first; an engine's change stream sees every writer, but SQLite, D1 and libSQL have none. [Open in the API layer](api-layer.md#open).
 - **Row-level security, the rest.** SQL Server's native predicates, tenancy with composite tenant keys, transitions, field policies and `can()` on the client. [The design](row-level-security.md#next).
 - **Named locks.** `querier.lock(name, { timeout })`, held to the end of the transaction, as Postgres's `pg_advisory_xact_lock` and MSSQL's `sp_getapplock` do. The migration lock in `migrationLock.ts` is the first half. An engine with no named lock takes a row with `SELECT ... FOR UPDATE`. Open: how a lock on a name shows in `$where`.
+- **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.
 
 ## Settled
 
@@ -54,8 +53,8 @@ A view is a read-only entity whose definition is its migration, and its field ty
 - **No fuzzy-match or `$max`/`$min` update operator.** Neither has a portable form or a caller `sql` does not already serve.
 - **A split write runs all or none, through one `runStatements` per querier.** One request on D1, Turso Cloud, libSQL and Neon over HTTP, a transaction elsewhere. [The design](split-writes.md).
 - **Row-level security.** One policy as data, held by the querier on every engine and, on a `policies: 'native'` pool, by Postgres and CockroachDB themselves, bound per transaction; filters are convenience scopes again. [The design](row-level-security.md).
-- **An entity with no key is read-only.** Every write refuses it by name in the querier (`writableMeta`), before any hook, on every engine, and a by-id call through `soleIdOf`. It holds a to-one by its own foreign key and is reached by a to-many without cascade; a to-one reaching it, which tells no row from a row of nulls without a key, and a cascade into it are refused on first read. Its `wire` takes `'read'` alone, so the API refuses a client's write as it refuses any it does not expose. Its table has no primary key, and MongoDB reads its documents without `_id`.
+- **An entity is read-only when it says so or has no key.** `readOnly: true` is the data form of the `readOnly` brand, so a view with a key column is read-only too; neither is inherited, as a key is each entity's own. The one flag, `meta.readOnly`, holds the querier, the API and cascades; `whyReadOnly` names the cause. Every write refuses it by name in the querier (`writableMeta`), before any hook, on every engine. An entity with no key also refuses a by-id call through `soleIdOf`. It holds a to-one by its own foreign key and is reached by a to-many without cascade; a to-one reaching it, which tells no row from a row of nulls without a key, and a cascade into it are refused on first read. Its `wire` takes `'read'` alone, so the API refuses a client's write as it refuses any it does not expose. Its table has no primary key, and MongoDB reads its documents without `_id`.
+- **A read-only entity takes no write at compile time.** Its type carries the `readOnly` brand, which `defineEntity` derives from `readOnly: true` or from having no key, and a decorated class declares, `[readOnly]?: true`. Each write's type parameter is held to `WritableEntity`, a constraint and not a conditional, so a generic caller's `E` still passes, at 11 instantiations over 800 queries (`ts.perf`). No general capability set.
 - **Read replicas are an option of the pool, not a pool wrapping pools** (0.117.0). `{ replicas: [config] }` takes configs of the pool's own driver, each opened as the primary is (`AbstractDriverQuerierPool`), so a replica cannot drift from the primary's `policies`, naming or logging, and its queriers carry the pool's dialect, which keeps a call inside any of its transactions on that transaction's querier. A wrapper composing built pools was built first and dropped for that drift. A read, a stream and a `readOnly` unit of work run on a random replica, what `QUERIER_OPS` says reads; no picker until an app needs one. `pool.withQuerier(...)` reads past the lag on the primary.
 - **What each querier method does to rows is one table, `QUERIER_OPS`**, total over `UniversalQuerier` and asked through `opDoes`: pool routing, the API's transaction choice, its HTTP methods and exposure all read it. A save or upsert is `['insert', 'update']`, not a kind of its own. The 22 pool delegators stay written out: building them from the table needs a cast.
 - **No `await using` on a per-call path.** Lowered for the target, it cost every pool call 1.7 KB (`pgAllocation.test.ts`); `try`/`finally` costs nothing. A stream, which holds its querier across yields, keeps it.
-- **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.

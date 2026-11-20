@@ -105,6 +105,11 @@ export type InsertIdSource = 'returning' | 'firstId';
 export interface DialectFeatures {
   readonly indexIfNotExists: boolean;
   /**
+   * Whether a `$text` search reads an index of the table it searches, which a plain view, read as its query, has
+   * none of: MySQL's and MariaDB's `MATCH`, SQLite's FTS5 table, MongoDB's text index.
+   */
+  readonly textSearchReadsIndex: boolean;
+  /**
    * Whether the engine has namespaces a table can sit behind. `false` leaves every table
    * unqualified, whatever `schema` an entity or pool named: SQLite attaches database files and
    * MongoDB takes its database from the connection, so neither has one to name.
@@ -443,11 +448,11 @@ export interface SqlQueryDialect {
    */
   columnOf<E>(meta: EntityMeta<E>, key: string): string;
 
-  /**
-   * The table of `meta` as a FROM names it, through the naming strategy and under its schema, and the alias its
-   * columns are read off: `alias`, else the table's own.
-   */
-  tableRef<E>(meta: EntityMeta<E>, alias?: string): { alias: string; ref: string };
+  /** The alias a read of `meta` qualifies its columns by where it takes none of its own. */
+  resolveTableAlias<E>(meta: EntityMeta<E>): string;
+
+  /** The rows of `meta` as a FROM or JOIN reads them, appended: its table, or a plain view's query under `alias`. */
+  appendRows<E>(ctx: QueryContext, meta: EntityMeta<E>, alias?: string): void;
 
   /**
    * Build an aggregate query.

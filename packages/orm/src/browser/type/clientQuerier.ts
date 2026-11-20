@@ -1,4 +1,4 @@
-import type { Type, EntityWrite, QueryOptions, SharedQuerier, WrittenId } from '../../type/index.js';
+import type { EntityWrite, QueryOptions, SharedQuerier, Type, WritableEntity, WrittenId } from '../../type/index.js';
 import type { CallOptions } from './transport.js';
 
 /**
@@ -7,25 +7,25 @@ import type { CallOptions } from './transport.js';
  * server's infer what `returning` reads back from their options, which the client's take none of.
  */
 export interface ClientQuerier extends SharedQuerier<'client', CallOptions, QueryOptions & CallOptions> {
-  insertOne<E extends object>(
+  insertOne<E extends WritableEntity>(
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: CallOptions,
   ): Promise<NonNullable<WrittenId<E>>>;
 
-  insertMany<E extends object>(
+  insertMany<E extends WritableEntity>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: CallOptions,
   ): Promise<NonNullable<WrittenId<E>>[]>;
 
-  saveOne<E extends object>(
+  saveOne<E extends WritableEntity>(
     entity: Type<E>,
     payload: EntityWrite<E>,
     opts?: CallOptions,
   ): Promise<NonNullable<WrittenId<E>>>;
 
-  saveMany<E extends object>(
+  saveMany<E extends WritableEntity>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
     opts?: CallOptions,

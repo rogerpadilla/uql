@@ -1,7 +1,8 @@
 /**
  * A consuming project as `tsc` sees it: decorated entities, `queries` call sites mixing the clauses a real query
  * does, then `definitions` decorated and `defined` entities from `defineEntity` declaring the same indexes, each read once,
- * and `wide` decorated pairs whose every column names its SQL type and whose relation is checked against each field.
+ * `wide` decorated pairs whose every column names its SQL type and whose relation is checked against each field, and
+ * `views`, an aggregate and a find view over an entity, each read once.
  * The caller makes `uql-orm` resolve. Shared by `type-perf.ts`, `type-floor.ts` and `packages/orm/verify-dist.ts`.
  */
 
@@ -128,6 +129,38 @@ export const DefinedChild${i} = defineEntity({
 }).relations((rel) => ({ parent: () => rel.manyToOne(Defined${i}, { references: (child) => child.parentId }) }));
 ${read('Defined', i)}`;
 
+/** An aggregate and a find view over one entity, a relation onto the first, each read so its row is weighed. */
+const view = (i: number) => /*ts*/ `
+export const Order${i} = defineEntity({
+  name: 'Order${i}',
+  fields: { id: f.number().autoIncrement(), customerId: f.number(), total: f.bigint(), paidAt: f.date().nullable() },
+});
+export const Customer${i} = defineEntity({ name: 'Customer${i}', fields: { id: f.number().autoIncrement(), name: f.string() } });
+export const Totals${i} = defineView({
+  name: 'Totals${i}',
+  from: () => Order${i},
+  aggregate: {
+    $group: { customerId: true },
+    $select: { orders: { $count: '*' }, spent: { $sum: { total: true } }, last: { $max: { paidAt: true } } },
+    $where: { paidAt: { $ne: null } },
+  },
+}).relations((rel) => ({ customer: () => rel.manyToOne(Customer${i}, { references: (row) => row.customerId }) }));
+export const Open${i} = defineView({
+  name: 'Open${i}',
+  from: () => Order${i},
+  find: { $select: { id: true, customerId: true, total: true }, $where: { paidAt: null } },
+});
+export async function readViews${i}(q: Querier) {
+  const totals = await q.findMany(Totals${i}, {
+    $select: { spent: true, last: true },
+    $where: { orders: { $gt: 1 } },
+    $sort: { spent: 'desc' },
+    $populate: { customer: { $select: { name: true } } },
+  });
+  const open = await q.findOneById(Open${i}, 1);
+  return [totals[0]?.customer?.name, totals[0]?.last, open?.total] as const;
+}`;
+
 const times = (count: number, write: (i: number) => string) => Array.from({ length: count }, (_, i) => write(i));
 
 /** Thirty columns of three SQL types, as a generated entity declares them. */
@@ -157,13 +190,20 @@ export type FixtureSize = {
   readonly definitions?: number;
   readonly defined?: number;
   readonly wide?: number;
+  readonly views?: number;
 };
 
 /** Enough to compile every block as a consumer. */
-export const ONE_OF_EACH: FixtureSize = { queries: 1, definitions: 1, defined: 1, wide: 1 };
+export const ONE_OF_EACH: FixtureSize = { queries: 1, definitions: 1, defined: 1, wide: 1, views: 1 };
 
-/** The project's sources by file name. */
-function sources({ queries = 0, definitions = 0, defined = 0, wide = 0 }: FixtureSize): Record<string, string> {
+/** The project's sources by file name; `views.ts` only where it holds a view, so a version without `defineView` compiles the rest. */
+function sources({
+  queries = 0,
+  definitions = 0,
+  defined = 0,
+  wide = 0,
+  views = 0,
+}: FixtureSize): Record<string, string> {
   return {
     'entities.ts': entities,
     'payloads.ts': /*ts*/ `import type { StandardSchemaV1 } from 'uql-orm';
@@ -187,6 +227,12 @@ export declare const Tags: StandardSchemaV1<unknown, string[]>;
       ...times(defined, definedEntity),
     ].join('\n'),
     'wide.ts': [/*ts*/ `import { Entity, f, Field, ManyToOne } from 'uql-orm';`, ...times(wide, wideEntity)].join('\n'),
+    ...(views && {
+      'views.ts': [
+        /*ts*/ `import { defineEntity, defineView, f, type Querier } from 'uql-orm';`,
+        ...times(views, view),
+      ].join('\n'),
+    }),
   };
 }
 
