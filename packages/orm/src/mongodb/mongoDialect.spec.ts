@@ -347,6 +347,25 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
+  /** A relation selecting only its key projects `_id`, never an empty projection, which MongoDB refuses. */
+  shouldProjectTheKeyOfARelationSelectingOnlyIt() {
+    expect(
+      this.dialect.aggregationPipeline(Item, { $select: { id: true }, $populate: { tax: { $select: { id: true } } } }),
+    ).toEqual([
+      {
+        $lookup: {
+          from: 'Tax',
+          localField: 'taxId',
+          foreignField: '_id',
+          pipeline: [{ $project: { _id: 1 } }],
+          as: '_uql_joined_tax',
+        },
+      },
+      { $unwind: { path: '$_uql_joined_tax', preserveNullAndEmptyArrays: true } },
+      { $project: { _id: 1, _uql_joined_tax: 1 } },
+    ]);
+  }
+
   /**
    * A relation of a relation is looked up inside the outer lookup's own pipeline, before the projection
    * that reads it.
@@ -369,12 +388,12 @@ class MongoDialectSpec implements Spec {
                 from: 'TaxCategory',
                 localField: 'categoryId',
                 foreignField: '_id',
-                pipeline: [{ $project: { name: 1 } }],
+                pipeline: [{ $project: { name: 1, _id: 1 } }],
                 as: '_uql_joined_category',
               },
             },
             { $unwind: { path: '$_uql_joined_category', preserveNullAndEmptyArrays: true } },
-            { $project: { name: 1, _uql_joined_category: 1 } },
+            { $project: { name: 1, _uql_joined_category: 1, _id: 1 } },
           ],
           as: '_uql_joined_tax',
         },
@@ -1179,7 +1198,7 @@ class MongoDialectSpec implements Spec {
           localField: 'relatedId',
           foreignField: '_id',
           // no `_id` key: MongoDB returns it by default, which is how the joined row keeps its id
-          pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }, { $project: { name: 1 } }],
+          pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }, { $project: { name: 1, _id: 1 } }],
           as: '_uql_joined_related',
         },
       },

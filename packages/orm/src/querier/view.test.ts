@@ -62,6 +62,13 @@ const RegionTotals = defineView({
   materialized: true,
 });
 
+const BucketTotals = defineView({
+  name: 'ViewTestBucketTotals',
+  from: () => Item,
+  aggregate: { $group: { groupId: true }, $select: { total: { $count: '*' } }, $where: { published: true } },
+  materialized: true,
+}).relations((rel) => ({ bucket: () => rel.manyToOne(Bucket, { references: (row) => row.groupId }) }));
+
 const Top = defineView({
   name: 'ViewTestTop',
   from: () => Item,
@@ -121,6 +128,7 @@ describe.each(sqlPools('test_view'))('a view on %s', (_name, connect) => {
     LiveLink,
     Sale,
     RegionTotals,
+    BucketTotals,
     Visit,
     SiteVisits,
     Top,
@@ -226,6 +234,20 @@ describe.each(sqlPools('test_view'))('a view on %s', (_name, connect) => {
     expect(await pool().findMany(RegionTotals, { $sort: { regionId: 'asc' } })).toEqual([
       { regionId: 1, sales: 2, amount: 25 },
       { regionId: 3, sales: 1, amount: 1 },
+    ]);
+  });
+
+  it('should populate a relation of a materialized view, read from its rows', async () => {
+    await pool().refreshView(BucketTotals);
+
+    expect(
+      await pool().findMany(BucketTotals, {
+        $populate: { bucket: { $select: { id: true } } },
+        $sort: { groupId: 'asc' },
+      }),
+    ).toEqual([
+      { groupId: 1, total: 2, bucket: { id: 1 } },
+      { groupId: 2, total: 1, bucket: { id: 2 } },
     ]);
   });
 

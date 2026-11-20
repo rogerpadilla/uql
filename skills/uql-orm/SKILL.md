@@ -3,11 +3,11 @@ name: uql-orm
 description: >
   Write code with UQL (the uql-orm package), the TypeScript ORM whose queries are plain JSON objects,
   on PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, SQL Server, MongoDB, Turso, Neon, D1 and PGlite.
-  Use when a project imports uql-orm, or when defining entities (@Entity, defineEntity), triggers or filters
-  (soft delete, multi-tenancy), querying ($where, $populate, findMany, aggregate), writing (insertMany, upsertOne,
-  updateMany, returning), transactions, raw SQL (sql, refs), migrations (uql-migrate), or serving queries to a client
-  (createApi, serve, createClientQuerier, createQueryOptions) with it. UQL is not Prisma,
-  Drizzle, TypeORM or MikroORM: their APIs do not carry over.
+  Use when a project imports uql-orm, or when defining entities (@Entity, defineEntity), views (defineView),
+  triggers, filters and policies (soft delete, multi-tenancy, row-level security), querying ($where, $populate,
+  findMany, aggregate), writing (insertMany, upsertOne, updateMany, returning), transactions, raw SQL (sql, refs),
+  migrations (uql-migrate), or serving queries to a client (createApi, serve, createClientQuerier,
+  createQueryOptions) with it. UQL is not Prisma, Drizzle, TypeORM or MikroORM: their APIs do not carry over.
 ---
 
 # UQL
@@ -142,7 +142,7 @@ export const Book = defineEntity({
 
 - Columns are the same builders. No `!` or `?` to write: a `.nullable()` column reads `| null`, a default makes it optional on insert, `f.enum()` gives the literal union. A constructor's type argument narrows the column, a brand or a JSON payload with no runtime schema: `f.uuid<UserId>().id()`, `f.json<Settings>()`. It checks the type against the column and exists only in types; a default is written as that type. A filter then takes the branded type, and a foreign key to a branded key must carry the same brand, whether a relation or a decorated property declares it.
 - The `interface` beside the entity names its rows: hovers and errors then print `Author`, which a type alias expands.
-- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract` and `fields`, into which a shared set of fields spreads. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `policies`, `hooks`, then `relations` last; only `filters` and `policies` follow it, and of two reading through relations the one chained last may read them.
+- `defineEntity` takes `name` (the table derives from it), `table`, `schema`, `extends`, `abstract`, `wire`, `readOnly` and `fields`, into which a shared set of fields spreads. Every other option is a section chained after it, each called at most once: `computed`, `indexes`, `checks`, `triggers`, `filters`, `policies`, `hooks`, then `relations` last; only `filters` and `policies` follow it, and of two reading through relations the one chained last may read them.
 - A relation is a thunk, so entities pointing at each other can sit in any order and file. A foreign key is a plain field that a `manyToOne` names as `references`, checked against the target's key type. `relations`' second callback declares aggregate fields: aggregates over a to-many, or expressions mixing them with columns.
 - A JSON column's payload is any Standard Schema (Zod, Valibot, ArkType), typed by its output. uql never runs it, so a write is not validated.
 - A hook is a function of the row and the same second argument. Behaviour is a plain function of the row (`label(author: Author)`): a row reads back as a plain object, so a method would never be there.
@@ -169,6 +169,7 @@ export const OpenOrder = defineView({ name: 'OpenOrder', from: () => Order, find
 - uql reads it by its query on every engine, MongoDB included, so its source's filters and policies hold every read. It reads like any entity and is read-only. A find view is keyed by its source's key where it selects it; an aggregate view by its `$group` columns where none is nullable. Sections: `relations`, `filters`, `policies`.
 - A plain view has no rows of its own: `$lock`, `estimatedCount`, and `$text` on MySQL, MariaDB, SQLite and MongoDB are refused, and it takes no `indexes`. Its query takes `$sort` only with `$limit`, a top N: otherwise a read orders and pages its rows. It has no table, so migrations leave it out. `tableOf(refs(CustomerTotals))` renders it in raw SQL: https://uql-orm.dev/entities/views.md
 - `materialized: true` keeps it as a table, read from its rows, which takes `.indexes(...)`. Migrations create and fill it; `await pool.refreshView(CustomerTotals)` replaces its rows with its query's in one write (MongoDB with `$out`, outside a transaction). Its refresh runs past every policy, so one over a source holding policies or a tenant must declare `.policies(...)` of its own; on `policies: 'native'` the role refreshing must read past row-level security. Writes refuse it, and `refreshView` takes nothing else.
+- SQL a find or an aggregate cannot express (a `UNION`, a window function): write the `CREATE VIEW` in a migration (`generate <name>`) and map it as a read-only entity with its columns declared by hand; no source's filter or policy holds it.
 
 ### Filters, soft delete, tenants and policies
 
@@ -235,7 +236,7 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `estimatedCount`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`, `restoreOneById`, `restoreMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Whether anything matches is `exists`, which stops at the first row, never `count(...) > 0`. Signatures: https://uql-orm.dev/querying/methods.md
+- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `estimatedCount`, `exists`, `aggregate`, `refreshView`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`, `restoreOneById`, `restoreMany`. Each takes the entity class first; on a querier, each taking a query also takes it as the query's `$entity`, so the whole call is JSON. Whether anything matches is `exists`, which stops at the first row, never `count(...) > 0`. Signatures: https://uql-orm.dev/querying/methods.md
 - `$` marks the query language: clauses, operators, `$old`/`$new` in a trigger's predicate and `$context` reads. Field, relation and context key names never take it, and neither do a definition's or a call's options (`policies: [{ allow, ops, when }]`, `{ filters: false }`).
 - Query keys: `$select`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`, `$lock`. `$select: { password: false }` reads every field but `password`. `$count: { posts: true }` counts a to-many under `_count` without loading it.
 - Results are narrowed to what the query selected and populated, at every depth. Reading an unselected field is a compile error. Name a shape with `QueryFindResult<User, 'id' | 'email'>`, or `QueryFindResult<User, typeof query>` for a query declared `as const satisfies Query<User>`. A function forwarding a query keeps the narrowing typed `<E extends object, const Q extends Query<E>>(entity: Type<E>, q: Captured<Query<E>, Q>): Promise<QueryFindResult<E, Q>[]>`.
@@ -344,6 +345,7 @@ export const handler = toFetchHandler(api); // on a catch-all under /api/v1
 
 - `sync`: applies what the entities imply. Development only. `sync --dry-run` prints only the SQL, for another tool to apply.
 - `generate:entities`: writes the diff as a migration file to review. A renamed column is a drop and an add, unless a naming strategy maps it or you write `renameColumn(table, from, to)`. It refuses a required column with no default on a table holding rows.
+- `generate <name>`: an empty migration for what a diff cannot express: a backfill, or a view written in SQL.
 - `up` and `down`: each migration in its own transaction, under a lock so concurrent instances run it once. From code: `await new Migrator(pool, { migrationsPath }).up()` before the app starts.
 - `generate:from-db`: writes entity classes from an existing database.
 - `drift:check`: fails when the database no longer matches the entities.

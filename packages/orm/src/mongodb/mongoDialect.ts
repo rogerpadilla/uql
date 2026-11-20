@@ -1429,9 +1429,11 @@ export class MongoDialect extends AbstractDialect {
       // The relation's own projection runs inside the lookup, where its keys resolve against the
       // related entity. Left out, `$populate: { rel: { $select } }` returned all of `rel`'s columns.
       const relationProjection = this.pipelineProjection(join.entity, join.query);
-      // MongoDB returns `_id` unless a projection subtracts it, so dropping the key from the map is
-      // how a joined document keeps its own id, as it does on the SQL dialects.
-      delete relationProjection?.[ID_KEY];
+      // A joined document keeps its own id, as on the SQL dialects: included, since a projection of the key alone
+      // would be left empty, which MongoDB refuses.
+      if (relationProjection) {
+        relationProjection[ID_KEY] = 1;
+      }
 
       const lookupPipeline = [
         ...(hasKeys(relationFilter) ? [{ $match: relationFilter }] : []),

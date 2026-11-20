@@ -47,6 +47,13 @@ const Stored = defineView({
   materialized: true,
 });
 
+const OwnerTotals = defineView({
+  name: 'MongoViewOwnerTotals',
+  from: () => Item,
+  aggregate: { $group: { ownerId: true }, $select: { total: { $count: '*' } }, $where: { published: true } },
+  materialized: true,
+}).relations((rel) => ({ owner: () => rel.manyToOne(Owner, { references: (row) => row.ownerId }) }));
+
 const Busy = defineView({ name: 'MongoViewBusy', from: () => Totals, find: { $where: { total: { $gt: 1 } } } });
 
 const Pin = defineEntity({
@@ -63,7 +70,7 @@ let ids: string[] = [];
 
 beforeAll(async () => {
   await pool.withQuerier((querier) => querier.db.dropDatabase());
-  await new Migrator(pool, { entities: [Owner, Item, Pin, Totals, Kinds, Published, Busy, Stored] }).sync({
+  await new Migrator(pool, { entities: [Owner, Item, Pin, Totals, Kinds, Published, Busy, Stored, OwnerTotals] }).sync({
     logging: false,
   });
   ownerId = await pool.insertOne(Owner, {});
@@ -146,6 +153,14 @@ it("should refresh a materialized view with $out, its documents keyed by the vie
   await pool.refreshView(Stored);
   expect(await pool.findOneById(Stored, 2)).toEqual({ groupId: 2, total: 2 });
   await pool.updateOneById(Item, ids[3]!, { published: false });
+});
+
+it('should populate a relation of a materialized view, read from its documents', async () => {
+  await pool.refreshView(OwnerTotals);
+
+  expect(await pool.findMany(OwnerTotals, { $populate: { owner: { $select: { id: true } } } })).toEqual([
+    { ownerId, total: 3, owner: { id: ownerId } },
+  ]);
 });
 
 it('should refuse a refresh inside a transaction, which $out runs outside of', async () => {

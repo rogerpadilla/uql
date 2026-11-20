@@ -2,7 +2,7 @@
  * A view is declared as a query over its source, and typed by it: its row is what the query answers, its key what keeps
  * a row unique, and no write takes it. Type-checked by `bun run ts` only.
  */
-import { defineEntity, defineView, f } from '../entity/index.js';
+import { defineEntity, defineView, Entity, f, Field } from '../entity/index.js';
 import type { IdKey, Querier } from '../index.js';
 
 const Workspace = defineEntity({ name: 'Workspace', fields: { id: f.number().autoIncrement(), name: f.string() } });
@@ -163,4 +163,28 @@ export function aMaterializedViewIsATableItsQueryRefreshes() {
   }).indexes((row, index) => [index([row.total])]);
   // @ts-expect-error its sections are each declared once
   Stored.indexes((row, index) => [index([row.total])]);
+}
+
+@Entity()
+class Ledger {
+  @Field(f.number().autoIncrement()) id?: number;
+  @Field(f.number()) accountId!: number;
+  @Field(f.number()) amount!: number;
+}
+
+export async function aViewReadsADecoratedSourceAsADefinedOne(): Promise<unknown[]> {
+  const Balances = defineView({
+    name: 'Balances',
+    from: () => Ledger,
+    aggregate: { $group: { accountId: true }, $select: { balance: { $sum: { amount: true } } } },
+  });
+  const rows: { accountId: number; balance: number | null }[] = await querier.findMany(Balances, {});
+  const keyed: IdKey<InstanceType<typeof Balances>> = 'accountId';
+  defineView({
+    name: 'TypoLedger',
+    from: () => Ledger,
+    // @ts-expect-error a group naming no field of its decorated source
+    aggregate: { $group: { acountId: true }, $select: { total: { $count: '*' } } },
+  });
+  return [rows, keyed];
 }
