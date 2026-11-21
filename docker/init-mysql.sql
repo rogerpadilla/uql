@@ -31,3 +31,5 @@ CREATE DATABASE IF NOT EXISTS test_keyless;
 GRANT ALL PRIVILEGES ON test_keyless.* TO 'test'@'%';
 CREATE DATABASE IF NOT EXISTS test_view;
 GRANT ALL PRIVILEGES ON test_view.* TO 'test'@'%';
+CREATE DATABASE IF NOT EXISTS test_composite;
+GRANT ALL PRIVILEGES ON test_composite.* TO 'test'@'%';

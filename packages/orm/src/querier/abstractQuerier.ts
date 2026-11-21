@@ -132,12 +132,19 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   // Every key, or the `$where` names only some of the columns and addresses each row that agrees on
   // those - which for an update or a delete is silently far more than the one row asked for. `{}`
   // reaches here too, and would otherwise be an unfiltered statement over the whole table.
-  const given: { readonly [K in IdKey<E>]?: unknown } = id;
-  const { ids } = getMeta(entity);
-  const missing = ids.filter((key) => given[key] == null);
+  assertEveryKey(getMeta(entity), id, 'is addressed by an object');
+}
+
+/** Refuses `given` leaving a column of its entity's primary key unset or null, as `what` names it. */
+export function assertEveryKey<E>(
+  meta: EntityMeta<E>,
+  given: { readonly [K in IdKey<E>]?: unknown },
+  what: string,
+): void {
+  const missing = meta.ids.filter((key) => given[key] == null);
   if (missing.length) {
     throw new UqlUsageError(
-      `'${entity.name}' is addressed by an object carrying every key of its primary key (${ids.join(', ')}); missing ${missing.join(', ')}.`,
+      `'${meta.entity.name}' ${what} carrying every key of its primary key (${meta.ids.join(', ')}); missing ${missing.join(', ')}.`,
     );
   }
 }

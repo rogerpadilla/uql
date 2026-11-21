@@ -9,6 +9,7 @@ import type {
   EntityData,
   EntityMeta,
   ExtraOptions,
+  IdKey,
   WrittenId,
   Query,
   QueryAggregate,
@@ -44,7 +45,7 @@ import { contextEntries, nextBinding, NOTHING_BOUND, roleOf, unsettled } from '.
 import { sql, statementOf } from '../util/sql.js';
 import type { SqlExecution } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { AbstractQuerier, type ReportingWrites } from './abstractQuerier.js';
+import { AbstractQuerier, assertEveryKey, type ReportingWrites } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError, failedIndexOf, isAbortedTransaction } from './queryError.js';
 import { rowReader } from './rowReader.js';
@@ -53,12 +54,11 @@ import { rowReader } from './rowReader.js';
  * Row indexes split by whether the row names its key, the one thing that changes what an insert can
  * report; coarser than {@link groupByInsertShape} on purpose, since an insert fills a missing column with `DEFAULT`.
  */
-function partitionBySuppliedId<E extends object>(meta: EntityMeta<E>, payload: EntityData<E>[]): number[][] {
+function partitionBySuppliedId<E extends object>(payload: EntityData<E>[], idKey: IdKey<E>): number[][] {
   const supplied: number[] = [];
   const generated: number[] = [];
   for (let index = 0; index < payload.length; index++) {
-    const row = payload[index];
-    (meta.ids.some((key) => row[key] === undefined) ? generated : supplied).push(index);
+    (payload[index][idKey] === undefined ? generated : supplied).push(index);
   }
   return supplied.length && generated.length ? [supplied, generated] : [supplied.length ? supplied : generated];
 }
@@ -545,6 +545,9 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
 
   override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {
     const meta = getMeta(entity);
+    if (meta.ids.length > 1) {
+      rows.forEach((row) => assertEveryKey(meta, row, 'is inserted with a row'));
+    }
     // The key the ids an insert reports land on: one column, so none for a composite, whose rows carry every column
     // of it, nor a keyless row. A `RETURNING` reports any key, a header only a generated one.
     const generatedKey = generatedKeyOf(meta);
@@ -630,7 +633,7 @@ export abstract class AbstractSqlQuerier<Tx extends TransactionHandle = Transact
     const { maxBindValues, maxInsertRows, insertIdSource } = this.dialect;
     const unordered = (row: EntityData<E>) =>
       insertIdSource === 'returning' && !!soleId(meta) && !generatedKeyOf(meta) && !namesKey(meta, row);
-    return partitionBySuppliedId(meta, rows).flatMap((group) =>
+    return partitionBySuppliedId(rows, meta.ids[0]).flatMap((group) =>
       chunkWithinLimits(meta, rows, group, maxBindValues, unordered(rows[group[0]]) ? 1 : maxInsertRows),
     );
   }

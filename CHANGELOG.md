@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking (area):**` marks only a change most users must act on, or one that silently changes what a query reads or writes; a rename or tightening the compiler reports is a plain line. `**Fixed (area):**` marks a fix. The area is what the change touches: `http`, `client`, `entity`, `querier`, `types`, `nestjs`, or an engine (`mariadb`). No internals, sizes or tests.
 
+## [0.118.3] - 2026-11-20
+
+- **Fixed (querier):** an insert into a composite primary key leaving a part of it out is refused by name before anything is written, where the database's `NOT NULL` error answered.
+
 ## [0.118.2] - 2026-11-20
 
 - **Fixed (mongodb):** `$populate` of a relation selecting only its key, `{ $select: { id: true } }`, reads it, where MongoDB refused an empty projection.

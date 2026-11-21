@@ -17,7 +17,7 @@ class Enrolment {
   @Field(f.number().id())
   studentId!: number;
   @Field(f.string().id())
-  courseId?: string;
+  courseId!: string;
   @OneToMany(() => Note, { mappedBy: (note) => note.enrolment })
   notes?: Note[];
   @ManyToMany(() => Badge, { through: () => EnrolmentBadge })
@@ -85,7 +85,7 @@ class Attempt {
 @Entity()
 class Ticket {
   [idKey]?: 'tenant' | 'code';
-  @Field(f.string().id()) tenant?: string;
+  @Field(f.string().id()) tenant!: string;
   @Field(
     f
       .string()
@@ -100,7 +100,7 @@ class Ticket {
 @Entity()
 class Seat {
   [idKey]?: 'tenant' | 'code';
-  @Field(f.string().id()) tenant?: string;
+  @Field(f.string().id()) tenant!: string;
   @Field(
     f
       .string()
